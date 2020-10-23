@@ -4,6 +4,7 @@
     "Description": "Allows you to use various XIVChat clients to chat in FFXIV from anywhere!",
     "InternalName": "XIVChatPlugin",
     "AssemblyVersion": "1.0.0",
+    "RepoUrl": "https://sr.ht/~jkcclemens/xivchat",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 1
 }
