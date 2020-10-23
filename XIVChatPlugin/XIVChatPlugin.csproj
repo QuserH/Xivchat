@@ -36,7 +36,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Dalamud">
-      <HintPath%appdata%\XIVLauncher\addon\Hooks\Dalamud.dll</HintPath>
+      <HintPath>%appdata%\XIVLauncher\addon\Hooks\Dalamud.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="ImGui.NET">
