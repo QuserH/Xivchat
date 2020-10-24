@@ -2,7 +2,7 @@
     "Author": "ascclemens",
     "Name": "XIVChat Server",
     "Description": "Allows you to use various XIVChat clients to chat in FFXIV from anywhere!",
-    "InternalName": "XIVChatPlugin",
+    "InternalName": "XIVChat",
     "AssemblyVersion": "1.0.0",
     "RepoUrl": "https://sr.ht/~jkcclemens/xivchat",
     "ApplicableVersion": "any",

@@ -10,7 +10,7 @@
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>XIVChatPlugin</RootNamespace>
-    <AssemblyName>XIVChatPlugin</AssemblyName>
+    <AssemblyName>XIVChat</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
@@ -112,7 +112,7 @@
     <None Include="app.config" />
     <None Include="ILMerge.props" />
     <None Include="packages.config" />
-    <None Include="XIVChatPlugin.json" />
+    <None Include="XIVChat.json" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj">
