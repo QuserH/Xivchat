@@ -15,6 +15,8 @@ namespace XIVChatPlugin {
 
         public bool SendBattle { get; set; } = true;
 
+        public bool PairingMode { get; set; } = true;
+
         public Dictionary<Guid, Tuple<string, byte[]>> TrustedKeys { get; set; } = new Dictionary<Guid, Tuple<string, byte[]>>();
         public KeyPair KeyPair { get; set; } = null;
 

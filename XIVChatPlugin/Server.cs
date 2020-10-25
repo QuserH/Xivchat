@@ -41,7 +41,7 @@ namespace XIVChatPlugin {
         private bool sendPlayerData = false;
 
         private volatile bool _running = false;
-        public bool Running { get => this._running; set => this._running = value; }
+        public bool Running => this._running;
 
         private InputChannel currentChannel = InputChannel.Say;
 
@@ -54,6 +54,82 @@ namespace XIVChatPlugin {
             }
 
             this.plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
+        }
+
+        private void SpawnPairingModeTask() {
+            Task.Run(async () => {
+                // delay for 10 seconds because of the jank way we cancel below to prevent port bind issues
+                await Task.Delay(10_000);
+
+                const int multicastPort = 17444;
+                using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, multicastPort));
+
+                var multicastAddr = IPAddress.Parse("224.0.0.147");
+                var endpoint = new IPEndPoint(multicastAddr, multicastPort);
+                udp.JoinMulticastGroup(multicastAddr);
+
+                string lastPlayerName = null;
+
+                Task<UdpReceiveResult> receiveTask = null;
+
+                while (this.Running) {
+                    if (!this.plugin.Config.PairingMode) {
+                        await Task.Delay(5_000);
+                        continue;
+                    }
+
+                    var playerName = this.plugin.Interface.ClientState.LocalPlayer?.Name;
+
+                    if (playerName != null) {
+                        lastPlayerName = playerName;
+                    }
+
+                    if (lastPlayerName == null) {
+                        await Task.Delay(5_000);
+                        continue;
+                    }
+
+                    if (receiveTask == null) {
+                        receiveTask = udp.ReceiveAsync();
+                    }
+
+                    var result = await Task.WhenAny(
+                        receiveTask,
+                        Task.Delay(1_500)
+                    );
+
+                    if (result != receiveTask) {
+                        if (!this.Running) {
+                            udp.Close();
+                        }
+
+                        continue;
+                    }
+
+                    var recv = await receiveTask;
+                    receiveTask = null;
+
+                    var data = recv.Buffer;
+                    if (data.Length != 1 || data[0] != 14) {
+                        continue;
+                    }
+
+                    var utf8 = Encoding.UTF8.GetBytes(lastPlayerName);
+                    var portBytes = BitConverter.GetBytes(this.plugin.Config.Port).Reverse().ToArray();
+                    var key = this.plugin.Config.KeyPair.PublicKey;
+                    // magic + string length + string + port + key
+                    var payload = new byte[1 + 1 + utf8.Length + portBytes.Length + key.Length]; // assuming names can only be 32 bytes here
+                    payload[0] = 14;
+                    payload[1] = (byte)utf8.Length;
+                    Array.Copy(utf8, 0, payload, 2, utf8.Length);
+                    Array.Copy(portBytes, 0, payload, 2 + utf8.Length, portBytes.Length);
+                    Array.Copy(key, 0, payload, 2 + utf8.Length + portBytes.Length, key.Length);
+
+                    await udp.SendAsync(payload, payload.Length, recv.RemoteEndPoint);
+                }
+
+                PluginLog.Log("Scan response thread done");
+            });
         }
 
         private async void OnReceiveFriendList(List<Player> friends) {
@@ -78,15 +154,15 @@ namespace XIVChatPlugin {
         }
 
         public void Spawn() {
-            var ip = IPAddress.Parse("0.0.0.0");
             var port = this.plugin.Config.Port;
 
             Task.Run(async () => {
-                this.listener = new TcpListener(ip, port);
+                this.listener = new TcpListener(IPAddress.Any, port);
                 this.listener.Start();
 
                 this._running = true;
                 PluginLog.Log("Running...");
+                this.SpawnPairingModeTask();
                 while (!this.tokenSource.IsCancellationRequested) {
                     var conn = await this.listener.GetTcpClient(this.tokenSource);
                     this.SpawnClientTask(conn);

@@ -73,6 +73,17 @@ namespace XIVChatPlugin {
 
         private static void TextWhite(string text) => WithWhiteText(() => ImGui.TextUnformatted(text));
 
+        private static void HelpMarker(string text) {
+            ImGui.TextDisabled("(?)");
+            if (ImGui.IsItemHovered()) {
+                ImGui.BeginTooltip();
+                ImGui.PushTextWrapPos(ImGui.GetFontSize() * 20f);
+                ImGui.TextUnformatted(text);
+                ImGui.PopTextWrapPos();
+                ImGui.EndTooltip();
+            }
+        }
+
         private void DrawInner() {
             this.AcceptPending();
 
@@ -129,6 +140,16 @@ namespace XIVChatPlugin {
                 }
 
                 ImGui.TextUnformatted("Changing this setting will not affect messages already in the backlog.");
+
+                ImGui.Spacing();
+
+                bool pairingMode = this.plugin.Config.PairingMode;
+                if (WithWhiteText(() => ImGui.Checkbox("Pairing mode", ref pairingMode))) {
+                    this.plugin.Config.PairingMode = pairingMode;
+                    this.plugin.Config.Save();
+                }
+                ImGui.SameLine();
+                HelpMarker("While in pairing mode, XIVChat Server will listen for information requests from clients broadcast on your local network and respond with information about the server. This will make it easier to add your server to a client, but this should be turned off when not actively adding new devices.");
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Trusted keys"))) {
