@@ -2,8 +2,13 @@
 using Dalamud.Hooking;
 using Dalamud.Plugin;
 using System;
+using System.Collections.Generic;
+#if DEBUG
 using System.IO;
+#endif
 using System.Reflection;
+
+// TODO: hostable relay server (run one but have option to run your own)?
 
 namespace XIVChatPlugin {
     public class Plugin : IDalamudPlugin {
@@ -41,12 +46,12 @@ namespace XIVChatPlugin {
             this.Config.Initialise(this);
 
             this.Functions = new GameFunctions(this);
-            var funcPtr = this.Interface.TargetModuleScanner.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
-            if (funcPtr == IntPtr.Zero) {
-                PluginLog.LogError("Could not sig chat channel change function");
-            } else {
+            try {
+                var funcPtr = this.Interface.TargetModuleScanner.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
                 this.chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(funcPtr, new ChatChannelChangeDelegate(this.ChangeChatChannelDetour));
                 this.chatChannelChangeHook.Enable();
+            } catch (KeyNotFoundException) {
+                PluginLog.LogError("Could not sig chat channel change function");
             }
 
             this.Ui = new PluginUI(this);
