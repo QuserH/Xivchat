@@ -243,6 +243,12 @@ namespace XIVChatPlugin {
             this.plugin.Functions.ProcessChatBox(message);
         }
 
+        private static readonly IReadOnlyList<byte> MAGIC = new byte[] {
+            14,
+            20,
+            67,
+        };
+
         private void SpawnClientTask(TcpClient conn) {
             if (conn == null) {
                 return;
@@ -251,6 +257,28 @@ namespace XIVChatPlugin {
             Task.Run(async () => {
                 var stream = conn.GetStream();
 
+                // get ready for reading magic bytes
+                var magic = new byte[MAGIC.Count];
+                var read = 0;
+
+                // only listen for magic for five seconds
+                using var cts = new CancellationTokenSource();
+                cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+                // read magic bytes
+                while (read < magic.Length) {
+                    if (cts.IsCancellationRequested) {
+                        return;
+                    }
+
+                    read += await stream.ReadAsync(magic, read, magic.Length - read, cts.Token);
+                }
+
+                // ignore this connection if incorrect magic bytes
+                if (!magic.SequenceEqual(MAGIC)) {
+                    return;
+                }
+
                 var handshake = await KeyExchange.ServerHandshake(this.plugin.Config.KeyPair, stream);
                 var newClient = new Client(conn) {
                     Handshake = handshake,
@@ -258,6 +286,11 @@ namespace XIVChatPlugin {
 
                 // if this public key isn't trusted, prompt first
                 if (!this.plugin.Config.TrustedKeys.Values.Any(entry => entry.Item2.SequenceEqual(handshake.RemotePublicKey))) {
+                    // if configured to not accept new clients, reject connection
+                    if (!this.plugin.Config.AcceptNewClients) {
+                        return;
+                    }
+
                     var accepted = Channel.CreateBounded<bool>(1);
 
                     await this.pendingClients.Writer.WriteAsync(Tuple.Create(newClient, accepted));
@@ -392,7 +425,11 @@ namespace XIVChatPlugin {
 
                 this.clients.TryRemove(id, out var _);
                 PluginLog.Log($"Client thread ended: {id}");
-            });
+            }).ContinueWith(_ => {
+                try {
+                    conn.Close();
+                } catch (ObjectDisposedException) { }
+            }); ;
         }
 
         private static readonly Regex colorRegex = new Regex(@"<Color\(.+?\)>", RegexOptions.Compiled);

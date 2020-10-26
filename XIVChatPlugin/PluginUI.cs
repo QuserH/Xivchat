@@ -138,8 +138,8 @@ namespace XIVChatPlugin {
                     this.plugin.Config.SendBattle = sendBattle;
                     this.plugin.Config.Save();
                 }
-
-                ImGui.TextUnformatted("Changing this setting will not affect messages already in the backlog.");
+                ImGui.SameLine();
+                HelpMarker("Changing this setting will not affect messages already in the backlog.");
 
                 ImGui.Spacing();
 
@@ -150,6 +150,16 @@ namespace XIVChatPlugin {
                 }
                 ImGui.SameLine();
                 HelpMarker("While in pairing mode, XIVChat Server will listen for information requests from clients broadcast on your local network and respond with information about the server. This will make it easier to add your server to a client, but this should be turned off when not actively adding new devices.");
+
+                ImGui.Spacing();
+
+                bool acceptNew = this.plugin.Config.AcceptNewClients;
+                if (WithWhiteText(() => ImGui.Checkbox("Accept new clients", ref acceptNew))) {
+                    this.plugin.Config.AcceptNewClients = acceptNew;
+                    this.plugin.Config.Save();
+                }
+                ImGui.SameLine();
+                HelpMarker("If this is disabled, XIVChat Server will only allow clients with already-trusted keys to connect.");
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Trusted keys"))) {
