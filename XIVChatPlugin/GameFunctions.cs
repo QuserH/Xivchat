@@ -17,6 +17,7 @@ namespace XIVChatPlugin {
         private delegate byte RequestFriendListDelegate(IntPtr manager);
         private delegate int FormatFriendListNameDelegate(long a1, long a2, long a3, int a4, IntPtr data, long a6);
         private delegate IntPtr OnReceiveFriendListChunkDelegate(IntPtr a1, IntPtr data);
+        private delegate IntPtr GetColourInfoDelegate(IntPtr handler, uint lookupResult);
 
         private readonly Hook<RequestFriendListDelegate> friendListHook;
         private readonly Hook<FormatFriendListNameDelegate> formatHook;
@@ -24,8 +25,11 @@ namespace XIVChatPlugin {
 
         private readonly GetUIModuleDelegate GetUIModule;
         private readonly EasierProcessChatBoxDelegate _EasierProcessChatBox;
+        private readonly GetColourInfoDelegate GetColourInfo;
 
         private readonly IntPtr uiModulePtr;
+        private readonly IntPtr colourHandler;
+        private readonly IntPtr colourLookup;
         private IntPtr friendListManager = IntPtr.Zero;
 
         private bool requestingFriendList = false;
@@ -43,10 +47,15 @@ namespace XIVChatPlugin {
             var friendListPtr = this.plugin.Interface.TargetModuleScanner.ScanText("40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9");
             var formatPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24 ??");
             var recvChunkPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2");
+            var getColourPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9 ?? ?? ?? ??");
+
             this.uiModulePtr = this.plugin.Interface.TargetModuleScanner.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
+            this.colourHandler = this.plugin.Interface.TargetModuleScanner.GetStaticAddressFromSig("48 8B 05 ?? ?? ?? ?? 48 8B A8 ?? ?? ?? ?? 48 85 ED 0F 84 ?? ?? ?? ??");
+            this.colourLookup = this.plugin.Interface.TargetModuleScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D ??");
 
             this.GetUIModule = Marshal.GetDelegateForFunctionPointer<GetUIModuleDelegate>(getUIModulePtr);
             this._EasierProcessChatBox = Marshal.GetDelegateForFunctionPointer<EasierProcessChatBoxDelegate>(easierProcessChatBoxPtr);
+            this.GetColourInfo = Marshal.GetDelegateForFunctionPointer<GetColourInfoDelegate>(getColourPtr);
 
             this.friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, new RequestFriendListDelegate(this.OnRequestFriendList));
             this.formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, new FormatFriendListNameDelegate(this.OnFormatFriendList));
@@ -55,6 +64,35 @@ namespace XIVChatPlugin {
             this.friendListHook.Enable();
             this.formatHook.Enable();
             this.receiveChunkHook.Enable();
+        }
+
+        // This function looks up a channel's user-defined colour.
+        //
+        // If this function would ever return 0, it returns null instead.
+        public uint? GetChannelColour(ChatCode channel) {
+            // Colours are retrieved by looking up their code in a lookup table. Some codes share a colour, so they're lumped into a parent code here.
+            // Only codes >= 10 (say) have configurable colours.
+            // After getting the lookup value for the code, it is passed into a function with a handler which returns a pointer.
+            // This pointer + 32 is the RGB value. This functions returns RGBA with A always max.
+
+            var parent = channel.Parent();
+
+            switch (parent) {
+                case ChatType.Debug:
+                case ChatType.Urgent:
+                case ChatType.Notice:
+                    return channel.DefaultColour();
+            }
+
+            var lookupResult = (uint)Marshal.ReadInt32(this.colourLookup, (int)parent * 4);
+            var info = this.GetColourInfo(Marshal.ReadIntPtr(this.colourHandler) + 16, lookupResult);
+            var rgb = (uint)Marshal.ReadInt32(info, 32) & 0xFFFFFF;
+
+            if (rgb == 0) {
+                return null;
+            }
+
+            return 0xFF | (rgb << 8);
         }
 
         public void ProcessChatBox(string message) {

@@ -101,6 +101,222 @@ namespace XIVChatCommon {
             this.code = code;
         }
 
+        public ChatType Parent() {
+            switch (this.Type) {
+                case ChatType.Say:
+                case ChatType.GmSay:
+                    return ChatType.Say;
+                case ChatType.Shout:
+                case ChatType.GmShout:
+                    return ChatType.Shout;
+                case ChatType.TellOutgoing:
+                case ChatType.TellIncoming:
+                case ChatType.GmTell:
+                    return ChatType.TellOutgoing;
+                case ChatType.Party:
+                case ChatType.CrossParty:
+                case ChatType.GmParty:
+                    return ChatType.Party;
+                case ChatType.Linkshell1:
+                case ChatType.GmLinkshell1:
+                    return ChatType.Linkshell1;
+                case ChatType.Linkshell2:
+                case ChatType.GmLinkshell2:
+                    return ChatType.Linkshell2;
+                case ChatType.Linkshell3:
+                case ChatType.GmLinkshell3:
+                    return ChatType.Linkshell3;
+                case ChatType.Linkshell4:
+                case ChatType.GmLinkshell4:
+                    return ChatType.Linkshell4;
+                case ChatType.Linkshell5:
+                case ChatType.GmLinkshell5:
+                    return ChatType.Linkshell5;
+                case ChatType.Linkshell6:
+                case ChatType.GmLinkshell6:
+                    return ChatType.Linkshell6;
+                case ChatType.Linkshell7:
+                case ChatType.GmLinkshell7:
+                    return ChatType.Linkshell7;
+                case ChatType.Linkshell8:
+                case ChatType.GmLinkshell8:
+                    return ChatType.Linkshell8;
+                case ChatType.FreeCompany:
+                case ChatType.GmFreeCompany:
+                    return ChatType.FreeCompany;
+                case ChatType.NoviceNetwork:
+                case ChatType.GmNoviceNetwork:
+                    return ChatType.NoviceNetwork;
+                case ChatType.CustomEmote:
+                    return ChatType.CustomEmote;
+                case ChatType.StandardEmote:
+                    return ChatType.StandardEmote;
+                case ChatType.Yell:
+                case ChatType.GmYell:
+                    return ChatType.Yell;
+                case ChatType.GainBuff:
+                case ChatType.LoseBuff:
+                    return ChatType.GainBuff;
+                case ChatType.GainDebuff:
+                case ChatType.LoseDebuff:
+                    return ChatType.GainDebuff;
+                case ChatType.System:
+                case ChatType.Alarm:
+                case ChatType.RetainerSale:
+                case ChatType.PeriodicRecruitmentNotification:
+                case ChatType.Sign:
+                case ChatType.Orchestrion:
+                case ChatType.MessageBook:
+                    return ChatType.System;
+                case ChatType.NpcDialogue:
+                case ChatType.NpcAnnouncement:
+                    return ChatType.NpcDialogue;
+                case ChatType.LootRoll:
+                case ChatType.RandomNumber:
+                    return ChatType.LootRoll;
+                case ChatType.FreeCompanyAnnouncement:
+                case ChatType.FreeCompanyLoginLogout:
+                    return ChatType.FreeCompanyAnnouncement;
+                case ChatType.PvpTeamAnnouncement:
+                case ChatType.PvpTeamLoginLogout:
+                    return ChatType.PvpTeamAnnouncement;
+                default:
+                    return this.Type;
+            }
+        }
+
+        //public string ConfigKey() {
+        //    switch (this.Type) {
+        //        case ChatType.Say:
+        //        case ChatType.GmSay:
+        //            return "ColorSay";
+        //        case ChatType.Shout:
+        //        case ChatType.GmShout:
+        //            return "ColorShout";
+        //        case ChatType.TellOutgoing:
+        //        case ChatType.TellIncoming:
+        //        case ChatType.GmTell:
+        //            return "ColorTell";
+        //        case ChatType.Party:
+        //        case ChatType.CrossParty:
+        //        case ChatType.GmParty:
+        //            return "ColorParty";
+        //        case ChatType.Alliance:
+        //            return "ColorAlliance";
+        //        case ChatType.Linkshell1:
+        //        case ChatType.GmLinkshell1:
+        //            return "ColorLS1";
+        //        case ChatType.Linkshell2:
+        //        case ChatType.GmLinkshell2:
+        //            return "ColorLS2";
+        //        case ChatType.Linkshell3:
+        //        case ChatType.GmLinkshell3:
+        //            return "ColorLS3";
+        //        case ChatType.Linkshell4:
+        //        case ChatType.GmLinkshell4:
+        //            return "ColorLS4";
+        //        case ChatType.Linkshell5:
+        //        case ChatType.GmLinkshell5:
+        //            return "ColorLS5";
+        //        case ChatType.Linkshell6:
+        //        case ChatType.GmLinkshell6:
+        //            return "ColorLS6";
+        //        case ChatType.Linkshell7:
+        //        case ChatType.GmLinkshell7:
+        //            return "ColorLS7";
+        //        case ChatType.Linkshell8:
+        //        case ChatType.GmLinkshell8:
+        //            return "ColorLS8";
+        //        case ChatType.FreeCompany:
+        //        case ChatType.GmFreeCompany:
+        //            return "ColorFCompany";
+        //        case ChatType.NoviceNetwork:
+        //        case ChatType.GmNoviceNetwork:
+        //            return "ColorBeginner";
+        //        case ChatType.CustomEmote:
+        //            return "ColorEmoteUser";
+        //        case ChatType.StandardEmote:
+        //            return "ColorEmote";
+        //        case ChatType.Yell:
+        //        case ChatType.GmYell:
+        //            return "ColorYell";
+        //        case ChatType.PvpTeam:
+        //            return "ColorPvPGroup";
+        //        case ChatType.CrossLinkshell1:
+        //            return "ColorCWLS";
+        //        case ChatType.Damage:
+        //            return "ColorAttackSuccess";
+        //        case ChatType.Miss:
+        //            return "ColorAttackFailure";
+        //        case ChatType.Action:
+        //            return "ColorAction";
+        //        case ChatType.Item:
+        //            return "ColorItem";
+        //        case ChatType.Healing:
+        //            return "ColorCureGive";
+        //        case ChatType.GainBuff:
+        //        case ChatType.GainDebuff:
+        //            return "ColorBuffGive";
+        //        case ChatType.LoseBuff:
+        //        case ChatType.LoseDebuff:
+        //            return "ColorDebuffGive";
+        //        case ChatType.Echo:
+        //            return "ColorEcho";
+        //        case ChatType.System:
+        //        case ChatType.Alarm:
+        //        case ChatType.RetainerSale:
+        //        case ChatType.PeriodicRecruitmentNotification:
+        //        case ChatType.Sign:
+        //        case ChatType.Orchestrion:
+        //        case ChatType.MessageBook:
+        //            return "ColorSysMsg";
+        //        case ChatType.BattleSystem:
+        //            return "ColorSysBattle";
+        //        case ChatType.GatheringSystem:
+        //            return "ColorSysGathering";
+        //        case ChatType.Error:
+        //            return "ColorSysError";
+        //        case ChatType.NpcDialogue:
+        //        case ChatType.NpcAnnouncement:
+        //            return "ColorNpcSay";
+        //        case ChatType.LootNotice:
+        //            return "ColorItemNotice";
+        //        case ChatType.Progress:
+        //            return "ColorGrowup";
+        //        case ChatType.LootRoll:
+        //        case ChatType.RandomNumber:
+        //            return "ColorLoot";
+        //        case ChatType.Crafting:
+        //            return "ColorCraft";
+        //        case ChatType.Gathering:
+        //            return "ColorGathering";
+        //        case ChatType.FreeCompanyAnnouncement:
+        //        case ChatType.FreeCompanyLoginLogout:
+        //            return "ColorFCAnnounce";
+        //        case ChatType.NoviceNetworkSystem:
+        //            return "ColorBeginnerAnnounce";
+        //        case ChatType.PvpTeamAnnouncement:
+        //        case ChatType.PvpTeamLoginLogout:
+        //            return "ColorPvPGroupAnnounce";
+        //        case ChatType.CrossLinkshell2:
+        //            return "ColorCWLS2";
+        //        case ChatType.CrossLinkshell3:
+        //            return "ColorCWLS3";
+        //        case ChatType.CrossLinkshell4:
+        //            return "ColorCWLS4";
+        //        case ChatType.CrossLinkshell5:
+        //            return "ColorCWLS5";
+        //        case ChatType.CrossLinkshell6:
+        //            return "ColorCWLS6";
+        //        case ChatType.CrossLinkshell7:
+        //            return "ColorCWLS7";
+        //        case ChatType.CrossLinkshell8:
+        //            return "ColorCWLS8";
+        //        default:
+        //            return null;
+        //    }
+        //}
+
         public NameFormatting NameFormat() {
             switch (this.Type) {
                 case ChatType.Say:

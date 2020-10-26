@@ -190,24 +190,26 @@ namespace XIVChatPlugin {
 
             var chunks = new List<Chunk>();
 
+            var colour = this.plugin.Functions.GetChannelColour(chatCode) ?? chatCode.DefaultColour();
+
             if (sender.Payloads.Count > 0) {
                 // FIXME: can't get format straight from game until Lumina stops returning LogKind.Format as a string (it's an SeString)
                 // var format = this.FormatFor(chatCode.Type);
                 var format = chatCode.NameFormat();
                 if (format != null && format.IsPresent) {
                     chunks.Add(new TextChunk {
-                        FallbackColour = chatCode.DefaultColour(),
+                        FallbackColour = colour,
                         Content = format.Before,
                     });
-                    chunks.AddRange(ToChunks(sender, chatCode.DefaultColour()));
+                    chunks.AddRange(ToChunks(sender, colour));
                     chunks.Add(new TextChunk {
-                        FallbackColour = chatCode.DefaultColour(),
+                        FallbackColour = colour,
                         Content = format.After,
                     });
                 }
             }
 
-            chunks.AddRange(ToChunks(message, chatCode.DefaultColour()));
+            chunks.AddRange(ToChunks(message, colour));
 
             var msg = new ServerMessage {
                 Timestamp = DateTime.UtcNow,
