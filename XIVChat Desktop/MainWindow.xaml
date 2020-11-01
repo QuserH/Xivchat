@@ -4,22 +4,110 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:XIVChat_Desktop"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="XIVChat for Windows"
+        Height="450"
+        Width="800"
+        x:Name="Main"
+        Icon="/ic_launcher-playstore.png"
+        d:DataContext="{d:DesignInstance local:MainWindow}">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Menu Grid.Row="1">
+        <Menu Grid.Row="0">
             <MenuItem Header="XIVChat">
-                <MenuItem Header="Connect"/>
-                <MenuItem Header="Disonnect" IsEnabled="False"/>
+                <MenuItem Header="Connect"
+                          Click="Connect_Click"
+                          IsEnabled="{Binding App.Disconnected, UpdateSourceTrigger=PropertyChanged}" />
+                <MenuItem Header="Disconnect"
+                          Click="Disconnect_Click"
+                          IsEnabled="{Binding App.Connected, UpdateSourceTrigger=PropertyChanged}" />
+                <Separator />
+                <MenuItem Header="Configuration"
+                          Click="Configuration_Click" />
+            </MenuItem>
+            <MenuItem Header="Tabs">
+                <MenuItem Header="Manage"
+                          Click="ManageTabs_Click" />
             </MenuItem>
         </Menu>
-        <ListView Grid.Row="2"></ListView>
-        <TextBox Grid.Row="3" TextWrapping="Wrap"/>
+        <TabControl x:Name="Tabs"
+                    Margin="8,0,8,8"
+                    TabStripPlacement="Bottom"
+                    Grid.Row="1"
+                    Loaded="Tabs_Loaded"
+                    SelectionChanged="Tabs_SelectionChanged"
+                    ItemsSource="{Binding App.Config.Tabs}">
+            <TabControl.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+            </TabControl.ItemTemplate>
 
+            <TabControl.ContentTemplate>
+                <DataTemplate>
+                    <Grid d:DataContext="{d:DesignInstance local:Tab}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <ScrollViewer Grid.Row="0"
+                                      x:Name="scroller">
+                            <ItemsControl Background="#333"
+                                          x:Name="items"
+                                          Padding="4"
+                                          ItemsSource="{Binding Messages, UpdateSourceTrigger=PropertyChanged}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel IsVirtualizing="True"
+                                                                VirtualizationMode="Recycling"
+                                                                VerticalAlignment="Bottom" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
+                                                   local:MessageFormatter.FormattedText="{Binding .}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <TextBlock Margin="8,4,0,0"
+                                   Grid.Row="1"
+                                   Text="{Binding App.Connection.CurrentChannel, ElementName=Main, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBox ui:ControlHelper.PlaceholderText="Send a message..."
+                                 Grid.Row="2"
+                                 Margin="0,0,0,8"
+                                 TextWrapping="Wrap"
+                                 SpellCheck.IsEnabled="True"
+                                 KeyDown="Input_Submit" />
+                    </Grid>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
+        </TabControl>
+        <StatusBar Grid.Row="2">
+            <StatusBarItem x:Name="LoggedInAs"
+                           Content="Not logged in" />
+            <Separator x:Name="LoggedInAsSeparator"
+                       Visibility="Collapsed" />
+            <StatusBarItem x:Name="CurrentWorld"
+                           Visibility="Collapsed" />
+            <Separator x:Name="CurrentWorldSeparator"
+                       Visibility="Collapsed" />
+            <StatusBarItem x:Name="Location"
+                           Visibility="Collapsed" />
+        </StatusBar>
     </Grid>
 </Window>
