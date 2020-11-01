@@ -18,11 +18,10 @@ namespace XIVChatCommon {
 
             void AppendCurrent(bool clear) {
                 var text = Encoding.UTF8.GetString(stringBytes.ToArray());
-                chunks.Add(new TextChunk {
+                chunks.Add(new TextChunk(text) {
                     Foreground = foreground,
                     Glow = glow,
                     Italic = italic,
-                    Content = text,
                 });
                 if (clear) {
                     stringBytes.Clear();
@@ -46,7 +45,7 @@ namespace XIVChatCommon {
                         case 0x12:
                             var spriteIndex = GetInteger(data);
                             chunks.Add(new IconChunk {
-                                Index = (byte)spriteIndex,
+                                index = (byte)spriteIndex,
                             });
                             break;
                         // italics processing
@@ -119,7 +118,7 @@ namespace XIVChatCommon {
             Int16Shl16 = 0xFB,
             Int24Packed = 0xFC,         // used in map links- sometimes short+byte, sometimes... not??
             Int16Int8Shl8 = 0xFD,
-            Int32 = 0xFE
+            Int32 = 0xFE,
         }
 
         private static uint GetInteger(BinaryReader input) {

@@ -53,17 +53,17 @@ namespace XIVChat_Desktop {
         }
 
         public void AddSystemMessage(string content) {
-            var message = new ServerMessage {
-                Channel = 0,
-                Content = Encoding.UTF8.GetBytes(content),
-                Timestamp = DateTime.UtcNow,
-                Chunks = new List<Chunk> {
-                    new TextChunk {
+            var message = new ServerMessage(
+                DateTime.UtcNow,
+                0,
+                new byte[0],
+                Encoding.UTF8.GetBytes(content),
+                new List<Chunk> {
+                    new TextChunk(content) {
                         Foreground = 0xb38cffff,
-                        Content = content,
                     },
-                },
-            };
+                }
+            );
             this.AddMessage(message);
         }
 

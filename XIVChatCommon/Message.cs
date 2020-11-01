@@ -2,6 +2,12 @@
 using MessagePack.Formatters;
 using System;
 using System.Collections.Generic;
+// ReSharper disable UnusedAutoPropertyAccessor.Global
+// ReSharper disable UnusedMember.Global
+// ReSharper disable ClassNeverInstantiated.Global
+// ReSharper disable UnusedType.Global
+// ReSharper disable MemberCanBePrivate.Global
+// ReSharper disable NotAccessedField.Global
 
 namespace XIVChatCommon {
     [MessagePackObject]
@@ -30,6 +36,14 @@ namespace XIVChatCommon {
 
         [IgnoreMember]
         protected override byte Code => (byte)ServerOperation.Message;
+        
+        public ServerMessage(DateTime timestamp, ChatType channel, byte[] sender, byte[] content, List<Chunk> chunks) {
+            this.Timestamp = timestamp;
+            this.Channel = channel;
+            this.Sender = sender;
+            this.Content = content;
+            this.Chunks = chunks;
+        }
 
         public static ServerMessage Decode(byte[] bytes) {
             return MessagePackSerializer.Deserialize<ServerMessage>(bytes);
@@ -62,11 +76,15 @@ namespace XIVChatCommon {
 
         [Key(4)]
         public string Content { get; set; }
+        
+        public TextChunk(string content) {
+            this.Content = content;
+        }
     }
 
     [MessagePackObject]
     public class IconChunk : Chunk {
-        [Key(0)] public byte Index;
+        [Key(0)] public byte index;
     }
 
     public class NameFormatting {
@@ -96,11 +114,11 @@ namespace XIVChatCommon {
     }
 
     public class ChatCode {
-        private const ushort CLEAR_7 = ~(~0 << 7);
+        private const ushort Clear7 = ~(~0 << 7);
 
         private readonly ushort code;
 
-        public ChatType Type => (ChatType)(this.code & CLEAR_7);
+        public ChatType Type => (ChatType)(this.code & Clear7);
         public ChatSource Source => this.SourceFrom(11);
         public ChatSource Target => this.SourceFrom(7);
         private ChatSource SourceFrom(ushort shift) => (ChatSource)(1 << ((this.code >> shift) & 0xF));
@@ -298,7 +316,7 @@ namespace XIVChatCommon {
         //    }
         //}
 
-        public NameFormatting NameFormat() => this.Type switch {
+        public NameFormatting? NameFormat() => this.Type switch {
             ChatType.Say => NameFormatting.Of("", ": "),
             ChatType.Shout => NameFormatting.Of("", ": "),
             ChatType.Yell => NameFormatting.Of("", ": "),
@@ -345,7 +363,7 @@ namespace XIVChatCommon {
             ChatType.CrossLinkshell7 => NameFormatting.Of("[CWLS7]<", "> "),
             ChatType.CrossLinkshell8 => NameFormatting.Of("[CWLS8]<", "> "),
             ChatType.NoviceNetwork => NameFormatting.Of("[NOVICE]", ": "),
-            _ => null
+            _ => null,
         };
 
         public bool IsBattle() {
@@ -500,7 +518,6 @@ namespace XIVChatCommon {
         CustomEmote = 28,
         StandardEmote = 29,
         Yell = 30,
-
         // 31 - also party?
         CrossParty = 32,
         PvpTeam = 36,
@@ -584,6 +601,10 @@ namespace XIVChatCommon {
 
         [IgnoreMember]
         protected override byte Code => (byte)ClientOperation.Message;
+        
+        public ClientMessage(string content) {
+            this.Content = content;
+        }
 
         public static ClientMessage Decode(byte[] bytes) {
             return MessagePackSerializer.Deserialize<ClientMessage>(bytes);
@@ -599,12 +620,10 @@ namespace XIVChatCommon {
         /// Sent in response to a client ping. Has no payload.
         /// </summary>
         Pong = 1,
-
         /// <summary>
         /// A message was sent in game and is being relayed to the client.
         /// </summary>
         Message = 2,
-
         /// <summary>
         /// The server is shutting down. Clients should send no response and close their sockets. Has no payload.
         /// </summary>
@@ -817,6 +836,10 @@ namespace XIVChatCommon {
 
         protected override byte Code => (byte)ClientOperation.CatchUp;
 
+        public ClientCatchUp(DateTime after) {
+            this.After = after;
+        }
+        
         public static ClientCatchUp Decode(byte[] bytes) {
             return MessagePackSerializer.Deserialize<ClientCatchUp>(bytes);
         }
@@ -835,6 +858,11 @@ namespace XIVChatCommon {
         public Player[] Players { get; set; }
 
         protected override byte Code => (byte)ServerOperation.PlayerList;
+        
+        public ServerPlayerList(PlayerListType type, Player[] players) {
+            this.Type = type;
+            this.Players = players;
+        }
 
         public static ServerPlayerList Decode(byte[] bytes) {
             return MessagePackSerializer.Deserialize<ServerPlayerList>(bytes);
@@ -871,10 +899,10 @@ namespace XIVChatCommon {
     [MessagePackObject]
     public class Player {
         [Key(0)]
-        public string Name { get; set; }
+        public string? Name { get; set; }
 
         [Key(1)]
-        public string FreeCompany { get; set; }
+        public string? FreeCompany { get; set; }
 
         [Key(2)]
         public ulong Status { get; set; }
@@ -883,31 +911,31 @@ namespace XIVChatCommon {
         public ushort CurrentWorld { get; set; }
 
         [Key(4)]
-        public string CurrentWorldName { get; set; }
+        public string? CurrentWorldName { get; set; }
 
         [Key(5)]
         public ushort HomeWorld { get; set; }
 
         [Key(6)]
-        public string HomeWorldName { get; set; }
+        public string? HomeWorldName { get; set; }
 
         [Key(7)]
         public ushort Territory { get; set; }
 
         [Key(8)]
-        public string TerritoryName { get; set; }
+        public string? TerritoryName { get; set; }
 
         [Key(9)]
         public byte Job { get; set; }
 
         [Key(10)]
-        public string JobName { get; set; }
+        public string? JobName { get; set; }
 
         [Key(11)]
         public byte GrandCompany { get; set; }
 
         [Key(12)]
-        public string GrandCompanyName { get; set; }
+        public string? GrandCompanyName { get; set; }
 
         [Key(13)]
         public byte Languages { get; set; }

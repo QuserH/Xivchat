@@ -97,7 +97,7 @@ namespace XIVChat_Desktop {
                         });
                         break;
                     case IconChunk iconChunk:
-                        var bounds = GetBounds(iconChunk.Index);
+                        var bounds = GetBounds(iconChunk.index);
                         if (bounds == null) {
                             break;
                         }

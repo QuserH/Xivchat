@@ -128,10 +128,7 @@ namespace XIVChatPlugin {
         }
 
         private async void OnReceiveFriendList(List<Player> friends) {
-            var msg = new ServerPlayerList {
-                Type = PlayerListType.Friend,
-                Players = friends.ToArray(),
-            };
+            var msg = new ServerPlayerList(PlayerListType.Friend, friends.ToArray());
 
             foreach (var id in this.waitingForFriendList) {
                 if (!this.Clients.TryGetValue(id, out var client)) {
@@ -193,27 +190,25 @@ namespace XIVChatPlugin {
                 // var format = this.FormatFor(chatCode.Type);
                 var format = chatCode.NameFormat();
                 if (format != null && format.IsPresent) {
-                    chunks.Add(new TextChunk {
+                    chunks.Add(new TextChunk(format.Before) {
                         FallbackColour = colour,
-                        Content = format.Before,
                     });
                     chunks.AddRange(ToChunks(sender, colour));
-                    chunks.Add(new TextChunk {
+                    chunks.Add(new TextChunk(format.After) {
                         FallbackColour = colour,
-                        Content = format.After,
                     });
                 }
             }
 
             chunks.AddRange(ToChunks(message, colour));
 
-            var msg = new ServerMessage {
-                Timestamp = DateTime.UtcNow,
-                Channel = (ChatType)type,
-                Sender = sender.Encode(),
-                Content = message.Encode(),
-                Chunks = chunks,
-            };
+            var msg = new ServerMessage(
+                DateTime.UtcNow,
+                (ChatType)type,
+                sender.Encode(),
+                message.Encode(),
+                chunks
+            );
 
             this.backlog.AddLast(msg);
             while (this.backlog.Count > this.plugin.Config.BacklogCount) {
@@ -273,7 +268,7 @@ namespace XIVChatPlugin {
                     return;
                 }
 
-                var handshake = await KeyExchange.ServerHandshake(this.plugin.Config.KeyPair, stream);
+                var handshake = await KeyExchange.ServerHandshake(this.plugin.Config.KeyPair!, stream);
                 var newClient = new Client(conn) {
                     Handshake = handshake,
                 };
@@ -521,12 +516,11 @@ namespace XIVChatPlugin {
             var glow = new Stack<uint>();
 
             void Append(string text) {
-                chunks.Add(new TextChunk {
+                chunks.Add(new TextChunk(text) {
                     FallbackColour = defaultColour,
                     Foreground = foreground.Count > 0 ? foreground.Peek() : (uint?)null,
                     Glow = glow.Count > 0 ? glow.Peek() : (uint?)null,
                     Italic = italic,
-                    Content = text,
                 });
             }
 
@@ -556,23 +550,19 @@ namespace XIVChatPlugin {
                         break;
                     case PayloadType.AutoTranslateText:
                         chunks.Add(new IconChunk {
-                            Index = 54,
+                            index = 54,
                         });
                         var autoText = ((AutoTranslatePayload)payload).Text;
                         Append(autoText.Substring(2, autoText.Length - 4));
                         chunks.Add(new IconChunk {
-                            Index = 55,
+                            index = 55,
                         });
                         break;
                     case PayloadType.Icon:
                         var index = ((IconPayload)payload).IconIndex;
                         chunks.Add(new IconChunk {
-                            Index = (byte)index,
+                            index = (byte)index,
                         });
-                        break;
-                    // FIXME: use ITextProvider directly once it's exposed
-                    case PayloadType.RawText:
-                        Append(((TextPayload)payload).Text);
                         break;
                     case PayloadType.Unknown:
                         var rawPayload = (RawPayload)payload;
@@ -582,12 +572,12 @@ namespace XIVChatPlugin {
                         }
 
                         break;
-                    //default:
-                    //    var textProviderType = typeof(SeString).Assembly.GetType("Dalamud.Game.Chat.SeStringHandling.ITextProvider");
-                    //    var textProp = textProviderType.GetProperty("Text", BindingFlags.NonPublic | BindingFlags.Instance);
-                    //    var text = (string)textProp.GetValue(payload);
-                    //    append(text);
-                    //    break;
+                    default:
+                        if (payload is ITextProvider textProvider) {
+                            Append(textProvider.Text);
+                        }
+
+                        break;
                 }
             }
 
@@ -732,9 +722,8 @@ namespace XIVChatPlugin {
 
             var homeWorld = player.HomeWorld.GameData.Name;
             var currentWorld = player.CurrentWorld.GameData.Name;
-            // FIXME: NPE if injected late
             var territory = this.plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(this.plugin.Interface.ClientState.TerritoryType);
-            var location = territory.PlaceName.Value.Name;
+            var location = territory?.PlaceName?.Value?.Name ?? "???";
             var name = player.Name;
 
             return new PlayerData(homeWorld, currentWorld, location, name);

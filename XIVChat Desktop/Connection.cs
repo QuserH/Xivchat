@@ -90,9 +90,7 @@ namespace XIVChat_Desktop {
                 // catch-up
                 var lastRealMessage = this.app.Window.Messages.FirstOrDefault(msg => msg.Channel != 0);
                 if (lastRealMessage != null) {
-                    var catchUp = new ClientCatchUp {
-                        After = lastRealMessage.Timestamp,
-                    };
+                    var catchUp = new ClientCatchUp(lastRealMessage.Timestamp);
                     await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, catchUp, this.cancel.Token);
                 }
             } else if (this.app.Config.BacklogMessages > 0) {
@@ -151,9 +149,7 @@ namespace XIVChat_Desktop {
                     var toSend = await outgoing;
                     outgoing = this.outgoing.Reader.ReadAsync().AsTask();
 
-                    var message = new ClientMessage {
-                        Content = toSend,
-                    };
+                    var message = new ClientMessage(toSend);
                     try {
                         await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, message, this.cancel.Token);
                     } catch (Exception ex) {
