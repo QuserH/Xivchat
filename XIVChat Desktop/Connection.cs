@@ -48,12 +48,15 @@ namespace XIVChat_Desktop {
             this.client = new TcpClient(this.host, this.port);
             var stream = this.client.GetStream();
 
+            // write the magic bytes
             await stream.WriteAsync(new byte[] {
                 14, 20, 67,
             });
 
+            // do the handshake
             var handshake = await KeyExchange.ClientHandshake(this.app.Config.KeyPair, stream);
 
+            // check for trust and prompt if not
             if (!this.app.Config.TrustedKeys.Any(trusted => trusted.Key.SequenceEqual(handshake.RemotePublicKey))) {
                 var trustChannel = Channel.CreateBounded<bool>(1);
 
@@ -85,7 +88,7 @@ namespace XIVChat_Desktop {
             // check if backlog or catch-up is needed
             if (sameHost) {
                 // catch-up
-                var lastRealMessage = this.app.Window.Messages.LastOrDefault(msg => msg.Channel != 0);
+                var lastRealMessage = this.app.Window.Messages.FirstOrDefault(msg => msg.Channel != 0);
                 if (lastRealMessage != null) {
                     var catchUp = new ClientCatchUp {
                         After = lastRealMessage.Timestamp,
@@ -164,7 +167,9 @@ namespace XIVChat_Desktop {
                     }
                 } else if (result == cancel) {
                     try {
-                        await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, ClientShutdown.Instance, this.cancel.Token);
+                        // NOTE: purposely not including cancellation token because it will already be cancelled here
+                        //       and we need to send this message
+                        await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, ClientShutdown.Instance);
                     } catch (Exception ex) {
                         this.Dispatch(() => {
                             this.app.Window.AddSystemMessage("Error sending message.");
@@ -199,6 +204,7 @@ namespace XIVChat_Desktop {
 
             switch (type) {
                 case ServerOperation.Pong:
+                    // no-op
                     break;
                 case ServerOperation.Message:
                     var message = ServerMessage.Decode(payload);
