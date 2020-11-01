@@ -184,9 +184,8 @@ namespace XIVChat_Desktop {
         public HashSet<FilterType> Types { get; set; } = new HashSet<FilterType>();
 
         public bool Allowed(ServerMessage message) {
-            return this.Types
-                .SelectMany(type => type.Types())
-                .Contains(new ChatCode((ushort)message.Channel).Type);
+            var code = new ChatCode((ushort)message.Channel);
+            return this.Types.Any(type => type.Allowed(code));
         }
     }
 }

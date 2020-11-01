@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using XIVChatCommon;
 
@@ -254,7 +255,7 @@ namespace XIVChat_Desktop {
         [Filter("Own Synthesis Messages", ChatType.Crafting, Source = FilterSource.Self)]
         OwnCrafting,
 
-        [Filter("Others' Synthesis Messages", ChatType.Crafting, Source = FilterSource.Self)]
+        [Filter("Others' Synthesis Messages", ChatType.Crafting, Source = FilterSource.Others)]
         OthersCrafting,
 
         [Filter("Own Gathering Messages", ChatType.Gathering, Source = FilterSource.Self)]
@@ -331,9 +332,9 @@ namespace XIVChat_Desktop {
 
         public static string? Name(this FilterType filter) => filter.Info()?.Name;
 
-        public static IEnumerable<ChatType> Types(this FilterType filter) => filter.Info()?.Types ?? new ChatType[0];
+        private static IEnumerable<ChatType> Types(this FilterType filter) => filter.Info()?.Types ?? new ChatType[0];
 
-        public static ChatSource[] Sources(this FilterType filter) => filter.Info()?.Source switch {
+        private static ChatSource[] Sources(this FilterType filter) => filter.Info()?.Source switch {
             FilterSource.Self => new[] {
                 ChatSource.Self,
             },
@@ -343,5 +344,14 @@ namespace XIVChat_Desktop {
             FilterSource.Others => Others,
             _ => new ChatSource[0],
         };
+
+        public static bool Allowed(this FilterType filter, ChatCode code) {
+            if (!filter.Types().Contains(code.Type)) {
+                return false;
+            }
+
+            var sources = filter.Sources();
+            return sources.Length == 0 || sources.Contains(code.Source);
+        }
     }
 }
