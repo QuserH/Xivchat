@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace XIVChatPlugin {
     public class Configuration : IPluginConfiguration {
-        private Plugin plugin;
+        private Plugin? plugin;
 
         public int Version { get; set; } = 1;
         public ushort Port { get; set; } = 14777;
@@ -20,14 +20,14 @@ namespace XIVChatPlugin {
         public bool AcceptNewClients { get; set; } = true;
 
         public Dictionary<Guid, Tuple<string, byte[]>> TrustedKeys { get; set; } = new Dictionary<Guid, Tuple<string, byte[]>>();
-        public KeyPair KeyPair { get; set; } = null;
+        public KeyPair? KeyPair { get; set; }
 
         public void Initialise(Plugin plugin) {
             this.plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
         }
 
         public void Save() {
-            this.plugin.Interface.SavePluginConfig(this);
+            this.plugin?.Interface.SavePluginConfig(this);
         }
     }
 }

@@ -10,8 +10,8 @@ namespace XIVChatPlugin {
     public class PluginUI {
         private readonly Plugin plugin;
 
-        private bool _showSettings = false;
-        public bool ShowSettings { get => this._showSettings; set => this._showSettings = value; }
+        private bool showSettings;
+        private bool ShowSettings { get => this.showSettings; set => this.showSettings = value; }
 
         private readonly Dictionary<Guid, Tuple<Client, Channel<bool>>> pending = new Dictionary<Guid, Tuple<Client, Channel<bool>>>();
         private readonly Dictionary<Guid, string> pendingNames = new Dictionary<Guid, string>(0);
@@ -21,26 +21,26 @@ namespace XIVChatPlugin {
         }
 
         private static class Colours {
-            public static readonly Vector4 primary = new Vector4(2 / 255f, 204 / 255f, 238 / 255f, 1.0f);
-            public static readonly Vector4 primaryDark = new Vector4(2 / 255f, 180 / 255f, 211 / 255f, 1.0f);
-            public static readonly Vector4 background = new Vector4(46 / 255f, 46 / 255f, 46 / 255f, 1.0f);
-            public static readonly Vector4 text = new Vector4(190 / 255f, 190 / 255f, 190 / 255f, 1.0f);
-            public static readonly Vector4 button = new Vector4(90 / 255f, 89 / 255f, 90 / 255f, 1.0f);
-            public static readonly Vector4 buttonActive = new Vector4(123 / 255f, 122 / 255f, 124 / 255f, 1.0f);
-            public static readonly Vector4 buttonHovered = new Vector4(108 / 255f, 107 / 255f, 109 / 255f, 1.0f);
+            public static readonly Vector4 Primary = new Vector4(2 / 255f, 204 / 255f, 238 / 255f, 1.0f);
+            public static readonly Vector4 PrimaryDark = new Vector4(2 / 255f, 180 / 255f, 211 / 255f, 1.0f);
+            public static readonly Vector4 Background = new Vector4(46 / 255f, 46 / 255f, 46 / 255f, 1.0f);
+            public static readonly Vector4 Text = new Vector4(190 / 255f, 190 / 255f, 190 / 255f, 1.0f);
+            public static readonly Vector4 Button = new Vector4(90 / 255f, 89 / 255f, 90 / 255f, 1.0f);
+            public static readonly Vector4 ButtonActive = new Vector4(123 / 255f, 122 / 255f, 124 / 255f, 1.0f);
+            public static readonly Vector4 ButtonHovered = new Vector4(108 / 255f, 107 / 255f, 109 / 255f, 1.0f);
 
-            public static readonly Vector4 white = new Vector4(1f, 1f, 1f, 1f);
+            public static readonly Vector4 White = new Vector4(1f, 1f, 1f, 1f);
         }
 
         public void Draw() {
-            ImGui.PushStyleColor(ImGuiCol.TitleBg, Colours.primaryDark);
-            ImGui.PushStyleColor(ImGuiCol.TitleBgActive, Colours.primary);
-            ImGui.PushStyleColor(ImGuiCol.TitleBgCollapsed, Colours.primaryDark);
-            ImGui.PushStyleColor(ImGuiCol.WindowBg, Colours.background);
-            ImGui.PushStyleColor(ImGuiCol.Text, Colours.text);
-            ImGui.PushStyleColor(ImGuiCol.Button, Colours.button);
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, Colours.buttonActive);
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Colours.buttonHovered);
+            ImGui.PushStyleColor(ImGuiCol.TitleBg, Colours.PrimaryDark);
+            ImGui.PushStyleColor(ImGuiCol.TitleBgActive, Colours.Primary);
+            ImGui.PushStyleColor(ImGuiCol.TitleBgCollapsed, Colours.PrimaryDark);
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, Colours.Background);
+            ImGui.PushStyleColor(ImGuiCol.Text, Colours.Text);
+            ImGui.PushStyleColor(ImGuiCol.Button, Colours.Button);
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, Colours.ButtonActive);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Colours.ButtonHovered);
 
             this.DrawInner();
 
@@ -48,14 +48,14 @@ namespace XIVChatPlugin {
         }
 
         private static V WithWhiteText<V>(Func<V> func) {
-            ImGui.PushStyleColor(ImGuiCol.Text, Colours.white);
+            ImGui.PushStyleColor(ImGuiCol.Text, Colours.White);
             var ret = func();
             ImGui.PopStyleColor();
             return ret;
         }
 
         private static void WithWhiteText(Action func) {
-            ImGui.PushStyleColor(ImGuiCol.Text, Colours.white);
+            ImGui.PushStyleColor(ImGuiCol.Text, Colours.White);
             func();
             ImGui.PopStyleColor();
         }
@@ -65,7 +65,7 @@ namespace XIVChatPlugin {
         }
 
         private static bool Begin(string name, ref bool showSettings, ImGuiWindowFlags flags) {
-            ImGui.PushStyleColor(ImGuiCol.Text, Colours.white);
+            ImGui.PushStyleColor(ImGuiCol.Text, Colours.White);
             var result = ImGui.Begin(name, ref showSettings, flags);
             ImGui.PopStyleColor();
             return result;
@@ -75,13 +75,15 @@ namespace XIVChatPlugin {
 
         private static void HelpMarker(string text) {
             ImGui.TextDisabled("(?)");
-            if (ImGui.IsItemHovered()) {
-                ImGui.BeginTooltip();
-                ImGui.PushTextWrapPos(ImGui.GetFontSize() * 20f);
-                ImGui.TextUnformatted(text);
-                ImGui.PopTextWrapPos();
-                ImGui.EndTooltip();
+            if (!ImGui.IsItemHovered()) {
+                return;
             }
+
+            ImGui.BeginTooltip();
+            ImGui.PushTextWrapPos(ImGui.GetFontSize() * 20f);
+            ImGui.TextUnformatted(text);
+            ImGui.PopTextWrapPos();
+            ImGui.EndTooltip();
         }
 
         private void DrawInner() {
@@ -93,12 +95,12 @@ namespace XIVChatPlugin {
                 }
             }
 
-            if (!this.ShowSettings || !Begin(this.plugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
+            if (!this.ShowSettings || !Begin(this.plugin.Name, ref this.showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
                 return;
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Server public key"))) {
-                string serverPublic = this.plugin.Config.KeyPair.PublicKey.ToHexString(upper: true);
+                string serverPublic = this.plugin.Config.KeyPair!.PublicKey.ToHexString(upper: true);
                 ImGui.TextUnformatted(serverPublic);
                 this.DrawColours(this.plugin.Config.KeyPair.PublicKey, serverPublic);
 
@@ -138,6 +140,7 @@ namespace XIVChatPlugin {
                     this.plugin.Config.SendBattle = sendBattle;
                     this.plugin.Config.Save();
                 }
+
                 ImGui.SameLine();
                 HelpMarker("Changing this setting will not affect messages already in the backlog.");
 
@@ -148,6 +151,7 @@ namespace XIVChatPlugin {
                     this.plugin.Config.PairingMode = pairingMode;
                     this.plugin.Config.Save();
                 }
+
                 ImGui.SameLine();
                 HelpMarker("While in pairing mode, XIVChat Server will listen for information requests from clients broadcast on your local network and respond with information about the server. This will make it easier to add your server to a client, but this should be turned off when not actively adding new devices.");
 
@@ -158,6 +162,7 @@ namespace XIVChatPlugin {
                     this.plugin.Config.AcceptNewClients = acceptNew;
                     this.plugin.Config.Save();
                 }
+
                 ImGui.SameLine();
                 HelpMarker("If this is disabled, XIVChat Server will only allow clients with already-trusted keys to connect.");
             }
@@ -173,7 +178,7 @@ namespace XIVChatPlugin {
                     var name = entry.Value.Item1;
 
                     var key = entry.Value.Item2;
-                    var hex = key.ToHexString(upper: true);
+                    var hex = key.ToHexString(true);
 
                     maxKeyLength = Math.Max(maxKeyLength, ImGui.CalcTextSize(name).X);
 
@@ -184,14 +189,17 @@ namespace XIVChatPlugin {
                         this.DrawColours(key, hex);
                         ImGui.EndTooltip();
                     }
+
                     ImGui.NextColumn();
 
                     if (WithWhiteText(() => ImGui.Button($"Untrust##{entry.Key}"))) {
                         this.plugin.Config.TrustedKeys.Remove(entry.Key);
                         this.plugin.Config.Save();
                     }
+
                     ImGui.NextColumn();
                 }
+
                 ImGui.SetColumnWidth(0, maxKeyLength + ImGui.GetStyle().ItemSpacing.X * 2);
                 ImGui.Columns(1);
             }
@@ -216,29 +224,32 @@ namespace XIVChatPlugin {
                         } catch (ObjectDisposedException) {
                             continue;
                         }
+
                         string ipAddress;
                         if (remote is IPEndPoint ip) {
                             ipAddress = ip.Address.ToString();
                         } else {
                             ipAddress = "Unknown";
                         }
+
                         ImGui.TextUnformatted(ipAddress);
 
                         ImGui.NextColumn();
 
-                        var trustedKey = this.plugin.Config.TrustedKeys.Values.FirstOrDefault(entry => entry.Item2.SequenceEqual(client.Value.Handshake.RemotePublicKey));
-                        if (trustedKey != default(Tuple<string, byte[]>)) {
-                            ImGui.TextUnformatted(trustedKey.Item1);
+                        var trustedKey = this.plugin.Config.TrustedKeys.Values.FirstOrDefault(entry => entry.Item2.SequenceEqual(client.Value.Handshake!.RemotePublicKey));
+                        if (trustedKey != null && !trustedKey.Equals(default(Tuple<string, byte[]>))) {
+                            ImGui.TextUnformatted(trustedKey!.Item1);
                             if (ImGui.IsItemHovered()) {
                                 ImGui.BeginTooltip();
 
-                                var hex = trustedKey.Item2.ToHexString(upper: true);
+                                var hex = trustedKey.Item2.ToHexString(true);
                                 ImGui.TextUnformatted(hex);
                                 this.DrawColours(trustedKey.Item2, hex);
 
                                 ImGui.EndTooltip();
                             }
                         }
+
                         ImGui.NextColumn();
 
                         if (WithWhiteText(() => ImGui.Button($"Disconnect##{client.Key}"))) {
@@ -247,6 +258,7 @@ namespace XIVChatPlugin {
 
                         ImGui.NextColumn();
                     }
+
                     ImGui.Columns(1);
                 }
             }
@@ -297,7 +309,7 @@ namespace XIVChatPlugin {
             ImGui.Dummy(new Vector2(0, 16 + spacing.Y * 2));
         }
 
-        public void OpenSettings(object sender, EventArgs args) {
+        public void OpenSettings(object? sender, EventArgs? args) {
             this.ShowSettings = true;
         }
 
@@ -307,18 +319,18 @@ namespace XIVChatPlugin {
             }
         }
 
-        private bool DrawPending(Guid id, Client client, Channel<bool> accepted) {
+        private bool DrawPending(Guid id, Client client, Channel<bool, bool> accepted) {
             bool ret = false;
 
-            var clientPublic = client.Handshake.RemotePublicKey;
+            var clientPublic = client.Handshake!.RemotePublicKey;
             var clientPublicHex = clientPublic.ToHexString(upper: true);
-            var serverPublic = this.plugin.Config.KeyPair.PublicKey;
+            var serverPublic = this.plugin.Config.KeyPair!.PublicKey;
             var serverPublicHex = serverPublic.ToHexString(upper: true);
 
             var width = Math.Max(ImGui.CalcTextSize(clientPublicHex).X, ImGui.CalcTextSize(serverPublicHex).X) + (ImGui.GetStyle().WindowPadding.X * 2);
 
             if (!Begin($"Incoming XIVChat connection##{clientPublic}", ImGuiWindowFlags.AlwaysAutoResize)) {
-                return ret;
+                return false;
             }
 
             ImGui.PushTextWrapPos(width);
@@ -361,6 +373,7 @@ namespace XIVChatPlugin {
                 this.pendingNames.Remove(id);
                 ret = true;
             }
+
             ImGui.SameLine();
             if (WithWhiteText(() => ImGui.Button("No"))) {
                 accepted.Writer.TryWrite(false);

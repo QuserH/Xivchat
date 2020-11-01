@@ -3,6 +3,7 @@ using Dalamud.Hooking;
 using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 #if DEBUG
 using System.IO;
 #endif
@@ -16,33 +17,37 @@ namespace XIVChatPlugin {
 
         public string Name => "XIVChat";
 
+        // ReSharper disable once MemberCanBePrivate.Global
         internal string Location { get; private set; } = Assembly.GetExecutingAssembly().Location;
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "LivePluginLoader")]
+        [SuppressMessage("ReSharper", "UnusedMember.Local")]
         private void SetLocation(string path) {
             this.Location = path;
         }
 
+        #pragma warning disable 8618
         public DalamudPluginInterface Interface { get; private set; }
         public Configuration Config { get; private set; }
-        public PluginUI Ui { get; private set; }
+        private PluginUI Ui { get; set; }
         public Server Server { get; private set; }
         public GameFunctions Functions { get; private set; }
+        #pragma warning restore 8618
 
         private delegate byte ChatChannelChangeDelegate(IntPtr a1, uint channel);
-        private Hook<ChatChannelChangeDelegate> chatChannelChangeHook;
+
+        private Hook<ChatChannelChangeDelegate>? chatChannelChangeHook;
 
         public void Initialize(DalamudPluginInterface pluginInterface) {
             this.Interface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface), "DalamudPluginInterface cannot be null");
 
             // load libsodium.so from debug location if in debug mode
-#if DEBUG
-            string path = Environment.GetEnvironmentVariable("PATH");
-            string newPath = Path.GetDirectoryName(this.Location);
+            #if DEBUG
+            string path = Environment.GetEnvironmentVariable("PATH")!;
+            string newPath = Path.GetDirectoryName(this.Location)!;
             Environment.SetEnvironmentVariable("PATH", $"{path};{newPath}");
-#endif
+            #endif
 
-            this.Config = (Configuration)this.Interface.GetPluginConfig() ?? new Configuration();
+            this.Config = (Configuration?)this.Interface.GetPluginConfig() ?? new Configuration();
             this.Config.Initialise(this);
 
             this.Functions = new GameFunctions(this);
@@ -74,37 +79,40 @@ namespace XIVChatPlugin {
         private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
             // a1 + 0xfd0 is the chat channel byte (including for when clicking on shout)
             this.Server.OnChatChannelChange(channel);
-            return this.chatChannelChangeHook.Original(a1, channel);
+            return this.chatChannelChangeHook!.Original(a1, channel);
         }
 
         private void OnCommand(string command, string args) {
             this.Ui.OpenSettings(null, null);
         }
 
+        [SuppressMessage("ReSharper", "DelegateSubtraction")]
         protected virtual void Dispose(bool disposing) {
-            if (!this.disposedValue) {
-                if (disposing) {
-                    this.Server.Dispose();
-
-                    this.Interface.UiBuilder.OnBuildUi -= this.Ui.Draw;
-                    this.Interface.UiBuilder.OnOpenConfigUi -= this.Ui.OpenSettings;
-                    this.Interface.Framework.OnUpdateEvent -= this.Server.OnFrameworkUpdate;
-                    this.Interface.Framework.Gui.Chat.OnChatMessage -= this.Server.OnChat;
-                    this.Interface.ClientState.OnLogin -= this.Server.OnLogIn;
-                    this.Interface.ClientState.OnLogout -= this.Server.OnLogOut;
-                    this.Interface.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
-                    this.Interface.CommandManager.RemoveHandler("/xivchat");
-
-                    this.chatChannelChangeHook?.Dispose();
-                }
-
-                this.disposedValue = true;
+            if (this.disposedValue) {
+                return;
             }
+
+            if (disposing) {
+                this.Server.Dispose();
+
+                this.Interface.UiBuilder.OnBuildUi -= this.Ui.Draw;
+                this.Interface.UiBuilder.OnOpenConfigUi -= this.Ui.OpenSettings;
+                this.Interface.Framework.OnUpdateEvent -= this.Server.OnFrameworkUpdate;
+                this.Interface.Framework.Gui.Chat.OnChatMessage -= this.Server.OnChat;
+                this.Interface.ClientState.OnLogin -= this.Server.OnLogIn;
+                this.Interface.ClientState.OnLogout -= this.Server.OnLogOut;
+                this.Interface.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
+                this.Interface.CommandManager.RemoveHandler("/xivchat");
+
+                this.chatChannelChangeHook?.Dispose();
+            }
+
+            this.disposedValue = true;
         }
 
         public void Dispose() {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-            this.Dispose(disposing: true);
+            this.Dispose(true);
             GC.SuppressFinalize(this);
         }
     }

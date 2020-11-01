@@ -3,19 +3,17 @@ using Dalamud.Game.Chat.SeStringHandling;
 using Dalamud.Game.Chat.SeStringHandling.Payloads;
 using Dalamud.Game.Internal;
 using Dalamud.Plugin;
-using Lumina.Data;
-using Lumina.Excel;
 using Lumina.Excel.GeneratedSheets;
 using MessagePack;
 using Sodium;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -32,20 +30,20 @@ namespace XIVChatPlugin {
         public IReadOnlyDictionary<Guid, Client> Clients => this.clients;
         public readonly Channel<Tuple<Client, Channel<bool>>> pendingClients = Channel.CreateUnbounded<Tuple<Client, Channel<bool>>>();
 
-        private readonly HashSet<Guid> WaitingForFriendList = new HashSet<Guid>();
+        private readonly HashSet<Guid> waitingForFriendList = new HashSet<Guid>();
 
-        private readonly LinkedList<ServerMessage> Backlog = new LinkedList<ServerMessage>();
+        private readonly LinkedList<ServerMessage> backlog = new LinkedList<ServerMessage>();
 
-        private TcpListener listener;
+        private TcpListener? listener;
 
-        private bool sendPlayerData = false;
+        private bool sendPlayerData;
 
-        private volatile bool _running = false;
-        public bool Running => this._running;
+        private volatile bool running;
+        private bool Running => this.running;
 
         private InputChannel currentChannel = InputChannel.Say;
 
-        private const int MAX_MESSAGE_SIZE = 128_000;
+        private const int MaxMessageSize = 128_000;
 
         public Server(Plugin plugin) {
             this.plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
@@ -65,12 +63,11 @@ namespace XIVChatPlugin {
                 using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, multicastPort));
 
                 var multicastAddr = IPAddress.Parse("224.0.0.147");
-                var endpoint = new IPEndPoint(multicastAddr, multicastPort);
                 udp.JoinMulticastGroup(multicastAddr);
 
-                string lastPlayerName = null;
+                string? lastPlayerName = null;
 
-                Task<UdpReceiveResult> receiveTask = null;
+                Task<UdpReceiveResult>? receiveTask = null;
 
                 while (this.Running) {
                     if (!this.plugin.Config.PairingMode) {
@@ -89,9 +86,7 @@ namespace XIVChatPlugin {
                         continue;
                     }
 
-                    if (receiveTask == null) {
-                        receiveTask = udp.ReceiveAsync();
-                    }
+                    receiveTask ??= udp.ReceiveAsync();
 
                     var result = await Task.WhenAny(
                         receiveTask,
@@ -116,7 +111,7 @@ namespace XIVChatPlugin {
 
                     var utf8 = Encoding.UTF8.GetBytes(lastPlayerName);
                     var portBytes = BitConverter.GetBytes(this.plugin.Config.Port).Reverse().ToArray();
-                    var key = this.plugin.Config.KeyPair.PublicKey;
+                    var key = this.plugin.Config.KeyPair!.PublicKey;
                     // magic + string length + string + port + key
                     var payload = new byte[1 + 1 + utf8.Length + portBytes.Length + key.Length]; // assuming names can only be 32 bytes here
                     payload[0] = 14;
@@ -138,19 +133,19 @@ namespace XIVChatPlugin {
                 Players = friends.ToArray(),
             };
 
-            foreach (var id in this.WaitingForFriendList) {
+            foreach (var id in this.waitingForFriendList) {
                 if (!this.Clients.TryGetValue(id, out var client)) {
                     continue;
                 }
 
                 try {
-                    await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, msg, client.TokenSource.Token);
+                    await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake!.Keys.tx, msg, client.TokenSource.Token);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
             }
 
-            this.WaitingForFriendList.Clear();
+            this.waitingForFriendList.Clear();
         }
 
         public void Spawn() {
@@ -160,14 +155,15 @@ namespace XIVChatPlugin {
                 this.listener = new TcpListener(IPAddress.Any, port);
                 this.listener.Start();
 
-                this._running = true;
+                this.running = true;
                 PluginLog.Log("Running...");
                 this.SpawnPairingModeTask();
                 while (!this.tokenSource.IsCancellationRequested) {
                     var conn = await this.listener.GetTcpClient(this.tokenSource);
                     this.SpawnClientTask(conn);
                 }
-                this._running = false;
+
+                this.running = false;
             });
         }
 
@@ -219,9 +215,9 @@ namespace XIVChatPlugin {
                 Chunks = chunks,
             };
 
-            this.Backlog.AddLast(msg);
-            while (this.Backlog.Count > this.plugin.Config.BacklogCount) {
-                this.Backlog.RemoveFirst();
+            this.backlog.AddLast(msg);
+            while (this.backlog.Count > this.plugin.Config.BacklogCount) {
+                this.backlog.RemoveFirst();
             }
 
             foreach (var client in this.clients.Values) {
@@ -243,13 +239,11 @@ namespace XIVChatPlugin {
             this.plugin.Functions.ProcessChatBox(message);
         }
 
-        private static readonly IReadOnlyList<byte> MAGIC = new byte[] {
-            14,
-            20,
-            67,
+        private static readonly IReadOnlyList<byte> Magic = new byte[] {
+            14, 20, 67,
         };
 
-        private void SpawnClientTask(TcpClient conn) {
+        private void SpawnClientTask(TcpClient? conn) {
             if (conn == null) {
                 return;
             }
@@ -258,7 +252,7 @@ namespace XIVChatPlugin {
                 var stream = conn.GetStream();
 
                 // get ready for reading magic bytes
-                var magic = new byte[MAGIC.Count];
+                var magic = new byte[Magic.Count];
                 var read = 0;
 
                 // only listen for magic for five seconds
@@ -275,7 +269,7 @@ namespace XIVChatPlugin {
                 }
 
                 // ignore this connection if incorrect magic bytes
-                if (!magic.SequenceEqual(MAGIC)) {
+                if (!magic.SequenceEqual(Magic)) {
                     return;
                 }
 
@@ -293,8 +287,8 @@ namespace XIVChatPlugin {
 
                     var accepted = Channel.CreateBounded<bool>(1);
 
-                    await this.pendingClients.Writer.WriteAsync(Tuple.Create(newClient, accepted));
-                    if (!await accepted.Reader.ReadAsync()) {
+                    await this.pendingClients.Writer.WriteAsync(Tuple.Create(newClient, accepted), this.tokenSource.Token);
+                    if (!await accepted.Reader.ReadAsync(this.tokenSource.Token)) {
                         return;
                     }
                 }
@@ -306,7 +300,7 @@ namespace XIVChatPlugin {
                 // send availability
                 var available = this.plugin.Interface.ClientState.LocalPlayer != null;
                 try {
-                    await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, new Availability(available));
+                    await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, new Availability(available), this.tokenSource.Token);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
@@ -321,10 +315,15 @@ namespace XIVChatPlugin {
                 // send current channel
                 try {
                     var channel = this.currentChannel;
-                    await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, new ServerChannel(
-                        channel,
-                        this.LocalisedChannelName(channel)
-                    ));
+                    await SecretMessage.SendSecretMessage(
+                        stream,
+                        handshake.Keys.tx,
+                        new ServerChannel(
+                            channel,
+                            this.LocalisedChannelName(channel)
+                        ),
+                        this.tokenSource.Token
+                    );
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
@@ -355,22 +354,25 @@ namespace XIVChatPlugin {
                                 } catch (Exception ex) {
                                     PluginLog.LogError($"Could not send message: {ex.Message}");
                                 }
+
                                 break;
                             case ClientOperation.Message:
                                 var clientMessage = ClientMessage.Decode(payload);
                                 foreach (var part in Wrap(clientMessage.Content)) {
                                     this.toGame.Enqueue(part);
                                 }
+
                                 break;
                             case ClientOperation.Shutdown:
                                 client.Disconnect();
                                 break;
                             case ClientOperation.Backlog:
+                                // ReSharper disable once LocalVariableHidesMember
                                 var backlog = ClientBacklog.Decode(payload);
 
                                 var backlogMessages = new List<ServerMessage>();
 
-                                var node = this.Backlog.Last;
+                                var node = this.backlog.Last;
                                 while (node != null) {
                                     if (backlogMessages.Count >= backlog.Amount) {
                                         break;
@@ -382,7 +384,7 @@ namespace XIVChatPlugin {
 
                                 backlogMessages.Reverse();
 
-                                await this.SendBacklogs(backlogMessages.ToArray(), stream, client);
+                                await SendBacklogs(backlogMessages.ToArray(), stream, client);
                                 break;
                             case ClientOperation.CatchUp:
                                 var catchUp = ClientCatchUp.Decode(payload);
@@ -390,13 +392,13 @@ namespace XIVChatPlugin {
                                 var after = catchUp.After.AddMilliseconds(1);
                                 var msgs = this.MessagesAfter(after);
 
-                                await this.SendBacklogs(msgs, stream, client);
+                                await SendBacklogs(msgs, stream, client);
                                 break;
                             case ClientOperation.PlayerList:
                                 var playerList = ClientPlayerList.Decode(payload);
 
                                 if (playerList.Type == PlayerListType.Friend) {
-                                    this.WaitingForFriendList.Add(id);
+                                    this.waitingForFriendList.Add(id);
 
                                     if (!this.plugin.Functions.RequestingFriendList && !this.plugin.Functions.RequestFriendList()) {
                                         this.plugin.Interface.Framework.Gui.Chat.PrintError($"[{this.plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
@@ -423,37 +425,20 @@ namespace XIVChatPlugin {
 
                 await listen;
 
-                this.clients.TryRemove(id, out var _);
+                this.clients.TryRemove(id, out _);
                 PluginLog.Log($"Client thread ended: {id}");
             }).ContinueWith(_ => {
                 try {
                     conn.Close();
                 } catch (ObjectDisposedException) { }
-            }); ;
+            });
         }
 
-        private static readonly Regex colorRegex = new Regex(@"<Color\(.+?\)>", RegexOptions.Compiled);
+/*
         private Dictionary<ChatType, NameFormatting> Formats { get; } = new Dictionary<ChatType, NameFormatting>();
+*/
 
-        [Sheet("LogKind")]
-        class LogKind : IExcelRow {
-            public byte Unknown0;
-            public byte[] Format;
-            public bool Unknown2;
-
-            public uint RowId { get; set; }
-            public uint SubRowId { get; set; }
-
-            public void PopulateData(RowParser parser, Lumina.Lumina lumina, Language language) {
-                this.RowId = parser.Row;
-                this.SubRowId = parser.SubRow;
-
-                this.Unknown0 = parser.ReadColumn<byte>(0);
-                this.Format = parser.ReadColumn<byte[]>(1);
-                this.Unknown2 = parser.ReadColumn<bool>(2);
-            }
-        }
-
+/*
         private NameFormatting FormatFor(ChatType type) {
             if (this.Formats.TryGetValue(type, out var cached)) {
                 return cached;
@@ -493,15 +478,16 @@ namespace XIVChatPlugin {
 
             //return nameFormatting;
         }
+*/
 
-        private async Task SendBacklogs(ServerMessage[] messages, NetworkStream stream, Client client) {
+        private static async Task SendBacklogs(IEnumerable<ServerMessage> messages, Stream stream, Client client) {
             var size = 5 + SecretMessage.MacSize(); // assume 5 bytes for payload lead-in, although it's likely to be less
             var responseMessages = new List<ServerMessage>();
 
             async Task SendBacklog() {
                 var resp = new ServerBacklog(responseMessages.ToArray());
                 try {
-                    await SecretMessage.SendSecretMessage(stream, client.Handshake.Keys.tx, resp, client.TokenSource.Token);
+                    await SecretMessage.SendSecretMessage(stream, client.Handshake!.Keys.tx, resp, client.TokenSource.Token);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send backlog: {ex.Message}");
                 }
@@ -511,13 +497,13 @@ namespace XIVChatPlugin {
                 // FIXME: this is very gross
                 var len = MessagePackSerializer.Serialize(catchUpMessage).Length;
                 // send message if it would've gone over length
-                if (size + len >= MAX_MESSAGE_SIZE) {
+                if (size + len >= MaxMessageSize) {
                     await SendBacklog();
 
                     size = 5 + SecretMessage.MacSize();
                     responseMessages.Clear();
-
                 }
+
                 size += len;
                 responseMessages.Add(catchUpMessage);
             }
@@ -527,7 +513,7 @@ namespace XIVChatPlugin {
             }
         }
 
-        private static List<Chunk> ToChunks(SeString msg, uint? defaultColour) {
+        private static IEnumerable<Chunk> ToChunks(SeString msg, uint? defaultColour) {
             var chunks = new List<Chunk>();
 
             var italic = false;
@@ -557,6 +543,7 @@ namespace XIVChatPlugin {
                         } else if (foreground.Count > 0) {
                             foreground.Pop();
                         }
+
                         break;
                     case PayloadType.UIGlow:
                         var glowPayload = (UIGlowPayload)payload;
@@ -565,16 +552,23 @@ namespace XIVChatPlugin {
                         } else if (glow.Count > 0) {
                             glow.Pop();
                         }
+
                         break;
                     case PayloadType.AutoTranslateText:
-                        chunks.Add(new IconChunk { Index = 54 });
+                        chunks.Add(new IconChunk {
+                            Index = 54,
+                        });
                         var autoText = ((AutoTranslatePayload)payload).Text;
                         Append(autoText.Substring(2, autoText.Length - 4));
-                        chunks.Add(new IconChunk { Index = 55 });
+                        chunks.Add(new IconChunk {
+                            Index = 55,
+                        });
                         break;
                     case PayloadType.Icon:
                         var index = ((IconPayload)payload).IconIndex;
-                        chunks.Add(new IconChunk { Index = (byte)index });
+                        chunks.Add(new IconChunk {
+                            Index = (byte)index,
+                        });
                         break;
                     // FIXME: use ITextProvider directly once it's exposed
                     case PayloadType.RawText:
@@ -586,26 +580,29 @@ namespace XIVChatPlugin {
                             foreground.Pop();
                             glow.Pop();
                         }
+
                         break;
-                        //default:
-                        //    var textProviderType = typeof(SeString).Assembly.GetType("Dalamud.Game.Chat.SeStringHandling.ITextProvider");
-                        //    var textProp = textProviderType.GetProperty("Text", BindingFlags.NonPublic | BindingFlags.Instance);
-                        //    var text = (string)textProp.GetValue(payload);
-                        //    append(text);
-                        //    break;
+                    //default:
+                    //    var textProviderType = typeof(SeString).Assembly.GetType("Dalamud.Game.Chat.SeStringHandling.ITextProvider");
+                    //    var textProp = textProviderType.GetProperty("Text", BindingFlags.NonPublic | BindingFlags.Instance);
+                    //    var text = (string)textProp.GetValue(payload);
+                    //    append(text);
+                    //    break;
                 }
             }
 
             return chunks;
         }
 
-        private ServerMessage[] MessagesAfter(DateTime time) => this.Backlog.Where(msg => msg.Timestamp > time).ToArray();
+        private IEnumerable<ServerMessage> MessagesAfter(DateTime time) => this.backlog.Where(msg => msg.Timestamp > time).ToArray();
 
-        private static string[] Wrap(string input) {
-            const int LIMIT = 500;
+        private static IEnumerable<string> Wrap(string input) {
+            const int limit = 500;
 
-            if (input.Length <= LIMIT) {
-                return new string[] { input };
+            if (input.Length <= limit) {
+                return new[] {
+                    input,
+                };
             }
 
             string prefix = string.Empty;
@@ -619,14 +616,14 @@ namespace XIVChatPlugin {
 
             var parts = new List<string>();
 
-            var builder = new StringBuilder(LIMIT);
+            var builder = new StringBuilder(limit);
 
             foreach (var word in input.Split(' ')) {
-                if (word.Length > LIMIT) {
-                    int wordParts = (int)Math.Ceiling((float)word.Length / LIMIT);
+                if (word.Length > limit) {
+                    int wordParts = (int)Math.Ceiling((float)word.Length / limit);
                     for (int i = 0; i < wordParts; i++) {
-                        var start = i == 0 ? 0 : (i * LIMIT);
-                        var partLength = LIMIT;
+                        var start = i == 0 ? 0 : (i * limit);
+                        var partLength = limit;
                         if (prefix.Length != 0) {
                             start = start == 0 ? 0 : (start - (prefix.Length + 1) * i);
                             partLength = partLength - prefix.Length - 1;
@@ -643,10 +640,11 @@ namespace XIVChatPlugin {
 
                         parts.Add(part);
                     }
+
                     continue;
                 }
 
-                if (builder.Length + word.Length > LIMIT) {
+                if (builder.Length + word.Length > limit) {
                     parts.Add(builder.ToString().TrimEnd(' '));
                     builder.Clear();
                 }
@@ -680,87 +678,35 @@ namespace XIVChatPlugin {
         }
 
         private string LocalisedChannelName(InputChannel channel) {
-            uint rowId;
-            switch (channel) {
-                case InputChannel.Tell:
-                    rowId = 3;
-                    break;
-                case InputChannel.Say:
-                    rowId = 1;
-                    break;
-                case InputChannel.Party:
-                    rowId = 4;
-                    break;
-                case InputChannel.Alliance:
-                    rowId = 17;
-                    break;
-                case InputChannel.Yell:
-                    rowId = 16;
-                    break;
-                case InputChannel.Shout:
-                    rowId = 2;
-                    break;
-                case InputChannel.FreeCompany:
-                    rowId = 7;
-                    break;
-                case InputChannel.PvpTeam:
-                    rowId = 19;
-                    break;
-                case InputChannel.NoviceNetwork:
-                    rowId = 18;
-                    break;
-                case InputChannel.CrossLinkshell1:
-                    rowId = 20;
-                    break;
-                case InputChannel.CrossLinkshell2:
-                    rowId = 300;
-                    break;
-                case InputChannel.CrossLinkshell3:
-                    rowId = 301;
-                    break;
-                case InputChannel.CrossLinkshell4:
-                    rowId = 302;
-                    break;
-                case InputChannel.CrossLinkshell5:
-                    rowId = 303;
-                    break;
-                case InputChannel.CrossLinkshell6:
-                    rowId = 304;
-                    break;
-                case InputChannel.CrossLinkshell7:
-                    rowId = 305;
-                    break;
-                case InputChannel.CrossLinkshell8:
-                    rowId = 306;
-                    break;
-                case InputChannel.Linkshell1:
-                    rowId = 8;
-                    break;
-                case InputChannel.Linkshell2:
-                    rowId = 9;
-                    break;
-                case InputChannel.Linkshell3:
-                    rowId = 10;
-                    break;
-                case InputChannel.Linkshell4:
-                    rowId = 11;
-                    break;
-                case InputChannel.Linkshell5:
-                    rowId = 12;
-                    break;
-                case InputChannel.Linkshell6:
-                    rowId = 13;
-                    break;
-                case InputChannel.Linkshell7:
-                    rowId = 14;
-                    break;
-                case InputChannel.Linkshell8:
-                    rowId = 15;
-                    break;
-                default:
-                    rowId = 0;
-                    break;
+            uint rowId = channel switch {
+                InputChannel.Tell => 3,
+                InputChannel.Say => 1,
+                InputChannel.Party => 4,
+                InputChannel.Alliance => 17,
+                InputChannel.Yell => 16,
+                InputChannel.Shout => 2,
+                InputChannel.FreeCompany => 7,
+                InputChannel.PvpTeam => 19,
+                InputChannel.NoviceNetwork => 18,
+                InputChannel.CrossLinkshell1 => 20,
+                InputChannel.CrossLinkshell2 => 300,
+                InputChannel.CrossLinkshell3 => 301,
+                InputChannel.CrossLinkshell4 => 302,
+                InputChannel.CrossLinkshell5 => 303,
+                InputChannel.CrossLinkshell6 => 304,
+                InputChannel.CrossLinkshell7 => 305,
+                InputChannel.CrossLinkshell8 => 306,
+                InputChannel.Linkshell1 => 8,
+                InputChannel.Linkshell2 => 9,
+                InputChannel.Linkshell3 => 10,
+                InputChannel.Linkshell4 => 11,
+                InputChannel.Linkshell5 => 12,
+                InputChannel.Linkshell6 => 13,
+                InputChannel.Linkshell7 => 14,
+                InputChannel.Linkshell8 => 15,
+                _ => 0,
             };
+
             return this.plugin.Interface.Data.GetExcelSheet<LogFilter>().GetRow(rowId).Name;
         }
 
@@ -778,7 +724,7 @@ namespace XIVChatPlugin {
             this.BroadcastMessage(new Availability(available));
         }
 
-        private PlayerData GeneratePlayerData() {
+        private PlayerData? GeneratePlayerData() {
             var player = this.plugin.Interface.ClientState.LocalPlayer;
             if (player == null) {
                 return null;
@@ -786,6 +732,7 @@ namespace XIVChatPlugin {
 
             var homeWorld = player.HomeWorld.GameData.Name;
             var currentWorld = player.CurrentWorld.GameData.Name;
+            // FIXME: NPE if injected late
             var territory = this.plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(this.plugin.Interface.ClientState.TerritoryType);
             var location = territory.PlaceName.Value.Name;
             var name = player.Name;
@@ -798,7 +745,8 @@ namespace XIVChatPlugin {
             if (playerData == null) {
                 return;
             }
-            await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, playerData);
+
+            await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake!.Keys.tx, playerData);
         }
 
         private void BroadcastPlayerData() {
@@ -838,18 +786,20 @@ namespace XIVChatPlugin {
                             await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, ServerShutdown.Instance);
                         } catch (Exception) { }
                     }
+
                     // cancel threads for open clients
                     client.TokenSource.Cancel();
                 });
             }
+
             this.plugin.Functions.ReceiveFriendList -= this.OnReceiveFriendList;
         }
     }
 
     public class Client {
-        public bool Connected { get; set; } = false;
-        public TcpClient Conn { get; private set; }
-        public HandshakeInfo Handshake { get; set; }
+        public bool Connected { get; set; }
+        public TcpClient Conn { get; }
+        public HandshakeInfo? Handshake { get; set; }
         public CancellationTokenSource TokenSource { get; } = new CancellationTokenSource();
         public Channel<ServerMessage> Queue { get; } = Channel.CreateUnbounded<ServerMessage>();
 
@@ -865,18 +815,18 @@ namespace XIVChatPlugin {
     }
 
     internal static class TcpListenerExt {
-        public static async Task<TcpClient> GetTcpClient(this TcpListener listener, CancellationTokenSource source) {
+        public static async Task<TcpClient?> GetTcpClient(this TcpListener listener, CancellationTokenSource source) {
             using (source.Token.Register(listener.Stop)) {
                 try {
                     var client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
                     return client;
-                } catch (ObjectDisposedException ex) {
+                } catch (ObjectDisposedException) {
                     // Token was canceled - swallow the exception and return null
                     if (source.Token.IsCancellationRequested) {
                         return null;
                     }
 
-                    throw ex;
+                    throw;
                 }
             }
         }

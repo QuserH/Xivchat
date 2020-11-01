@@ -1,12 +1,11 @@
-﻿using Dalamud.Plugin;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
 namespace XIVChatPlugin {
     public static class Extensions {
-        public static string ToHexString(this byte[] bytes, bool upper = false, string separator = "") {
+        public static string ToHexString(this IEnumerable<byte> bytes, bool upper = false, string separator = "") {
             return string.Join(separator, bytes.Select(b => b.ToString(upper ? "X2" : "x2")));
         }
 
