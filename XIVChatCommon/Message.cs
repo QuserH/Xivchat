@@ -9,17 +9,22 @@ namespace XIVChatCommon {
         [MessagePackFormatter(typeof(MillisecondsDateTimeFormatter))]
         [Key(0)]
         public DateTime Timestamp { get; set; }
+
         [Key(1)]
         public ChatType Channel { get; set; }
+
         [Key(2)]
         public byte[] Sender { get; set; }
+
         [Key(3)]
         public byte[] Content { get; set; }
+
         [Key(4)]
         public List<Chunk> Chunks { get; set; }
 
         [IgnoreMember]
         public string ContentText => XivString.GetText(this.Content);
+
         [IgnoreMember]
         public string SenderText => XivString.GetText(this.Sender);
 
@@ -45,20 +50,23 @@ namespace XIVChatCommon {
     public class TextChunk : Chunk {
         [Key(0)]
         public uint? FallbackColour { get; set; }
+
         [Key(1)]
         public uint? Foreground { get; set; }
+
         [Key(2)]
         public uint? Glow { get; set; }
+
         [Key(3)]
         public bool Italic { get; set; }
+
         [Key(4)]
         public string Content { get; set; }
     }
 
     [MessagePackObject]
     public class IconChunk : Chunk {
-        [Key(0)]
-        public byte Index;
+        [Key(0)] public byte Index;
     }
 
     public class NameFormatting {
@@ -101,89 +109,62 @@ namespace XIVChatCommon {
             this.code = code;
         }
 
-        public ChatType Parent() {
-            switch (this.Type) {
-                case ChatType.Say:
-                case ChatType.GmSay:
-                    return ChatType.Say;
-                case ChatType.Shout:
-                case ChatType.GmShout:
-                    return ChatType.Shout;
-                case ChatType.TellOutgoing:
-                case ChatType.TellIncoming:
-                case ChatType.GmTell:
-                    return ChatType.TellOutgoing;
-                case ChatType.Party:
-                case ChatType.CrossParty:
-                case ChatType.GmParty:
-                    return ChatType.Party;
-                case ChatType.Linkshell1:
-                case ChatType.GmLinkshell1:
-                    return ChatType.Linkshell1;
-                case ChatType.Linkshell2:
-                case ChatType.GmLinkshell2:
-                    return ChatType.Linkshell2;
-                case ChatType.Linkshell3:
-                case ChatType.GmLinkshell3:
-                    return ChatType.Linkshell3;
-                case ChatType.Linkshell4:
-                case ChatType.GmLinkshell4:
-                    return ChatType.Linkshell4;
-                case ChatType.Linkshell5:
-                case ChatType.GmLinkshell5:
-                    return ChatType.Linkshell5;
-                case ChatType.Linkshell6:
-                case ChatType.GmLinkshell6:
-                    return ChatType.Linkshell6;
-                case ChatType.Linkshell7:
-                case ChatType.GmLinkshell7:
-                    return ChatType.Linkshell7;
-                case ChatType.Linkshell8:
-                case ChatType.GmLinkshell8:
-                    return ChatType.Linkshell8;
-                case ChatType.FreeCompany:
-                case ChatType.GmFreeCompany:
-                    return ChatType.FreeCompany;
-                case ChatType.NoviceNetwork:
-                case ChatType.GmNoviceNetwork:
-                    return ChatType.NoviceNetwork;
-                case ChatType.CustomEmote:
-                    return ChatType.CustomEmote;
-                case ChatType.StandardEmote:
-                    return ChatType.StandardEmote;
-                case ChatType.Yell:
-                case ChatType.GmYell:
-                    return ChatType.Yell;
-                case ChatType.GainBuff:
-                case ChatType.LoseBuff:
-                    return ChatType.GainBuff;
-                case ChatType.GainDebuff:
-                case ChatType.LoseDebuff:
-                    return ChatType.GainDebuff;
-                case ChatType.System:
-                case ChatType.Alarm:
-                case ChatType.RetainerSale:
-                case ChatType.PeriodicRecruitmentNotification:
-                case ChatType.Sign:
-                case ChatType.Orchestrion:
-                case ChatType.MessageBook:
-                    return ChatType.System;
-                case ChatType.NpcDialogue:
-                case ChatType.NpcAnnouncement:
-                    return ChatType.NpcDialogue;
-                case ChatType.LootRoll:
-                case ChatType.RandomNumber:
-                    return ChatType.LootRoll;
-                case ChatType.FreeCompanyAnnouncement:
-                case ChatType.FreeCompanyLoginLogout:
-                    return ChatType.FreeCompanyAnnouncement;
-                case ChatType.PvpTeamAnnouncement:
-                case ChatType.PvpTeamLoginLogout:
-                    return ChatType.PvpTeamAnnouncement;
-                default:
-                    return this.Type;
-            }
-        }
+        public ChatType Parent() => this.Type switch {
+            ChatType.Say => ChatType.Say,
+            ChatType.GmSay => ChatType.Say,
+            ChatType.Shout => ChatType.Shout,
+            ChatType.GmShout => ChatType.Shout,
+            ChatType.TellOutgoing => ChatType.TellOutgoing,
+            ChatType.TellIncoming => ChatType.TellOutgoing,
+            ChatType.GmTell => ChatType.TellOutgoing,
+            ChatType.Party => ChatType.Party,
+            ChatType.CrossParty => ChatType.Party,
+            ChatType.GmParty => ChatType.Party,
+            ChatType.Linkshell1 => ChatType.Linkshell1,
+            ChatType.GmLinkshell1 => ChatType.Linkshell1,
+            ChatType.Linkshell2 => ChatType.Linkshell2,
+            ChatType.GmLinkshell2 => ChatType.Linkshell2,
+            ChatType.Linkshell3 => ChatType.Linkshell3,
+            ChatType.GmLinkshell3 => ChatType.Linkshell3,
+            ChatType.Linkshell4 => ChatType.Linkshell4,
+            ChatType.GmLinkshell4 => ChatType.Linkshell4,
+            ChatType.Linkshell5 => ChatType.Linkshell5,
+            ChatType.GmLinkshell5 => ChatType.Linkshell5,
+            ChatType.Linkshell6 => ChatType.Linkshell6,
+            ChatType.GmLinkshell6 => ChatType.Linkshell6,
+            ChatType.Linkshell7 => ChatType.Linkshell7,
+            ChatType.GmLinkshell7 => ChatType.Linkshell7,
+            ChatType.Linkshell8 => ChatType.Linkshell8,
+            ChatType.GmLinkshell8 => ChatType.Linkshell8,
+            ChatType.FreeCompany => ChatType.FreeCompany,
+            ChatType.GmFreeCompany => ChatType.FreeCompany,
+            ChatType.NoviceNetwork => ChatType.NoviceNetwork,
+            ChatType.GmNoviceNetwork => ChatType.NoviceNetwork,
+            ChatType.CustomEmote => ChatType.CustomEmote,
+            ChatType.StandardEmote => ChatType.StandardEmote,
+            ChatType.Yell => ChatType.Yell,
+            ChatType.GmYell => ChatType.Yell,
+            ChatType.GainBuff => ChatType.GainBuff,
+            ChatType.LoseBuff => ChatType.GainBuff,
+            ChatType.GainDebuff => ChatType.GainDebuff,
+            ChatType.LoseDebuff => ChatType.GainDebuff,
+            ChatType.System => ChatType.System,
+            ChatType.Alarm => ChatType.System,
+            ChatType.RetainerSale => ChatType.System,
+            ChatType.PeriodicRecruitmentNotification => ChatType.System,
+            ChatType.Sign => ChatType.System,
+            ChatType.Orchestrion => ChatType.System,
+            ChatType.MessageBook => ChatType.System,
+            ChatType.NpcDialogue => ChatType.NpcDialogue,
+            ChatType.NpcAnnouncement => ChatType.NpcDialogue,
+            ChatType.LootRoll => ChatType.LootRoll,
+            ChatType.RandomNumber => ChatType.LootRoll,
+            ChatType.FreeCompanyAnnouncement => ChatType.FreeCompanyAnnouncement,
+            ChatType.FreeCompanyLoginLogout => ChatType.FreeCompanyAnnouncement,
+            ChatType.PvpTeamAnnouncement => ChatType.PvpTeamAnnouncement,
+            ChatType.PvpTeamLoginLogout => ChatType.PvpTeamAnnouncement,
+            _ => this.Type,
+        };
 
         //public string ConfigKey() {
         //    switch (this.Type) {
@@ -317,97 +298,55 @@ namespace XIVChatCommon {
         //    }
         //}
 
-        public NameFormatting NameFormat() {
-            switch (this.Type) {
-                case ChatType.Say:
-                case ChatType.Shout:
-                case ChatType.Yell:
-                case ChatType.NpcAnnouncement:
-                case ChatType.NpcDialogue:
-                    return NameFormatting.Of("", ": ");
-                case ChatType.TellOutgoing:
-                    return NameFormatting.Of(">> ", ": ");
-                case ChatType.TellIncoming:
-                    return NameFormatting.Of("", " >> ");
-                case ChatType.GmTell:
-                    return NameFormatting.Of("[GM]", " >> ");
-                case ChatType.GmSay:
-                case ChatType.GmShout:
-                case ChatType.GmYell:
-                    return NameFormatting.Of("[GM]", ": ");
-                case ChatType.GmParty:
-                    return NameFormatting.Of("([GM]", ") ");
-                case ChatType.GmFreeCompany:
-                    return NameFormatting.Of("[FC]<[GM]", "> ");
-                case ChatType.GmLinkshell1:
-                    return NameFormatting.Of("[1]<[GM]", "> ");
-                case ChatType.GmLinkshell2:
-                    return NameFormatting.Of("[2]<[GM]", "> ");
-                case ChatType.GmLinkshell3:
-                    return NameFormatting.Of("[3]<[GM]", "> ");
-                case ChatType.GmLinkshell4:
-                    return NameFormatting.Of("[4]<[GM]", "> ");
-                case ChatType.GmLinkshell5:
-                    return NameFormatting.Of("[5]<[GM]", "> ");
-                case ChatType.GmLinkshell6:
-                    return NameFormatting.Of("[6]<[GM]", "> ");
-                case ChatType.GmLinkshell7:
-                    return NameFormatting.Of("[7]<[GM]", "> ");
-                case ChatType.GmLinkshell8:
-                    return NameFormatting.Of("[8]<[GM]", "> ");
-                case ChatType.GmNoviceNetwork:
-                    return NameFormatting.Of("[NOVICE][GM]", ": ");
-                case ChatType.Party:
-                case ChatType.CrossParty:
-                    return NameFormatting.Of("(", ") ");
-                case ChatType.Alliance:
-                    return NameFormatting.Of("((", ")) ");
-                case ChatType.PvpTeam:
-                    return NameFormatting.Of("[PVP]<", "> ");
-                case ChatType.FreeCompany:
-                    return NameFormatting.Of("[FC]<", "> ");
-                case ChatType.Linkshell1:
-                    return NameFormatting.Of("[1]<", "> ");
-                case ChatType.Linkshell2:
-                    return NameFormatting.Of("[2]<", "> ");
-                case ChatType.Linkshell3:
-                    return NameFormatting.Of("[3]<", "> ");
-                case ChatType.Linkshell4:
-                    return NameFormatting.Of("[4]<", "> ");
-                case ChatType.Linkshell5:
-                    return NameFormatting.Of("[5]<", "> ");
-                case ChatType.Linkshell6:
-                    return NameFormatting.Of("[6]<", "> ");
-                case ChatType.Linkshell7:
-                    return NameFormatting.Of("[7]<", "> ");
-                case ChatType.Linkshell8:
-                    return NameFormatting.Of("[8]<", "> ");
-                case ChatType.StandardEmote:
-                    return NameFormatting.Empty();
-                case ChatType.CustomEmote:
-                    return NameFormatting.Of("", "");
-                case ChatType.CrossLinkshell1:
-                    return NameFormatting.Of("[CWLS1]<", "> ");
-                case ChatType.CrossLinkshell2:
-                    return NameFormatting.Of("[CWLS2]<", "> ");
-                case ChatType.CrossLinkshell3:
-                    return NameFormatting.Of("[CWLS3]<", "> ");
-                case ChatType.CrossLinkshell4:
-                    return NameFormatting.Of("[CWLS4]<", "> ");
-                case ChatType.CrossLinkshell5:
-                    return NameFormatting.Of("[CWLS5]<", "> ");
-                case ChatType.CrossLinkshell6:
-                    return NameFormatting.Of("[CWLS6]<", "> ");
-                case ChatType.CrossLinkshell7:
-                    return NameFormatting.Of("[CWLS7]<", "> ");
-                case ChatType.CrossLinkshell8:
-                    return NameFormatting.Of("[CWLS8]<", "> ");
-                case ChatType.NoviceNetwork:
-                    return NameFormatting.Of("[NOVICE]", ": ");
-                default:
-                    return null;
-            }
-        }
+        public NameFormatting NameFormat() => this.Type switch {
+            ChatType.Say => NameFormatting.Of("", ": "),
+            ChatType.Shout => NameFormatting.Of("", ": "),
+            ChatType.Yell => NameFormatting.Of("", ": "),
+            ChatType.NpcAnnouncement => NameFormatting.Of("", ": "),
+            ChatType.NpcDialogue => NameFormatting.Of("", ": "),
+            ChatType.TellOutgoing => NameFormatting.Of(">> ", ": "),
+            ChatType.TellIncoming => NameFormatting.Of("", " >> "),
+            ChatType.GmTell => NameFormatting.Of("[GM]", " >> "),
+            ChatType.GmSay => NameFormatting.Of("[GM]", ": "),
+            ChatType.GmShout => NameFormatting.Of("[GM]", ": "),
+            ChatType.GmYell => NameFormatting.Of("[GM]", ": "),
+            ChatType.GmParty => NameFormatting.Of("([GM]", ") "),
+            ChatType.GmFreeCompany => NameFormatting.Of("[FC]<[GM]", "> "),
+            ChatType.GmLinkshell1 => NameFormatting.Of("[1]<[GM]", "> "),
+            ChatType.GmLinkshell2 => NameFormatting.Of("[2]<[GM]", "> "),
+            ChatType.GmLinkshell3 => NameFormatting.Of("[3]<[GM]", "> "),
+            ChatType.GmLinkshell4 => NameFormatting.Of("[4]<[GM]", "> "),
+            ChatType.GmLinkshell5 => NameFormatting.Of("[5]<[GM]", "> "),
+            ChatType.GmLinkshell6 => NameFormatting.Of("[6]<[GM]", "> "),
+            ChatType.GmLinkshell7 => NameFormatting.Of("[7]<[GM]", "> "),
+            ChatType.GmLinkshell8 => NameFormatting.Of("[8]<[GM]", "> "),
+            ChatType.GmNoviceNetwork => NameFormatting.Of("[NOVICE][GM]", ": "),
+            ChatType.Party => NameFormatting.Of("(", ") "),
+            ChatType.CrossParty => NameFormatting.Of("(", ") "),
+            ChatType.Alliance => NameFormatting.Of("((", ")) "),
+            ChatType.PvpTeam => NameFormatting.Of("[PVP]<", "> "),
+            ChatType.FreeCompany => NameFormatting.Of("[FC]<", "> "),
+            ChatType.Linkshell1 => NameFormatting.Of("[1]<", "> "),
+            ChatType.Linkshell2 => NameFormatting.Of("[2]<", "> "),
+            ChatType.Linkshell3 => NameFormatting.Of("[3]<", "> "),
+            ChatType.Linkshell4 => NameFormatting.Of("[4]<", "> "),
+            ChatType.Linkshell5 => NameFormatting.Of("[5]<", "> "),
+            ChatType.Linkshell6 => NameFormatting.Of("[6]<", "> "),
+            ChatType.Linkshell7 => NameFormatting.Of("[7]<", "> "),
+            ChatType.Linkshell8 => NameFormatting.Of("[8]<", "> "),
+            ChatType.StandardEmote => NameFormatting.Empty(),
+            ChatType.CustomEmote => NameFormatting.Of("", ""),
+            ChatType.CrossLinkshell1 => NameFormatting.Of("[CWLS1]<", "> "),
+            ChatType.CrossLinkshell2 => NameFormatting.Of("[CWLS2]<", "> "),
+            ChatType.CrossLinkshell3 => NameFormatting.Of("[CWLS3]<", "> "),
+            ChatType.CrossLinkshell4 => NameFormatting.Of("[CWLS4]<", "> "),
+            ChatType.CrossLinkshell5 => NameFormatting.Of("[CWLS5]<", "> "),
+            ChatType.CrossLinkshell6 => NameFormatting.Of("[CWLS6]<", "> "),
+            ChatType.CrossLinkshell7 => NameFormatting.Of("[CWLS7]<", "> "),
+            ChatType.CrossLinkshell8 => NameFormatting.Of("[CWLS8]<", "> "),
+            ChatType.NoviceNetwork => NameFormatting.Of("[NOVICE]", ": "),
+            _ => null
+        };
 
         public bool IsBattle() {
             switch (this.Type) {
@@ -532,9 +471,9 @@ namespace XIVChatCommon {
         }
 
         private static uint Rgba(byte red, byte green, byte blue, byte alpha = 0xFF) => alpha
-            | (uint)(red << 24)
-            | (uint)(green << 16)
-            | (uint)(blue << 8);
+                                                                                        | (uint)(red << 24)
+                                                                                        | (uint)(green << 16)
+                                                                                        | (uint)(blue << 8);
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1028:Enum Storage should be Int32")]
@@ -561,6 +500,7 @@ namespace XIVChatCommon {
         CustomEmote = 28,
         StandardEmote = 29,
         Yell = 30,
+
         // 31 - also party?
         CrossParty = 32,
         PvpTeam = 36,
@@ -659,10 +599,12 @@ namespace XIVChatCommon {
         /// Sent in response to a client ping. Has no payload.
         /// </summary>
         Pong = 1,
+
         /// <summary>
         /// A message was sent in game and is being relayed to the client.
         /// </summary>
         Message = 2,
+
         /// <summary>
         /// The server is shutting down. Clients should send no response and close their sockets. Has no payload.
         /// </summary>
@@ -677,14 +619,10 @@ namespace XIVChatCommon {
 
     [MessagePackObject]
     public class PlayerData : IEncodable {
-        [Key(0)]
-        public readonly string homeWorld;
-        [Key(1)]
-        public readonly string currentWorld;
-        [Key(2)]
-        public readonly string location;
-        [Key(3)]
-        public readonly string name;
+        [Key(0)] public readonly string homeWorld;
+        [Key(1)] public readonly string currentWorld;
+        [Key(2)] public readonly string location;
+        [Key(3)] public readonly string name;
 
         public PlayerData(string homeWorld, string currentWorld, string location, string name) {
             this.homeWorld = homeWorld;
@@ -718,8 +656,7 @@ namespace XIVChatCommon {
 
     [MessagePackObject]
     public class Availability : IEncodable {
-        [Key(0)]
-        public readonly bool available;
+        [Key(0)] public readonly bool available;
 
         public Availability(bool available) {
             this.available = available;
@@ -739,10 +676,8 @@ namespace XIVChatCommon {
 
     [MessagePackObject]
     public class ServerChannel : IEncodable {
-        [Key(0)]
-        public readonly byte channel;
-        [Key(1)]
-        public readonly string name;
+        [Key(0)] public readonly byte channel;
+        [Key(1)] public readonly string name;
 
         [IgnoreMember]
         public InputChannel InputChannel => (InputChannel)this.channel;
@@ -841,8 +776,7 @@ namespace XIVChatCommon {
 
     [MessagePackObject]
     public class ServerBacklog : IEncodable {
-        [Key(0)]
-        public readonly ServerMessage[] messages;
+        [Key(0)] public readonly ServerMessage[] messages;
 
         protected override byte Code => (byte)ServerOperation.Backlog;
 
@@ -938,32 +872,46 @@ namespace XIVChatCommon {
     public class Player {
         [Key(0)]
         public string Name { get; set; }
+
         [Key(1)]
         public string FreeCompany { get; set; }
+
         [Key(2)]
         public ulong Status { get; set; }
+
         [Key(3)]
         public ushort CurrentWorld { get; set; }
+
         [Key(4)]
         public string CurrentWorldName { get; set; }
+
         [Key(5)]
         public ushort HomeWorld { get; set; }
+
         [Key(6)]
         public string HomeWorldName { get; set; }
+
         [Key(7)]
         public ushort Territory { get; set; }
+
         [Key(8)]
         public string TerritoryName { get; set; }
+
         [Key(9)]
         public byte Job { get; set; }
+
         [Key(10)]
         public string JobName { get; set; }
+
         [Key(11)]
         public byte GrandCompany { get; set; }
+
         [Key(12)]
         public string GrandCompanyName { get; set; }
+
         [Key(13)]
         public byte Languages { get; set; }
+
         [Key(14)]
         public byte MainLanguage { get; set; }
     }
@@ -976,7 +924,9 @@ namespace XIVChatCommon {
             byte[] payload = this.PayloadEncode();
 
             if (payload.Length == 0) {
-                return new byte[] { this.Code };
+                return new[] {
+                    this.Code,
+                };
             }
 
             byte[] bytes = new byte[1 + payload.Length];

@@ -1,9 +1,6 @@
 ﻿using Sodium;
-using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace XIVChatCommon {
@@ -90,8 +87,8 @@ namespace XIVChatCommon {
     }
 
     public class HandshakeInfo {
-        public byte[] RemotePublicKey { get; private set; }
-        public SessionKeys Keys { get; private set; }
+        public byte[] RemotePublicKey { get; }
+        public SessionKeys Keys { get; }
 
         internal HandshakeInfo(byte[] remote, SessionKeys keys) {
             this.RemotePublicKey = remote;
