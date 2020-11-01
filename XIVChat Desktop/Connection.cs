@@ -80,11 +80,11 @@ namespace XIVChat_Desktop {
                     this.app.LastHost = currentHost;
                 });
             }
-            
+
             this.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Connected");
             });
-            
+
             // check if backlog or catch-up is needed
             if (sameHost) {
                 // catch-up
@@ -141,6 +141,7 @@ namespace XIVChat_Desktop {
                     if (this.incoming.Reader.Completion.IsCompleted) {
                         break;
                     }
+
                     var rawMessage = await incoming;
                     incoming = this.incoming.Reader.ReadAsync().AsTask();
 
@@ -178,7 +179,10 @@ namespace XIVChat_Desktop {
                     break;
                 }
             }
-            
+
+            // remove player data
+            this.SetPlayerData(null);
+
             // at this point, we are disconnected, so log it
             this.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Disconnected");
@@ -215,24 +219,7 @@ namespace XIVChat_Desktop {
                 case ServerOperation.PlayerData:
                     var playerData = payload.Length == 0 ? null : PlayerData.Decode(payload);
 
-                    var visibility = playerData == null ? Visibility.Collapsed : Visibility.Visible;
-
-                    this.Dispatch(() => {
-                        var window = this.app.Window;
-
-                        window.LoggedInAs.Content = playerData?.name;
-                        window.LoggedInAs.Visibility = visibility;
-
-                        window.LoggedInAsSeparator.Visibility = visibility;
-
-                        window.CurrentWorld.Content = playerData?.currentWorld;
-                        window.CurrentWorld.Visibility = visibility;
-
-                        window.CurrentWorldSeparator.Visibility = visibility;
-
-                        window.Location.Content = playerData?.location;
-                        window.Location.Visibility = visibility;
-                    });
+                    this.SetPlayerData(playerData);
                     break;
                 case ServerOperation.Availability:
                     break;
@@ -260,6 +247,27 @@ namespace XIVChat_Desktop {
                 case ServerOperation.LinkshellList:
                     break;
             }
+        }
+
+        private void SetPlayerData(PlayerData? playerData) {
+            var visibility = playerData == null ? Visibility.Collapsed : Visibility.Visible;
+
+            this.Dispatch(() => {
+                var window = this.app.Window;
+
+                window.LoggedInAs.Content = playerData?.name;
+                window.LoggedInAs.Visibility = visibility;
+
+                window.LoggedInAsSeparator.Visibility = visibility;
+
+                window.CurrentWorld.Content = playerData?.currentWorld;
+                window.CurrentWorld.Visibility = visibility;
+
+                window.CurrentWorldSeparator.Visibility = visibility;
+
+                window.Location.Content = playerData?.location;
+                window.Location.Visibility = visibility;
+            });
         }
 
         private void Dispatch(Action action) {
