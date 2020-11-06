@@ -377,7 +377,10 @@ namespace XIVChatPlugin {
                                     node = node.Previous;
                                 }
 
-                                backlogMessages.Reverse();
+                                bool bNewestFirst = false;
+                                if (client.Preferences?.TryGetValue(ClientPreference.BacklogNewestMessagesFirst, out bNewestFirst) == true && !bNewestFirst) {
+                                    backlogMessages.Reverse();
+                                }
 
                                 await SendBacklogs(backlogMessages.ToArray(), stream, client);
                                 break;
@@ -386,6 +389,11 @@ namespace XIVChatPlugin {
                                 // I'm not sure why this needs to be done, but apparently it does
                                 var after = catchUp.After.AddMilliseconds(1);
                                 var msgs = this.MessagesAfter(after);
+
+                                bool cNewestFirst = false;
+                                if (client.Preferences?.TryGetValue(ClientPreference.BacklogNewestMessagesFirst, out cNewestFirst) == true && cNewestFirst) {
+                                    msgs = msgs.Reverse();
+                                }
 
                                 await SendBacklogs(msgs, stream, client);
                                 break;
@@ -399,6 +407,11 @@ namespace XIVChatPlugin {
                                         this.plugin.Interface.Framework.Gui.Chat.PrintError($"[{this.plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
                                     }
                                 }
+
+                                break;
+                            case ClientOperation.Preferences:
+                                var preferences = ClientPreferences.Decode(payload);
+                                client.Preferences = preferences;
 
                                 break;
                         }
@@ -789,6 +802,7 @@ namespace XIVChatPlugin {
         public bool Connected { get; set; }
         public TcpClient Conn { get; }
         public HandshakeInfo? Handshake { get; set; }
+        public ClientPreferences? Preferences { get; set; }
         public CancellationTokenSource TokenSource { get; } = new CancellationTokenSource();
         public Channel<ServerMessage> Queue { get; } = Channel.CreateUnbounded<ServerMessage>();
 

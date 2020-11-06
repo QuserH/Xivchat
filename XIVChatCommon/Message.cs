@@ -2,6 +2,8 @@
 using MessagePack.Formatters;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+
 // ReSharper disable UnusedAutoPropertyAccessor.Global
 // ReSharper disable UnusedMember.Global
 // ReSharper disable ClassNeverInstantiated.Global
@@ -36,7 +38,7 @@ namespace XIVChatCommon {
 
         [IgnoreMember]
         protected override byte Code => (byte)ServerOperation.Message;
-        
+
         public ServerMessage(DateTime timestamp, ChatType channel, byte[] sender, byte[] content, List<Chunk> chunks) {
             this.Timestamp = timestamp;
             this.Channel = channel;
@@ -76,7 +78,7 @@ namespace XIVChatCommon {
 
         [Key(4)]
         public string Content { get; set; }
-        
+
         public TextChunk(string content) {
             this.Content = content;
         }
@@ -601,7 +603,7 @@ namespace XIVChatCommon {
 
         [IgnoreMember]
         protected override byte Code => (byte)ClientOperation.Message;
-        
+
         public ClientMessage(string content) {
             this.Content = content;
         }
@@ -839,7 +841,7 @@ namespace XIVChatCommon {
         public ClientCatchUp(DateTime after) {
             this.After = after;
         }
-        
+
         public static ClientCatchUp Decode(byte[] bytes) {
             return MessagePackSerializer.Deserialize<ClientCatchUp>(bytes);
         }
@@ -858,7 +860,7 @@ namespace XIVChatCommon {
         public Player[] Players { get; set; }
 
         protected override byte Code => (byte)ServerOperation.PlayerList;
-        
+
         public ServerPlayerList(PlayerListType type, Player[] players) {
             this.Type = type;
             this.Players = players;
@@ -944,6 +946,57 @@ namespace XIVChatCommon {
         public byte MainLanguage { get; set; }
     }
 
+    [MessagePackObject]
+    public class ClientPreferences : IEncodable {
+        [Key(0)]
+        public Dictionary<ClientPreference, object> Preferences { get; set; } = new Dictionary<ClientPreference, object>();
+
+        protected override byte Code => (byte)ClientOperation.Preferences;
+
+        protected override byte[] PayloadEncode() {
+            return MessagePackSerializer.Serialize(this);
+        }
+
+        public static ClientPreferences Decode(byte[] bytes) {
+            return MessagePackSerializer.Deserialize<ClientPreferences>(bytes);
+        }
+    }
+
+    public enum ClientPreference {
+        [Preference(typeof(bool))]
+        BacklogNewestMessagesFirst,
+    }
+
+    public class PreferenceAttribute : Attribute {
+        public Type ValueType { get; }
+
+        public PreferenceAttribute(Type valueType) {
+            this.ValueType = valueType;
+        }
+    }
+
+    public static class ClientPreferencesExtension {
+        public static bool TryGetValue<T>(this ClientPreferences prefs, ClientPreference pref, out T value) {
+            value = default!;
+
+            if (!prefs.Preferences.TryGetValue(pref, out var obj)) {
+                return false;
+            }
+
+            var attr = pref
+                .GetType()
+                .GetField(pref.ToString())
+                ?.GetCustomAttribute<PreferenceAttribute>(false);
+
+            if (obj.GetType() != typeof(T) || obj.GetType() != attr?.ValueType) {
+                return false;
+            }
+
+            value = (T)obj;
+            return true;
+        }
+    }
+
     public abstract class IEncodable {
         protected abstract byte Code { get; }
         protected abstract byte[] PayloadEncode();
@@ -981,6 +1034,7 @@ namespace XIVChatCommon {
         CatchUp = 5,
         PlayerList = 6,
         LinkshellList = 7,
+        Preferences = 8,
     }
 
     public class MillisecondsDateTimeFormatter : IMessagePackFormatter<DateTime> {

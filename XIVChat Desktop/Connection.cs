@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Net.Sockets;
@@ -7,6 +8,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
 using XIVChatCommon;
+using DispatcherPriority = System.Windows.Threading.DispatcherPriority;
 
 namespace XIVChat_Desktop {
     public class Connection : INotifyPropertyChanged {
@@ -84,6 +86,16 @@ namespace XIVChat_Desktop {
             this.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Connected");
             });
+
+            // tell the server our preferences
+            var preferences = new ClientPreferences {
+                Preferences = new Dictionary<ClientPreference, object> {
+                    {
+                        ClientPreference.BacklogNewestMessagesFirst, true
+                    },
+                },
+            };
+            await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, preferences, this.cancel.Token);
 
             // check if backlog or catch-up is needed
             if (sameHost) {
@@ -235,9 +247,14 @@ namespace XIVChat_Desktop {
                 case ServerOperation.Backlog:
                     var backlog = ServerBacklog.Decode(payload);
 
-                    foreach (var msg in backlog.messages) {
-                        this.Dispatch(() => {
-                            this.app.Window.AddMessage(msg);
+                    this.backlogSequence += 1;
+
+                    var seq = this.backlogSequence;
+                    foreach (var msg in backlog.messages.ToList().Chunks(100)) {
+                        msg.Reverse();
+                        var array = msg.ToArray();
+                        this.Dispatch(DispatcherPriority.Background, () => {
+                            this.app.Window.AddReversedChunk(array, seq);
                         });
                     }
 
@@ -248,6 +265,8 @@ namespace XIVChat_Desktop {
                     break;
             }
         }
+
+        private int backlogSequence = -1;
 
         private void SetPlayerData(PlayerData? playerData) {
             var visibility = playerData == null ? Visibility.Collapsed : Visibility.Visible;
@@ -271,7 +290,11 @@ namespace XIVChat_Desktop {
         }
 
         private void Dispatch(Action action) {
-            this.app.Dispatcher.BeginInvoke(action);
+            this.Dispatch(DispatcherPriority.Normal, action);
+        }
+
+        private void Dispatch(DispatcherPriority priority, Action action) {
+            this.app.Dispatcher.BeginInvoke(priority, action);
         }
     }
 }

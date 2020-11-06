@@ -1,9 +1,10 @@
 ﻿using Newtonsoft.Json;
 using Sodium;
 using System;
-using System.Collections.Concurrent;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
@@ -100,7 +101,7 @@ namespace XIVChat_Desktop {
     }
 
     [JsonObject]
-    public class Tab : INotifyPropertyChanged {
+    public class Tab : IEnumerable<ServerMessage>, INotifyCollectionChanged {
         private string name;
 
         public Tab(string name) {
@@ -111,25 +112,53 @@ namespace XIVChat_Desktop {
             get => this.name;
             set {
                 this.name = value;
-                this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Name)));
             }
         }
 
         public Filter Filter { get; set; } = new Filter();
 
         [JsonIgnore]
-        public ObservableCollection<ServerMessage> Messages { get; } = new ObservableCollection<ServerMessage>();
+        public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+        private void NotifyReset() {
+            this.CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+        }
 
-        public void RepopulateMessages(ConcurrentStack<ServerMessage> mainMessages) {
+        private void NotifyAdd(ServerMessage message) {
+            this.CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, message));
+        }
+
+        private void NotifyAddItemsAt(IList messages, int index) {
+            this.CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, messages, index));
+        }
+
+        public void RepopulateMessages(IEnumerable<ServerMessage> mainMessages) {
             this.Messages.Clear();
 
-            foreach (var message in mainMessages.Where(msg => this.Filter.Allowed(msg)).Reverse()) {
+            // add messages from newest to oldest
+            foreach (var message in mainMessages.Where(msg => this.Filter.Allowed(msg))) {
                 this.Messages.Add(message);
             }
 
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Messages)));
+            this.NotifyReset();
+        }
+
+        private int lastSequence = -1;
+        private int insertAt;
+
+        public void AddReversedChunk(ServerMessage[] messages, int sequence) {
+            if (sequence != this.lastSequence) {
+                this.lastSequence = sequence;
+                this.insertAt = this.Messages.Count;
+            }
+
+            var filtered = messages
+                .Where(msg => msg.Channel == 0 || this.Filter.Allowed(msg))
+                .ToList();
+
+            this.Messages.InsertRange(this.insertAt, filtered);
+
+            this.NotifyAddItemsAt(filtered, this.insertAt);
         }
 
         public void AddMessage(ServerMessage message) {
@@ -138,13 +167,12 @@ namespace XIVChat_Desktop {
             }
 
             this.Messages.Add(message);
-
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Messages)));
+            this.NotifyAdd(message);
         }
 
         public void ClearMessages() {
             this.Messages.Clear();
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Messages)));
+            this.NotifyReset();
         }
 
         public static Filter GeneralFilter() {
@@ -177,6 +205,16 @@ namespace XIVChat_Desktop {
                 },
             };
         }
+
+        public IEnumerator<ServerMessage> GetEnumerator() {
+            return this.Messages.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return this.GetEnumerator();
+        }
+
+        public event NotifyCollectionChangedEventHandler? CollectionChanged;
     }
 
     [JsonObject]

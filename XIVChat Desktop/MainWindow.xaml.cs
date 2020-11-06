@@ -15,7 +15,7 @@ namespace XIVChat_Desktop {
     public partial class MainWindow {
         public App App => (App)Application.Current;
 
-        public ConcurrentStack<ServerMessage> Messages { get; } = new ConcurrentStack<ServerMessage>();
+        public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
 
         public MainWindow() {
             this.InitializeComponent();
@@ -67,13 +67,39 @@ namespace XIVChat_Desktop {
             this.AddMessage(message);
         }
 
+        private int lastSequence = -1;
+        private int insertAt;
+
+        public void AddReversedChunk(ServerMessage[] messages, int sequence) {
+            if (sequence != this.lastSequence) {
+                this.lastSequence = sequence;
+                this.insertAt = this.Messages.Count;
+            }
+
+            // detect if scroller is at the bottom
+            var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
+            var wasAtBottom = Math.Abs(scroller!.VerticalOffset - scroller.ScrollableHeight) < .0001;
+
+            // add messages to main list
+            this.Messages.InsertRange(this.insertAt, messages);
+            // add message to each tab if the filter allows for it
+            foreach (var tab in this.App.Config.Tabs) {
+                tab.AddReversedChunk(messages, sequence);
+            }
+
+            // scroll to the bottom if previously at the bottom
+            if (wasAtBottom) {
+                scroller.ScrollToBottom();
+            }
+        }
+
         public void AddMessage(ServerMessage message) {
             // detect if scroller is at the bottom
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
             var wasAtBottom = Math.Abs(scroller!.VerticalOffset - scroller.ScrollableHeight) < .0001;
 
             // add message to main list
-            this.Messages.Push(message);
+            this.Messages.Add(message);
             // add message to each tab if the filter allows for it
             foreach (var tab in this.App.Config.Tabs) {
                 tab.AddMessage(message);

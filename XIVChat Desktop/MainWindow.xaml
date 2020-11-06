@@ -63,7 +63,7 @@
                             <ItemsControl Background="#333"
                                           x:Name="items"
                                           Padding="4"
-                                          ItemsSource="{Binding Messages, UpdateSourceTrigger=PropertyChanged}">
+                                          ItemsSource="{Binding .}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <VirtualizingStackPanel IsVirtualizing="True"
