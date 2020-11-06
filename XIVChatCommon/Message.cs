@@ -82,6 +82,14 @@ namespace XIVChatCommon {
         public TextChunk(string content) {
             this.Content = content;
         }
+
+        public TextChunk(uint? fallbackColour, uint? foreground, uint? glow, bool italic, string content) {
+            this.FallbackColour = fallbackColour;
+            this.Foreground = foreground;
+            this.Glow = glow;
+            this.Italic = italic;
+            this.Content = content;
+        }
     }
 
     [MessagePackObject]

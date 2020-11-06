@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Channels;
 using System.Windows;
@@ -42,7 +41,7 @@ namespace XIVChat_Desktop {
             var colours = new List<Color>();
 
             // ReSharper disable once LoopCanBeConvertedToQuery
-            foreach (var chunk in SplitList(key.ToList(), 3)) {
+            foreach (var chunk in key.ToList().Chunks(3)) {
                 var r = chunk[0];
                 var g = chunk.Count > 1 ? chunk[1] : (byte)0;
                 var b = chunk.Count > 2 ? chunk[2] : (byte)0;
@@ -51,12 +50,6 @@ namespace XIVChat_Desktop {
             }
 
             return colours;
-        }
-
-        private static IEnumerable<List<T>> SplitList<T>(List<T> locations, int nSize) {
-            for (int i = 0; i < locations.Count; i += nSize) {
-                yield return locations.GetRange(i, Math.Min(nSize, locations.Count - i));
-            }
         }
 
         private static string ToHexString(IEnumerable<byte> bytes) {
