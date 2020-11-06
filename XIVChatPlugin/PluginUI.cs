@@ -117,6 +117,8 @@ namespace XIVChatPlugin {
                     ushort realPort = (ushort)Math.Min(ushort.MaxValue, Math.Max(1, port));
                     this.plugin.Config.Port = realPort;
                     this.plugin.Config.Save();
+
+                    this.plugin.RelaunchServer();
                 }
 
                 ImGui.Spacing();

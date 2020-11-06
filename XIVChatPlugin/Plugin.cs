@@ -61,8 +61,7 @@ namespace XIVChatPlugin {
 
             this.Ui = new PluginUI(this);
 
-            this.Server = new Server(this);
-            this.Server.Spawn();
+            this.LaunchServer();
 
             this.Interface.UiBuilder.OnBuildUi += this.Ui.Draw;
             this.Interface.UiBuilder.OnOpenConfigUi += this.Ui.OpenSettings;
@@ -74,6 +73,16 @@ namespace XIVChatPlugin {
             this.Interface.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
                 HelpMessage = "Opens the config for the XIVChat plugin",
             });
+        }
+
+        public void LaunchServer() {
+            this.Server = new Server(this);
+            this.Server.Spawn();
+        }
+
+        public void RelaunchServer() {
+            this.Server.Dispose();
+            this.LaunchServer();
         }
 
         private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
