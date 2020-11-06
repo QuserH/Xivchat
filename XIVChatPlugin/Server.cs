@@ -377,8 +377,7 @@ namespace XIVChatPlugin {
                                     node = node.Previous;
                                 }
 
-                                bool bNewestFirst = false;
-                                if (client.Preferences?.TryGetValue(ClientPreference.BacklogNewestMessagesFirst, out bNewestFirst) == true && !bNewestFirst) {
+                                if (!client.GetPreference(ClientPreference.BacklogNewestMessagesFirst, false)) {
                                     backlogMessages.Reverse();
                                 }
 
@@ -390,8 +389,7 @@ namespace XIVChatPlugin {
                                 var after = catchUp.After.AddMilliseconds(1);
                                 var msgs = this.MessagesAfter(after);
 
-                                bool cNewestFirst = false;
-                                if (client.Preferences?.TryGetValue(ClientPreference.BacklogNewestMessagesFirst, out cNewestFirst) == true && cNewestFirst) {
+                                if (client.GetPreference(ClientPreference.BacklogNewestMessagesFirst, false)) {
                                     msgs = msgs.Reverse();
                                 }
 
@@ -814,6 +812,16 @@ namespace XIVChatPlugin {
             this.Connected = false;
             this.TokenSource.Cancel();
             this.Conn.Close();
+        }
+
+        public T GetPreference<T>(ClientPreference pref, T def = default) {
+            var prefs = this.Preferences;
+
+            if (prefs == null) {
+                return def;
+            }
+
+            return prefs.TryGetValue(pref, out T result) ? result : def;
         }
     }
 
