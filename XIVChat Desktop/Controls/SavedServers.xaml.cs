@@ -15,6 +15,11 @@ namespace XIVChat_Desktop.Controls {
             set { this.SetValue(ItemsSourceProperty, value); }
         }
 
+        public Visibility ControlsVisibility {
+            get { return (Visibility)this.GetValue(ControlsVisibilityProperty); }
+            set { this.SetValue(ControlsVisibilityProperty, value); }
+        }
+
         public SavedServer? SelectedServer {
             get {
                 var item = this.Servers.SelectedItem;
@@ -26,8 +31,13 @@ namespace XIVChat_Desktop.Controls {
         public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register(
             "ItemsSource",
             typeof(IEnumerable<SavedServer>),
-            typeof(SavedServers),
-            new PropertyMetadata(null)
+            typeof(SavedServers)
+        );
+
+        public static readonly DependencyProperty ControlsVisibilityProperty = DependencyProperty.Register(
+            "ControlsVisibility",
+            typeof(Visibility),
+            typeof(SavedServers)
         );
 
         public SavedServers() {

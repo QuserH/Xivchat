@@ -18,7 +18,8 @@
     <TabControl>
         <TabItem Header="Servers">
             <cc:SavedServers ItemsSource="{Binding Config.Servers}"
-                             ItemDoubleClick="SavedServers_ItemDoubleClick" />
+                             ItemDoubleClick="SavedServers_ItemDoubleClick"
+                             ControlsVisibility="Visible" />
         </TabItem>
         <TabItem Header="Window">
             <Grid Margin="8">

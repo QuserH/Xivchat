@@ -23,7 +23,8 @@
 
         <cc:SavedServers x:Name="Servers"
                          ItemsSource="{Binding App.Config.Servers}"
-                         ItemDoubleClick="Servers_ItemDoubleClick" />
+                         ItemDoubleClick="Servers_ItemDoubleClick"
+                         ControlsVisibility="Visible" />
 
         <WrapPanel Grid.Row="1"
                    Grid.ColumnSpan="2"

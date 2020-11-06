@@ -20,6 +20,15 @@ namespace XIVChat_Desktop {
             this.DataContext = this;
         }
 
+        public ManageServer(Window owner, SavedServer server, bool isNewServer) {
+            this.Owner = owner;
+            this.Server = server;
+            this.isNewServer = isNewServer;
+
+            this.InitializeComponent();
+            this.DataContext = this;
+        }
+
         private void Save_Click(object sender, RoutedEventArgs e) {
             // FIXME: this shouldn't be using data bindings because it should only take effect after clicking save
             var serverName = this.ServerName.Text;

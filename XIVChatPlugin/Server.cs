@@ -60,7 +60,9 @@ namespace XIVChatPlugin {
                 await Task.Delay(10_000);
 
                 const int multicastPort = 17444;
-                using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, multicastPort));
+                using var udp = new UdpClient();
+                udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                udp.Client.Bind(new IPEndPoint(IPAddress.Any, multicastPort));
 
                 var multicastAddr = IPAddress.Parse("224.0.0.147");
                 udp.JoinMulticastGroup(multicastAddr);

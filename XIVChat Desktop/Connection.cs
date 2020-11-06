@@ -62,7 +62,7 @@ namespace XIVChat_Desktop {
             if (!this.app.Config.TrustedKeys.Any(trusted => trusted.Key.SequenceEqual(handshake.RemotePublicKey))) {
                 var trustChannel = Channel.CreateBounded<bool>(1);
 
-                this.Dispatch(() => {
+                this.app.Dispatch(() => {
                     new TrustDialog(this.app.Window, trustChannel.Writer, handshake.RemotePublicKey).Show();
                 });
 
@@ -77,13 +77,13 @@ namespace XIVChat_Desktop {
             var currentHost = $"{this.host}:{this.port}";
             var sameHost = this.app.LastHost == currentHost;
             if (!sameHost) {
-                this.Dispatch(() => {
+                this.app.Dispatch(() => {
                     this.app.Window.ClearAllMessages();
                     this.app.LastHost = currentHost;
                 });
             }
 
-            this.Dispatch(() => {
+            this.app.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Connected");
             });
 
@@ -122,7 +122,7 @@ namespace XIVChat_Desktop {
                     var result = await Task.WhenAny(inc, cancel);
                     if (result == inc) {
                         if (inc.Exception != null) {
-                            this.Dispatch(() => {
+                            this.app.Dispatch(() => {
                                 this.app.Window.AddSystemMessage("Error reading incoming message.");
                                 // ReSharper disable once LocalizableElement
                                 Console.WriteLine($"Error reading incoming message: {inc.Exception.Message}");
@@ -166,7 +166,7 @@ namespace XIVChat_Desktop {
                     try {
                         await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, message, this.cancel.Token);
                     } catch (Exception ex) {
-                        this.Dispatch(() => {
+                        this.app.Dispatch(() => {
                             this.app.Window.AddSystemMessage("Error sending message.");
                             // ReSharper disable once LocalizableElement
                             Console.WriteLine($"Error sending message: {ex.Message}");
@@ -180,7 +180,7 @@ namespace XIVChat_Desktop {
                         //       and we need to send this message
                         await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, ClientShutdown.Instance);
                     } catch (Exception ex) {
-                        this.Dispatch(() => {
+                        this.app.Dispatch(() => {
                             this.app.Window.AddSystemMessage("Error sending message.");
                             // ReSharper disable once LocalizableElement
                             Console.WriteLine($"Error sending message: {ex.Message}");
@@ -196,7 +196,7 @@ namespace XIVChat_Desktop {
             this.SetPlayerData(null);
 
             // at this point, we are disconnected, so log it
-            this.Dispatch(() => {
+            this.app.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Disconnected");
             });
 
@@ -221,7 +221,7 @@ namespace XIVChat_Desktop {
                 case ServerOperation.Message:
                     var message = ServerMessage.Decode(payload);
 
-                    this.Dispatch(() => {
+                    this.app.Dispatch(() => {
                         this.app.Window.AddMessage(message);
                     });
                     break;
@@ -240,7 +240,7 @@ namespace XIVChat_Desktop {
 
                     this.CurrentChannel = channel.name;
 
-                    this.Dispatch(() => {
+                    this.app.Dispatch(() => {
                         this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentChannel)));
                     });
                     break;
@@ -253,7 +253,7 @@ namespace XIVChat_Desktop {
                     foreach (var msg in backlog.messages.ToList().Chunks(100)) {
                         msg.Reverse();
                         var array = msg.ToArray();
-                        this.Dispatch(DispatcherPriority.Background, () => {
+                        this.app.Dispatch(DispatcherPriority.Background, () => {
                             this.app.Window.AddReversedChunk(array, seq);
                         });
                     }
@@ -271,11 +271,10 @@ namespace XIVChat_Desktop {
         private void SetPlayerData(PlayerData? playerData) {
             var visibility = playerData == null ? Visibility.Collapsed : Visibility.Visible;
 
-            this.Dispatch(() => {
+            this.app.Dispatch(() => {
                 var window = this.app.Window;
 
-                window.LoggedInAs.Content = playerData?.name;
-                window.LoggedInAs.Visibility = visibility;
+                window.LoggedInAs.Content = playerData?.name ?? "Not logged in";
 
                 window.LoggedInAsSeparator.Visibility = visibility;
 
@@ -287,14 +286,6 @@ namespace XIVChat_Desktop {
                 window.Location.Content = playerData?.location;
                 window.Location.Visibility = visibility;
             });
-        }
-
-        private void Dispatch(Action action) {
-            this.Dispatch(DispatcherPriority.Normal, action);
-        }
-
-        private void Dispatch(DispatcherPriority priority, Action action) {
-            this.app.Dispatcher.BeginInvoke(priority, action);
         }
     }
 }

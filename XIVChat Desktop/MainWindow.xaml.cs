@@ -158,5 +158,9 @@ namespace XIVChat_Desktop {
         private void ManageTabs_Click(object sender, RoutedEventArgs e) {
             new ManageTabs(this).Show();
         }
+
+        private void Scan_Click(object sender, RoutedEventArgs e) {
+            new ServerScan(this).Show();
+        }
     }
 }

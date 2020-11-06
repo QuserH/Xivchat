@@ -31,7 +31,9 @@
         </ListView>
         <WrapPanel Grid.Column="1"
                    Orientation="Vertical"
-                   Margin="8,0,0,0">
+                   Margin="8,0,0,0"
+                   DataContext="{Binding ElementName=SavedServersControl}"
+                   Visibility="{Binding ControlsVisibility}">
             <Button HorizontalAlignment="Stretch"
                     Margin="0,0,0,4"
                     Click="AddServer_Click">

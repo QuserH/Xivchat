@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using XIVChatCommon;
@@ -86,6 +87,27 @@ namespace XIVChat_Desktop {
             this.Name = name;
             this.Host = host;
             this.Port = port;
+        }
+
+        protected bool Equals(SavedServer other) {
+            return this.Name == other.Name && this.Host == other.Host && this.Port == other.Port;
+        }
+
+        public override bool Equals(object? obj) {
+            if (ReferenceEquals(null, obj)) {
+                return false;
+            }
+
+            if (ReferenceEquals(this, obj)) {
+                return true;
+            }
+
+            return obj.GetType() == this.GetType() && this.Equals((SavedServer)obj);
+        }
+
+        [SuppressMessage("ReSharper", "NonReadonlyMemberInGetHashCode")]
+        public override int GetHashCode() {
+            return HashCode.Combine(this.Name, this.Host, this.Port);
         }
     }
 

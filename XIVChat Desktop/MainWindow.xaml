@@ -27,6 +27,8 @@
                 <MenuItem Header="Disconnect"
                           Click="Disconnect_Click"
                           IsEnabled="{Binding App.Connected, UpdateSourceTrigger=PropertyChanged}" />
+                <MenuItem Header="Scan"
+                          Click="Scan_Click" />
                 <Separator />
                 <MenuItem Header="Configuration"
                           Click="Configuration_Click" />
