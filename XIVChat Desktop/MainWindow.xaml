@@ -60,30 +60,37 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <ScrollViewer Grid.Row="0"
-                                      x:Name="scroller">
-                            <ItemsControl Background="#333"
-                                          x:Name="items"
-                                          Padding="4"
-                                          ItemsSource="{Binding .}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <VirtualizingStackPanel IsVirtualizing="True"
-                                                                VirtualizationMode="Recycling"
-                                                                VerticalAlignment="Bottom" />
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
+                        <ItemsControl Grid.Row="0"
+                                      x:Name="items"
+                                      Padding="4"
+                                      ItemsSource="{Binding .}">
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer x:Name="scroller"
+                                                  CanContentScroll="True"
+                                                  Background="#333">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
 
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
-                                                   TextWrapping="Wrap"
-                                                   FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
-                                                   local:MessageFormatter.FormattedText="{Binding .}" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel IsVirtualizing="True"
+                                                            VirtualizationMode="Recycling"
+                                                            VerticalAlignment="Bottom" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
+                                               TextWrapping="Wrap"
+                                               FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
+                                               local:MessageFormatter.FormattedText="{Binding .}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
                         <TextBlock Margin="8,4,0,0"
                                    Grid.Row="1"
