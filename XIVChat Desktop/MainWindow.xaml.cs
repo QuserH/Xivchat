@@ -1,6 +1,7 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,10 +13,12 @@ namespace XIVChat_Desktop {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow {
+    public partial class MainWindow : INotifyPropertyChanged {
         public App App => (App)Application.Current;
 
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
+
+        public string InputPlaceholder => this.App.Connection?.Available == true ? "Send a message..." : "Chat is currently unavailable";
 
         public MainWindow() {
             this.InitializeComponent();
@@ -161,6 +164,12 @@ namespace XIVChat_Desktop {
 
         private void Scan_Click(object sender, RoutedEventArgs e) {
             new ServerScan(this).Show();
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        internal virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }

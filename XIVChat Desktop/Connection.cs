@@ -28,6 +28,16 @@ namespace XIVChat_Desktop {
         public event PropertyChangedEventHandler? PropertyChanged;
         public string? CurrentChannel { get; private set; }
 
+        private bool available;
+
+        public bool Available {
+            get => this.available;
+            private set {
+                this.available = value;
+                this.OnPropertyChanged(nameof(this.Available));
+            }
+        }
+
         public Connection(App app, string host, ushort port) {
             this.app = app;
 
@@ -195,6 +205,9 @@ namespace XIVChat_Desktop {
             // remove player data
             this.SetPlayerData(null);
 
+            // set availability
+            this.Available = false;
+
             // at this point, we are disconnected, so log it
             this.app.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Disconnected");
@@ -234,6 +247,9 @@ namespace XIVChat_Desktop {
                     this.SetPlayerData(playerData);
                     break;
                 case ServerOperation.Availability:
+                    var availability = Availability.Decode(payload);
+
+                    this.Available = availability.available;
                     break;
                 case ServerOperation.Channel:
                     var channel = ServerChannel.Decode(payload);
@@ -286,6 +302,23 @@ namespace XIVChat_Desktop {
                 window.Location.Content = playerData?.location;
                 window.Location.Visibility = visibility;
             });
+        }
+
+        private void OnPropertyChanged(string prop) {
+            Action action;
+
+            if (prop == nameof(this.Available)) {
+                action = () => {
+                    this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Available)));
+                    this.app.Window.OnPropertyChanged(nameof(MainWindow.InputPlaceholder));
+                };
+            } else {
+                action = () => {
+                    this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
+                };
+            }
+
+            this.app.Dispatch(action);
         }
     }
 }
