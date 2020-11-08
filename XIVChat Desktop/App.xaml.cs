@@ -10,7 +10,7 @@ namespace XIVChat_Desktop {
     public partial class App : INotifyPropertyChanged {
         public MainWindow Window { get; private set; } = null!;
         public Configuration Config { get; private set; } = null!;
-        
+
         public string? LastHost { get; set; }
 
         private Connection? connection;
@@ -32,14 +32,25 @@ namespace XIVChat_Desktop {
         private void Application_Startup(object sender, StartupEventArgs e) {
             try {
                 this.Config = Configuration.Load() ?? new Configuration();
-            } catch (Exception) {
-                this.Config = new Configuration();
+            } catch (Exception ex) {
+                var result = MessageBox.Show(
+                    $"Could not load the configuration file: {ex.Message}. Do you want to create a new configuration file and overwrite the old one?",
+                    "Error loading config",
+                    MessageBoxButton.YesNo
+                );
+
+                if (result == MessageBoxResult.Yes) {
+                    this.Config = new Configuration();
+                } else {
+                    this.Shutdown(1);
+                    return;
+                }
             }
 
             try {
                 this.Config.Save();
-            } catch (Exception) {
-                // TODO
+            } catch (Exception ex) {
+                MessageBox.Show($"Could not save configuration file. {ex.Message}");
             }
 
             var wnd = new MainWindow();
