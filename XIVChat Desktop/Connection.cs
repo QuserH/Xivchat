@@ -110,13 +110,15 @@ namespace XIVChat_Desktop {
             // check if backlog or catch-up is needed
             if (sameHost) {
                 // catch-up
-                var lastRealMessage = this.app.Window.Messages.FirstOrDefault(msg => msg.Channel != 0);
+                var lastRealMessage = this.app.Window.Messages.LastOrDefault(msg => msg.Channel != 0);
                 if (lastRealMessage != null) {
+                    _backlogSequence += 1;
                     var catchUp = new ClientCatchUp(lastRealMessage.Timestamp);
                     await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, catchUp, this.cancel.Token);
                 }
             } else if (this.app.Config.BacklogMessages > 0) {
                 // backlog
+                _backlogSequence += 1;
                 var backlogReq = new ClientBacklog {
                     Amount = this.app.Config.BacklogMessages,
                 };
@@ -263,9 +265,7 @@ namespace XIVChat_Desktop {
                 case ServerOperation.Backlog:
                     var backlog = ServerBacklog.Decode(payload);
 
-                    this.backlogSequence += 1;
-
-                    var seq = this.backlogSequence;
+                    var seq = _backlogSequence;
                     foreach (var msg in backlog.messages.ToList().Chunks(100)) {
                         msg.Reverse();
                         var array = msg.ToArray();
@@ -282,7 +282,7 @@ namespace XIVChat_Desktop {
             }
         }
 
-        private int backlogSequence = -1;
+        private static int _backlogSequence = -1;
 
         private void SetPlayerData(PlayerData? playerData) {
             var visibility = playerData == null ? Visibility.Collapsed : Visibility.Visible;

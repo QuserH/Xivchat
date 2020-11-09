@@ -15,6 +15,7 @@
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -24,10 +25,14 @@
                  ui:ControlHelper.PlaceholderText="Name"
                  ui:ControlHelper.Header="Name"
                  Text="{Binding Tab.Name}" />
-        <TabControl Grid.Row="1"
+        <CheckBox Grid.Row="1"
+                  Margin="0,0,0,8"
+                  Content="Process messages as Markdown"
+                  IsChecked="{Binding Tab.ProcessMarkdown}" />
+        <TabControl Grid.Row="2"
                     x:Name="Tabs" />
         <Button Margin="0,8,0,0"
-                Grid.Row="2"
+                Grid.Row="3"
                 Content="Save"
                 Click="Save_Click" />
     </Grid>

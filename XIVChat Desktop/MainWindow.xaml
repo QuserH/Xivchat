@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:XIVChat_Desktop"
+        xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
         xmlns:ui="http://schemas.modernwpf.com/2019"
         ui:WindowHelper.UseModernWindowStyle="True"
         mc:Ignorable="d"
@@ -53,7 +54,8 @@
 
             <TabControl.ContentTemplate>
                 <DataTemplate>
-                    <Grid d:DataContext="{d:DesignInstance local:Tab}">
+                    <Grid x:Name="TabGrid"
+                          d:DataContext="{d:DesignInstance local:Tab}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
@@ -85,10 +87,11 @@
 
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
-                                               TextWrapping="Wrap"
-                                               FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
-                                               local:MessageFormatter.FormattedText="{Binding .}" />
+                                    <cc:MessageTextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
+                                                         TextWrapping="Wrap"
+                                                         FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
+                                                         Tab="{Binding DataContext, ElementName=TabGrid}"
+                                                         Message="{Binding .}" />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

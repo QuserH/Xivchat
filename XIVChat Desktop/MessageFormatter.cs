@@ -7,6 +7,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using XIVChatCommon;
+using Inline = System.Windows.Documents.Inline;
 
 namespace XIVChat_Desktop {
     public class MessageFormatter {
@@ -16,8 +17,8 @@ namespace XIVChat_Desktop {
         public static readonly DependencyProperty FormattedTextProperty = DependencyProperty.RegisterAttached(
             "FormattedText",
             typeof(ServerMessage),
-            typeof(MessageFormatter),
-            new PropertyMetadata(null, FormattedTextPropertyChanged)
+            typeof(MessageFormatter)
+            // new PropertyMetadata(null, FormattedTextPropertyChanged)
         );
 
         public static void SetFormattedText(DependencyObject textBlock, ServerMessage value) {
@@ -28,23 +29,23 @@ namespace XIVChat_Desktop {
             return (string)textBlock.GetValue(FormattedTextProperty);
         }
 
-        private static void FormattedTextPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) {
-            // Clear current textBlock
-            if (!(d is TextBlock textBlock)) {
-                return;
-            }
+        // private static void FormattedTextPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) {
+        //     // Clear current textBlock
+        //     if (!(d is TextBlock textBlock)) {
+        //         return;
+        //     }
+        //
+        //     textBlock.ClearValue(TextBlock.TextProperty);
+        //     textBlock.Inlines.Clear();
+        //
+        //     // Create new formatted text
+        //     var lineHeight = textBlock.FontFamily.LineSpacing * textBlock.FontSize;
+        //     foreach (var inline in ChunksToTextBlock(lineHeight, (ServerMessage)e.NewValue)) {
+        //         textBlock.Inlines.Add(inline);
+        //     }
+        // }
 
-            textBlock.ClearValue(TextBlock.TextProperty);
-            textBlock.Inlines.Clear();
-
-            // Create new formatted text
-            var lineHeight = textBlock.FontFamily.LineSpacing * textBlock.FontSize;
-            foreach (var inline in ChunksToTextBlock(lineHeight, (ServerMessage)e.NewValue)) {
-                textBlock.Inlines.Add(inline);
-            }
-        }
-
-        private static IEnumerable<Inline> ChunksToTextBlock(double lineHeight, ServerMessage message) {
+        public static IEnumerable<Inline> ChunksToTextBlock(double lineHeight, ServerMessage message, Tab tab) {
             var elements = new List<Inline>();
 
             var timestampString = message.Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentUICulture);
@@ -65,36 +66,24 @@ namespace XIVChat_Desktop {
                         var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
                         var style = textChunk.Italic ? FontStyles.Italic : FontStyles.Normal;
 
-                        //var part = string.Empty;
-                        //foreach (char c in textChunk.Content) {
-                        //    if (c >= '\ue000' && c <= '\uf8ff') {
-                        //        // private use
+                        if (tab.ProcessMarkdown) {
+                            var inlines = Markdown.MarkdownToInlines(textChunk.Content);
 
-                        //        // add existing text if necessary
-                        //        if (part.Length != 0) {
-                        //            elements.Add(new Run(part) {
-                        //                Foreground = brush,
-                        //                FontStyle = style,
-                        //            });
-                        //            part = string.Empty;
-                        //        }
+                            foreach (var inline in inlines) {
+                                inline.Foreground = brush;
+                                if (inline.FontStyle == FontStyles.Normal) {
+                                    inline.FontStyle = style;
+                                }
 
-                        //        // add private use segment with font
-                        //        elements.Add(new Run(c.ToString()) {
-                        //            Foreground = brush,
-                        //            FontStyle = style,
-                        //            FontFamily = new FontFamily(new Uri("pack://application:,,,/"), "/fonts/#XIV AXIS Std ATK"),
-                        //        });
-                        //        continue;
-                        //    }
+                                elements.Add(inline);
+                            }
+                        } else {
+                            elements.Add(new Run(textChunk.Content) {
+                                Foreground = brush,
+                                FontStyle = style,
+                            });
+                        }
 
-                        //    part += c;
-                        //}
-
-                        elements.Add(new Run(textChunk.Content) {
-                            Foreground = brush,
-                            FontStyle = style,
-                        });
                         break;
                     case IconChunk iconChunk:
                         var bounds = GetBounds(iconChunk.index);
