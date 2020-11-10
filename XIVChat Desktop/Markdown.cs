@@ -20,6 +20,7 @@ namespace XIVChat_Desktop {
             var root = new ContainerNode();
             DelimiterNode? run = null;
             char? last = null;
+            var escaping = false;
 
             var segment = new StringBuilder();
 
@@ -63,10 +64,15 @@ namespace XIVChat_Desktop {
 
             var chars = input.ToCharArray();
             foreach (var c in chars) {
-                bool append = true;
+                var append = true;
+
+                if (c == '\\' && !escaping) {
+                    escaping = true;
+                    append = false;
+                }
 
                 // these characters can form delimiter runs
-                if (Delimiters.Contains(c)) {
+                if (Delimiters.Contains(c) && !escaping) {
                     // don't add this character to the text segment
                     append = false;
 
@@ -101,9 +107,24 @@ namespace XIVChat_Desktop {
 
                 Finish:
                 last = c;
-                if (append) {
-                    segment.Append(c);
+                if (!append) {
+                    continue;
                 }
+
+                if (escaping) {
+                    escaping = false;
+
+                    if (!c.IsAsciiPunctuation()) {
+                        segment.Append('\\');
+                    }
+                }
+
+                segment.Append(c);
+            }
+
+            // re-add backslashes as final character
+            if (escaping) {
+                segment.Append('\\');
             }
 
             // if we ended on a run, process it
@@ -117,9 +138,6 @@ namespace XIVChat_Desktop {
         }
 
         private static IEnumerable<Inline> NodesToInlines(MarkdownNodeWithChildren root) {
-            // FIXME: Ex. 436, 439, 448, 451 (escaping)
-            //        https://spec.commonmark.org/0.29/#emphasis-and-strong-emphasis
-
             var openersBottom = new Dictionary<int, Dictionary<char, LinkedListNode<DelimiterNode>?>>();
             for (var i = 0; i < 3; i++) {
                 openersBottom[i] = new Dictionary<char, LinkedListNode<DelimiterNode>?>();
