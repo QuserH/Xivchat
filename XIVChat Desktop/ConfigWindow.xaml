@@ -26,6 +26,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
@@ -43,8 +44,15 @@
                          Text="{Binding Config.FontSize, Converter={StaticResource DoubleConverter}}"
                          ui:ControlHelper.Header="Log font size"
                          Width="200" />
+                <TextBox Grid.Row="2"
+                         Grid.Column="0"
+                         ui:ControlHelper.Header="Messages to store locally"
+                         HorizontalAlignment="Left"
+                         PreviewTextInput="NumericInputFilter"
+                         Text="{Binding Config.LocalBacklogMessages, Converter={StaticResource UIntConverter}}"
+                         Width="200" />
 
-                <Button Grid.Row="3"
+                <Button Grid.Row="4"
                         HorizontalAlignment="Right"
                         Click="Save_Click">
                     Save

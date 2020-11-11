@@ -37,6 +37,8 @@ namespace XIVChat_Desktop {
 
         public ushort BacklogMessages { get; set; } = 500;
 
+        public uint LocalBacklogMessages { get; set; } = 10_000;
+
         #region io
 
         private static string FilePath() => Path.Join(
@@ -156,6 +158,10 @@ namespace XIVChat_Desktop {
             this.CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, messages, index));
         }
 
+        private void NotifyRemoveItemsAt(IList messages, int index) {
+            this.CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, messages, index));
+        }
+
         public void RepopulateMessages(IEnumerable<ServerMessage> mainMessages) {
             this.Messages.Clear();
 
@@ -170,7 +176,7 @@ namespace XIVChat_Desktop {
         private int lastSequence = -1;
         private int insertAt;
 
-        public void AddReversedChunk(ServerMessage[] messages, int sequence) {
+        public void AddReversedChunk(ServerMessage[] messages, int sequence, Configuration config) {
             if (sequence != this.lastSequence) {
                 this.lastSequence = sequence;
                 this.insertAt = this.Messages.Count;
@@ -181,17 +187,31 @@ namespace XIVChat_Desktop {
                 .ToList();
 
             this.Messages.InsertRange(this.insertAt, filtered);
-
             this.NotifyAddItemsAt(filtered, this.insertAt);
+
+            this.Prune(config);
         }
 
-        public void AddMessage(ServerMessage message) {
+        public void AddMessage(ServerMessage message, Configuration config) {
             if (message.Channel != 0 && !this.Filter.Allowed(message)) {
                 return;
             }
 
             this.Messages.Add(message);
             this.NotifyAdd(message);
+
+            this.Prune(config);
+        }
+
+        private void Prune(Configuration config) {
+            var diff = this.Messages.Count - config.LocalBacklogMessages;
+            if (diff <= 0) {
+                return;
+            }
+
+            var removed = this.Messages.Take((int)diff).ToList();
+            this.Messages.RemoveRange(0, (int)diff);
+            this.NotifyRemoveItemsAt(removed, 0);
         }
 
         public void ClearMessages() {

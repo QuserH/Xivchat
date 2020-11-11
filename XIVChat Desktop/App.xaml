@@ -8,6 +8,7 @@
         <ResourceDictionary>
             <local:DoubleConverter x:Key="DoubleConverter" />
             <local:UShortConverter x:Key="UShortConverter" />
+            <local:UIntConverter x:Key="UIntConverter" />
             <local:SenderPlayerConverter x:Key="SenderPlayerConverter" />
 
             <ResourceDictionary.MergedDictionaries>

@@ -87,7 +87,12 @@ namespace XIVChat_Desktop {
             this.Messages.InsertRange(this.insertAt, messages);
             // add message to each tab if the filter allows for it
             foreach (var tab in this.App.Config.Tabs) {
-                tab.AddReversedChunk(messages, sequence);
+                tab.AddReversedChunk(messages, sequence, this.App.Config);
+            }
+
+            var diff = this.Messages.Count - this.App.Config.LocalBacklogMessages;
+            if (diff > 0) {
+                this.Messages.RemoveRange(0, (int)diff);
             }
 
             // scroll to the bottom if previously at the bottom
@@ -105,7 +110,12 @@ namespace XIVChat_Desktop {
             this.Messages.Add(message);
             // add message to each tab if the filter allows for it
             foreach (var tab in this.App.Config.Tabs) {
-                tab.AddMessage(message);
+                tab.AddMessage(message, this.App.Config);
+            }
+
+            var diff = this.Messages.Count - this.App.Config.LocalBacklogMessages;
+            if (diff > 0) {
+                this.Messages.RemoveRange(0, (int)diff);
             }
 
             // scroll to the bottom if previously at the bottom

@@ -33,6 +33,20 @@ namespace XIVChat_Desktop {
         }
     }
 
+    public class UIntConverter : IValueConverter {
+        public object? Convert(object value, Type targetType, object parameter, CultureInfo culture) {
+            return value.ToString();
+        }
+
+        public object? ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
+            if (uint.TryParse(value.ToString(), out var res)) {
+                return res;
+            }
+
+            return null;
+        }
+    }
+
     public class SenderPlayerConverter : IValueConverter {
         public object? Convert(object value, Type targetType, object parameter, CultureInfo culture) {
             if (!(value is ServerMessage.SenderPlayer sender)) {
