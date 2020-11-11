@@ -1,7 +1,9 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Markup;
 
 namespace XIVChat_Desktop {
     /// <summary>
@@ -52,6 +54,13 @@ namespace XIVChat_Desktop {
             } catch (Exception ex) {
                 MessageBox.Show($"Could not save configuration file. {ex.Message}");
             }
+
+            FrameworkElement.LanguageProperty.OverrideMetadata(
+                typeof(FrameworkElement),
+                new FrameworkPropertyMetadata(
+                    XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag)
+                )
+            );
 
             var wnd = new MainWindow();
             this.Window = wnd;
