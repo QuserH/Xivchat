@@ -23,7 +23,7 @@ namespace XIVChat_Desktop {
         }
 
         private void AddTab_Click(object sender, RoutedEventArgs e) {
-            new FiltersSelection(this, null).ShowDialog();
+            new ManageTab(this, null).ShowDialog();
         }
 
         private void EditTab_Click(object sender, RoutedEventArgs e) {
@@ -31,7 +31,7 @@ namespace XIVChat_Desktop {
             if (tab == null) {
                 return;
             }
-            new FiltersSelection(this, tab).ShowDialog();
+            new ManageTab(this, tab).ShowDialog();
         }
 
         private void DeleteTab_Click(object sender, RoutedEventArgs e) {
@@ -53,7 +53,7 @@ namespace XIVChat_Desktop {
 
             var tab = item as Tab;
 
-            new FiltersSelection(this, tab).ShowDialog();
+            new ManageTab(this, tab).ShowDialog();
         }
     }
 }

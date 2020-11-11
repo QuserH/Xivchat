@@ -121,7 +121,7 @@ namespace XIVChatCommon {
             Int32 = 0xFE,
         }
 
-        private static uint GetInteger(BinaryReader input) {
+        public static uint GetInteger(BinaryReader input) {
             var t = input.ReadByte();
             var type = (IntegerType)t;
             return GetInteger(input, type);

@@ -171,5 +171,9 @@ namespace XIVChat_Desktop {
         internal virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+
+        private void Export_Click(object sender, RoutedEventArgs e) {
+            new Export(this).Show();
+        }
     }
 }

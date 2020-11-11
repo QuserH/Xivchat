@@ -8,7 +8,7 @@ namespace XIVChat_Desktop {
     /// <summary>
     /// Interaction logic for FiltersSelection.xaml
     /// </summary>
-    public partial class FiltersSelection {
+    public partial class ManageTab {
         public App App => (App)Application.Current;
 
         public Tab Tab { get; }
@@ -16,7 +16,7 @@ namespace XIVChat_Desktop {
         private readonly bool isNewTab;
         private readonly IImmutableSet<FilterType> oldFilters;
 
-        public FiltersSelection(Window owner, Tab? tab) {
+        public ManageTab(Window owner, Tab? tab) {
             this.Owner = owner;
             this.isNewTab = tab == null;
             this.Tab = tab ?? new Tab("") {
@@ -100,7 +100,7 @@ namespace XIVChat_Desktop {
                 MessageBox.Show("Tab must have a name.");
                 return;
             }
-            
+
             if (this.isNewTab) {
                 this.App.Config.Tabs.Add(this.Tab);
             }

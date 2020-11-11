@@ -139,6 +139,8 @@ namespace XIVChat_Desktop {
 
         public Filter Filter { get; set; } = new Filter();
 
+        public bool ProcessMarkdown { get; set; }
+
         [JsonIgnore]
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
 
@@ -243,7 +245,7 @@ namespace XIVChat_Desktop {
     public class Filter {
         public HashSet<FilterType> Types { get; set; } = new HashSet<FilterType>();
 
-        public bool Allowed(ServerMessage message) {
+        public virtual bool Allowed(ServerMessage message) {
             var code = new ChatCode((ushort)message.Channel);
             return this.Types.Any(type => type.Allowed(code));
         }

@@ -1,4 +1,4 @@
-﻿<Window x:Class="XIVChat_Desktop.FiltersSelection"
+﻿<Window x:Class="XIVChat_Desktop.ManageTab"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -11,7 +11,7 @@
         Title="Manage tab"
         Height="450"
         Width="400"
-        d:DataContext="{d:DesignInstance local:FiltersSelection}">
+        d:DataContext="{d:DesignInstance local:ManageTab}">
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />

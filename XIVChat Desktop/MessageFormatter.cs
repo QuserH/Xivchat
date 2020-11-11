@@ -45,13 +45,15 @@ namespace XIVChat_Desktop {
         //     }
         // }
 
-        public static IEnumerable<Inline> ChunksToTextBlock(double lineHeight, ServerMessage message, Tab tab) {
+        public static IEnumerable<Inline> ChunksToTextBlock(double lineHeight, ServerMessage message, bool processMarkdown, bool showTimestamp) {
             var elements = new List<Inline>();
 
-            var timestampString = message.Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentUICulture);
-            elements.Add(new Run($"[{timestampString}]") {
-                Foreground = new SolidColorBrush(Colors.White),
-            });
+            if (showTimestamp) {
+                var timestampString = message.Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentUICulture);
+                elements.Add(new Run($"[{timestampString}]") {
+                    Foreground = new SolidColorBrush(Colors.White),
+                });
+            }
 
             foreach (var chunk in message.Chunks) {
                 switch (chunk) {
@@ -66,7 +68,7 @@ namespace XIVChat_Desktop {
                         var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
                         var style = textChunk.Italic ? FontStyles.Italic : FontStyles.Normal;
 
-                        if (tab.ProcessMarkdown) {
+                        if (processMarkdown) {
                             var inlines = Markdown.MarkdownToInlines(textChunk.Content);
 
                             foreach (var inline in inlines) {

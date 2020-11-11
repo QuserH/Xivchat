@@ -28,6 +28,18 @@ namespace XIVChat_Desktop.Controls {
             set => this.SetValue(TabProperty, value);
         }
 
+        public static readonly DependencyProperty ShowTimestampsProperty = DependencyProperty.Register(
+            "ShowTimestamps",
+            typeof(bool),
+            typeof(MessageTextBlock),
+            new PropertyMetadata(true, PropertyChanged)
+        );
+
+        public bool ShowTimestamps {
+            get => (bool)this.GetValue(ShowTimestampsProperty);
+            set => this.SetValue(ShowTimestampsProperty, value);
+        }
+
         public static void PropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) {
             // Clear current textBlock
             if (!(d is MessageTextBlock textBlock)) {
@@ -41,12 +53,12 @@ namespace XIVChat_Desktop.Controls {
                 return;
             }
 
-            textBlock.ClearValue(TextBlock.TextProperty);
+            textBlock.ClearValue(TextProperty);
             textBlock.Inlines.Clear();
 
             // Create new formatted text
             var lineHeight = textBlock.FontFamily.LineSpacing * textBlock.FontSize;
-            foreach (var inline in MessageFormatter.ChunksToTextBlock(lineHeight, message, tab)) {
+            foreach (var inline in MessageFormatter.ChunksToTextBlock(lineHeight, message, tab.ProcessMarkdown, textBlock.ShowTimestamps)) {
                 textBlock.Inlines.Add(inline);
             }
         }

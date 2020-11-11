@@ -8,6 +8,7 @@
         <ResourceDictionary>
             <local:DoubleConverter x:Key="DoubleConverter" />
             <local:UShortConverter x:Key="UShortConverter" />
+            <local:SenderPlayerConverter x:Key="SenderPlayerConverter" />
 
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemeResources AccentColor="#02ccee" />
