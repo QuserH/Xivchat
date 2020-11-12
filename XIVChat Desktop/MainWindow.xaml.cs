@@ -185,5 +185,9 @@ namespace XIVChat_Desktop {
         private void Export_Click(object sender, RoutedEventArgs e) {
             new Export(this).Show();
         }
+
+        private void Licence_Click(object sender, RoutedEventArgs e) {
+            new LicenceWindow(this, false).Show();
+        }
     }
 }

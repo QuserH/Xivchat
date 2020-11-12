@@ -31,7 +31,7 @@ namespace XIVChat_Desktop {
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private void Application_Startup(object sender, StartupEventArgs e) {
+        private async void Application_Startup(object sender, StartupEventArgs e) {
             try {
                 this.Config = Configuration.Load() ?? new Configuration();
             } catch (Exception ex) {
@@ -62,11 +62,23 @@ namespace XIVChat_Desktop {
                 )
             );
 
-            var wnd = new MainWindow();
-            this.Window = wnd;
-
             // I guess this gets initialised where you call it the first time, so initialise it on the UI thread
             this.Dispatcher.Invoke(() => { });
+
+            #if RELEASE
+            if (string.IsNullOrWhiteSpace(this.Config.LicenceKey) || !(await LicenceWindow.LicenceInfo(this.Config.LicenceKey)).Valid()) {
+                var lic = new LicenceWindow(null, true);
+                lic.Show();
+                return;
+            }
+            #endif
+
+            this.InitialiseWindow();
+        }
+
+        public void InitialiseWindow() {
+            var wnd = new MainWindow();
+            this.Window = wnd;
 
             wnd.Show();
 

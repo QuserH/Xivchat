@@ -34,6 +34,8 @@
                 <MenuItem Header="Export"
                           Click="Export_Click" />
                 <Separator />
+                <MenuItem Header="Licence"
+                          Click="Licence_Click" />
                 <MenuItem Header="Configuration"
                           Click="Configuration_Click" />
             </MenuItem>

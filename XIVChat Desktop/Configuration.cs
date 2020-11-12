@@ -16,6 +16,8 @@ namespace XIVChat_Desktop {
     public class Configuration : INotifyPropertyChanged {
         public event PropertyChangedEventHandler? PropertyChanged;
 
+        public string? LicenceKey { get; set; }
+
         public KeyPair KeyPair { get; set; } = PublicKeyBox.GenerateKeyPair();
 
         public ObservableCollection<SavedServer> Servers { get; set; } = new ObservableCollection<SavedServer>();
