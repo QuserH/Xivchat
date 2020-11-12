@@ -65,7 +65,7 @@ namespace XIVChat_Desktop {
             this.Close();
         }
 
-        public static async Task<LicenceResponse> LicenceInfo(string key, bool increment = false) {
+        private static async Task<LicenceResponse> LicenceInfo(string key, bool increment = false) {
             var uri = new Uri("https://api.gumroad.com/v2/licenses/verify");
             var data = new Dictionary<string, string> {
                 ["product_permalink"] = "kvQIw",

@@ -14,10 +14,10 @@
         d:DataContext="{d:DesignInstance local:ManageServer}">
     <Grid Margin="8">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid.ColumnDefinitions>
@@ -34,7 +34,7 @@
                  Grid.Row="0"
                  Grid.Column="1"
                  x:Name="ServerName"
-                 Text="{Binding Server.Name}" />
+                 Text="{Binding Server.Name, Mode=OneTime}" />
 
         <Label VerticalAlignment="Center"
                Grid.Row="1"
@@ -45,7 +45,7 @@
                  Grid.Row="1"
                  Grid.Column="1"
                  x:Name="ServerHost"
-                 Text="{Binding Server.Host}" />
+                 Text="{Binding Server.Host, Mode=OneTime}" />
 
         <Label VerticalAlignment="Center"
                Grid.Row="2"
@@ -56,7 +56,7 @@
                  Grid.Row="2"
                  Grid.Column="1"
                  x:Name="ServerPort"
-                 Text="{Binding Server.Port}"
+                 Text="{Binding Server.Port, Mode=OneTime}"
                  ui:ControlHelper.PlaceholderText="14777" />
 
         <WrapPanel Margin="0,8,0,0"

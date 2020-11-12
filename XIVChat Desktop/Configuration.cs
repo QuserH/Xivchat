@@ -83,15 +83,45 @@ namespace XIVChat_Desktop {
     }
 
     [JsonObject]
-    public class SavedServer {
-        public string Name { get; set; }
-        public string Host { get; set; }
-        public ushort Port { get; set; }
+    public class SavedServer : INotifyPropertyChanged {
+        private string name;
+        private string host;
+        private ushort port;
+
+        public string Name {
+            get => this.name;
+            set {
+                this.name = value;
+                this.OnPropertyChanged(nameof(this.Name));
+            }
+        }
+
+        public string Host {
+            get => this.host;
+            set {
+                this.host = value;
+                this.OnPropertyChanged(nameof(this.Host));
+            }
+        }
+
+        public ushort Port {
+            get => this.port;
+            set {
+                this.port = value;
+                this.OnPropertyChanged(nameof(this.Port));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
 
         public SavedServer(string name, string host, ushort port) {
-            this.Name = name;
-            this.Host = host;
-            this.Port = port;
+            this.name = name;
+            this.host = host;
+            this.port = port;
         }
 
         protected bool Equals(SavedServer other) {

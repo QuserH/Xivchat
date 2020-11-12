@@ -209,7 +209,6 @@ namespace XIVChat_Desktop {
 
         private void SetMarkdownProcessing(bool on) {
             this.ExportTab.ProcessMarkdown = on;
-            this.Repopulate();
         }
 
         private void RightArrow_Click(object sender, RoutedEventArgs e) {

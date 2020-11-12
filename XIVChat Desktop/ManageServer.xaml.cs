@@ -56,6 +56,10 @@ namespace XIVChat_Desktop {
                     port
                 );
                 this.App.Config.Servers.Add(this.Server);
+            } else {
+                this.Server!.Name = serverName;
+                this.Server.Host = serverHost;
+                this.Server.Port = port;
             }
 
             this.App.Config.Save();

@@ -96,10 +96,13 @@ namespace XIVChat_Desktop {
         }
 
         private void Save_Click(object sender, RoutedEventArgs e) {
-            if (this.Tab.Name.Length == 0) {
+            if (this.TabName.Text.Length == 0) {
                 MessageBox.Show("Tab must have a name.");
                 return;
             }
+
+            this.Tab.Name = this.TabName.Text;
+            this.Tab.ProcessMarkdown = this.MarkdownToggle.IsChecked ?? false;
 
             if (this.isNewTab) {
                 this.App.Config.Tabs.Add(this.Tab);
