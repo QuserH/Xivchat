@@ -16,16 +16,16 @@ namespace XIVChat_Desktop.Controls {
             set => this.SetValue(MessageProperty, value);
         }
 
-        public static readonly DependencyProperty TabProperty = DependencyProperty.Register(
-            "Tab",
-            typeof(Tab),
+        public static readonly DependencyProperty ProcessMarkdownProperty = DependencyProperty.Register(
+            "ProcessMarkdown",
+            typeof(bool),
             typeof(MessageTextBlock),
-            new PropertyMetadata(null, PropertyChanged)
+            new PropertyMetadata(false, PropertyChanged)
         );
 
-        public Tab? Tab {
-            get => (Tab)this.GetValue(TabProperty);
-            set => this.SetValue(TabProperty, value);
+        public bool ProcessMarkdown {
+            get => (bool)this.GetValue(ProcessMarkdownProperty);
+            set => this.SetValue(ProcessMarkdownProperty, value);
         }
 
         public static readonly DependencyProperty ShowTimestampsProperty = DependencyProperty.Register(
@@ -47,9 +47,8 @@ namespace XIVChat_Desktop.Controls {
             }
 
             var message = textBlock.Message;
-            var tab = textBlock.Tab;
 
-            if (message == null || tab == null) {
+            if (message == null) {
                 return;
             }
 
@@ -58,7 +57,13 @@ namespace XIVChat_Desktop.Controls {
 
             // Create new formatted text
             var lineHeight = textBlock.FontFamily.LineSpacing * textBlock.FontSize;
-            foreach (var inline in MessageFormatter.ChunksToTextBlock(lineHeight, message, tab.ProcessMarkdown, textBlock.ShowTimestamps)) {
+            var inlines = MessageFormatter.ChunksToTextBlock(
+                message,
+                lineHeight,
+                textBlock.ProcessMarkdown,
+                textBlock.ShowTimestamps
+            );
+            foreach (var inline in inlines) {
                 textBlock.Inlines.Add(inline);
             }
         }

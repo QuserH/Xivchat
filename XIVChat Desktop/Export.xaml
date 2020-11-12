@@ -49,7 +49,7 @@
                     <cc:MessageTextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
                                          TextWrapping="Wrap"
                                          FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
-                                         Tab="{Binding ExportTab, ElementName=Main}"
+                                         ProcessMarkdown="{Binding ExportTab.ProcessMarkdown, ElementName=Main}"
                                          Message="{Binding .}"
                                          ShowTimestamps="{Binding ShowTimestamps, ElementName=Main}" />
                 </DataTemplate>

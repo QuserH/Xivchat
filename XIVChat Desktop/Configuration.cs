@@ -9,6 +9,7 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using XIVChatCommon;
 
 namespace XIVChat_Desktop {
@@ -127,8 +128,9 @@ namespace XIVChat_Desktop {
     }
 
     [JsonObject]
-    public class Tab : IEnumerable<ServerMessage>, INotifyCollectionChanged {
+    public class Tab : IEnumerable<ServerMessage>, INotifyCollectionChanged, INotifyPropertyChanged {
         private string name;
+        private bool processMarkdown;
 
         public Tab(string name) {
             this.name = name;
@@ -138,12 +140,19 @@ namespace XIVChat_Desktop {
             get => this.name;
             set {
                 this.name = value;
+                this.OnPropertyChanged(nameof(this.Name));
             }
         }
 
         public Filter Filter { get; set; } = new Filter();
 
-        public bool ProcessMarkdown { get; set; }
+        public bool ProcessMarkdown {
+            get => this.processMarkdown;
+            set {
+                this.processMarkdown = value;
+                this.OnPropertyChanged(nameof(this.ProcessMarkdown));
+            }
+        }
 
         [JsonIgnore]
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
@@ -261,6 +270,11 @@ namespace XIVChat_Desktop {
         }
 
         public event NotifyCollectionChangedEventHandler? CollectionChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 
     [JsonObject]

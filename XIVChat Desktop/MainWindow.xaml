@@ -95,7 +95,7 @@
                                     <cc:MessageTextBlock FontFamily="Global User Interface, /fonts/#XIV AXIS Std ATK"
                                                          TextWrapping="Wrap"
                                                          FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
-                                                         Tab="{Binding DataContext, ElementName=TabGrid}"
+                                                         ProcessMarkdown="{Binding DataContext.ProcessMarkdown, ElementName=TabGrid}"
                                                          Message="{Binding .}" />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

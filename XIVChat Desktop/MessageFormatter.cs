@@ -45,7 +45,7 @@ namespace XIVChat_Desktop {
         //     }
         // }
 
-        public static IEnumerable<Inline> ChunksToTextBlock(double lineHeight, ServerMessage message, bool processMarkdown, bool showTimestamp) {
+        public static IEnumerable<Inline> ChunksToTextBlock(ServerMessage message, double lineHeight, bool processMarkdown, bool showTimestamp) {
             var elements = new List<Inline>();
 
             if (showTimestamp) {

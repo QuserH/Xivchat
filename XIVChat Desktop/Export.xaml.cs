@@ -256,7 +256,7 @@ namespace XIVChat_Desktop {
                 this.Dispatch(DispatcherPriority.Background, () => {
                     var paragraph = new Paragraph();
                     // this has to be done on the main thread
-                    var inlines = MessageFormatter.ChunksToTextBlock(this.App.Config.FontSize, message, this.ExportTab.ProcessMarkdown, this.ShowTimestamps);
+                    var inlines = MessageFormatter.ChunksToTextBlock(message, this.App.Config.FontSize, this.ExportTab.ProcessMarkdown, this.ShowTimestamps);
                     paragraph.Inlines.AddRange(inlines);
                     flow.Blocks.Add(paragraph);
                 });
