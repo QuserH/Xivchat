@@ -52,6 +52,11 @@
                 <MenuItem Header="Manage"
                           Click="ManageTabs_Click" />
             </MenuItem>
+            <MenuItem Header="Players"
+                      WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
+                <MenuItem Header="Friend list"
+                          Click="FriendList_Click" />
+            </MenuItem>
         </Menu>
         <TabControl x:Name="Tabs"
                     Margin="8,0,8,8"

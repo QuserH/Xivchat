@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Data;
-using System.Windows.Media;
 using XIVChatCommon;
 
 namespace XIVChat_Desktop {
@@ -71,6 +70,30 @@ namespace XIVChat_Desktop {
         }
 
         public object? ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class TitleCaseConverter : IValueConverter {
+        public object? Convert(object? value, Type targetType, object parameter, CultureInfo culture) {
+            var s = value?.ToString();
+            if (s == null) {
+                return null;
+            }
+
+            var lastWasSpace = true;
+            var newString = new StringBuilder();
+
+            foreach (var c in s.ToCharArray()) {
+                newString.Append(lastWasSpace ? char.ToUpperInvariant(c) : c);
+
+                lastWasSpace = c.IsWhitespace();
+            }
+
+            return newString.ToString();
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
             throw new NotImplementedException();
         }
     }

@@ -1,0 +1,66 @@
+﻿<Window x:Class="XIVChat_Desktop.FriendList"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:local="clr-namespace:XIVChat_Desktop"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        mc:Ignorable="d"
+        Title="Friend list"
+        WindowStartupLocation="CenterOwner"
+        Height="400"
+        Width="700"
+        Closed="FriendList_OnClosed"
+        d:DataContext="{d:DesignInstance local:FriendList}">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ProgressBar Grid.Row="0"
+                     IsIndeterminate="True"
+                     Visibility="{Binding Waiting, Converter={StaticResource BoolToVisibilityConverter}}" />
+        <DataGrid Grid.Row="0"
+                  ItemsSource="{Binding App.Window.FriendList}"
+                  AutoGenerateColumns="False"
+                  SelectionUnit="FullRow"
+                  SelectionMode="Single"
+                  IsReadOnly="True"
+                  CanUserReorderColumns="True"
+                  Visibility="{Binding Waiting, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Name"
+                                    Binding="{Binding Name}" />
+                <DataGridTextColumn Header="Job"
+                                    Binding="{Binding JobName, Converter={StaticResource TitleCaseConverter}}" />
+                <DataGridTextColumn Header="Location"
+                                    Binding="{Binding TerritoryName}" />
+                <DataGridTextColumn Header="FC"
+                                    Binding="{Binding FreeCompany}" />
+            </DataGrid.Columns>
+        </DataGrid>
+        <!-- <ListView Grid.Row="0" -->
+        <!--           ItemsSource="{Binding App.Window.FriendList}" -->
+        <!--           Visibility="{Binding Waiting, Converter={StaticResource InverseBoolToVisibilityConverter}}"> -->
+        <!--     <ListView.View> -->
+        <!--         <GridView> -->
+        <!--             <GridViewColumn Header="Name" -->
+        <!--                             DisplayMemberBinding="{Binding Name}" /> -->
+        <!--             <GridViewColumn Header="Job" -->
+        <!--                             DisplayMemberBinding="{Binding JobName}" /> -->
+        <!--             <GridViewColumn Header="Location" -->
+        <!--                             DisplayMemberBinding="{Binding TerritoryName}" /> -->
+        <!--             <GridViewColumn Header="FC" -->
+        <!--                             DisplayMemberBinding="{Binding FreeCompany}" /> -->
+        <!--         </GridView> -->
+        <!--     </ListView.View> -->
+        <!-- </ListView> -->
+        <Button Grid.Row="1"
+                IsEnabled="{Binding App.Connected}"
+                Content="Refresh"
+                Margin="0,8,0,0"
+                Click="Refresh_Click" />
+    </Grid>
+</Window>

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -17,6 +18,7 @@ namespace XIVChat_Desktop {
         public App App => (App)Application.Current;
 
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
+        public ObservableCollection<Player> FriendList { get; } = new ObservableCollection<Player>();
 
         public string InputPlaceholder => this.App.Connection?.Available == true ? "Send a message..." : "Chat is currently unavailable";
 
@@ -79,7 +81,7 @@ namespace XIVChat_Desktop {
                 this.insertAt = this.Messages.Count;
             }
 
-            // detect if scroller is at the bottom
+            // detect iFriendList_Click the bottom
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
             var wasAtBottom = Math.Abs(scroller!.VerticalOffset - scroller.ScrollableHeight) < .0001;
 
@@ -193,6 +195,10 @@ namespace XIVChat_Desktop {
         private void Exit_Click(object sender, RoutedEventArgs e) {
             this.Close();
             this.App.Shutdown();
+        }
+
+        private void FriendList_Click(object sender, RoutedEventArgs e) {
+            new FriendList(this).Show();
         }
     }
 }

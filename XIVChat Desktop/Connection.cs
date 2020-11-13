@@ -20,6 +20,7 @@ namespace XIVChat_Desktop {
         private TcpClient? client;
 
         private readonly Channel<string> outgoing = Channel.CreateUnbounded<string>();
+        private readonly Channel<byte[]> outgoingMessages = Channel.CreateUnbounded<byte[]>();
         private readonly Channel<byte[]> incoming = Channel.CreateUnbounded<byte[]>();
         private readonly Channel<byte> cancelChannel = Channel.CreateBounded<byte>(2);
 
@@ -47,6 +48,13 @@ namespace XIVChat_Desktop {
 
         public void SendMessage(string message) {
             this.outgoing.Writer.TryWrite(message);
+        }
+
+        public void RequestFriendList() {
+            var msg = new ClientPlayerList {
+                Type = PlayerListType.Friend,
+            };
+            this.outgoingMessages.Writer.TryWrite(msg.Encode());
         }
 
         public void Disconnect() {
@@ -156,11 +164,12 @@ namespace XIVChat_Desktop {
 
             var incoming = this.incoming.Reader.ReadAsync().AsTask();
             var outgoing = this.outgoing.Reader.ReadAsync().AsTask();
+            var outgoingMessage = this.outgoingMessages.Reader.ReadAsync().AsTask();
             var cancel = this.cancelChannel.Reader.ReadAsync().AsTask();
 
             // listen for incoming and outgoing messages and cancel requests
             while (!this.cancel.IsCancellationRequested) {
-                var result = await Task.WhenAny(incoming, outgoing, cancel);
+                var result = await Task.WhenAny(incoming, outgoing, outgoingMessage, cancel);
                 if (result == incoming) {
                     if (this.incoming.Reader.Completion.IsCompleted) {
                         break;
@@ -177,6 +186,21 @@ namespace XIVChat_Desktop {
                     var message = new ClientMessage(toSend);
                     try {
                         await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, message, this.cancel.Token);
+                    } catch (Exception ex) {
+                        this.app.Dispatch(() => {
+                            this.app.Window.AddSystemMessage("Error sending message.");
+                            // ReSharper disable once LocalizableElement
+                            Console.WriteLine($"Error sending message: {ex.Message}");
+                            Console.WriteLine(ex.StackTrace);
+                        });
+                        break;
+                    }
+                } else if (result == outgoingMessage) {
+                    var toSend = await outgoingMessage;
+                    outgoingMessage = this.outgoingMessages.Reader.ReadAsync().AsTask();
+
+                    try {
+                        await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, toSend, this.cancel.Token);
                     } catch (Exception ex) {
                         this.app.Dispatch(() => {
                             this.app.Window.AddSystemMessage("Error sending message.");
@@ -276,6 +300,17 @@ namespace XIVChat_Desktop {
 
                     break;
                 case ServerOperation.PlayerList:
+                    var playerList = ServerPlayerList.Decode(payload);
+
+                    if (playerList.Type == PlayerListType.Friend) {
+                        this.app.Dispatch(() => {
+                            this.app.Window.FriendList.Clear();
+                            foreach (var player in playerList.Players) {
+                                this.app.Window.FriendList.Add(player);
+                            }
+                        });
+                    }
+
                     break;
                 case ServerOperation.LinkshellList:
                     break;
