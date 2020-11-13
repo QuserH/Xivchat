@@ -34,13 +34,37 @@ namespace XIVChat_Desktop {
             get => this.fontSize;
             set {
                 this.fontSize = value;
-                this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.FontSize)));
+                this.OnPropertyChanged(nameof(this.FontSize));
             }
         }
 
         public ushort BacklogMessages { get; set; } = 500;
 
         public uint LocalBacklogMessages { get; set; } = 10_000;
+
+        private double opacity = 1.0;
+
+        public double Opacity {
+            get => this.opacity;
+            set {
+                this.opacity = value;
+                this.OnPropertyChanged(nameof(this.Opacity));
+            }
+        }
+
+        private bool compactMode;
+
+        public bool CompactMode {
+            get => this.compactMode;
+            set {
+                this.compactMode = value;
+                this.OnPropertyChanged(nameof(this.CompactMode));
+            }
+        }
+
+        private void OnPropertyChanged(string propName) {
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
+        }
 
         #region io
 

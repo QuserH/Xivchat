@@ -25,34 +25,34 @@
             <Grid Margin="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <CheckBox Grid.Row="0"
-                          Grid.Column="0"
-                          Content="Always on top"
-                          IsChecked="{Binding Config.AlwaysOnTop}"
-                          Checked="AlwaysOnTop_Checked"
-                          Unchecked="AlwaysOnTop_Unchecked" />
-                <TextBox Grid.Row="1"
-                         Grid.Column="0"
-                         HorizontalAlignment="Left"
-                         PreviewTextInput="NumericInputFilter"
-                         Text="{Binding Config.FontSize, Converter={StaticResource DoubleConverter}}"
-                         ui:ControlHelper.Header="Log font size"
-                         Width="200" />
-                <TextBox Grid.Row="2"
-                         Grid.Column="0"
-                         ui:ControlHelper.Header="Messages to store locally"
-                         HorizontalAlignment="Left"
-                         PreviewTextInput="NumericInputFilter"
-                         Text="{Binding Config.LocalBacklogMessages, Converter={StaticResource UIntConverter}}"
-                         Width="200" />
+                <StackPanel>
+                    <CheckBox Content="Always on top"
+                              IsChecked="{Binding Config.AlwaysOnTop}"
+                              Checked="AlwaysOnTop_Checked"
+                              Unchecked="AlwaysOnTop_Unchecked" />
+                    <CheckBox Content="Compact mode"
+                              IsChecked="{Binding Config.CompactMode}" />
+                    <Slider ui:ControlHelper.Header="Opacity"
+                            Value="{Binding Config.Opacity}"
+                            Minimum=".3"
+                            Maximum="1" />
+                    <TextBox HorizontalAlignment="Left"
+                             PreviewTextInput="NumericInputFilter"
+                             Text="{Binding Config.FontSize, Converter={StaticResource DoubleConverter}}"
+                             ui:ControlHelper.Header="Log font size"
+                             Width="200" />
+                    <TextBox ui:ControlHelper.Header="Messages to store locally"
+                             HorizontalAlignment="Left"
+                             PreviewTextInput="NumericInputFilter"
+                             Text="{Binding Config.LocalBacklogMessages, Converter={StaticResource UIntConverter}}"
+                             Width="200" />
+                </StackPanel>
 
-                <Button Grid.Row="4"
+                <Button Grid.Row="2"
                         HorizontalAlignment="Right"
                         Click="Save_Click">
                     Save

@@ -10,6 +10,13 @@
             <local:UShortConverter x:Key="UShortConverter" />
             <local:UIntConverter x:Key="UIntConverter" />
             <local:SenderPlayerConverter x:Key="SenderPlayerConverter" />
+            <local:NotConverter x:Key="NotConverter" />
+            <local:BoolToVisibility x:Key="BoolToVisibilityConverter"
+                                    TrueValue="Visible"
+                                    FalseValue="Collapsed" />
+            <local:BoolToVisibility x:Key="InverseBoolToVisibilityConverter"
+                                    TrueValue="Collapsed"
+                                    FalseValue="Visible" />
 
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemeResources AccentColor="#02ccee" />

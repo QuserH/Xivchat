@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 using XIVChatCommon;
 
 namespace XIVChat_Desktop {
@@ -70,5 +73,32 @@ namespace XIVChat_Desktop {
         public object? ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
             throw new NotImplementedException();
         }
+    }
+
+    public class NotConverter : IValueConverter {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) {
+            return !((bool)value);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
+            return !((bool)value);
+        }
+    }
+
+    public abstract class BoolMapper<T> : IValueConverter {
+        public T TrueValue { get; set; } = default!;
+        public T FalseValue { get; set; } = default!;
+
+        public object? Convert(object value, Type targetType, object parameter, CultureInfo culture) {
+            return (bool)value ? this.TrueValue : this.FalseValue;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
+            var val = (T)value;
+            return EqualityComparer<T>.Default.Equals(val, this.TrueValue);
+        }
+    }
+
+    public class BoolToVisibility : BoolMapper<Visibility> {
     }
 }

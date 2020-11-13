@@ -7,11 +7,15 @@
         xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
         xmlns:ui="http://schemas.modernwpf.com/2019"
         ui:WindowHelper.UseModernWindowStyle="True"
+        ui:TitleBar.ExtendViewIntoTitleBar="{Binding App.Config.CompactMode}"
         mc:Ignorable="d"
         Title="XIVChat for Windows"
         Height="450"
         Width="800"
         x:Name="Main"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Opacity="{Binding App.Config.Opacity}"
         Icon="/Resources/logo.ico"
         d:DataContext="{d:DesignInstance local:MainWindow}">
     <Grid>
@@ -21,7 +25,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Menu Grid.Row="0">
-            <MenuItem Header="XIVChat">
+            <MenuItem Header="XIVChat"
+                      WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
                 <MenuItem Header="Connect"
                           Click="Connect_Click"
                           IsEnabled="{Binding App.Disconnected, UpdateSourceTrigger=PropertyChanged}" />
@@ -38,8 +43,12 @@
                           Click="Licence_Click" />
                 <MenuItem Header="Configuration"
                           Click="Configuration_Click" />
+                <Separator />
+                <MenuItem Header="Exit"
+                          Click="Exit_Click" />
             </MenuItem>
-            <MenuItem Header="Tabs">
+            <MenuItem Header="Tabs"
+                      WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
                 <MenuItem Header="Manage"
                           Click="ManageTabs_Click" />
             </MenuItem>
@@ -117,7 +126,8 @@
                 </DataTemplate>
             </TabControl.ContentTemplate>
         </TabControl>
-        <StatusBar Grid.Row="2">
+        <StatusBar Grid.Row="2"
+                   Visibility="{Binding App.Config.CompactMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
             <StatusBarItem x:Name="LoggedInAs"
                            Content="Not logged in" />
             <Separator x:Name="LoggedInAsSeparator"

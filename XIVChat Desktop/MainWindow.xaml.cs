@@ -189,5 +189,10 @@ namespace XIVChat_Desktop {
         private void Licence_Click(object sender, RoutedEventArgs e) {
             new LicenceWindow(this, false).Show();
         }
+
+        private void Exit_Click(object sender, RoutedEventArgs e) {
+            this.Close();
+            this.App.Shutdown();
+        }
     }
 }
