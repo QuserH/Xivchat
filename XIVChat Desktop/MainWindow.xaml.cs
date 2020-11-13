@@ -81,7 +81,7 @@ namespace XIVChat_Desktop {
                 this.insertAt = this.Messages.Count;
             }
 
-            // detect iFriendList_Click the bottom
+            // detect if scroller is at the bottom
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
             var wasAtBottom = Math.Abs(scroller!.VerticalOffset - scroller.ScrollableHeight) < .0001;
 
