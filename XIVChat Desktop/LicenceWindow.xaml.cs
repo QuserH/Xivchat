@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Windows.Web.Http;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace XIVChat_Desktop {
     public partial class LicenceWindow {
@@ -37,9 +38,14 @@ namespace XIVChat_Desktop {
         }
 
         private async Task<bool> Check(bool increment = false) {
+            var key = this.App.Config.LicenceKey;
+            if (string.IsNullOrWhiteSpace(key)) {
+                return false;
+            }
+
             this.Dispatch(() => this.CheckButton.IsEnabled = false);
 
-            var licence = await LicenceInfo(this.App.Config.LicenceKey!, increment);
+            var licence = await LicenceInfo(key, increment);
             var valid = licence.Valid();
 
             this.Dispatch(() => {
@@ -85,6 +91,7 @@ namespace XIVChat_Desktop {
         }
     }
 
+    [JsonObject(NamingStrategyType = typeof(SnakeCaseNamingStrategy))]
     public class LicenceResponse {
         public readonly bool success;
         public readonly uint uses;
@@ -101,6 +108,8 @@ namespace XIVChat_Desktop {
         }
     }
 
+
+    [JsonObject(NamingStrategyType = typeof(SnakeCaseNamingStrategy))]
     public class Purchase {
         public readonly string id;
         public readonly string productName;
