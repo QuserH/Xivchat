@@ -12,7 +12,7 @@
         Height="450"
         Width="800"
         x:Name="Main"
-        Icon="/ic_launcher-playstore.png"
+        Icon="/Resources/logo.ico"
         d:DataContext="{d:DesignInstance local:MainWindow}">
     <Grid>
         <Grid.RowDefinitions>

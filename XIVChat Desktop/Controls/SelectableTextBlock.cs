@@ -13,7 +13,7 @@ namespace XIVChat_Desktop.Controls {
             FocusVisualStyleProperty.OverrideMetadata(typeof(SelectableTextBlock), new FrameworkPropertyMetadata(null));
         }
 
-        public SelectableTextBlock() {
+        protected SelectableTextBlock() {
             TextEditorWrapper.CreateFor(this);
         }
     }

@@ -10,11 +10,13 @@
         <Company>XIVChat</Company>
         <AssemblyVersion>1.0.0</AssemblyVersion>
         <FileVersion>1.0.0</FileVersion>
+        <ApplicationIcon>Resources\logo.ico</ApplicationIcon>
     </PropertyGroup>
 
     <ItemGroup>
         <None Remove="fonts\ffxiv.ttf" />
         <None Remove="ic_launcher-playstore.png" />
+        <None Remove="Resources\logo.ico" />
         <None Remove="Resources\fonticon_ps4.tex.png" />
     </ItemGroup>
 
@@ -31,8 +33,8 @@
 
     <ItemGroup>
         <Resource Include="fonts\ffxiv.ttf" />
-        <Resource Include="ic_launcher-playstore.png" />
         <Resource Include="Resources\fonticon_ps4.tex.png" />
+        <Resource Include="Resources\logo.ico" />
     </ItemGroup>
 
     <ItemGroup>

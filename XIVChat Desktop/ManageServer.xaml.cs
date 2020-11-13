@@ -30,7 +30,6 @@ namespace XIVChat_Desktop {
         }
 
         private void Save_Click(object sender, RoutedEventArgs e) {
-            // FIXME: this shouldn't be using data bindings because it should only take effect after clicking save
             var serverName = this.ServerName.Text;
             var serverHost = this.ServerHost.Text;
 
