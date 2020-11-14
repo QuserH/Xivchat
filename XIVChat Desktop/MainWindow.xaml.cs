@@ -127,10 +127,7 @@ namespace XIVChat_Desktop {
         }
 
         private void Connect_Click(object sender, RoutedEventArgs e) {
-            var dialog = new ConnectDialog {
-                Owner = this,
-            };
-            dialog.ShowDialog();
+            new ConnectDialog(this).ShowDialog();
         }
 
         private void Disconnect_Click(object sender, RoutedEventArgs e) {

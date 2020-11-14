@@ -1,5 +1,4 @@
 ﻿using System.Windows;
-using System.Windows.Controls;
 using XIVChatCommon;
 
 namespace XIVChat_Desktop.Controls {
@@ -40,7 +39,7 @@ namespace XIVChat_Desktop.Controls {
             set => this.SetValue(ShowTimestampsProperty, value);
         }
 
-        public static void PropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) {
+        private static void PropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) {
             // Clear current textBlock
             if (!(d is MessageTextBlock textBlock)) {
                 return;

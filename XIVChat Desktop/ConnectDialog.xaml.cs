@@ -8,7 +8,9 @@ namespace XIVChat_Desktop {
     public partial class ConnectDialog {
         public App App => (App)Application.Current;
 
-        public ConnectDialog() {
+        public ConnectDialog(Window owner) {
+            this.Owner = owner;
+
             this.InitializeComponent();
             this.DataContext = this;
         }

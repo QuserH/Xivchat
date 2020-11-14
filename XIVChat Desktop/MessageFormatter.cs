@@ -11,39 +11,7 @@ using Inline = System.Windows.Documents.Inline;
 
 namespace XIVChat_Desktop {
     public class MessageFormatter {
-        private static readonly BitmapFrame FontIcon =
-            BitmapFrame.Create(new Uri("pack://application:,,,/Resources/fonticon_ps4.tex.png"));
-
-        public static readonly DependencyProperty FormattedTextProperty = DependencyProperty.RegisterAttached(
-            "FormattedText",
-            typeof(ServerMessage),
-            typeof(MessageFormatter)
-            // new PropertyMetadata(null, FormattedTextPropertyChanged)
-        );
-
-        public static void SetFormattedText(DependencyObject textBlock, ServerMessage value) {
-            textBlock.SetValue(FormattedTextProperty, value);
-        }
-
-        public static string GetFormattedText(DependencyObject textBlock) {
-            return (string)textBlock.GetValue(FormattedTextProperty);
-        }
-
-        // private static void FormattedTextPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) {
-        //     // Clear current textBlock
-        //     if (!(d is TextBlock textBlock)) {
-        //         return;
-        //     }
-        //
-        //     textBlock.ClearValue(TextBlock.TextProperty);
-        //     textBlock.Inlines.Clear();
-        //
-        //     // Create new formatted text
-        //     var lineHeight = textBlock.FontFamily.LineSpacing * textBlock.FontSize;
-        //     foreach (var inline in ChunksToTextBlock(lineHeight, (ServerMessage)e.NewValue)) {
-        //         textBlock.Inlines.Add(inline);
-        //     }
-        // }
+        private static readonly BitmapFrame FontIcon = BitmapFrame.Create(new Uri("pack://application:,,,/Resources/fonticon_ps4.tex.png"));
 
         public static IEnumerable<Inline> ChunksToTextBlock(ServerMessage message, double lineHeight, bool processMarkdown, bool showTimestamp) {
             var elements = new List<Inline>();

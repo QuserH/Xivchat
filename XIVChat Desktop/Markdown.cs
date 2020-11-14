@@ -343,12 +343,18 @@ namespace XIVChat_Desktop {
             var isLeft = false;
             var isRight = false;
 
-            // A left-flanking delimiter run is a delimiter run that is (1) not followed by Unicode whitespace, and either (2a) not followed by a punctuation character, or (2b) followed by a punctuation character and preceded by Unicode whitespace or a punctuation character. For purposes of this definition, the beginning and the end of the line count as Unicode whitespace.
+            // A left-flanking delimiter run is a delimiter run that is (1) not followed by Unicode whitespace, and
+            // either (2a) not followed by a punctuation character, or (2b) followed by a punctuation character and
+            // preceded by Unicode whitespace or a punctuation character. For purposes of this definition, the beginning
+            // and the end of the line count as Unicode whitespace.
             if (!followedByWhitespace && (!followedByPunctuation || (followedByPunctuation && (precededByWhitespace || precededByPunctuation)))) {
                 isLeft = true;
             }
 
-            // A right-flanking delimiter run is a delimiter run that is (1) not preceded by Unicode whitespace, and either (2a) not preceded by a punctuation character, or (2b) preceded by a punctuation character and followed by Unicode whitespace or a punctuation character. For purposes of this definition, the beginning and the end of the line count as Unicode whitespace.
+            // A right-flanking delimiter run is a delimiter run that is (1) not preceded by Unicode whitespace, and
+            // either (2a) not preceded by a punctuation character, or (2b) preceded by a punctuation character and
+            // followed by Unicode whitespace or a punctuation character. For purposes of this definition, the beginning
+            // and the end of the line count as Unicode whitespace.
             if (!precededByWhitespace && (!precededByPunctuation || (precededByPunctuation && (followedByWhitespace || followedByPunctuation)))) {
                 isRight = true;
             }
