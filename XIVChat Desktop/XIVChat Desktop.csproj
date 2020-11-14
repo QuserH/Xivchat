@@ -14,10 +14,38 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <None Remove="fonts\ffxiv.ttf" />
-        <None Remove="ic_launcher-playstore.png" />
-        <None Remove="Resources\logo.ico" />
         <None Remove="Resources\fonticon_ps4.tex.png" />
+        <None Remove="Resources\logo.ico" />
+        <None Remove="Resources\status\app_status_afk.png" />
+        <None Remove="Resources\status\app_status_contents.png" />
+        <None Remove="Resources\status\app_status_contents_same.png" />
+        <None Remove="Resources\status\app_status_contents_similar.png" />
+        <None Remove="Resources\status\app_status_cross_party_leader.png" />
+        <None Remove="Resources\status\app_status_cross_party_member.png" />
+        <None Remove="Resources\status\app_status_offline.png" />
+        <None Remove="Resources\status\app_status_online.png" />
+        <None Remove="Resources\status\app_status_party_leader.png" />
+        <None Remove="Resources\status\app_status_party_member.png" />
+        <None Remove="Resources\status\app_status_roleplaying.png" />
+        <None Remove="Resources\status\app_status_roleplaying.svg" />
+        <None Remove="fonts\ffxiv.ttf" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Resource Include="Resources\fonticon_ps4.tex.png" />
+        <Resource Include="Resources\logo.ico" />
+        <Resource Include="Resources\status\app_status_afk.png" />
+        <Resource Include="Resources\status\app_status_contents.png" />
+        <Resource Include="Resources\status\app_status_contents_same.png" />
+        <Resource Include="Resources\status\app_status_contents_similar.png" />
+        <Resource Include="Resources\status\app_status_cross_party_leader.png" />
+        <Resource Include="Resources\status\app_status_cross_party_member.png" />
+        <Resource Include="Resources\status\app_status_offline.png" />
+        <Resource Include="Resources\status\app_status_online.png" />
+        <Resource Include="Resources\status\app_status_party_leader.png" />
+        <Resource Include="Resources\status\app_status_party_member.png" />
+        <Resource Include="Resources\status\app_status_roleplaying.png" />
+        <Resource Include="fonts\ffxiv.ttf" />
     </ItemGroup>
 
     <ItemGroup>
@@ -29,12 +57,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Resource Include="fonts\ffxiv.ttf" />
-        <Resource Include="Resources\fonticon_ps4.tex.png" />
-        <Resource Include="Resources\logo.ico" />
     </ItemGroup>
 
     <ItemGroup>

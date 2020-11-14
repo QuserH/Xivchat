@@ -303,9 +303,12 @@ namespace XIVChat_Desktop {
                     var playerList = ServerPlayerList.Decode(payload);
 
                     if (playerList.Type == PlayerListType.Friend) {
+                        var players = playerList.Players
+                            .OrderBy(player => !player.HasStatus(PlayerStatus.Online));
+
                         this.app.Dispatch(() => {
                             this.app.Window.FriendList.Clear();
-                            foreach (var player in playerList.Players) {
+                            foreach (var player in players) {
                                 this.app.Window.FriendList.Add(player);
                             }
                         });

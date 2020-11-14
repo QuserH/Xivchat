@@ -5,6 +5,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:local="clr-namespace:XIVChat_Desktop"
         xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:common="clr-namespace:XIVChatCommon;assembly=XIVChatCommon"
         ui:WindowHelper.UseModernWindowStyle="True"
         mc:Ignorable="d"
         Title="Friend list"
@@ -30,7 +31,20 @@
                   IsReadOnly="True"
                   CanUserReorderColumns="True"
                   Visibility="{Binding Waiting, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+            <DataGrid.Resources>
+                <local:FriendListStatusConverter x:Key="StatusConverter" />
+            </DataGrid.Resources>
             <DataGrid.Columns>
+                <DataGridTemplateColumn d:DataContext="{d:DesignInstance common:Player}">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Image MaxHeight="32"
+                                   MaxWidth="32"
+                                   Margin="4"
+                                   Source="{Binding ., Converter={StaticResource StatusConverter}}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Name"
                                     Binding="{Binding Name}" />
                 <DataGridTextColumn Header="Job"
