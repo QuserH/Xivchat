@@ -29,7 +29,7 @@
                       WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
                 <MenuItem Header="Connect"
                           Click="Connect_Click"
-                          IsEnabled="{Binding App.Disconnected, UpdateSourceTrigger=PropertyChanged}" />
+                          IsEnabled="{Binding App.Connected, Converter={StaticResource NotConverter}, UpdateSourceTrigger=PropertyChanged}" />
                 <MenuItem Header="Disconnect"
                           Click="Disconnect_Click"
                           IsEnabled="{Binding App.Connected, UpdateSourceTrigger=PropertyChanged}" />
