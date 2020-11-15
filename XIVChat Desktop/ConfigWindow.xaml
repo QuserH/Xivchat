@@ -36,6 +36,9 @@
                               Unchecked="AlwaysOnTop_Unchecked" />
                     <CheckBox Content="Compact mode"
                               IsChecked="{Binding Config.CompactMode}" />
+                    <ComboBox x:Name="ThemeChooser"
+                              ui:ControlHelper.Header="Theme"
+                              SelectedItem="{Binding Config.Theme}" />
                     <Slider ui:ControlHelper.Header="Opacity"
                             Value="{Binding Config.Opacity}"
                             Minimum=".3"

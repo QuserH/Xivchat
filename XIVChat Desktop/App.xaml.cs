@@ -4,6 +4,11 @@ using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Markup;
+using ModernWpf;
+
+// TODO: Up/down to cycle through input history
+// TODO: key word notification, notifications on message type, targeted message (like emote targeting you)
+// TODO: right click message to send tell to sender?
 
 namespace XIVChat_Desktop {
     /// <summary>
@@ -27,7 +32,6 @@ namespace XIVChat_Desktop {
         }
 
         public bool Connected => this.Connection != null;
-        public bool Disconnected => this.Connection == null;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -54,6 +58,16 @@ namespace XIVChat_Desktop {
             } catch (Exception ex) {
                 MessageBox.Show($"Could not save configuration file. {ex.Message}");
             }
+
+            this.Config.PropertyChanged += (o, args) => {
+                if (args.PropertyName != nameof(Configuration.Theme)) {
+                    return;
+                }
+
+                this.UpdateTheme();
+            };
+
+            this.UpdateTheme();
 
             FrameworkElement.LanguageProperty.OverrideMetadata(
                 typeof(FrameworkElement),
@@ -86,9 +100,17 @@ namespace XIVChat_Desktop {
             _ = new ConfigWindow(wnd, this.Config);
         }
 
+        private void UpdateTheme() {
+            ThemeManager.Current.ApplicationTheme = this.Config.Theme switch {
+                Theme.System => null,
+                Theme.Dark => ApplicationTheme.Dark,
+                Theme.Light => ApplicationTheme.Light,
+                _ => null,
+            };
+        }
+
         private void ConnectionStatusChanged() {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Connected)));
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Disconnected)));
         }
 
         public void Connect(string host, ushort port) {

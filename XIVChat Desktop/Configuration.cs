@@ -62,6 +62,16 @@ namespace XIVChat_Desktop {
             }
         }
 
+        private Theme theme = Theme.System;
+
+        public Theme Theme {
+            get => this.theme;
+            set {
+                this.theme = value;
+                this.OnPropertyChanged(nameof(this.Theme));
+            }
+        }
+
         private void OnPropertyChanged(string propName) {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
         }
@@ -168,6 +178,12 @@ namespace XIVChat_Desktop {
         public override int GetHashCode() {
             return HashCode.Combine(this.Name, this.Host, this.Port);
         }
+    }
+
+    public enum Theme {
+        System,
+        Light,
+        Dark,
     }
 
     [JsonObject]

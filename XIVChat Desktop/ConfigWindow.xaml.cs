@@ -16,6 +16,8 @@ namespace XIVChat_Desktop {
 
             this.InitializeComponent();
             this.DataContext = this;
+
+            this.ThemeChooser.ItemsSource = (Theme[])Enum.GetValues(typeof(Theme));
         }
 
         private void AlwaysOnTop_Checked(object? sender, RoutedEventArgs e) {

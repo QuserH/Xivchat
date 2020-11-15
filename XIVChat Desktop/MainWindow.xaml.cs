@@ -179,7 +179,7 @@ namespace XIVChat_Desktop {
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        internal virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+        internal void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
