@@ -15,6 +15,63 @@ namespace XIVChat_Desktop {
     /// Interaction logic for MainWindow.xaml
     /// </summary>
     public partial class MainWindow : INotifyPropertyChanged {
+        #region commands
+
+        private void AlwaysTrue_CanExecute(object sender, CanExecuteRoutedEventArgs e) {
+            e.CanExecute = true;
+        }
+
+        public static readonly RoutedUICommand EditTab = new RoutedUICommand(
+            "EditTab",
+            "EditTab",
+            typeof(MainWindow)
+        );
+
+        private void EditTab_OnExecuted(object sender, ExecutedRoutedEventArgs e) {
+            if (!(e.Parameter is Tab tab)) {
+                return;
+            }
+
+            new ManageTab(this, tab).Show();
+        }
+
+        public static readonly RoutedUICommand DeleteTab = new RoutedUICommand(
+            "DeleteTab",
+            "DeleteTab",
+            typeof(MainWindow)
+        );
+
+        private void DeleteTab_OnExecuted(object sender, ExecutedRoutedEventArgs e) {
+            if (!(e.Parameter is Tab tab)) {
+                return;
+            }
+
+            this.App.Config.Tabs.Remove(tab);
+            this.App.Config.Save();
+        }
+
+        public static readonly RoutedUICommand AddTab = new RoutedUICommand(
+            "AddTab",
+            "AddTab",
+            typeof(MainWindow)
+        );
+
+        private void AddTab_OnExecuted(object sender, ExecutedRoutedEventArgs e) {
+            new ManageTab(this, null).Show();
+        }
+
+        public static readonly RoutedUICommand ManageTabs = new RoutedUICommand(
+            "ManageTabs",
+            "ManageTabs",
+            typeof(MainWindow)
+        );
+
+        private void ManageTabs_OnExecuted(object sender, ExecutedRoutedEventArgs e) {
+            new ManageTabs(this).Show();
+        }
+
+        #endregion
+
         public App App => (App)Application.Current;
 
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
@@ -167,10 +224,6 @@ namespace XIVChat_Desktop {
         private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e) {
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
             scroller?.ScrollToBottom();
-        }
-
-        private void ManageTabs_Click(object sender, RoutedEventArgs e) {
-            new ManageTabs(this).Show();
         }
 
         private void Scan_Click(object sender, RoutedEventArgs e) {

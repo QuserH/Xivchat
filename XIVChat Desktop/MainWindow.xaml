@@ -47,11 +47,6 @@
                 <MenuItem Header="Exit"
                           Click="Exit_Click" />
             </MenuItem>
-            <MenuItem Header="Tabs"
-                      WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
-                <MenuItem Header="Manage"
-                          Click="ManageTabs_Click" />
-            </MenuItem>
             <MenuItem Header="Players"
                       WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
                 <MenuItem Header="Friend list"
@@ -65,6 +60,57 @@
                     Loaded="Tabs_Loaded"
                     SelectionChanged="Tabs_SelectionChanged"
                     ItemsSource="{Binding App.Config.Tabs}">
+            <TabControl.CommandBindings>
+                <CommandBinding Command="local:MainWindow.AddTab"
+                                Executed="AddTab_OnExecuted"
+                                CanExecute="AlwaysTrue_CanExecute" />
+                <CommandBinding Command="local:MainWindow.ManageTabs"
+                                Executed="ManageTabs_OnExecuted"
+                                CanExecute="AlwaysTrue_CanExecute" />
+                <CommandBinding Command="local:MainWindow.EditTab"
+                                Executed="EditTab_OnExecuted"
+                                CanExecute="AlwaysTrue_CanExecute" />
+                <CommandBinding Command="local:MainWindow.DeleteTab"
+                                Executed="DeleteTab_OnExecuted"
+                                CanExecute="AlwaysTrue_CanExecute" />
+            </TabControl.CommandBindings>
+
+            <TabControl.Resources>
+                <Style TargetType="{x:Type MenuItem}"
+                       BasedOn="{StaticResource DefaultMenuItemStyle}">
+                    <Setter Property="CommandTarget"
+                            Value="{Binding Path=PlacementTarget,RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}" />
+                </Style>
+
+                <ContextMenu x:Key="TabContextMenu"
+                             DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                             d:DataContext="{d:DesignInstance local:Tab}">
+                    <MenuItem Header="Edit"
+                              Command="local:MainWindow.EditTab"
+                              CommandParameter="{Binding}" />
+                    <MenuItem Header="Delete"
+                              Command="local:MainWindow.DeleteTab"
+                              CommandParameter="{Binding}" />
+                </ContextMenu>
+            </TabControl.Resources>
+
+            <TabControl.ItemContainerStyle>
+                <Style TargetType="{x:Type TabItem}"
+                       BasedOn="{StaticResource DefaultTabItemStyle}">
+                    <Setter Property="ContextMenu"
+                            Value="{StaticResource TabContextMenu}" />
+                </Style>
+            </TabControl.ItemContainerStyle>
+
+            <TabControl.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Add tab"
+                              Command="local:MainWindow.AddTab" />
+                    <MenuItem Header="Manage tabs"
+                              Command="local:MainWindow.ManageTabs" />
+                </ContextMenu>
+            </TabControl.ContextMenu>
+
             <TabControl.ItemTemplate>
                 <DataTemplate>
                     <TextBlock Text="{Binding Name}" />
