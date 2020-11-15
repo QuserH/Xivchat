@@ -47,8 +47,6 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <cc:MessageTextBlock FontFamily="Global User Interface, /Resources/fonts/#XIV AXIS Std ATK"
-                                         TextWrapping="Wrap"
-                                         FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
                                          ProcessMarkdown="{Binding ExportTab.ProcessMarkdown, ElementName=Main}"
                                          Message="{Binding .}"
                                          ShowTimestamps="{Binding ShowTimestamps, ElementName=Main}" />

@@ -1,8 +1,16 @@
 ﻿using System.Windows;
+using System.Windows.Data;
 using XIVChatCommon;
 
 namespace XIVChat_Desktop.Controls {
     public class MessageTextBlock : SelectableTextBlock {
+        public MessageTextBlock() {
+            this.SetBinding(FontSizeProperty, new Binding("Config.FontSize") {
+                Source = (App)Application.Current,
+            });
+            this.TextWrapping = TextWrapping.Wrap;
+        }
+
         public static readonly DependencyProperty MessageProperty = DependencyProperty.Register(
             "Message",
             typeof(ServerMessage),
