@@ -18,6 +18,10 @@ namespace XIVChat_Desktop {
 
             this.InitializeComponent();
             this.DataContext = this;
+
+            if (this.isNewServer) {
+                this.Title = "Add server";
+            }
         }
 
         public ManageServer(Window owner, SavedServer server, bool isNewServer) {

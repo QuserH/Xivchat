@@ -27,6 +27,10 @@ namespace XIVChat_Desktop {
             this.InitializeComponent();
             this.DataContext = this;
 
+            if (this.isNewTab) {
+                this.Title = "Add tab";
+            }
+
             foreach (var category in (FilterCategory[])Enum.GetValues(typeof(FilterCategory))) {
                 var panel = new WrapPanel {
                     Margin = new Thickness(8),
