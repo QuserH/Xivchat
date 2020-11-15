@@ -7,108 +7,134 @@
         xmlns:ui="http://schemas.modernwpf.com/2019"
         ui:WindowHelper.UseModernWindowStyle="True"
         SizeToContent="WidthAndHeight"
+        ContentRendered="TrustDialog_OnContentRendered"
         WindowStartupLocation="CenterOwner"
         mc:Ignorable="d"
         Title="Key verification">
     <Grid Margin="8">
 
         <Grid.RowDefinitions>
-            <RowDefinition/>
-            <RowDefinition/>
-            <RowDefinition/>
-            <RowDefinition/>
-            <RowDefinition/>
-            <RowDefinition/>
+            <RowDefinition />
+            <RowDefinition />
+            <RowDefinition />
+            <RowDefinition />
+            <RowDefinition />
+            <RowDefinition />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Column="0" Grid.Row="0">
+        <TextBlock Grid.Column="0"
+                   Grid.Row="0">
             You are attempting to connect to a server you have never connected to before. Please check the server and ensure the two keys below match.
         </TextBlock>
 
-        <Grid Grid.Column="0" Grid.Row="1">
+        <Grid Grid.Column="0"
+              Grid.Row="1">
             <Grid.RowDefinitions>
-                <RowDefinition/>
-                <RowDefinition/>
-                <RowDefinition/>
+                <RowDefinition />
+                <RowDefinition />
+                <RowDefinition />
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.Column="0">Server:</TextBlock>
-            <TextBlock x:Name="ServerPublicKey" Grid.Row="1" Grid.Column="0"/>
-            <Grid Grid.Row="2" Grid.Column="0" Height="24" x:Name="ServerPublicKeyColours">
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0">
+                Server:
+            </TextBlock>
+            <TextBlock x:Name="ServerPublicKey"
+                       Grid.Row="1"
+                       Grid.Column="0" />
+            <Grid Grid.Row="2"
+                  Grid.Column="0"
+                  Height="24"
+                  x:Name="ServerPublicKeyColours">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
                 </Grid.ColumnDefinitions>
 
-                <Rectangle Grid.Column="0"></Rectangle>
-                <Rectangle Grid.Column="1"></Rectangle>
-                <Rectangle Grid.Column="2"></Rectangle>
-                <Rectangle Grid.Column="3"></Rectangle>
-                <Rectangle Grid.Column="4"></Rectangle>
-                <Rectangle Grid.Column="5"></Rectangle>
-                <Rectangle Grid.Column="6"></Rectangle>
-                <Rectangle Grid.Column="7"></Rectangle>
-                <Rectangle Grid.Column="8"></Rectangle>
-                <Rectangle Grid.Column="9"></Rectangle>
-                <Rectangle Grid.Column="10"></Rectangle>
+                <Rectangle Grid.Column="0" />
+                <Rectangle Grid.Column="1" />
+                <Rectangle Grid.Column="2" />
+                <Rectangle Grid.Column="3" />
+                <Rectangle Grid.Column="4" />
+                <Rectangle Grid.Column="5" />
+                <Rectangle Grid.Column="6" />
+                <Rectangle Grid.Column="7" />
+                <Rectangle Grid.Column="8" />
+                <Rectangle Grid.Column="9" />
+                <Rectangle Grid.Column="10" />
             </Grid>
         </Grid>
 
-        <Grid Grid.Column="0" Grid.Row="2">
+        <Grid Grid.Column="0"
+              Grid.Row="2">
             <Grid.RowDefinitions>
-                <RowDefinition/>
-                <RowDefinition/>
-                <RowDefinition/>
+                <RowDefinition />
+                <RowDefinition />
+                <RowDefinition />
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.Column="0">Client:</TextBlock>
-            <TextBlock x:Name="ClientPublicKey" Grid.Row="1" Grid.Column="0"/>
-            <Grid Grid.Row="2" Grid.Column="0" Height="24" x:Name="ClientPublicKeyColours">
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0">
+                Client:
+            </TextBlock>
+            <TextBlock x:Name="ClientPublicKey"
+                       Grid.Row="1"
+                       Grid.Column="0" />
+            <Grid Grid.Row="2"
+                  Grid.Column="0"
+                  Height="24"
+                  x:Name="ClientPublicKeyColours">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition/>
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                    <ColumnDefinition />
                 </Grid.ColumnDefinitions>
 
-                <Rectangle Grid.Column="0"></Rectangle>
-                <Rectangle Grid.Column="1"></Rectangle>
-                <Rectangle Grid.Column="2"></Rectangle>
-                <Rectangle Grid.Column="3"></Rectangle>
-                <Rectangle Grid.Column="4"></Rectangle>
-                <Rectangle Grid.Column="5"></Rectangle>
-                <Rectangle Grid.Column="6"></Rectangle>
-                <Rectangle Grid.Column="7"></Rectangle>
-                <Rectangle Grid.Column="8"></Rectangle>
-                <Rectangle Grid.Column="9"></Rectangle>
-                <Rectangle Grid.Column="10"></Rectangle>
+                <Rectangle Grid.Column="0" />
+                <Rectangle Grid.Column="1" />
+                <Rectangle Grid.Column="2" />
+                <Rectangle Grid.Column="3" />
+                <Rectangle Grid.Column="4" />
+                <Rectangle Grid.Column="5" />
+                <Rectangle Grid.Column="6" />
+                <Rectangle Grid.Column="7" />
+                <Rectangle Grid.Column="8" />
+                <Rectangle Grid.Column="9" />
+                <Rectangle Grid.Column="10" />
             </Grid>
         </Grid>
 
-        <WrapPanel Grid.Row="3" Grid.Column="0" Orientation="Vertical">
+        <WrapPanel Grid.Row="3"
+                   Grid.Column="0"
+                   Orientation="Vertical">
             <TextBlock>Give the key a name to remember it.</TextBlock>
             <TextBox x:Name="KeyName">No name</TextBox>
         </WrapPanel>
 
-        <TextBlock Grid.Row="4" Grid.Column="0">Do both keys match?</TextBlock>
+        <TextBlock Grid.Row="4"
+                   Grid.Column="0">
+            Do both keys match?
+        </TextBlock>
 
-        <WrapPanel Grid.Row="5" Grid.Column="0">
+        <WrapPanel Grid.Row="5"
+                   Grid.Column="0">
             <Button Click="Yes_Click">Yes</Button>
             <Button Click="No_Click">No</Button>
         </WrapPanel>

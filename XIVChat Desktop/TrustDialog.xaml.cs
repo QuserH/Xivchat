@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Channels;
 using System.Windows;
@@ -73,6 +74,10 @@ namespace XIVChat_Desktop {
         private async void No_Click(object sender, RoutedEventArgs e) {
             await this.trustChannel.WriteAsync(false);
             this.Close();
+        }
+
+        private void TrustDialog_OnContentRendered(object? sender, EventArgs e) {
+            this.InvalidateVisual();
         }
     }
 }
