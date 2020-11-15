@@ -15,6 +15,7 @@
 
     <ItemGroup>
         <None Remove="Resources\fonticon_ps4.tex.png" />
+        <None Remove="Resources\fonts\ffxiv.ttf" />
         <None Remove="Resources\logo.ico" />
         <None Remove="Resources\status\app_status_afk.png" />
         <None Remove="Resources\status\app_status_contents.png" />
@@ -28,11 +29,11 @@
         <None Remove="Resources\status\app_status_party_member.png" />
         <None Remove="Resources\status\app_status_roleplaying.png" />
         <None Remove="Resources\status\app_status_roleplaying.svg" />
-        <None Remove="fonts\ffxiv.ttf" />
     </ItemGroup>
 
     <ItemGroup>
         <Resource Include="Resources\fonticon_ps4.tex.png" />
+        <Resource Include="Resources\fonts\ffxiv.ttf" />
         <Resource Include="Resources\logo.ico" />
         <Resource Include="Resources\status\app_status_afk.png" />
         <Resource Include="Resources\status\app_status_contents.png" />
@@ -45,7 +46,6 @@
         <Resource Include="Resources\status\app_status_party_leader.png" />
         <Resource Include="Resources\status\app_status_party_member.png" />
         <Resource Include="Resources\status\app_status_roleplaying.png" />
-        <Resource Include="fonts\ffxiv.ttf" />
     </ItemGroup>
 
     <ItemGroup>
