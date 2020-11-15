@@ -78,8 +78,9 @@
             <TabControl.Resources>
                 <Style TargetType="{x:Type MenuItem}"
                        BasedOn="{StaticResource DefaultMenuItemStyle}">
+                    <!-- this is necessary to work around an issue where you have to select an item before commands check if they can execute -->
                     <Setter Property="CommandTarget"
-                            Value="{Binding Path=PlacementTarget,RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}" />
+                            Value="{Binding Path=PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}" />
                 </Style>
 
                 <ContextMenu x:Key="TabContextMenu"
@@ -154,8 +155,6 @@
                                 <DataTemplate>
                                     <cc:MessageTextBlock
                                         FontFamily="Global User Interface, /Resources/fonts/#XIV AXIS Std ATK"
-                                        TextWrapping="Wrap"
-                                        FontSize="{Binding App.Config.FontSize, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
                                         ProcessMarkdown="{Binding DataContext.ProcessMarkdown, ElementName=TabGrid}"
                                         Message="{Binding .}" />
                                 </DataTemplate>
