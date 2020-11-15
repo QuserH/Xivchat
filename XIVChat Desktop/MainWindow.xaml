@@ -120,14 +120,14 @@
                                    Grid.Row="1"
                                    Text="{Binding App.Connection.CurrentChannel, ElementName=Main, UpdateSourceTrigger=PropertyChanged}" />
 
-                        <TextBox
-                            ui:ControlHelper.PlaceholderText="{Binding InputPlaceholder, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
-                            IsEnabled="{Binding App.Connection.Available, ElementName=Main, UpdateSourceTrigger=PropertyChanged, FallbackValue=False}"
-                            Grid.Row="2"
-                            Margin="0,0,0,8"
-                            TextWrapping="Wrap"
-                            SpellCheck.IsEnabled="True"
-                            KeyDown="Input_Submit" />
+                        <TextBox x:Name="InputBox"
+                                 ui:ControlHelper.PlaceholderText="{Binding InputPlaceholder, ElementName=Main, UpdateSourceTrigger=PropertyChanged}"
+                                 IsEnabled="{Binding App.Connection.Available, ElementName=Main, UpdateSourceTrigger=PropertyChanged, FallbackValue=False}"
+                                 Grid.Row="2"
+                                 Margin="0,0,0,8"
+                                 TextWrapping="Wrap"
+                                 SpellCheck.IsEnabled="True"
+                                 KeyDown="Input_Submit" />
                     </Grid>
                 </DataTemplate>
             </TabControl.ContentTemplate>

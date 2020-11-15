@@ -5,11 +5,18 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using XIVChatCommon;
 
 namespace XIVChat_Desktop {
     public partial class FriendList : INotifyPropertyChanged {
+        public static readonly RoutedUICommand SendTell = new RoutedUICommand(
+            "SendTell",
+            "SendTell",
+            typeof(FriendList)
+        );
+
         public App App => (App)Application.Current;
 
         private bool waiting;
@@ -29,6 +36,31 @@ namespace XIVChat_Desktop {
             this.DataContext = this;
 
             this.App.Window.FriendList.CollectionChanged += this.OnFriendListChanged;
+        }
+
+        private void SendTell_Executed(object sender, ExecutedRoutedEventArgs executedRoutedEventArgs) {
+            if (!(executedRoutedEventArgs.Parameter is Player player)) {
+                return;
+            }
+
+            var input = this.App.Window.GetCurrentInputBox();
+            if (input == null) {
+                return;
+            }
+
+            var tell = $"/tell {player.Name}@{player.HomeWorldName} ";
+
+            input.Text = input.Text.Insert(0, tell);
+            input.SelectionStart = tell.Length;
+            input.SelectionLength = input.Text.Length - tell.Length;
+
+            this.Close();
+
+            input.Focus();
+        }
+
+        private void SendTell_CanExecute(object sender, CanExecuteRoutedEventArgs e) {
+            e.CanExecute = this.App.Connected;
         }
 
         private void Refresh_Click(object sender, RoutedEventArgs e) {

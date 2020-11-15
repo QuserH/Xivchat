@@ -12,6 +12,7 @@
         WindowStartupLocation="CenterOwner"
         Height="400"
         Width="700"
+        x:Name="Main"
         Closed="FriendList_OnClosed"
         d:DataContext="{d:DesignInstance local:FriendList}">
     <Grid Margin="8">
@@ -31,9 +32,32 @@
                   IsReadOnly="True"
                   CanUserReorderColumns="True"
                   Visibility="{Binding Waiting, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+            <DataGrid.CommandBindings>
+                <CommandBinding Command="local:FriendList.SendTell"
+                                Executed="SendTell_Executed"
+                                CanExecute="SendTell_CanExecute" />
+            </DataGrid.CommandBindings>
+
             <DataGrid.Resources>
                 <local:FriendListStatusConverter x:Key="StatusConverter" />
+
+                <ContextMenu x:Key="RowMenu"
+                             DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                             d:DataContext="{d:DesignInstance common:Player}">
+                    <MenuItem Header="Send tell"
+                              Command="local:FriendList.SendTell"
+                              CommandParameter="{Binding}" />
+                </ContextMenu>
             </DataGrid.Resources>
+
+            <DataGrid.RowStyle>
+                <Style TargetType="{x:Type DataGridRow}"
+                       BasedOn="{StaticResource DefaultDataGridRowStyle}">
+                    <Setter Property="ContextMenu"
+                            Value="{StaticResource RowMenu}" />
+                </Style>
+            </DataGrid.RowStyle>
+
             <DataGrid.Columns>
                 <DataGridTemplateColumn d:DataContext="{d:DesignInstance common:Player}">
                     <DataGridTemplateColumn.CellTemplate>
@@ -55,22 +79,6 @@
                                     Binding="{Binding FreeCompany}" />
             </DataGrid.Columns>
         </DataGrid>
-        <!-- <ListView Grid.Row="0" -->
-        <!--           ItemsSource="{Binding App.Window.FriendList}" -->
-        <!--           Visibility="{Binding Waiting, Converter={StaticResource InverseBoolToVisibilityConverter}}"> -->
-        <!--     <ListView.View> -->
-        <!--         <GridView> -->
-        <!--             <GridViewColumn Header="Name" -->
-        <!--                             DisplayMemberBinding="{Binding Name}" /> -->
-        <!--             <GridViewColumn Header="Job" -->
-        <!--                             DisplayMemberBinding="{Binding JobName}" /> -->
-        <!--             <GridViewColumn Header="Location" -->
-        <!--                             DisplayMemberBinding="{Binding TerritoryName}" /> -->
-        <!--             <GridViewColumn Header="FC" -->
-        <!--                             DisplayMemberBinding="{Binding FreeCompany}" /> -->
-        <!--         </GridView> -->
-        <!--     </ListView.View> -->
-        <!-- </ListView> -->
         <Button Grid.Row="1"
                 IsEnabled="{Binding App.Connected}"
                 Content="Refresh"

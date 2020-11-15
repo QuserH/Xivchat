@@ -144,11 +144,9 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            if (!(sender is TextBox)) {
+            if (!(sender is TextBox textBox)) {
                 return;
             }
-
-            var textBox = (TextBox)sender;
 
             conn.SendMessage(textBox.Text);
             textBox.Text = "";
@@ -160,6 +158,10 @@ namespace XIVChat_Desktop {
 
         private void Tabs_Loaded(object sender, RoutedEventArgs e) {
             this.Tabs.SelectedIndex = 0;
+        }
+
+        public TextBox? GetCurrentInputBox() {
+            return this.FindElementByName<TextBox>(this.Tabs, "InputBox");
         }
 
         private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e) {
