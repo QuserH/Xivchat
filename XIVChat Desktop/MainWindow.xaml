@@ -172,7 +172,7 @@
                                  Margin="0,0,0,8"
                                  TextWrapping="Wrap"
                                  SpellCheck.IsEnabled="True"
-                                 KeyDown="Input_Submit" />
+                                 PreviewKeyDown="Input_Submit" />
                     </Grid>
                 </DataTemplate>
             </TabControl.ContentTemplate>

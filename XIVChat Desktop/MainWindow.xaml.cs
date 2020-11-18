@@ -77,6 +77,22 @@ namespace XIVChat_Desktop {
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
         public ObservableCollection<Player> FriendList { get; } = new ObservableCollection<Player>();
 
+        private int historyIndex = -1;
+
+        private int HistoryIndex {
+            get => this.historyIndex;
+            set {
+                var idx = Math.Min(this.History.Count - 1, Math.Max(-1, value));
+                this.historyIndex = idx;
+            }
+        }
+
+        private int ReverseHistoryIndex => this.HistoryIndex == -1 ? -1 : Math.Max(-1, this.History.Count - this.HistoryIndex - 1);
+
+        private string? HistoryBuffer { get; set; }
+
+        private List<string> History { get; } = new List<string>();
+
         public string InputPlaceholder => this.App.Connection?.Available == true ? "Send a message..." : "Chat is currently unavailable";
 
         public MainWindow() {
@@ -192,21 +208,64 @@ namespace XIVChat_Desktop {
         }
 
         private void Input_Submit(object sender, KeyEventArgs e) {
-            if (e.Key != Key.Return) {
+            if (!(sender is TextBox textBox)) {
                 return;
             }
 
+            switch (e.Key) {
+                case Key.Return:
+                    this.Submit(textBox);
+                    break;
+                case Key.Up:
+                    this.ArrowNavigate(textBox, true);
+                    break;
+                case Key.Down:
+                    this.ArrowNavigate(textBox, false);
+                    break;
+            }
+        }
+
+        private void Submit(TextBox textBox) {
             var conn = this.App.Connection;
             if (conn == null) {
                 return;
             }
 
-            if (!(sender is TextBox textBox)) {
-                return;
+            conn.SendMessage(textBox.Text);
+            this.History.Add(textBox.Text);
+            while (this.History.Count > 100) {
+                this.History.RemoveAt(0);
             }
 
-            conn.SendMessage(textBox.Text);
             textBox.Text = "";
+        }
+
+        private void ArrowNavigate(TextBox textBox, bool up) {
+            var firstLine = textBox.GetLineLength(0);
+            var inFirstLine = textBox.CaretIndex <= firstLine;
+
+            var lastLine = textBox.Text.Length - textBox.GetLineLength(textBox.LineCount - 1);
+            var inLastLine = textBox.CaretIndex >= lastLine;
+
+            if (this.HistoryIndex == -1) {
+                this.HistoryBuffer = textBox.Text;
+            }
+
+            if (up && inFirstLine) {
+                // go up in history
+                this.HistoryIndex += 1;
+                textBox.Text = this.History[this.ReverseHistoryIndex];
+            } else if (!up && inLastLine) {
+                // go down in history
+                this.HistoryIndex -= 1;
+
+                if (this.HistoryIndex == -1) {
+                    textBox.Text = this.HistoryBuffer;
+                    this.HistoryBuffer = null;
+                } else {
+                    textBox.Text = this.History[this.ReverseHistoryIndex];
+                }
+            }
         }
 
         private void Configuration_Click(object sender, RoutedEventArgs e) {
