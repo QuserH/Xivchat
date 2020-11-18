@@ -157,7 +157,23 @@
                                     <cc:MessageTextBlock
                                         FontFamily="Global User Interface, /Resources/fonts/#XIV AXIS Std ATK"
                                         ProcessMarkdown="{Binding DataContext.ProcessMarkdown, ElementName=TabGrid}"
-                                        Message="{Binding .}" />
+                                        Message="{Binding .}">
+                                        <cc:MessageTextBlock.CommandBindings>
+                                            <CommandBinding Command="local:MainWindow.MessageSendTell"
+                                                            Executed="MessageSendTell_OnExecuted"
+                                                            CanExecute="MessageSendTell_CanExecute" />
+                                        </cc:MessageTextBlock.CommandBindings>
+
+                                        <cc:MessageTextBlock.ContextMenu>
+                                            <ContextMenu
+                                                DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                                d:DataContext="{d:DesignInstance server:ServerMessage}">
+                                                <MenuItem Header="Send /tell to sender"
+                                                          Command="local:MainWindow.MessageSendTell"
+                                                          CommandParameter="{Binding}" />
+                                            </ContextMenu>
+                                        </cc:MessageTextBlock.ContextMenu>
+                                    </cc:MessageTextBlock>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

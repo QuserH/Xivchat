@@ -77,6 +77,14 @@ namespace XIVChat_Desktop {
             typeof(MainWindow)
         );
 
+        private void MessageSendTell_CanExecute(object sender, CanExecuteRoutedEventArgs e) {
+            if (!(e.Parameter is ServerMessage message)) {
+                return;
+            }
+
+            e.CanExecute = message.GetSenderPlayer() != null;
+        }
+
         private void MessageSendTell_OnExecuted(object eventSender, ExecutedRoutedEventArgs e) {
             if (!(e.Parameter is ServerMessage message)) {
                 return;
@@ -87,12 +95,12 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            var input = this.GetCurrentInputBox();
-            if (input == null) {
+            var worldName = Util.WorldName(sender.Server);
+            if (worldName == null) {
                 return;
             }
 
-            input.Text.Insert(0, $"/tell {sender.Name}@{sender.Server} ");
+            this.InsertTellCommand(sender.Name, worldName);
         }
 
         #endregion
@@ -221,6 +229,23 @@ namespace XIVChat_Desktop {
             // scroll to the bottom if previously at the bottom
             if (wasAtBottom) {
                 scroller.ScrollToBottom();
+            }
+        }
+
+        public void InsertTellCommand(string name, string world, bool focus = true) {
+            var input = this.App.Window.GetCurrentInputBox();
+            if (input == null) {
+                return;
+            }
+
+            var tell = $"/tell {name}@{world} ";
+
+            input.Text = input.Text.Insert(0, tell);
+            input.SelectionStart = tell.Length;
+            input.SelectionLength = input.Text.Length - tell.Length;
+
+            if (focus) {
+                input.Focus();
             }
         }
 

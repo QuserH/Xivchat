@@ -43,20 +43,16 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            var input = this.App.Window.GetCurrentInputBox();
-            if (input == null) {
+            var name = player.Name;
+            var world = player.HomeWorldName;
+
+            if (name == null || world == null) {
                 return;
             }
 
-            var tell = $"/tell {player.Name}@{player.HomeWorldName} ";
-
-            input.Text = input.Text.Insert(0, tell);
-            input.SelectionStart = tell.Length;
-            input.SelectionLength = input.Text.Length - tell.Length;
+            this.App.Window.InsertTellCommand(name, world);
 
             this.Close();
-
-            input.Focus();
         }
 
         private void SendTell_CanExecute(object sender, CanExecuteRoutedEventArgs e) {

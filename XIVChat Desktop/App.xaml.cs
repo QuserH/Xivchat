@@ -6,7 +6,6 @@ using System.Windows;
 using System.Windows.Markup;
 using ModernWpf;
 
-// TODO: Up/down to cycle through input history
 // TODO: key word notification, notifications on message type, targeted message (like emote targeting you)
 // TODO: right click message to send tell to sender?
 
