@@ -241,6 +241,10 @@ namespace XIVChat_Desktop {
         }
 
         private void ArrowNavigate(TextBox textBox, bool up) {
+            if (this.History.Count == 0) {
+                return;
+            }
+
             var caretLine = textBox.GetLineIndexFromCharacterIndex(textBox.CaretIndex);
             var inFirstLine = caretLine == 0;
             var inLastLine = caretLine == textBox.LineCount - 1;
