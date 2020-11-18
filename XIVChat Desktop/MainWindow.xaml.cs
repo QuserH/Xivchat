@@ -241,11 +241,9 @@ namespace XIVChat_Desktop {
         }
 
         private void ArrowNavigate(TextBox textBox, bool up) {
-            var firstLine = textBox.GetLineLength(0);
-            var inFirstLine = textBox.CaretIndex <= firstLine;
-
-            var lastLine = textBox.Text.Length - textBox.GetLineLength(textBox.LineCount - 1);
-            var inLastLine = textBox.CaretIndex >= lastLine;
+            var caretLine = textBox.GetLineIndexFromCharacterIndex(textBox.CaretIndex);
+            var inFirstLine = caretLine == 0;
+            var inLastLine = caretLine == textBox.LineCount - 1;
 
             if (this.HistoryIndex == -1) {
                 this.HistoryBuffer = textBox.Text;
