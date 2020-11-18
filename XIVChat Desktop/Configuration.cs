@@ -10,7 +10,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using XIVChatCommon;
+using XIVChatCommon.Message;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     [JsonObject]

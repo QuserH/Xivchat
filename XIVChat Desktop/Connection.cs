@@ -7,8 +7,11 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using XIVChatCommon;
-using DispatcherPriority = System.Windows.Threading.DispatcherPriority;
+using XIVChatCommon.Message;
+using XIVChatCommon.Message.Client;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public class Connection : INotifyPropertyChanged {
@@ -268,7 +271,13 @@ namespace XIVChat_Desktop {
                     this.Disconnect();
                     break;
                 case ServerOperation.PlayerData:
-                    var playerData = payload.Length == 0 ? null : PlayerData.Decode(payload);
+                    var rawPlayerData = payload.Length == 0 ? null : PlayerData.Decode(payload);
+
+                    var playerData = rawPlayerData switch {
+                        PlayerData data => data,
+                        EmptyPlayerData _ => null,
+                        _ => throw new Exception("Bad player data"),
+                    };
 
                     this.SetPlayerData(playerData);
                     break;

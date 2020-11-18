@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:XIVChat_Desktop"
         xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
         xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:server="clr-namespace:XIVChatCommon.Message.Server;assembly=XIVChatCommon"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:TitleBar.ExtendViewIntoTitleBar="{Binding App.Config.CompactMode}"
         mc:Ignorable="d"

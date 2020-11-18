@@ -5,7 +5,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:local="clr-namespace:XIVChat_Desktop"
         xmlns:ui="http://schemas.modernwpf.com/2019"
-        xmlns:common="clr-namespace:XIVChatCommon;assembly=XIVChatCommon"
+        xmlns:message="clr-namespace:XIVChatCommon.Message;assembly=XIVChatCommon"
         ui:WindowHelper.UseModernWindowStyle="True"
         mc:Ignorable="d"
         Title="Friend list"
@@ -43,8 +43,8 @@
 
                 <ContextMenu x:Key="RowMenu"
                              DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
-                             d:DataContext="{d:DesignInstance common:Player}">
-                    <MenuItem Header="Send tell"
+                             d:DataContext="{d:DesignInstance message:Player}">
+                    <MenuItem Header="Send /tell"
                               Command="local:FriendList.SendTell"
                               CommandParameter="{Binding}" />
                 </ContextMenu>
@@ -59,7 +59,7 @@
             </DataGrid.RowStyle>
 
             <DataGrid.Columns>
-                <DataGridTemplateColumn d:DataContext="{d:DesignInstance common:Player}">
+                <DataGridTemplateColumn d:DataContext="{d:DesignInstance message:Player}">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Image MaxHeight="32"

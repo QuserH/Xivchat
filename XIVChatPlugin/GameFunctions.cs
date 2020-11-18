@@ -6,7 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
-using XIVChatCommon;
+using XIVChatCommon.Message;
 
 namespace XIVChatPlugin {
     public class GameFunctions : IDisposable {

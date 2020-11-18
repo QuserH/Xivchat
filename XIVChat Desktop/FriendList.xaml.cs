@@ -7,7 +7,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
-using XIVChatCommon;
+using XIVChatCommon.Message;
 
 namespace XIVChat_Desktop {
     public partial class FriendList : INotifyPropertyChanged {

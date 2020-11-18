@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Data;
-using XIVChatCommon;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public class DoubleConverter : IValueConverter {

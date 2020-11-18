@@ -8,7 +8,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using XIVChatCommon;
+using XIVChatCommon.Message;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     /// <summary>
@@ -68,6 +69,30 @@ namespace XIVChat_Desktop {
 
         private void ManageTabs_OnExecuted(object sender, ExecutedRoutedEventArgs e) {
             new ManageTabs(this).Show();
+        }
+
+        public static readonly RoutedUICommand MessageSendTell = new RoutedUICommand(
+            "MessageSendTell",
+            "MessageSendTell",
+            typeof(MainWindow)
+        );
+
+        private void MessageSendTell_OnExecuted(object eventSender, ExecutedRoutedEventArgs e) {
+            if (!(e.Parameter is ServerMessage message)) {
+                return;
+            }
+
+            var sender = message.GetSenderPlayer();
+            if (sender == null) {
+                return;
+            }
+
+            var input = this.GetCurrentInputBox();
+            if (input == null) {
+                return;
+            }
+
+            input.Text.Insert(0, $"/tell {sender.Name}@{sender.Server} ");
         }
 
         #endregion

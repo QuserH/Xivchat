@@ -1,6 +1,6 @@
 ﻿using System.Windows;
 using System.Windows.Data;
-using XIVChatCommon;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop.Controls {
     public class MessageTextBlock : SelectableTextBlock {

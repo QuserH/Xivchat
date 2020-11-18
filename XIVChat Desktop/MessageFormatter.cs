@@ -6,8 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using XIVChatCommon;
-using Inline = System.Windows.Documents.Inline;
+using XIVChatCommon.Message;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public class MessageFormatter {

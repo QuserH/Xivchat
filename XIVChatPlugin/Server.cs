@@ -18,6 +18,9 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using XIVChatCommon;
+using XIVChatCommon.Message;
+using XIVChatCommon.Message.Client;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
     public class Server : IDisposable {

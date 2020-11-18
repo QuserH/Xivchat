@@ -11,7 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Threading;
 using Microsoft.Win32;
-using XIVChatCommon;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public partial class Export : INotifyPropertyChanged {

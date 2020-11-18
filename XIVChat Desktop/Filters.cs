@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using XIVChatCommon;
+using XIVChatCommon.Message;
 
 namespace XIVChat_Desktop {
     public enum FilterCategory {
@@ -102,9 +102,14 @@ namespace XIVChat_Desktop {
 
     // NOTE: Changing the order of these is a breaking change
     public enum FilterType {
-        [Filter("Say", ChatType.Say)] Say,
-        [Filter("Shout", ChatType.Shout)] Shout,
-        [Filter("Yell", ChatType.Yell)] Yell,
+        [Filter("Say", ChatType.Say)]
+        Say,
+
+        [Filter("Shout", ChatType.Shout)]
+        Shout,
+
+        [Filter("Yell", ChatType.Yell)]
+        Yell,
 
         [Filter("Tell", ChatType.TellOutgoing, ChatType.TellIncoming)]
         Tell,
@@ -117,7 +122,9 @@ namespace XIVChat_Desktop {
 
         [Filter("Free Company", ChatType.FreeCompany)]
         FreeCompany,
-        [Filter("PvP Team", ChatType.PvpTeam)] PvpTeam,
+
+        [Filter("PvP Team", ChatType.PvpTeam)]
+        PvpTeam,
 
         [Filter("Cross-world Linkshell [1]", ChatType.CrossLinkshell1)]
         CrossLinkshell1,
@@ -190,9 +197,14 @@ namespace XIVChat_Desktop {
         )]
         Battle,
 
-        [Filter("Debug", ChatType.Debug)] Debug,
-        [Filter("Urgent", ChatType.Urgent)] Urgent,
-        [Filter("Notice", ChatType.Notice)] Notice,
+        [Filter("Debug", ChatType.Debug)]
+        Debug,
+
+        [Filter("Urgent", ChatType.Urgent)]
+        Urgent,
+
+        [Filter("Notice", ChatType.Notice)]
+        Notice,
 
         [Filter("System Messages", ChatType.System)]
         SystemMessages,
@@ -208,7 +220,9 @@ namespace XIVChat_Desktop {
 
         [Filter("Error Messages", ChatType.Error)]
         ErrorMessages,
-        [Filter("Echo", ChatType.Echo)] Echo,
+
+        [Filter("Echo", ChatType.Echo)]
+        Echo,
 
         [Filter("Novice Network Notifications", ChatType.NoviceNetworkSystem)]
         NoviceNetworkAnnouncements,

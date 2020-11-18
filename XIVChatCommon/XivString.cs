@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using XIVChatCommon.Message;
 
 namespace XIVChatCommon {
     public static class XivString {
@@ -68,8 +69,10 @@ namespace XIVChatCommon {
                         case 0x49:
                             break;
                     }
+
                     continue;
                 }
+
                 stringBytes.Add(b);
             }
 
@@ -90,8 +93,10 @@ namespace XIVChatCommon {
                     if (end != End) {
                         throw new ArgumentException("Input was not a valid XivString");
                     }
+
                     continue;
                 }
+
                 stringBytes.Add(b);
             }
 
@@ -108,15 +113,15 @@ namespace XIVChatCommon {
             ByteTimes256 = 0xF1,
             Int16 = 0xF2,
             ByteShl16 = 0xF3,
-            Int16Packed = 0xF4,         // seen in map links, seemingly 2 8-bit values packed into 2 bytes with only one marker
+            Int16Packed = 0xF4, // seen in map links, seemingly 2 8-bit values packed into 2 bytes with only one marker
             Int16Shl8 = 0xF5,
-            Int24Special = 0xF6,        // unsure how different form Int24 - used for hq items that add 1 million, also used for normal 24-bit values in map links
+            Int24Special = 0xF6, // unsure how different form Int24 - used for hq items that add 1 million, also used for normal 24-bit values in map links
             Int8Shl24 = 0xF7,
             Int8Shl8Int8 = 0xF8,
             Int8Shl8Int8Shl8 = 0xF9,
             Int24 = 0xFA,
             Int16Shl16 = 0xFB,
-            Int24Packed = 0xFC,         // used in map links- sometimes short+byte, sometimes... not??
+            Int24Packed = 0xFC, // used in map links- sometimes short+byte, sometimes... not??
             Int16Int8Shl8 = 0xFD,
             Int32 = 0xFE,
         }
@@ -146,66 +151,66 @@ namespace XIVChatCommon {
                 case IntegerType.Int8Shl24:
                     return (uint)(input.ReadByte() << 24);
                 case IntegerType.Int8Shl8Int8: {
-                        var v = 0;
-                        v |= input.ReadByte() << 24;
-                        v |= input.ReadByte();
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 24;
+                    v |= input.ReadByte();
+                    return (uint)v;
+                }
                 case IntegerType.Int8Shl8Int8Shl8: {
-                        var v = 0;
-                        v |= input.ReadByte() << 24;
-                        v |= input.ReadByte() << 8;
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 24;
+                    v |= input.ReadByte() << 8;
+                    return (uint)v;
+                }
 
 
                 case IntegerType.Int16:
                 // fallthrough - same logic
                 case IntegerType.Int16Packed: {
-                        var v = 0;
-                        v |= input.ReadByte() << 8;
-                        v |= input.ReadByte();
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 8;
+                    v |= input.ReadByte();
+                    return (uint)v;
+                }
                 case IntegerType.Int16Shl8: {
-                        var v = 0;
-                        v |= input.ReadByte() << 16;
-                        v |= input.ReadByte() << 8;
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 16;
+                    v |= input.ReadByte() << 8;
+                    return (uint)v;
+                }
                 case IntegerType.Int16Shl16: {
-                        var v = 0;
-                        v |= input.ReadByte() << 24;
-                        v |= input.ReadByte() << 16;
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 24;
+                    v |= input.ReadByte() << 16;
+                    return (uint)v;
+                }
 
                 case IntegerType.Int24Special:
                 // Fallthrough - same logic
                 case IntegerType.Int24Packed:
                 // fallthrough again
                 case IntegerType.Int24: {
-                        var v = 0;
-                        v |= input.ReadByte() << 16;
-                        v |= input.ReadByte() << 8;
-                        v |= input.ReadByte();
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 16;
+                    v |= input.ReadByte() << 8;
+                    v |= input.ReadByte();
+                    return (uint)v;
+                }
                 case IntegerType.Int16Int8Shl8: {
-                        var v = 0;
-                        v |= input.ReadByte() << 24;
-                        v |= input.ReadByte() << 16;
-                        v |= input.ReadByte() << 8;
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 24;
+                    v |= input.ReadByte() << 16;
+                    v |= input.ReadByte() << 8;
+                    return (uint)v;
+                }
                 case IntegerType.Int32: {
-                        var v = 0;
-                        v |= input.ReadByte() << 24;
-                        v |= input.ReadByte() << 16;
-                        v |= input.ReadByte() << 8;
-                        v |= input.ReadByte();
-                        return (uint)v;
-                    }
+                    var v = 0;
+                    v |= input.ReadByte() << 24;
+                    v |= input.ReadByte() << 16;
+                    v |= input.ReadByte() << 8;
+                    v |= input.ReadByte();
+                    return (uint)v;
+                }
 
                 default:
                     throw new NotSupportedException();
