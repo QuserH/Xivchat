@@ -240,12 +240,8 @@ namespace XIVChatCommon.Message.Server {
         [IgnoreMember]
         protected override byte Code => (byte)ServerOperation.PlayerData;
 
-        public static object Decode(byte[] bytes) {
-            try {
-                return MessagePackSerializer.Deserialize<PlayerData>(bytes);
-            } catch (Exception) {
-                return MessagePackSerializer.Deserialize<EmptyPlayerData>(bytes);
-            }
+        public static PlayerData Decode(byte[] bytes) {
+            return MessagePackSerializer.Deserialize<PlayerData>(bytes);
         }
 
         protected override byte[] PayloadEncode() {

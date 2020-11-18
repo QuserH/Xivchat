@@ -7,7 +7,6 @@ using System.Windows.Markup;
 using ModernWpf;
 
 // TODO: key word notification, notifications on message type, targeted message (like emote targeting you)
-// TODO: right click message to send tell to sender?
 
 namespace XIVChat_Desktop {
     /// <summary>

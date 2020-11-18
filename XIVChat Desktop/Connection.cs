@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -144,16 +145,20 @@ namespace XIVChat_Desktop {
                 while (!this.cancel.IsCancellationRequested) {
                     var result = await Task.WhenAny(inc, cancel);
                     if (result == inc) {
-                        if (inc.Exception != null) {
+                        var ex = inc.Exception;
+                        if (ex != null) {
                             this.app.Dispatch(() => {
                                 this.app.Window.AddSystemMessage("Error reading incoming message.");
                                 // ReSharper disable once LocalizableElement
-                                Console.WriteLine($"Error reading incoming message: {inc.Exception.Message}");
-                                foreach (var inner in inc.Exception.InnerExceptions) {
+                                Console.WriteLine($"Error reading incoming message: {ex.Message}");
+                                foreach (var inner in ex.InnerExceptions) {
                                     Console.WriteLine(inner.StackTrace);
                                 }
                             });
-                            break;
+                            if (!(ex.InnerException is CryptographicException)) {
+                                this.app.Disconnect();
+                                break;
+                            }
                         }
 
                         var rawMessage = await inc;
@@ -268,16 +273,10 @@ namespace XIVChat_Desktop {
                     });
                     break;
                 case ServerOperation.Shutdown:
-                    this.Disconnect();
+                    this.app.Disconnect();
                     break;
                 case ServerOperation.PlayerData:
-                    var rawPlayerData = payload.Length == 0 ? null : PlayerData.Decode(payload);
-
-                    var playerData = rawPlayerData switch {
-                        PlayerData data => data,
-                        EmptyPlayerData _ => null,
-                        _ => throw new Exception("Bad player data"),
-                    };
+                    var playerData = payload.Length == 0 ? null : PlayerData.Decode(payload);
 
                     this.SetPlayerData(playerData);
                     break;
@@ -292,7 +291,7 @@ namespace XIVChat_Desktop {
                     this.CurrentChannel = channel.name;
 
                     this.app.Dispatch(() => {
-                        this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.CurrentChannel)));
+                        this.OnPropertyChanged(nameof(this.CurrentChannel));
                     });
                     break;
                 case ServerOperation.Backlog:
