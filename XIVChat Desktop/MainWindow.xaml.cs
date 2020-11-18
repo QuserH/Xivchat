@@ -93,7 +93,7 @@ namespace XIVChat_Desktop {
 
         private List<string> History { get; } = new List<string>();
 
-        public string InputPlaceholder => this.App.Connection?.Available == true ? "Send a message..." : "Chat is currently unavailable";
+        public string InputPlaceholder => this.App.Connection?.Available == true ? "Send a message…" : "Chat is currently unavailable";
 
         public MainWindow() {
             this.InitializeComponent();
