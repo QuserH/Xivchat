@@ -189,7 +189,9 @@ namespace XIVChat_Desktop {
 
             // detect if scroller is at the bottom
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
-            var wasAtBottom = Math.Abs(scroller!.VerticalOffset - scroller.ScrollableHeight) < .0001;
+            var scrollerOffset = scroller!.VerticalOffset;
+            var scrollerHeight = scroller.ScrollableHeight;
+            var wasAtBottom = Math.Abs(scroller.VerticalOffset - scrollerHeight) < .0001;
 
             // add messages to main list
             this.Messages.InsertRange(this.insertAt, messages);
@@ -206,13 +208,18 @@ namespace XIVChat_Desktop {
             // scroll to the bottom if previously at the bottom
             if (wasAtBottom) {
                 scroller.ScrollToBottom();
+            } else {
+                scroller.UpdateLayout();
+                var scrollDiff = scroller.ScrollableHeight - scrollerHeight;
+                scroller.ScrollToVerticalOffset(scrollerOffset + scrollDiff);
             }
         }
 
         public void AddMessage(ServerMessage message) {
             // detect if scroller is at the bottom
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
-            var wasAtBottom = Math.Abs(scroller!.VerticalOffset - scroller.ScrollableHeight) < .0001;
+            var verticalOffset = scroller!.VerticalOffset;
+            var wasAtBottom = Math.Abs(verticalOffset - scroller.ScrollableHeight) < .0001;
 
             // add message to main list
             this.Messages.Add(message);
@@ -229,6 +236,8 @@ namespace XIVChat_Desktop {
             // scroll to the bottom if previously at the bottom
             if (wasAtBottom) {
                 scroller.ScrollToBottom();
+            } else {
+                scroller.ScrollToVerticalOffset(verticalOffset);
             }
         }
 
