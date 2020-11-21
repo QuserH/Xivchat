@@ -1,20 +1,18 @@
-﻿<Window x:Class="XIVChat_Desktop.Export"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:local="clr-namespace:XIVChat_Desktop"
-        xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
-        xmlns:xiv="clr-namespace:XIVChatCommon;assembly=XIVChatCommon"
-        xmlns:ui="http://schemas.modernwpf.com/2019"
-        xmlns:sdl="http://schemas.sdl.com/xaml"
-        ui:WindowHelper.UseModernWindowStyle="True"
-        mc:Ignorable="d"
-        Title="Export"
-        x:Name="Main"
-        d:DataContext="{d:DesignInstance local:Export}"
-        Height="600"
-        Width="800">
+﻿<local:XivChatWindow x:Class="XIVChat_Desktop.Export"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:local="clr-namespace:XIVChat_Desktop"
+                     xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
+                     xmlns:ui="http://schemas.modernwpf.com/2019"
+                     ui:WindowHelper.UseModernWindowStyle="True"
+                     mc:Ignorable="d"
+                     Title="Export"
+                     x:Name="Main"
+                     d:DataContext="{d:DesignInstance local:Export}"
+                     Height="600"
+                     Width="800">
     <Grid Margin="8">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -149,4 +147,4 @@
                     HorizontalAlignment="Right" />
         </Grid>
     </Grid>
-</Window>
+</local:XivChatWindow>

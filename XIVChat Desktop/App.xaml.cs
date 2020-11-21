@@ -67,12 +67,7 @@ namespace XIVChat_Desktop {
 
             this.UpdateTheme();
 
-            FrameworkElement.LanguageProperty.OverrideMetadata(
-                typeof(FrameworkElement),
-                new FrameworkPropertyMetadata(
-                    XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag)
-                )
-            );
+            LocaliseAllElements();
 
             // I guess this gets initialised where you call it the first time, so initialise it on the UI thread
             this.Dispatcher.Invoke(() => { });
@@ -86,6 +81,15 @@ namespace XIVChat_Desktop {
             #endif
 
             this.InitialiseWindow();
+        }
+
+        private static void LocaliseAllElements() {
+            FrameworkElement.LanguageProperty.OverrideMetadata(
+                typeof(FrameworkElement),
+                new FrameworkPropertyMetadata(
+                    XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag)
+                )
+            );
         }
 
         public void InitialiseWindow() {

@@ -94,7 +94,6 @@ namespace XIVChat_Desktop {
         }
 
         private void ServerScan_OnContentRendered(object? sender, EventArgs e) {
-            this.InvalidateVisual();
             this.udpThread ??= Task.Run(this.Scanner);
         }
 

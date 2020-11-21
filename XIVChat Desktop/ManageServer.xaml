@@ -1,17 +1,16 @@
-﻿<Window x:Class="XIVChat_Desktop.ManageServer"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:XIVChat_Desktop"
-        mc:Ignorable="d"
-        xmlns:ui="http://schemas.modernwpf.com/2019"
-        ui:WindowHelper.UseModernWindowStyle="True"
-        WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
-        ContentRendered="ManageServer_OnContentRendered"
-        Title="Manage server"
-        d:DataContext="{d:DesignInstance local:ManageServer}">
+﻿<local:XivChatWindow x:Class="XIVChat_Desktop.ManageServer"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:local="clr-namespace:XIVChat_Desktop"
+                     mc:Ignorable="d"
+                     xmlns:ui="http://schemas.modernwpf.com/2019"
+                     ui:WindowHelper.UseModernWindowStyle="True"
+                     WindowStartupLocation="CenterOwner"
+                     SizeToContent="WidthAndHeight"
+                     Title="Manage server"
+                     d:DataContext="{d:DesignInstance local:ManageServer}">
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -75,4 +74,4 @@
             </Button>
         </WrapPanel>
     </Grid>
-</Window>
+</local:XivChatWindow>

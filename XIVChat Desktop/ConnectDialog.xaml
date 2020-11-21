@@ -1,20 +1,19 @@
-﻿<Window x:Class="XIVChat_Desktop.ConnectDialog"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:XIVChat_Desktop"
-        xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
-        xmlns:ui="http://schemas.modernwpf.com/2019"
-        ui:WindowHelper.UseModernWindowStyle="True"
-        mc:Ignorable="d"
-        ContentRendered="ConnectDialog_OnContentRendered"
-        SizeToContent="WidthAndHeight"
-        WindowStartupLocation="CenterOwner"
-        ResizeMode="CanResizeWithGrip"
-        ShowInTaskbar="False"
-        Title="Connect"
-        d:DataContext="{d:DesignInstance local:ConnectDialog}">
+﻿<local:XivChatWindow x:Class="XIVChat_Desktop.ConnectDialog"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:local="clr-namespace:XIVChat_Desktop"
+                     xmlns:cc="clr-namespace:XIVChat_Desktop.Controls"
+                     xmlns:ui="http://schemas.modernwpf.com/2019"
+                     ui:WindowHelper.UseModernWindowStyle="True"
+                     mc:Ignorable="d"
+                     SizeToContent="WidthAndHeight"
+                     WindowStartupLocation="CenterOwner"
+                     ResizeMode="CanResizeWithGrip"
+                     ShowInTaskbar="False"
+                     Title="Connect"
+                     d:DataContext="{d:DesignInstance local:ConnectDialog}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -41,4 +40,4 @@
             </Button>
         </WrapPanel>
     </Grid>
-</Window>
+</local:XivChatWindow>

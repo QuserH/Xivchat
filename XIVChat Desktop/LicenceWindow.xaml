@@ -1,17 +1,16 @@
-﻿<Window x:Class="XIVChat_Desktop.LicenceWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:local="clr-namespace:XIVChat_Desktop"
-        xmlns:ui="http://schemas.modernwpf.com/2019"
-        ui:WindowHelper.UseModernWindowStyle="True"
-        mc:Ignorable="d"
-        Title="Licence"
-        WindowStartupLocation="CenterOwner"
-        ContentRendered="LicenceWindow_OnContentRendered"
-        SizeToContent="WidthAndHeight"
-        d:DataContext="{d:DesignInstance local:LicenceWindow}">
+﻿<local:XivChatWindow x:Class="XIVChat_Desktop.LicenceWindow"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:local="clr-namespace:XIVChat_Desktop"
+                     xmlns:ui="http://schemas.modernwpf.com/2019"
+                     ui:WindowHelper.UseModernWindowStyle="True"
+                     mc:Ignorable="d"
+                     Title="Licence"
+                     WindowStartupLocation="CenterOwner"
+                     SizeToContent="WidthAndHeight"
+                     d:DataContext="{d:DesignInstance local:LicenceWindow}">
     <StackPanel Margin="8">
         <ProgressBar x:Name="Loading"
                      IsIndeterminate="True" />
@@ -29,4 +28,4 @@
                     IsEnabled="False" />
         </StackPanel>
     </StackPanel>
-</Window>
+</local:XivChatWindow>

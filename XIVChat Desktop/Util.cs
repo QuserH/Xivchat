@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Windows.Threading;
-using Windows.UI.Xaml.Data;
 
 namespace XIVChat_Desktop {
     public static class Util {
