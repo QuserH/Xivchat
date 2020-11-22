@@ -10,9 +10,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XIVChatCommon", "XIVChatCommon\XIVChatCommon.csproj", "{6F426EAB-15D4-48AC-80D2-2D2DF2CE5EE0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "XIVChatCommon", "XIVChatCommon\XIVChatCommon.csproj", "{6F426EAB-15D4-48AC-80D2-2D2DF2CE5EE0}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "XIVChat Desktop", "XIVChat Desktop\XIVChat Desktop.csproj", "{D2773EAE-6B9E-4017-9681-585AAB5A99F4}"
+EndProject
+Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "XIVChat Desktop Installer", "XIVChat Desktop Installer\XIVChat Desktop Installer.wixproj", "{6017ABE2-E82F-476D-B3DA-18B634E092F2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -32,6 +34,8 @@ Global
 		{D2773EAE-6B9E-4017-9681-585AAB5A99F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D2773EAE-6B9E-4017-9681-585AAB5A99F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D2773EAE-6B9E-4017-9681-585AAB5A99F4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6017ABE2-E82F-476D-B3DA-18B634E092F2}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{6017ABE2-E82F-476D-B3DA-18B634E092F2}.Release|Any CPU.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+	<Product Id="*" Name="XIVChat for Windows" Language="1033" Version="1.0.0.0" Manufacturer="XIVChat" UpgradeCode="82f30f39-99e8-4040-9bc0-32c1eac159df">
+		<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+
+		<MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+		<MediaTemplate EmbedCab="yes" />
+
+		<Feature Id="ProductFeature" Title="XIVChat for Windows" Level="1">
+			<ComponentGroupRef Id="XIVChat_Desktop" />
+			<ComponentRef Id="App_Start_Menu_Shortcut" />
+		</Feature>
+	</Product>
+
+	<Fragment>
+		<Directory Id="TARGETDIR" Name="SourceDir">
+			<Directory Id="ProgramFiles64Folder">
+				<Directory Id="INSTALLFOLDER" Name="XIVChat for Windows" />
+			</Directory>
+			<Directory Id="ProgramMenuFolder">
+				<Directory Id="ApplicationProgramsFolder" Name="XIVChat for Windows"/>
+			</Directory>
+		</Directory>
+
+		<DirectoryRef Id="ApplicationProgramsFolder">
+			<Component Id="App_Start_Menu_Shortcut" Guid="6EF30C67-2EAA-4988-8470-E1149D5C1B50">
+				<Shortcut Id="ApplicationStartMenuShortcut" Name="XIVChat for Windows" Target="[INSTALLFOLDER]XIVChat Desktop.exe" WorkingDirectory="INSTALLFOLDER" />
+				<RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall"/>
+				<RegistryValue Root="HKCU" Key="Software\XIVChat for Windows" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+			</Component>
+		</DirectoryRef>
+	</Fragment>
+</Wix>
