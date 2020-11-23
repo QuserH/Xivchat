@@ -10,6 +10,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -72,6 +73,8 @@ namespace XIVChat_Desktop {
                 this.OnPropertyChanged(nameof(this.Theme));
             }
         }
+
+        public ObservableCollection<Notification> Notifications { get; set; } = new ObservableCollection<Notification>();
 
         private void OnPropertyChanged(string propName) {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
@@ -355,6 +358,72 @@ namespace XIVChat_Desktop {
         public virtual bool Allowed(ServerMessage message) {
             var code = new ChatCode((ushort)message.Channel);
             return this.Types.Any(type => type.Allowed(code));
+        }
+    }
+
+    [JsonObject]
+    public class Notification {
+        public string Name { get; set; }
+        public List<ChatType> Channels { get; set; } = new List<ChatType>();
+        public List<string> Substrings { get; set; } = new List<string>();
+
+        private IReadOnlyCollection<String> regexes = new List<string>();
+
+        public IReadOnlyCollection<string> Regexes {
+            get => this.regexes;
+            set {
+                this.regexes = value;
+                this.ResetRegexes();
+            }
+        }
+
+        [JsonIgnore]
+        public Lazy<List<Regex>> ParsedRegexes { get; private set; } = null!;
+
+        public Notification(string name) {
+            this.Name = name;
+            this.ResetRegexes();
+        }
+
+        private void ResetRegexes() {
+            this.ParsedRegexes = new Lazy<List<Regex>>(
+                () => {
+                    try {
+                        return this.ParseRegexes();
+                    } catch (ArgumentException) {
+                        return new List<Regex>();
+                    }
+                }
+            );
+        }
+
+        private List<Regex> ParseRegexes() {
+            return this.Regexes
+                .Select(regex => new Regex(regex, RegexOptions.Compiled))
+                .ToList();
+        }
+
+        [SuppressMessage("ReSharper", "ConvertIfStatementToReturnStatement")]
+        public bool Matches(ServerMessage message) {
+            if (!this.Channels.Contains(message.Channel)) {
+                return false;
+            }
+
+            if (this.Substrings.Count == 0 && this.Regexes.Count == 0) {
+                return false;
+            }
+
+            var text = message.ContentText;
+
+            if (this.Substrings.Any(substring => text.ContainsIgnoreCase(substring))) {
+                return true;
+            }
+
+            if (this.ParsedRegexes.Value.Any(regex => regex.IsMatch(text))) {
+                return true;
+            }
+
+            return false;
         }
     }
 }

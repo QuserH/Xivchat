@@ -49,5 +49,35 @@ namespace XIVChat_Desktop {
             var allDigits = e.Text.All(c => char.IsDigit(c));
             e.Handled = !allDigits;
         }
+
+        private void Notifications_DoubleClick(object sender, MouseButtonEventArgs e) {
+            var context = ((FrameworkElement)e.OriginalSource).DataContext;
+            if (!(context is Notification notification)) {
+                return;
+            }
+
+            new ManageNotification(this, notification).Show();
+        }
+
+        private void Notifications_Add_Click(object sender, RoutedEventArgs e) {
+            new ManageNotification(this, null).Show();
+        }
+
+        private void Notifications_Edit_Click(object sender, RoutedEventArgs e) {
+            if (!(this.Notifications.SelectedItem is Notification notif)) {
+                return;
+            }
+
+            new ManageNotification(this, notif).Show();
+        }
+
+        private void Notifications_Delete_Click(object sender, RoutedEventArgs e) {
+            if (!(this.Notifications.SelectedItem is Notification notif)) {
+                return;
+            }
+
+            this.Config.Notifications.Remove(notif);
+            this.Config.Save();
+        }
     }
 }

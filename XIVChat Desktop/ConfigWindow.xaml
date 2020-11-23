@@ -84,5 +84,41 @@
                 </Button>
             </Grid>
         </TabItem>
+        <TabItem Header="Notifications">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ListView Grid.Column="0"
+                          x:Name="Notifications"
+                          ItemsSource="{Binding Config.Notifications}"
+                          MouseDoubleClick="Notifications_DoubleClick">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Name"
+                                            DisplayMemberBinding="{Binding Name}" />
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <StackPanel Grid.Column="1"
+                            Margin="8,0,0,0"
+                            Orientation="Vertical">
+                    <Button Margin="0,0,0,4"
+                            HorizontalAlignment="Stretch"
+                            Content="Add"
+                            Click="Notifications_Add_Click" />
+                    <Button Margin="0,0,0,4"
+                            HorizontalAlignment="Stretch"
+                            Content="Edit"
+                            Click="Notifications_Edit_Click" />
+                    <Button HorizontalAlignment="Stretch"
+                            Content="Delete"
+                            Click="Notifications_Delete_Click" />
+                </StackPanel>
+            </Grid>
+        </TabItem>
     </TabControl>
 </local:XivChatWindow>

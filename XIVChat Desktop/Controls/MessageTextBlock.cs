@@ -1,5 +1,7 @@
-﻿using System.Windows;
+﻿using System.Linq;
+using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop.Controls {
@@ -54,9 +56,13 @@ namespace XIVChat_Desktop.Controls {
             }
 
             var message = textBlock.Message;
-
             if (message == null) {
                 return;
+            }
+
+            var config = ((App)Application.Current).Config;
+            if (config.Notifications.Any(notif => notif.Matches(message))) {
+                textBlock.Background = new SolidColorBrush(Color.FromArgb(128, 200, 100, 100));
             }
 
             textBlock.ClearValue(TextProperty);

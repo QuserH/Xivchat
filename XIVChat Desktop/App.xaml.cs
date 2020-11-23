@@ -1,12 +1,18 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Markup;
+using Windows.UI.Notifications;
+using Microsoft.Toolkit.Uwp.Notifications;
 using ModernWpf;
+using XIVChatCommon.Message;
+using XIVChatCommon.Message.Server;
 
-// TODO: key word notification, notifications on message type, targeted message (like emote targeting you)
+// TODO: search messages
+// TODO: notifications for targeted messages (like emote targeting you)
 
 namespace XIVChat_Desktop {
     /// <summary>
@@ -34,6 +40,8 @@ namespace XIVChat_Desktop {
         public event PropertyChangedEventHandler? PropertyChanged;
 
         private async void Application_Startup(object sender, StartupEventArgs e) {
+            Notifications.Initialise();
+
             try {
                 this.Config = Configuration.Load() ?? new Configuration();
             } catch (Exception ex) {
@@ -121,6 +129,7 @@ namespace XIVChat_Desktop {
             }
 
             this.Connection = new Connection(this, host, port);
+            this.Connection.ReceiveMessage += this.OnReceiveMessage;
             Task.Run(this.Connection.Connect);
         }
 
@@ -131,6 +140,38 @@ namespace XIVChat_Desktop {
 
             this.Connection?.Disconnect();
             this.Connection = null;
+        }
+
+        private void OnReceiveMessage(ServerMessage message) {
+            if (!this.Config.Notifications.Any(notif => notif.Matches(message))) {
+                return;
+            }
+
+            var sender = message.GetSenderPlayer();
+
+            var builder = new ToastContentBuilder();
+
+            if (sender != null) {
+                var name = sender.Name;
+
+                if (sender.Server != 0) {
+                    name += $" ({Util.WorldName(sender.Server)})";
+                }
+
+                builder.AddText(name);
+            } else {
+                builder.AddText("Notification");
+            }
+
+            builder
+                .AddText(message.ContentText)
+                .AddAttributionText(message.Channel.Name());
+
+            var content = builder.GetToastContent();
+
+            var toast = new ToastNotification(content.GetXml());
+
+            DesktopNotificationManagerCompat.CreateToastNotifier().Show(toast);
         }
     }
 }

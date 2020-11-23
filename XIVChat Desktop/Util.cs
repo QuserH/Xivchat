@@ -1,5 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
+using System.Windows.Controls;
 using System.Windows.Threading;
 
 namespace XIVChat_Desktop {
@@ -672,6 +677,64 @@ namespace XIVChat_Desktop {
                 65535 => "outofrange2",
                 _ => null,
             };
+        }
+
+        public static bool ContainsIgnoreCase(this string haystack, string needle) {
+            return CultureInfo.InvariantCulture.CompareInfo.IndexOf(haystack, needle, CompareOptions.IgnoreCase) >= 0;
+        }
+
+        public static bool IsValidRegex(this string regex) {
+            try {
+                _ = new Regex(regex);
+                return true;
+            } catch (ArgumentException) {
+                return false;
+            }
+        }
+
+        public static bool IsValidRegex(this string regex, out ArgumentException exception) {
+            try {
+                _ = new Regex(regex);
+                exception = default!;
+                return true;
+            } catch (ArgumentException ex) {
+                exception = ex;
+                return false;
+            }
+        }
+    }
+
+    public class RegexValidator : ValidationRule {
+        public override ValidationResult Validate(object value, CultureInfo cultureInfo) {
+            if (!(value is string text)) {
+                return new ValidationResult(false, "Value is not text.");
+            }
+
+            return text.IsValidRegex(out var ex)
+                ? ValidationResult.ValidResult
+                : new ValidationResult(false, $"Invalid regular expression: {ex.Message}");
+        }
+    }
+
+    public class StringWrapper : INotifyPropertyChanged {
+        private string value;
+
+        public String Value {
+            get => this.value;
+            set {
+                this.value = value;
+                this.OnPropertyChanged(nameof(this.Value));
+            }
+        }
+
+        public StringWrapper(string value) {
+            this.value = value;
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }

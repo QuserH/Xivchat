@@ -30,6 +30,10 @@ namespace XIVChat_Desktop {
 
         public readonly CancellationTokenSource cancel = new CancellationTokenSource();
 
+        public delegate void ReceiveMessageDelegate(ServerMessage message);
+
+        public event ReceiveMessageDelegate? ReceiveMessage;
+
         public event PropertyChangedEventHandler? PropertyChanged;
         public string? CurrentChannel { get; private set; }
 
@@ -269,6 +273,7 @@ namespace XIVChat_Desktop {
                     var message = ServerMessage.Decode(payload);
 
                     this.app.Dispatch(() => {
+                        this.ReceiveMessage?.Invoke(message);
                         this.app.Window.AddMessage(message);
                     });
                     break;

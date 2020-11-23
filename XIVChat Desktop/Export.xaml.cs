@@ -2,6 +2,7 @@
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -165,6 +166,7 @@ namespace XIVChat_Desktop {
                 this.Senders.Add(sender);
             }
 
+            [SuppressMessage("ReSharper", "ConvertIfStatementToReturnStatement")]
             public bool AllowedMinusSenders(ServerMessage message) {
                 if (!base.Allowed(message)) {
                     return false;
@@ -181,6 +183,7 @@ namespace XIVChat_Desktop {
                 return true;
             }
 
+            [SuppressMessage("ReSharper", "ConvertIfStatementToReturnStatement")]
             public override bool Allowed(ServerMessage message) {
                 if (!this.AllowedMinusSenders(message)) {
                     return false;
