@@ -191,9 +191,7 @@ namespace XIVChatPlugin {
             var colour = this.plugin.Functions.GetChannelColour(chatCode) ?? chatCode.DefaultColour();
 
             if (sender.Payloads.Count > 0) {
-                // FIXME: can't get format straight from game until Lumina stops returning LogKind.Format as a string (it's an SeString)
-                // var format = this.FormatFor(chatCode.Type);
-                var format = chatCode.NameFormat();
+                var format = this.FormatFor(chatCode.Type);
                 if (format != null && format.IsPresent) {
                     chunks.Add(new TextChunk(format.Before) {
                         FallbackColour = colour,
@@ -445,12 +443,10 @@ namespace XIVChatPlugin {
             });
         }
 
-/*
-        private Dictionary<ChatType, NameFormatting> Formats { get; } = new Dictionary<ChatType, NameFormatting>();
-*/
 
-/*
-        private NameFormatting FormatFor(ChatType type) {
+        private Dictionary<ChatType, NameFormatting> Formats { get; } = new Dictionary<ChatType, NameFormatting>();
+
+        private NameFormatting? FormatFor(ChatType type) {
             if (this.Formats.TryGetValue(type, out var cached)) {
                 return cached;
             }
@@ -461,35 +457,46 @@ namespace XIVChatPlugin {
                 return null;
             }
 
-            var sestring = this.plugin.Interface.SeStringManager.Parse(logKind.Format);
+            var format = logKind.Format;
+            var sestring = this.plugin.Interface.SeStringManager.Parse(format.RawData.ToArray());
 
-            //PluginLog.Log(string.Join("", Encoding.ASCII.GetBytes(logKind.Format).Select(b => b.ToString("x2"))));
+            static bool IsStringParam(Payload payload, byte num) {
+                if (payload.Type != PayloadType.Unknown) {
+                    return false;
+                }
 
-            //var sestring = this.plugin.Interface.SeStringManager.Parse(Encoding.ASCII.GetBytes(logKind.Format));
+                var data = ((RawPayload)payload).Data;
 
-            //var format = colorRegex.Replace(logKind.Format, "")
-            //    .Replace("</Color>", "")
-            //    .Replace("<Highlight>", "")
-            //    .Replace("</Highlight>", "");
+                return data.Length >= 5 && data[1] == 0x29 && data[4] == num + 1;
+            }
 
-            return NameFormatting.Empty();
+            var firstStringParam = sestring.Payloads.FindIndex(payload => IsStringParam(payload, 1));
+            var secondStringParam = sestring.Payloads.FindIndex(payload => IsStringParam(payload, 2));
 
-            //if (format.IndexOf("StringParameter(1)") == -1) {
-            //    return NameFormatting.Empty();
-            //}
+            if (firstStringParam == -1 || secondStringParam == -1) {
+                return NameFormatting.Empty();
+            }
 
-            //var parts = format.Split(new string[] { "StringParameter(1)" }, StringSplitOptions.None);
+            var before = sestring.Payloads
+                .GetRange(0, firstStringParam)
+                .Where(payload => payload is ITextProvider)
+                .Cast<ITextProvider>()
+                .Select(text => text.Text);
+            var after = sestring.Payloads
+                .GetRange(firstStringParam + 1, secondStringParam - firstStringParam)
+                .Where(payload => payload is ITextProvider)
+                .Cast<ITextProvider>()
+                .Select(text => text.Text);
 
-            //var nameFormatting = NameFormatting.Of(
-            //    before: parts[0],
-            //    after: parts[1].Split(new string[] { "StringParameter(2)" }, StringSplitOptions.None)[0]
-            //);
+            var nameFormatting = NameFormatting.Of(
+                string.Join("", before),
+                string.Join("", after)
+            );
 
-            //this.Formats[type] = nameFormatting;
+            this.Formats[type] = nameFormatting;
 
-            //return nameFormatting;
+            return nameFormatting;
         }
-*/
 
         private static async Task SendBacklogs(IEnumerable<ServerMessage> messages, Stream stream, Client client) {
             var size = 5 + SecretMessage.MacSize(); // assume 5 bytes for payload lead-in, although it's likely to be less

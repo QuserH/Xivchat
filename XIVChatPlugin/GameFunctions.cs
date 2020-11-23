@@ -211,11 +211,17 @@ namespace XIVChatPlugin {
     [StructLayout(LayoutKind.Explicit)]
     [SuppressMessage("ReSharper", "PrivateFieldCanBeConvertedToLocalVariable")]
     readonly struct ChatPayload : IDisposable {
-        [FieldOffset(0)] readonly IntPtr textPtr;
-        [FieldOffset(16)] readonly ulong textLen;
+        [FieldOffset(0)]
+        readonly IntPtr textPtr;
 
-        [FieldOffset(8)] readonly ulong unk1;
-        [FieldOffset(24)] readonly ulong unk2;
+        [FieldOffset(16)]
+        readonly ulong textLen;
+
+        [FieldOffset(8)]
+        readonly ulong unk1;
+
+        [FieldOffset(24)]
+        readonly ulong unk2;
 
         internal ChatPayload(string text) {
             byte[] stringBytes = Encoding.UTF8.GetBytes(text);
