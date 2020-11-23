@@ -364,6 +364,7 @@ namespace XIVChat_Desktop {
     [JsonObject]
     public class Notification {
         public string Name { get; set; }
+        public bool MatchAll { get; set; }
         public List<ChatType> Channels { get; set; } = new List<ChatType>();
         public List<string> Substrings { get; set; } = new List<string>();
 
@@ -407,6 +408,10 @@ namespace XIVChat_Desktop {
         public bool Matches(ServerMessage message) {
             if (!this.Channels.Contains(message.Channel)) {
                 return false;
+            }
+
+            if (this.MatchAll) {
+                return true;
             }
 
             if (this.Substrings.Count == 0 && this.Regexes.Count == 0) {

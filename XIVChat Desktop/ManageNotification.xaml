@@ -27,6 +27,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -91,11 +92,15 @@
                 Command="local:ManageNotification.AddEmpty"
                 CommandParameter="{Binding Substrings}" />
 
-        <Label Grid.Row="7"
+        <CheckBox Grid.Row="7"
+                  IsChecked="{Binding Notification.MatchAll}"
+                  Content="Match all messages from selected channels" />
+
+        <Label Grid.Row="8"
                Margin="0,0,0,8"
                Content="Channels" />
 
-        <ScrollViewer Grid.Row="8">
+        <ScrollViewer Grid.Row="9">
             <WrapPanel x:Name="Channels"
                        Orientation="Vertical" />
         </ScrollViewer>
