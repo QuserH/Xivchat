@@ -5,7 +5,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Markup;
+using System.Windows.Media.Imaging;
 using Windows.UI.Notifications;
+using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Toolkit.Uwp.Notifications;
 using ModernWpf;
 using XIVChatCommon.Message;
@@ -21,6 +23,10 @@ namespace XIVChat_Desktop {
     public partial class App : INotifyPropertyChanged {
         public MainWindow Window { get; private set; } = null!;
         public Configuration Config { get; private set; } = null!;
+
+        private Lazy<TaskbarIcon> TaskbarIcon { get; } = new Lazy<TaskbarIcon>(() => new TaskbarIcon {
+            IconSource = new BitmapImage(new Uri("pack://application:,,,/Resources/logo.ico")),
+        });
 
         public string? LastHost { get; set; }
 
@@ -142,6 +148,26 @@ namespace XIVChat_Desktop {
             this.Connection = null;
         }
 
+        private static void Win10Notify(string title, string text, string? attribution) {
+            var builder = new ToastContentBuilder()
+                .AddText(title)
+                .AddText(text);
+
+            if (attribution != null) {
+                builder.AddAttributionText(attribution);
+            }
+
+            var content = builder.GetToastContent();
+
+            var toast = new ToastNotification(content.GetXml());
+
+            DesktopNotificationManagerCompat.CreateToastNotifier().Show(toast);
+        }
+
+        private void Notify(string title, string text) {
+            this.TaskbarIcon.Value.ShowBalloonTip(title, text, BalloonIcon.None);
+        }
+
         private void OnReceiveMessage(ServerMessage message) {
             if (!this.Config.Notifications.Any(notif => notif.Matches(message))) {
                 return;
@@ -149,8 +175,7 @@ namespace XIVChat_Desktop {
 
             var sender = message.GetSenderPlayer();
 
-            var builder = new ToastContentBuilder();
-
+            string title;
             if (sender != null) {
                 var name = sender.Name;
 
@@ -158,20 +183,19 @@ namespace XIVChat_Desktop {
                     name += $" ({Util.WorldName(sender.Server)})";
                 }
 
-                builder.AddText(name);
+                title = name;
             } else {
-                builder.AddText("Notification");
+                title = "Notification";
             }
 
-            builder
-                .AddText(message.ContentText)
-                .AddAttributionText(message.Channel.Name());
+            var text = message.ContentText;
+            var attribution = message.Channel.Name();
 
-            var content = builder.GetToastContent();
-
-            var toast = new ToastNotification(content.GetXml());
-
-            DesktopNotificationManagerCompat.CreateToastNotifier().Show(toast);
+            if (Environment.OSVersion.Version.Major < 10) {
+                this.Notify(title, text);
+            } else {
+                Win10Notify(title, text, attribution);
+            }
         }
     }
 }
