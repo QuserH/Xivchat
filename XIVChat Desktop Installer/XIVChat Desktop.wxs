@@ -2,218 +2,248 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
     <Fragment>
         <DirectoryRef Id="INSTALLFOLDER">
-            <Component Id="cmp9110E4565D76564E9BC2F34625854902" Guid="{ED09E941-9237-4C5E-973E-AE91C47DDC08}">
+            <Component Id="cmp9110E4565D76564E9BC2F34625854902" Guid="{BDFFE5A3-AB02-447B-87DF-B4D81BE48CBD}">
                 <File Id="filAC751AB8116CEF372F8CFDA54B395D08" KeyPath="yes" Source="$(var.BasePath)\ControlzEx.dll" />
             </Component>
-            <Component Id="cmp223D4754378C01052DA8253A843FD297" Guid="{1A4A3E46-A31C-491B-858B-B910C0A4978C}">
+            <Component Id="cmpBE3C1D05C7C90455322C9F819A57A07A" Guid="{C5DB034C-2E42-4463-9C6E-159197042AA1}">
+                <File Id="filE7C602A91344AD969255F20A2CA7411A" KeyPath="yes" Source="$(var.BasePath)\Hardcodet.Wpf.TaskbarNotification.dll" />
+            </Component>
+            <Component Id="cmp223D4754378C01052DA8253A843FD297" Guid="{2B119E81-05BF-43F6-A30E-79B06434A6A1}">
                 <File Id="filBC562C5B3D9848A2114F0AF7275FF1E6" KeyPath="yes" Source="$(var.BasePath)\MahApps.Metro.dll" />
             </Component>
-            <Component Id="cmpBFEDA7A8D4424C72EC293E61D495B6FF" Guid="{6D9C4D42-B9D3-4A15-B584-255DBB7494AB}">
+            <Component Id="cmpBFEDA7A8D4424C72EC293E61D495B6FF" Guid="{CCDDDA07-D1E0-400B-85EF-B509223A6590}">
                 <File Id="filADEAA118F7F2A52D63B51B90C22A091E" KeyPath="yes" Source="$(var.BasePath)\MessagePack.Annotations.dll" />
             </Component>
-            <Component Id="cmp11D04828B3ED23976ED03141046B44C2" Guid="{1F70685E-2B7A-4125-B160-66070EE298F6}">
+            <Component Id="cmp11D04828B3ED23976ED03141046B44C2" Guid="{55479C74-2E25-4FE7-9760-11CA50400B53}">
                 <File Id="fil4C4F5B126A8A0E6401516C96D9AE73FC" KeyPath="yes" Source="$(var.BasePath)\MessagePack.dll" />
             </Component>
-            <Component Id="cmp20E5A82EE1F53BB560782568696E50EF" Guid="{42D211A7-AA35-485D-8930-92812726FA96}">
+            <Component Id="cmp20E5A82EE1F53BB560782568696E50EF" Guid="{ED8A3BE6-FF2E-479B-A33D-B1F5462D912B}">
                 <File Id="fil2E537F5E44EFF72FBE1AF325D6F073A2" KeyPath="yes" Source="$(var.BasePath)\Microsoft.Bcl.AsyncInterfaces.dll" />
             </Component>
-            <Component Id="cmpDF2A173873CB2DF4B359397F026B691C" Guid="{5EF37848-F841-4FBE-87FA-191024EDD662}">
+            <Component Id="cmpDF2A173873CB2DF4B359397F026B691C" Guid="{E21191BB-E10B-4DD0-BCFA-90D8C4468162}">
                 <File Id="filF77BADE6C443F07005CCC8598C0BF253" KeyPath="yes" Source="$(var.BasePath)\Microsoft.Toolkit.Uwp.Notifications.dll" />
             </Component>
-            <Component Id="cmp8AC833CFB7DC6722697152FE46DA157A" Guid="{EF7C466A-5220-47E8-8B69-CAE231AAE4EB}">
+            <Component Id="cmp16861E24C897764CA922EC062BA74EC9" Guid="{43A72BF4-A34A-4021-A9A6-88BA1AAF594E}">
+                <File Id="filD8E300ACBEFE74B5C24D4D06DCE96AAC" KeyPath="yes" Source="$(var.BasePath)\Microsoft.Win32.SystemEvents.dll" />
+            </Component>
+            <Component Id="cmp8AC833CFB7DC6722697152FE46DA157A" Guid="{FEAEB8E4-A3C6-4B5D-BB19-0E9826AFA2A8}">
                 <File Id="filD3CAD095889A5DE7EAAE25C73BC9910A" KeyPath="yes" Source="$(var.BasePath)\Microsoft.Xaml.Behaviors.dll" />
             </Component>
-            <Component Id="cmpB007AF0D64FEC3E4CCD5DDEEFDD0FCE0" Guid="{46ECC1D0-EA22-4179-83EC-36694092755A}">
+            <Component Id="cmpB007AF0D64FEC3E4CCD5DDEEFDD0FCE0" Guid="{BDE7050B-0157-439C-842B-8E9B5CB21CF0}">
                 <File Id="fil0FE932F6613C8F739053FD8C168D1309" KeyPath="yes" Source="$(var.BasePath)\ModernWpf.Controls.dll" />
             </Component>
-            <Component Id="cmp8033887FE4533F73A3432B0F9C9A4E87" Guid="{1BF59AAD-95C2-465B-8186-2C53737417D8}">
+            <Component Id="cmp8033887FE4533F73A3432B0F9C9A4E87" Guid="{569E8226-A1D4-4CBA-8ED7-D6CA3E3F209B}">
                 <File Id="fil9398A823363F820CC8933AA416C6C745" KeyPath="yes" Source="$(var.BasePath)\ModernWpf.dll" />
             </Component>
-            <Component Id="cmpB7046E471ED7E50D2ACC307A1500865A" Guid="{5CCC551C-32C0-418A-972E-FC5FD223BD83}">
+            <Component Id="cmpB7046E471ED7E50D2ACC307A1500865A" Guid="{6CBCCA04-CE1B-46FF-9B44-4446F52F236C}">
                 <File Id="fil669E50F53452FB453C5646AC7F26FFF3" KeyPath="yes" Source="$(var.BasePath)\ModernWpf.MahApps.dll" />
             </Component>
-            <Component Id="cmp979BB5B2297816EF2D91624FE967267D" Guid="{8276288D-3B7C-4A0B-8069-001F8D82C93C}">
+            <Component Id="cmp979BB5B2297816EF2D91624FE967267D" Guid="{FEBCACC7-88F5-419C-8E1C-6E1550D8BAC2}">
                 <File Id="fil90ABFE40E18B3705156C760B3E7FFC87" KeyPath="yes" Source="$(var.BasePath)\NAudio.dll" />
             </Component>
-            <Component Id="cmpBC4FC00A26E7D32479D42D3411317FC5" Guid="{C35B270B-154E-4FB7-B627-8434923FFCA5}">
+            <Component Id="cmpBC4FC00A26E7D32479D42D3411317FC5" Guid="{5FA6A9DB-8C53-4688-9AB9-ED74E3A7180F}">
                 <File Id="fil90A8AAD9FC612906D405476D61CEA3F4" KeyPath="yes" Source="$(var.BasePath)\Newtonsoft.Json.dll" />
             </Component>
-            <Component Id="cmp435E538CF04439DBCE66AA16A7EAC669" Guid="{B711ED8F-25C5-40B8-9995-D3D6CE7EAAC4}">
+            <Component Id="cmp435E538CF04439DBCE66AA16A7EAC669" Guid="{7AC37C6C-E480-4ADE-B697-7E2F2C8C5D64}">
                 <File Id="fil4E2A83C32699608B0BD82E20FD02DC34" KeyPath="yes" Source="$(var.BasePath)\Sodium.Core.dll" />
             </Component>
-            <Component Id="cmpA5817A2BB296EF3C39CAFA8A07CD6B59" Guid="{99C0EC66-B510-454E-807B-08FE61643E43}">
+            <Component Id="cmp08EBD8C605FF27A4F0FCEC5A1317087B" Guid="{04BF4417-F45D-4724-8DBF-AD96F7A16B14}">
+                <File Id="fil01C46D7B4C6F372B6DD0D0DC961DAE47" KeyPath="yes" Source="$(var.BasePath)\System.Drawing.Common.dll" />
+            </Component>
+            <Component Id="cmpA5817A2BB296EF3C39CAFA8A07CD6B59" Guid="{C3260732-2939-42EE-A2EF-3BDC9DC6A127}">
                 <File Id="fil1FBF587862F484BB82A1D65565F935B6" KeyPath="yes" Source="$(var.BasePath)\System.Text.Json.dll" />
             </Component>
-            <Component Id="cmp789087371D7AD59BBC0313545741F979" Guid="{AD220BE9-B3BD-437A-A3DD-8F5CEA39B734}">
+            <Component Id="cmp789087371D7AD59BBC0313545741F979" Guid="{9CBD33DD-E81B-4558-BC75-7795624BE16E}">
                 <File Id="fil8D5DD4833DEFEDB55C6A86A0D03E8D76" KeyPath="yes" Source="$(var.BasePath)\XIVChat Desktop.deps.json" />
             </Component>
-            <Component Id="cmp400C65086FD37B5B46A2A729C0AC57EF" Guid="{872C8F8C-CE84-4825-93F5-78062F1CB6ED}">
+            <Component Id="cmp400C65086FD37B5B46A2A729C0AC57EF" Guid="{2D844883-71C0-4426-90EB-108626AD35D2}">
                 <File Id="filB3ED4075481BEDB1FFFB1B678F5FAFD3" KeyPath="yes" Source="$(var.BasePath)\XIVChat Desktop.dll" />
             </Component>
-            <Component Id="cmpEA4BCDFE4F274948BEDF619A2303342A" Guid="{CCF62A65-0B0F-41DA-B482-A6B3B5C4A83E}">
+            <Component Id="cmpEA4BCDFE4F274948BEDF619A2303342A" Guid="{376ED31C-1C1D-4814-A085-FD6A8F762514}">
                 <File Id="filE41F75E644085020A15B472257C3E843" KeyPath="yes" Source="$(var.BasePath)\XIVChat Desktop.exe" />
             </Component>
-            <Component Id="cmp2976261FCF531D3D10B13E080A963D75" Guid="{6288B69A-B432-483A-968F-3BFCECC20365}">
+            <Component Id="cmp2976261FCF531D3D10B13E080A963D75" Guid="{8D938733-1F35-4AEF-B2B2-28D3FA51B049}">
                 <File Id="fil1E9777FBBDBE5F312C983CA24E9CAD61" KeyPath="yes" Source="$(var.BasePath)\XIVChat Desktop.pdb" />
             </Component>
-            <Component Id="cmpE21E5009D2DB48C7FD0819BEBC60A338" Guid="{5F9E5587-0781-43D7-90FE-7274C14E5488}">
+            <Component Id="cmpE21E5009D2DB48C7FD0819BEBC60A338" Guid="{E1DA274F-33FB-4577-9026-DC3FDD939FFA}">
                 <File Id="filC35BA98EFEAE6179940B7AA5FA56CD12" KeyPath="yes" Source="$(var.BasePath)\XIVChat Desktop.runtimeconfig.json" />
             </Component>
-            <Component Id="cmp398EECD87ED648B7A1C26D0A22F0EF95" Guid="{493264D8-7657-4A17-AC44-6876BDD34798}">
+            <Component Id="cmp398EECD87ED648B7A1C26D0A22F0EF95" Guid="{C54DF6AB-6C35-4186-9A50-986736949A70}">
                 <File Id="fil126847746BA3BEC2AED804AB8CDC8E82" KeyPath="yes" Source="$(var.BasePath)\XIVChatCommon.dll" />
             </Component>
-            <Component Id="cmp56488BC092D9B3E6C8546D012BC86A37" Guid="{747C7321-D892-4EEB-8894-7EDF680EEE97}">
+            <Component Id="cmp56488BC092D9B3E6C8546D012BC86A37" Guid="{E001DB71-5DCD-490C-9FA7-E3DFC87A77CC}">
                 <File Id="filD1F731A953EEC1D296BC63DEE80F5354" KeyPath="yes" Source="$(var.BasePath)\XIVChatCommon.dll.config" />
             </Component>
-            <Component Id="cmp81257D18BC0A55BE374445B2BD0F64D7" Guid="{58D182F7-9AF2-460C-8441-9137C78349A8}">
+            <Component Id="cmp81257D18BC0A55BE374445B2BD0F64D7" Guid="{EF01D27F-5518-4484-9C01-01D6D8F6E86D}">
                 <File Id="filF8AC879C547AD1B893B16A102D884929" KeyPath="yes" Source="$(var.BasePath)\XIVChatCommon.pdb" />
             </Component>
             <Directory Id="dirB15F4604371D144EAEEAD44FE901D873" Name="cs">
-                <Component Id="cmpDF1017D5EA73474BB8B4BC39002E4D58" Guid="{64A79C8C-2B4B-4CA2-823B-ACBBE21AFE56}">
+                <Component Id="cmpDF1017D5EA73474BB8B4BC39002E4D58" Guid="{5CD6E513-E7BC-4C77-8EED-84415A41AD53}">
                     <File Id="fil675ECD2530B8677AA272904DA6672EBE" KeyPath="yes" Source="$(var.BasePath)\cs\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmpF7786389F47AC8EB89ADBE206455608C" Guid="{3630F7A4-A6E3-4A98-B317-D38AAF1F3BA9}">
+                <Component Id="cmpF7786389F47AC8EB89ADBE206455608C" Guid="{29DF3383-FA0E-4953-B717-470F97D4020E}">
                     <File Id="filCBF17FE453172DD8F936DA0D41B2BAFA" KeyPath="yes" Source="$(var.BasePath)\cs\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir242DC17B8DFC53C13CAF172FC08B730A" Name="de">
-                <Component Id="cmpC3B99F0A5508251016E44BE8208CED53" Guid="{FA1826BA-CA14-4170-988E-561A4A7F18F5}">
+                <Component Id="cmpC3B99F0A5508251016E44BE8208CED53" Guid="{EACF9202-3594-4B9B-BF1F-D333BFBCD2A2}">
                     <File Id="fil23A1B05CB5F648DA7BC904FD3CF5149C" KeyPath="yes" Source="$(var.BasePath)\de\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp5269E840D3DFC44ED1F2BA98860997AD" Guid="{D80C9E6F-A5E3-4559-B41D-49139B414DE8}">
+                <Component Id="cmp5269E840D3DFC44ED1F2BA98860997AD" Guid="{E9E31AD7-8A18-4A80-B029-5975CBEF007C}">
                     <File Id="fil59C1737A67DB30E51FC5B92D49276EB8" KeyPath="yes" Source="$(var.BasePath)\de\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir9AE38F4F5CB5E565E774521E138F44FD" Name="es">
-                <Component Id="cmp2630CC831699EAC6E0056928C990EAE6" Guid="{094FA722-AC97-404E-BD1D-E8D3FE205501}">
+                <Component Id="cmp2630CC831699EAC6E0056928C990EAE6" Guid="{FE93E4D7-C439-4741-A0C7-0EBAE941B44F}">
                     <File Id="fil1B7BA65BB358ACE5D091A5B1CADF10A8" KeyPath="yes" Source="$(var.BasePath)\es\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp5A9A270CB119FF90FCB0D36EC4EB7993" Guid="{06060DB4-693F-4602-80F9-7710A45B05CB}">
+                <Component Id="cmp5A9A270CB119FF90FCB0D36EC4EB7993" Guid="{FCF3D984-95F6-4B64-8501-8F07EBE999D4}">
                     <File Id="fil5A52D5B5741298AE7797157445EFD9F9" KeyPath="yes" Source="$(var.BasePath)\es\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dirE645CF78C2D071742BC4B8A6FBD56FD6" Name="fa">
-                <Component Id="cmp34431FF5B24C6D71E2C86DF9EA673513" Guid="{2F9E6497-2E73-4BA2-B9B8-57CEA709F0E8}">
+                <Component Id="cmp34431FF5B24C6D71E2C86DF9EA673513" Guid="{1B9C6BD2-4D97-49E4-87DF-CC965A317F6C}">
                     <File Id="fil734A2292354D095669D503B0BF4376D0" KeyPath="yes" Source="$(var.BasePath)\fa\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp5E6C10F0089DD4D032C8CAAE8EDFA8CA" Guid="{935E0A9B-B568-4141-AC85-EE8940DADD46}">
+                <Component Id="cmp5E6C10F0089DD4D032C8CAAE8EDFA8CA" Guid="{BFD7ADF3-8EF7-467A-B32E-AF6480A8145E}">
                     <File Id="fil2A55BE9DB326666F5C419404D9778F69" KeyPath="yes" Source="$(var.BasePath)\fa\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dirB55DFDA91FEE7CCCBC65CA7493B75748" Name="fr">
-                <Component Id="cmp18C8DB1AE6EF8B68B287916E8C32010E" Guid="{575FC827-FCD5-45F7-BD50-5A822ED763C3}">
+                <Component Id="cmp18C8DB1AE6EF8B68B287916E8C32010E" Guid="{C6B8243B-2ECD-4AD9-9EFD-CD9F26FFB1BB}">
                     <File Id="filBF607A98F30D2396D83635F8B8F8F19B" KeyPath="yes" Source="$(var.BasePath)\fr\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp60D1139BF82E88BCF9EECCB952C86126" Guid="{992CC15C-4912-4968-9BED-8A3E8746CB03}">
+                <Component Id="cmp60D1139BF82E88BCF9EECCB952C86126" Guid="{8AA9E3F2-63FE-4059-B983-A54E87314F5C}">
                     <File Id="fil93DA8F12174E0B15D77D83A048D12321" KeyPath="yes" Source="$(var.BasePath)\fr\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir45DE18DD71F3E8DD6BE4A0E2B48778C8" Name="it">
-                <Component Id="cmp4E90C54A2ECCDBF0E576048CDC71957A" Guid="{2FA5F13F-472C-49A1-831B-9EFC148CFD4A}">
+                <Component Id="cmp4E90C54A2ECCDBF0E576048CDC71957A" Guid="{ED08368F-9DD3-447A-8D23-6C09A54E8334}">
                     <File Id="fil73A445CB5355419F38CE0F226BE3E307" KeyPath="yes" Source="$(var.BasePath)\it\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp2701E060A06B1093D35E76B56ECD06A8" Guid="{8D44DE7A-60F1-4C11-BCB9-18CCA06E60F8}">
+                <Component Id="cmp2701E060A06B1093D35E76B56ECD06A8" Guid="{E1470975-8527-40AE-9847-F246E6708D82}">
                     <File Id="filEF0D3AEDDF6B3463D8C91A866A7BD15A" KeyPath="yes" Source="$(var.BasePath)\it\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir997B58958EFAE06BB705E870622AB899" Name="ja">
-                <Component Id="cmpB12B5549D58DF5676978C03F8ED80459" Guid="{A4FF9D75-139D-4A3D-851D-C1C439301796}">
+                <Component Id="cmpB12B5549D58DF5676978C03F8ED80459" Guid="{DFA93993-A32A-4050-8D6F-E23DF8BE12E6}">
                     <File Id="fil45ED9691C1B8E9E57C75BECE14E69147" KeyPath="yes" Source="$(var.BasePath)\ja\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp28B642547407CD2308D46980DBFAD6DE" Guid="{CA004FD3-3450-4B75-B7B5-1B6307DEDDB9}">
+                <Component Id="cmp28B642547407CD2308D46980DBFAD6DE" Guid="{5AFDE4C3-D218-4D43-93F3-C14962596460}">
                     <File Id="fil9DB193CBEDC3C3BE169011FAF657709F" KeyPath="yes" Source="$(var.BasePath)\ja\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dirF152986C1E6339E5EF84FD1370841521" Name="ko">
-                <Component Id="cmp32BFC9F56E55797CB235FF2F40C937EF" Guid="{A2C18F52-C55E-42C9-9721-EE109385C512}">
+                <Component Id="cmp32BFC9F56E55797CB235FF2F40C937EF" Guid="{00CB26F2-4E6E-4C1F-A2B4-455D13146038}">
                     <File Id="filDD5BEB5A7492AB7E7E390FDE9E5133AF" KeyPath="yes" Source="$(var.BasePath)\ko\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmpA4CE22D990EFE68C8C6C59C1C40DAA1D" Guid="{B96CA8CC-E509-4998-AE62-F3F80DD2602D}">
+                <Component Id="cmpA4CE22D990EFE68C8C6C59C1C40DAA1D" Guid="{800E5D2E-BB4A-46D7-8C78-56768C9BB4E6}">
                     <File Id="fil543D2885EA7DAD06E36C9E43396D0CCB" KeyPath="yes" Source="$(var.BasePath)\ko\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dirB6C57608593BDEA87B90E388CF59E0E8" Name="pl">
-                <Component Id="cmp9FCDAD41FEFFA2DDEDB957E3FE674E67" Guid="{A848635A-E4CE-44BC-9047-807FDA2F3D24}">
+                <Component Id="cmp9FCDAD41FEFFA2DDEDB957E3FE674E67" Guid="{07C55A92-EC3D-456D-8480-510C2591A256}">
                     <File Id="fil26FF7BEE283226870FEFD2B0C89CA1FD" KeyPath="yes" Source="$(var.BasePath)\pl\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp8933ACAEFB61280F9C79FFBAA3932F8E" Guid="{72BF94C0-981C-4F35-9806-1752A8592927}">
+                <Component Id="cmp8933ACAEFB61280F9C79FFBAA3932F8E" Guid="{AA84577F-0D2B-4343-8523-205C6D58931A}">
                     <File Id="filF33FCA65059FF658F0A0D6E4963EB5CB" KeyPath="yes" Source="$(var.BasePath)\pl\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir339F53F3A11C56B053FD1FEC9B438810" Name="pt-BR">
-                <Component Id="cmp1C8CD8AD9B5287F3179B12DA7C767F9D" Guid="{3E3F4B23-74D5-4EFB-BC9F-D7C4B9D2082A}">
+                <Component Id="cmp1C8CD8AD9B5287F3179B12DA7C767F9D" Guid="{19917427-1EEC-470F-8669-F59408FDB058}">
                     <File Id="fil031659422936ACF9F57BAC8FFD4C9900" KeyPath="yes" Source="$(var.BasePath)\pt-BR\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmpD55B828841C94B06A1567062AB1B7478" Guid="{F7C704EA-72BD-49EF-8BF6-7E9CD17D0534}">
+                <Component Id="cmpD55B828841C94B06A1567062AB1B7478" Guid="{D6452EC3-68E5-4FB7-AE53-E958B498C68F}">
                     <File Id="fil9F20E21391B11581B044FA1B7D8AF6CC" KeyPath="yes" Source="$(var.BasePath)\pt-BR\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dirE9205C68F964857267FD3312DBFF9A91" Name="ru">
-                <Component Id="cmp02DA52A2877A70998A9DDC8FE1F976B4" Guid="{C10C37A9-5930-4023-A388-9FF838A9E806}">
+                <Component Id="cmp02DA52A2877A70998A9DDC8FE1F976B4" Guid="{3F51CCFE-2BB3-4C3F-BD07-C374E6369B65}">
                     <File Id="fil07743B03845EA3376CB997B8F1E7FD7C" KeyPath="yes" Source="$(var.BasePath)\ru\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmpB5304B9C50B55D5D98FEEEEF99EB628F" Guid="{461FB805-A22A-4AF9-8A78-34CCDBC4D9C5}">
+                <Component Id="cmpB5304B9C50B55D5D98FEEEEF99EB628F" Guid="{A5764FA0-D6A7-4D8A-97FA-4DD43EA81EEC}">
                     <File Id="filA16C4C6DAE8CC82B68FED6E58E8560FE" KeyPath="yes" Source="$(var.BasePath)\ru\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir58E8247E2885C01898CAD009F9EFD8BA" Name="runtimes">
                 <Directory Id="dir43C41CC727670B5306674FCA0856E156" Name="linux-musl-x64">
                     <Directory Id="dir45A4D9035B4FF6D574E71B5F5E92BDDF" Name="native">
-                        <Component Id="cmp3636EFD97F29C4E37D7C0FCD8187768F" Guid="{CA66745D-2E89-4647-B1AA-8D869F8CEC3E}">
+                        <Component Id="cmp3636EFD97F29C4E37D7C0FCD8187768F" Guid="{52E8CCBF-19D4-45AC-BAB2-4C85BDE419F1}">
                             <File Id="fil037C9035F0E626F30942E483F42AC573" KeyPath="yes" Source="$(var.BasePath)\runtimes\linux-musl-x64\native\libsodium.so" />
                         </Component>
                     </Directory>
                 </Directory>
                 <Directory Id="dir986BEF73997BE02DCDBC34E856C19B36" Name="linux-x64">
                     <Directory Id="dirE1E651EB5B4F1522E5E10B81FEA70677" Name="native">
-                        <Component Id="cmpAF365E4340D4D953CEB0C0A0C8AD2775" Guid="{F5905918-5DC3-43F9-999A-3CA2684345ED}">
+                        <Component Id="cmpAF365E4340D4D953CEB0C0A0C8AD2775" Guid="{7DC48238-DEB3-4407-9536-0430315135C6}">
                             <File Id="fil674BB6FD43444204EA4A7A3792E132F9" KeyPath="yes" Source="$(var.BasePath)\runtimes\linux-x64\native\libsodium.so" />
                         </Component>
                     </Directory>
                 </Directory>
                 <Directory Id="dir42B901FB10752B2744AE05D46EAF35EC" Name="osx-x64">
                     <Directory Id="dir71D0D403061D4DE071C64AEB774E16CF" Name="native">
-                        <Component Id="cmp4D3C286B9CBE50A1EBCA07ED538D1EC3" Guid="{1817A4CF-BBEF-4247-AA30-8B342DEE8E82}">
+                        <Component Id="cmp4D3C286B9CBE50A1EBCA07ED538D1EC3" Guid="{D6CB472F-C3FD-45C3-8265-E56416AE1AEA}">
                             <File Id="filD22DC3C3CD5AC199BFD3A6743239FFC7" KeyPath="yes" Source="$(var.BasePath)\runtimes\osx-x64\native\libsodium.dylib" />
                         </Component>
                     </Directory>
                 </Directory>
+                <Directory Id="dirDD6F90495A1A6169171F36CE85E975B6" Name="unix">
+                    <Directory Id="dirF5C312D00ABBDC163194A7BEF01BFACF" Name="lib">
+                        <Directory Id="dir294AEFEFF4E8C5A86E7E1147588E123E" Name="netcoreapp3.0">
+                            <Component Id="cmpF4AD5C5B3BFAF3AFE5BC8AA957546247" Guid="{AAFEC8C0-A58C-4598-A608-67954B2C720E}">
+                                <File Id="fil1797D6F7F2B351E1E42ACA50FC09D80D" KeyPath="yes" Source="$(var.BasePath)\runtimes\unix\lib\netcoreapp3.0\System.Drawing.Common.dll" />
+                            </Component>
+                        </Directory>
+                    </Directory>
+                </Directory>
+                <Directory Id="dir9BE9104649A116CC7BCCF4D9CCD3331B" Name="win">
+                    <Directory Id="dirD19B0610952D1EE2D417EB5361695989" Name="lib">
+                        <Directory Id="dir9CFC3E32F9CD3F5D85C1CE5068697BC1" Name="netcoreapp3.0">
+                            <Component Id="cmp946EB16BD114CBF5B87B4E5FF94153E3" Guid="{AD968E6B-1456-4829-96BD-BE656F3009EA}">
+                                <File Id="filA5B8427E19E08327B11E12487D2638B7" KeyPath="yes" Source="$(var.BasePath)\runtimes\win\lib\netcoreapp3.0\Microsoft.Win32.SystemEvents.dll" />
+                            </Component>
+                            <Component Id="cmp2AAA2FAA1C898CAB5E25F29DCD76CA1F" Guid="{5CE2527D-9589-4E1C-AC3F-D36B0AA1D15C}">
+                                <File Id="fil0E8F659D0BD2A39DD4E825B30BA45270" KeyPath="yes" Source="$(var.BasePath)\runtimes\win\lib\netcoreapp3.0\System.Drawing.Common.dll" />
+                            </Component>
+                        </Directory>
+                    </Directory>
+                </Directory>
                 <Directory Id="dirB9C75524282911E40C3C964A8836A714" Name="win-x64">
                     <Directory Id="dir1F9DF9DD2FB29AE2942604FAC206D5C4" Name="native">
-                        <Component Id="cmp4A8CEFD5DC3D3D172737587D3A9C227A" Guid="{1C831BED-F8A6-4AB9-B091-018A0B6CFB07}">
+                        <Component Id="cmp4A8CEFD5DC3D3D172737587D3A9C227A" Guid="{1BF67787-9943-4C03-960F-A9529F54B896}">
                             <File Id="filC0DA9196F9EC039A35AA8AB2D7699020" KeyPath="yes" Source="$(var.BasePath)\runtimes\win-x64\native\libsodium.dll" />
                         </Component>
                     </Directory>
                 </Directory>
                 <Directory Id="dir92F336DAA82E5A629052407A3F87EF27" Name="win-x86">
                     <Directory Id="dir2B43AAE918D399CEF13EC6CBA2D3D5EA" Name="native">
-                        <Component Id="cmp3AF8D3C4C19360AB3EBD29EFC70E81E7" Guid="{5DE88095-FBE0-4925-A3D8-A3DA0504DFF8}">
+                        <Component Id="cmp3AF8D3C4C19360AB3EBD29EFC70E81E7" Guid="{0F4A2F00-5A77-40F0-A1DF-2EE9B0D7BF5D}">
                             <File Id="filDF556011EB1739DB735A877F78576512" KeyPath="yes" Source="$(var.BasePath)\runtimes\win-x86\native\libsodium.dll" />
                         </Component>
                     </Directory>
                 </Directory>
             </Directory>
             <Directory Id="dirE562A4656FE03253EA39D17E8127BA05" Name="tr">
-                <Component Id="cmp8BEFFCD40519D747BCEBF8DC55035EBE" Guid="{2C262289-9419-4CF6-A57E-7E6EFAD5DF5A}">
+                <Component Id="cmp8BEFFCD40519D747BCEBF8DC55035EBE" Guid="{2D34C837-8280-47AA-970A-667FE4902C55}">
                     <File Id="fil17CC24A53806EDEAA4866AE72242A601" KeyPath="yes" Source="$(var.BasePath)\tr\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmpAAC047A15FA3964EF2BF3B73E3C8AAB3" Guid="{A8BC1076-76F9-40B0-8D9C-62B5983F3AE3}">
+                <Component Id="cmpAAC047A15FA3964EF2BF3B73E3C8AAB3" Guid="{60FC0971-E131-44CB-AA67-2ABE36430366}">
                     <File Id="filB5688274979C5CEDA7696CFB5EDCF929" KeyPath="yes" Source="$(var.BasePath)\tr\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir4A8DD77DBC79775EC39CACBC8AA06107" Name="zh-Hans">
-                <Component Id="cmpAE422B2613FE5FD2EC5B16295D230175" Guid="{D0F588A0-769D-4B98-9B98-9E41DEB28F41}">
+                <Component Id="cmpAE422B2613FE5FD2EC5B16295D230175" Guid="{2210BA16-6640-471E-83E3-D85149A0C1D1}">
                     <File Id="fil882E66387ADECAC798D7A8D9AC87C024" KeyPath="yes" Source="$(var.BasePath)\zh-Hans\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmp03830096E165CD46C0051D6232AF0C3E" Guid="{EC71A4B6-D070-461A-96BB-F694C956BB92}">
+                <Component Id="cmp03830096E165CD46C0051D6232AF0C3E" Guid="{098F08BE-1FF9-4AC8-B365-7DE688F96F99}">
                     <File Id="filF50B5781988349ABB0904963F3B6BDA5" KeyPath="yes" Source="$(var.BasePath)\zh-Hans\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
             <Directory Id="dir083BC4C92455CD933FA93376E7459C85" Name="zh-Hant">
-                <Component Id="cmp278377B2415FF0785B55A2951C169A36" Guid="{9AF27352-6364-4DFA-BD41-E8D78A22898D}">
+                <Component Id="cmp278377B2415FF0785B55A2951C169A36" Guid="{BD411189-AB5B-4E81-8116-6DA14CA13A74}">
                     <File Id="filB1C593CC8BA262492BC8C9B620D03E74" KeyPath="yes" Source="$(var.BasePath)\zh-Hant\ModernWpf.MahApps.resources.dll" />
                 </Component>
-                <Component Id="cmpB2CE33CEE4CDEEFC9302D1F5D2620713" Guid="{3F159596-6979-4F01-8353-2A3246C05890}">
+                <Component Id="cmpB2CE33CEE4CDEEFC9302D1F5D2620713" Guid="{797E1DAC-EFA9-47A6-959D-D14BC827FDF8}">
                     <File Id="fil1AABF0A259B44E00967E3959365ED5C5" KeyPath="yes" Source="$(var.BasePath)\zh-Hant\ModernWpf.resources.dll" />
                 </Component>
             </Directory>
@@ -222,11 +252,13 @@
     <Fragment>
         <ComponentGroup Id="XIVChat_Desktop">
             <ComponentRef Id="cmp9110E4565D76564E9BC2F34625854902" />
+            <ComponentRef Id="cmpBE3C1D05C7C90455322C9F819A57A07A" />
             <ComponentRef Id="cmp223D4754378C01052DA8253A843FD297" />
             <ComponentRef Id="cmpBFEDA7A8D4424C72EC293E61D495B6FF" />
             <ComponentRef Id="cmp11D04828B3ED23976ED03141046B44C2" />
             <ComponentRef Id="cmp20E5A82EE1F53BB560782568696E50EF" />
             <ComponentRef Id="cmpDF2A173873CB2DF4B359397F026B691C" />
+            <ComponentRef Id="cmp16861E24C897764CA922EC062BA74EC9" />
             <ComponentRef Id="cmp8AC833CFB7DC6722697152FE46DA157A" />
             <ComponentRef Id="cmpB007AF0D64FEC3E4CCD5DDEEFDD0FCE0" />
             <ComponentRef Id="cmp8033887FE4533F73A3432B0F9C9A4E87" />
@@ -234,6 +266,7 @@
             <ComponentRef Id="cmp979BB5B2297816EF2D91624FE967267D" />
             <ComponentRef Id="cmpBC4FC00A26E7D32479D42D3411317FC5" />
             <ComponentRef Id="cmp435E538CF04439DBCE66AA16A7EAC669" />
+            <ComponentRef Id="cmp08EBD8C605FF27A4F0FCEC5A1317087B" />
             <ComponentRef Id="cmpA5817A2BB296EF3C39CAFA8A07CD6B59" />
             <ComponentRef Id="cmp789087371D7AD59BBC0313545741F979" />
             <ComponentRef Id="cmp400C65086FD37B5B46A2A729C0AC57EF" />
@@ -268,6 +301,9 @@
             <ComponentRef Id="cmp3636EFD97F29C4E37D7C0FCD8187768F" />
             <ComponentRef Id="cmpAF365E4340D4D953CEB0C0A0C8AD2775" />
             <ComponentRef Id="cmp4D3C286B9CBE50A1EBCA07ED538D1EC3" />
+            <ComponentRef Id="cmpF4AD5C5B3BFAF3AFE5BC8AA957546247" />
+            <ComponentRef Id="cmp946EB16BD114CBF5B87B4E5FF94153E3" />
+            <ComponentRef Id="cmp2AAA2FAA1C898CAB5E25F29DCD76CA1F" />
             <ComponentRef Id="cmp4A8CEFD5DC3D3D172737587D3A9C227A" />
             <ComponentRef Id="cmp3AF8D3C4C19360AB3EBD29EFC70E81E7" />
             <ComponentRef Id="cmp8BEFFCD40519D747BCEBF8DC55035EBE" />

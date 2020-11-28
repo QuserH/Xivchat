@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-    <Product Id="*" Name="XIVChat for Windows" Language="1033" Version="1.0.0.0" Manufacturer="XIVChat"
-             UpgradeCode="82f30f39-99e8-4040-9bc0-32c1eac159df">
+    <Product Id="B0180BA2-96D4-49FE-9091-C8A0B3E991F1" Name="XIVChat for Windows" Language="1033" Version="1.0.0.0"
+             Manufacturer="XIVChat"
+             UpgradeCode="D792BC67-EE1E-46D7-8C68-1A794875E1D1">
         <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"/>
 
         <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."/>
