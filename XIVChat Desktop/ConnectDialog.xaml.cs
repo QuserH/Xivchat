@@ -1,5 +1,4 @@
-﻿using System;
-using System.Windows;
+﻿using System.Windows;
 
 namespace XIVChat_Desktop {
     /// <summary>
@@ -35,10 +34,6 @@ namespace XIVChat_Desktop {
             this.App.Connect(server.Host, server.Port);
 
             this.Close();
-        }
-
-        private void ConnectDialog_OnContentRendered(object? sender, EventArgs e) {
-            this.InvalidateVisual();
         }
     }
 }

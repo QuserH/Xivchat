@@ -2,7 +2,7 @@
 using Microsoft.Toolkit.Uwp.Notifications;
 
 namespace XIVChat_Desktop {
-    public class Notifications {
+    public static class Notifications {
         public static void Initialise() {
             DesktopNotificationManagerCompat.RegisterAumidAndComServer<XivChatNotificationActivator>("XIVChat.XIVChat_Desktop");
             DesktopNotificationManagerCompat.RegisterActivator<XivChatNotificationActivator>();

@@ -41,12 +41,8 @@ namespace XIVChat_Desktop {
             new ManageServer(this, server).ShowDialog();
         }
 
-        private void ConfigWindow_OnContentRendered(object? sender, EventArgs e) {
-            this.InvalidateVisual();
-        }
-
         private void NumericInputFilter(object sender, TextCompositionEventArgs e) {
-            var allDigits = e.Text.All(c => char.IsDigit(c));
+            var allDigits = e.Text.All(char.IsDigit);
             e.Handled = !allDigits;
         }
 

@@ -1,5 +1,4 @@
-﻿using System;
-using System.Windows;
+﻿using System.Windows;
 
 namespace XIVChat_Desktop {
     /// <summary>
@@ -72,10 +71,6 @@ namespace XIVChat_Desktop {
 
         private void Cancel_Click(object sender, RoutedEventArgs e) {
             this.Close();
-        }
-
-        private void ManageServer_OnContentRendered(object? sender, EventArgs e) {
-            this.InvalidateVisual();
         }
     }
 }

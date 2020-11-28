@@ -71,7 +71,7 @@ namespace XIVChat_Desktop {
             this.Close();
         }
 
-        private static async Task<LicenceResponse> LicenceInfo(string key, bool increment = false) {
+        internal static async Task<LicenceResponse> LicenceInfo(string key, bool increment = false) {
             var uri = new Uri("https://api.gumroad.com/v2/licenses/verify");
             var data = new Dictionary<string, string> {
                 ["product_permalink"] = "kvQIw",
@@ -84,10 +84,6 @@ namespace XIVChat_Desktop {
             var response = JsonConvert.DeserializeObject<LicenceResponse>(await res.Content.ReadAsStringAsync());
 
             return response;
-        }
-
-        private void LicenceWindow_OnContentRendered(object? sender, EventArgs e) {
-            this.InvalidateVisual();
         }
     }
 
