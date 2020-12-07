@@ -783,7 +783,7 @@ namespace XIVChatPlugin {
             this.BroadcastPlayerData();
         }
 
-        public void OnTerritoryChange(object sender, ushort territoryId) => this.BroadcastPlayerData();
+        public void OnTerritoryChange(object sender, ushort territoryId) => this.sendPlayerData = true;
 
         public void Dispose() {
             // stop accepting new clients
