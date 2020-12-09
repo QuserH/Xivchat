@@ -147,6 +147,14 @@ namespace XIVChatPlugin {
                 jobName = this.plugin.Interface.Data.GetExcelSheet<ClassJob>().GetRow(entry.job)?.Name;
             }
 
+            // FIXME: remove this try/catch when lumina fixes bug with .Value
+            string? territoryName;
+            try {
+                territoryName = this.plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(entry.territoryId)?.PlaceName?.Value?.Name;
+            } catch (NullReferenceException) {
+                territoryName = null;
+            }
+
             var player = new Player {
                 Name = entry.Name(),
                 FreeCompany = entry.FreeCompany(),
@@ -158,7 +166,7 @@ namespace XIVChatPlugin {
                 HomeWorldName = this.plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.homeWorldId)?.Name,
 
                 Territory = entry.territoryId,
-                TerritoryName = this.plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(entry.territoryId)?.PlaceName?.Value?.Name,
+                TerritoryName = territoryName,
 
                 Job = entry.job,
                 JobName = jobName,
