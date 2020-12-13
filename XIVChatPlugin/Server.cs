@@ -443,6 +443,24 @@ namespace XIVChatPlugin {
             });
         }
 
+        public class NameFormatting {
+            public string Before { get; private set; } = string.Empty;
+            public string After { get; private set; } = string.Empty;
+            public bool IsPresent { get; private set; } = true;
+
+            public static NameFormatting Empty() {
+                return new NameFormatting {
+                    IsPresent = false,
+                };
+            }
+
+            public static NameFormatting Of(string before, string after) {
+                return new NameFormatting {
+                    Before = before,
+                    After = after,
+                };
+            }
+        }
 
         private Dictionary<ChatType, NameFormatting> Formats { get; } = new Dictionary<ChatType, NameFormatting>();
 
