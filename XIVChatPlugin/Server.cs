@@ -479,11 +479,7 @@ namespace XIVChatPlugin {
             var sestring = this.plugin.Interface.SeStringManager.Parse(format.RawData.ToArray());
 
             static bool IsStringParam(Payload payload, byte num) {
-                if (payload.Type != PayloadType.Unknown) {
-                    return false;
-                }
-
-                var data = ((RawPayload)payload).Data;
+                var data = payload.Encode();
 
                 return data.Length >= 5 && data[1] == 0x29 && data[4] == num + 1;
             }
