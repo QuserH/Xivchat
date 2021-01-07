@@ -7,17 +7,17 @@ using System.Numerics;
 using System.Threading.Channels;
 
 namespace XIVChatPlugin {
-    public class PluginUI {
-        private readonly Plugin plugin;
+    public class PluginUi {
+        private Plugin Plugin { get; }
 
-        private bool showSettings;
-        private bool ShowSettings { get => this.showSettings; set => this.showSettings = value; }
+        private bool _showSettings;
+        private bool ShowSettings { get => this._showSettings; set => this._showSettings = value; }
 
-        private readonly Dictionary<Guid, Tuple<Client, Channel<bool>>> pending = new Dictionary<Guid, Tuple<Client, Channel<bool>>>();
-        private readonly Dictionary<Guid, string> pendingNames = new Dictionary<Guid, string>(0);
+        private readonly Dictionary<Guid, Tuple<Client, Channel<bool>>> _pending = new Dictionary<Guid, Tuple<Client, Channel<bool>>>();
+        private readonly Dictionary<Guid, string> _pendingNames = new Dictionary<Guid, string>(0);
 
-        public PluginUI(Plugin plugin) {
-            this.plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
+        public PluginUi(Plugin plugin) {
+            this.Plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
         }
 
         private static class Colours {
@@ -47,7 +47,7 @@ namespace XIVChatPlugin {
             ImGui.PopStyleColor(8);
         }
 
-        private static V WithWhiteText<V>(Func<V> func) {
+        private static T WithWhiteText<T>(Func<T> func) {
             ImGui.PushStyleColor(ImGuiCol.Text, Colours.White);
             var ret = func();
             ImGui.PopStyleColor();
@@ -89,58 +89,58 @@ namespace XIVChatPlugin {
         private void DrawInner() {
             this.AcceptPending();
 
-            foreach (var item in this.pending.ToList()) {
+            foreach (var item in this._pending.ToList()) {
                 if (this.DrawPending(item.Key, item.Value.Item1, item.Value.Item2)) {
-                    this.pending.Remove(item.Key);
+                    this._pending.Remove(item.Key);
                 }
             }
 
-            if (!this.ShowSettings || !Begin(this.plugin.Name, ref this.showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
+            if (!this.ShowSettings || !Begin(this.Plugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
                 return;
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Server public key"))) {
-                string serverPublic = this.plugin.Config.KeyPair!.PublicKey.ToHexString(upper: true);
+                string serverPublic = this.Plugin.Config.KeyPair!.PublicKey.ToHexString(upper: true);
                 ImGui.TextUnformatted(serverPublic);
-                this.DrawColours(this.plugin.Config.KeyPair.PublicKey, serverPublic);
+                DrawColours(this.Plugin.Config.KeyPair.PublicKey, serverPublic);
 
                 if (WithWhiteText(() => ImGui.Button("Regenerate"))) {
-                    this.plugin.Server.RegenerateKeyPair();
+                    this.Plugin.Server.RegenerateKeyPair();
                 }
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Settings", ImGuiTreeNodeFlags.DefaultOpen))) {
                 TextWhite("Port");
 
-                int port = this.plugin.Config.Port;
+                int port = this.Plugin.Config.Port;
                 if (WithWhiteText(() => ImGui.InputInt("##port", ref port))) {
-                    ushort realPort = (ushort)Math.Min(ushort.MaxValue, Math.Max(1, port));
-                    this.plugin.Config.Port = realPort;
-                    this.plugin.Config.Save();
+                    var realPort = (ushort)Math.Min(ushort.MaxValue, Math.Max(1, port));
+                    this.Plugin.Config.Port = realPort;
+                    this.Plugin.Config.Save();
 
-                    this.plugin.RelaunchServer();
+                    this.Plugin.RelaunchServer();
                 }
 
                 ImGui.Spacing();
 
-                bool backlogEnabled = this.plugin.Config.BacklogEnabled;
+                var backlogEnabled = this.Plugin.Config.BacklogEnabled;
                 if (WithWhiteText(() => ImGui.Checkbox("Enable backlog", ref backlogEnabled))) {
-                    this.plugin.Config.BacklogEnabled = backlogEnabled;
-                    this.plugin.Config.Save();
+                    this.Plugin.Config.BacklogEnabled = backlogEnabled;
+                    this.Plugin.Config.Save();
                 }
 
-                int backlogCount = this.plugin.Config.BacklogCount;
+                int backlogCount = this.Plugin.Config.BacklogCount;
                 if (WithWhiteText(() => ImGui.DragInt("Backlog messages", ref backlogCount, 1f, 0, ushort.MaxValue))) {
-                    this.plugin.Config.BacklogCount = (ushort)Math.Max(0, Math.Min(ushort.MaxValue, backlogCount));
-                    this.plugin.Config.Save();
+                    this.Plugin.Config.BacklogCount = (ushort)Math.Max(0, Math.Min(ushort.MaxValue, backlogCount));
+                    this.Plugin.Config.Save();
                 }
 
                 ImGui.Spacing();
 
-                bool sendBattle = this.plugin.Config.SendBattle;
+                var sendBattle = this.Plugin.Config.SendBattle;
                 if (WithWhiteText(() => ImGui.Checkbox("Send battle messages", ref sendBattle))) {
-                    this.plugin.Config.SendBattle = sendBattle;
-                    this.plugin.Config.Save();
+                    this.Plugin.Config.SendBattle = sendBattle;
+                    this.Plugin.Config.Save();
                 }
 
                 ImGui.SameLine();
@@ -148,10 +148,10 @@ namespace XIVChatPlugin {
 
                 ImGui.Spacing();
 
-                bool pairingMode = this.plugin.Config.PairingMode;
+                var pairingMode = this.Plugin.Config.PairingMode;
                 if (WithWhiteText(() => ImGui.Checkbox("Pairing mode", ref pairingMode))) {
-                    this.plugin.Config.PairingMode = pairingMode;
-                    this.plugin.Config.Save();
+                    this.Plugin.Config.PairingMode = pairingMode;
+                    this.Plugin.Config.Save();
                 }
 
                 ImGui.SameLine();
@@ -159,10 +159,10 @@ namespace XIVChatPlugin {
 
                 ImGui.Spacing();
 
-                bool acceptNew = this.plugin.Config.AcceptNewClients;
+                var acceptNew = this.Plugin.Config.AcceptNewClients;
                 if (WithWhiteText(() => ImGui.Checkbox("Accept new clients", ref acceptNew))) {
-                    this.plugin.Config.AcceptNewClients = acceptNew;
-                    this.plugin.Config.Save();
+                    this.Plugin.Config.AcceptNewClients = acceptNew;
+                    this.Plugin.Config.Save();
                 }
 
                 ImGui.SameLine();
@@ -170,13 +170,13 @@ namespace XIVChatPlugin {
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Trusted keys"))) {
-                if (this.plugin.Config.TrustedKeys.Count == 0) {
+                if (this.Plugin.Config.TrustedKeys.Count == 0) {
                     ImGui.TextUnformatted("None");
                 }
 
                 ImGui.Columns(2);
                 var maxKeyLength = 0f;
-                foreach (var entry in this.plugin.Config.TrustedKeys.ToList()) {
+                foreach (var entry in this.Plugin.Config.TrustedKeys.ToList()) {
                     var name = entry.Value.Item1;
 
                     var key = entry.Value.Item2;
@@ -188,15 +188,15 @@ namespace XIVChatPlugin {
                     if (ImGui.IsItemHovered()) {
                         ImGui.BeginTooltip();
                         ImGui.TextUnformatted(hex);
-                        this.DrawColours(key, hex);
+                        DrawColours(key, hex);
                         ImGui.EndTooltip();
                     }
 
                     ImGui.NextColumn();
 
                     if (WithWhiteText(() => ImGui.Button($"Untrust##{entry.Key}"))) {
-                        this.plugin.Config.TrustedKeys.Remove(entry.Key);
-                        this.plugin.Config.Save();
+                        this.Plugin.Config.TrustedKeys.Remove(entry.Key);
+                        this.Plugin.Config.Save();
                     }
 
                     ImGui.NextColumn();
@@ -208,7 +208,7 @@ namespace XIVChatPlugin {
 
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Connected clients"))) {
-                if (this.plugin.Server.Clients.Count == 0) {
+                if (this.Plugin.Server.Clients.Count == 0) {
                     ImGui.TextUnformatted("None");
                 } else {
                     ImGui.Columns(3);
@@ -219,7 +219,7 @@ namespace XIVChatPlugin {
                     ImGui.NextColumn();
                     ImGui.NextColumn();
 
-                    foreach (var client in this.plugin.Server.Clients) {
+                    foreach (var client in this.Plugin.Server.Clients) {
                         EndPoint remote;
                         try {
                             remote = client.Value.Conn.Client.RemoteEndPoint;
@@ -238,7 +238,7 @@ namespace XIVChatPlugin {
 
                         ImGui.NextColumn();
 
-                        var trustedKey = this.plugin.Config.TrustedKeys.Values.FirstOrDefault(entry => entry.Item2.SequenceEqual(client.Value.Handshake!.RemotePublicKey));
+                        var trustedKey = this.Plugin.Config.TrustedKeys.Values.FirstOrDefault(entry => entry.Item2.SequenceEqual(client.Value.Handshake!.RemotePublicKey));
                         if (trustedKey != null && !trustedKey.Equals(default(Tuple<string, byte[]>))) {
                             ImGui.TextUnformatted(trustedKey!.Item1);
                             if (ImGui.IsItemHovered()) {
@@ -246,7 +246,7 @@ namespace XIVChatPlugin {
 
                                 var hex = trustedKey.Item2.ToHexString(true);
                                 ImGui.TextUnformatted(hex);
-                                this.DrawColours(trustedKey.Item2, hex);
+                                DrawColours(trustedKey.Item2, hex);
 
                                 ImGui.EndTooltip();
                             }
@@ -278,19 +278,19 @@ namespace XIVChatPlugin {
             ImGui.End();
         }
 
-        private void DrawColours(byte[] bytes, string widthOf) {
-            this.DrawColours(bytes, ImGui.CalcTextSize(widthOf).X);
+        private static void DrawColours(byte[] bytes, string widthOf) {
+            DrawColours(bytes, ImGui.CalcTextSize(widthOf).X);
         }
 
-        private void DrawColours(byte[] bytes, float width = 0f) {
+        private static void DrawColours(byte[] bytes, float width = 0f) {
             var pos = ImGui.GetCursorScreenPos();
             var spacing = ImGui.GetStyle().ItemSpacing;
 
             var colours = bytes.ToColours();
 
-            float sizeX = width == 0f ? 32f : width / colours.Count;
+            var sizeX = width == 0f ? 32f : width / colours.Count;
 
-            for (int i = 0; i < colours.Count; i++) {
+            for (var i = 0; i < colours.Count; i++) {
                 var topLeft = new Vector2(
                     pos.X + (sizeX * i),
                     pos.Y + spacing.Y
@@ -316,17 +316,17 @@ namespace XIVChatPlugin {
         }
 
         private void AcceptPending() {
-            while (this.plugin.Server.pendingClients.Reader.TryRead(out var item)) {
-                this.pending[Guid.NewGuid()] = item;
+            while (this.Plugin.Server.pendingClients.Reader.TryRead(out var item)) {
+                this._pending[Guid.NewGuid()] = item;
             }
         }
 
         private bool DrawPending(Guid id, Client client, Channel<bool, bool> accepted) {
-            bool ret = false;
+            var ret = false;
 
             var clientPublic = client.Handshake!.RemotePublicKey;
             var clientPublicHex = clientPublic.ToHexString(upper: true);
-            var serverPublic = this.plugin.Config.KeyPair!.PublicKey;
+            var serverPublic = this.Plugin.Config.KeyPair!.PublicKey;
             var serverPublicHex = serverPublic.ToHexString(upper: true);
 
             var width = Math.Max(ImGui.CalcTextSize(clientPublicHex).X, ImGui.CalcTextSize(serverPublicHex).X) + (ImGui.GetStyle().WindowPadding.X * 2);
@@ -343,13 +343,13 @@ namespace XIVChatPlugin {
 
             TextWhite("Server");
             ImGui.TextUnformatted(serverPublicHex);
-            this.DrawColours(serverPublic, serverPublicHex);
+            DrawColours(serverPublic, serverPublicHex);
 
             ImGui.Spacing();
 
             TextWhite("Client");
             ImGui.TextUnformatted(clientPublicHex);
-            this.DrawColours(clientPublic, clientPublicHex);
+            DrawColours(clientPublic, clientPublicHex);
 
             ImGui.Separator();
 
@@ -357,12 +357,12 @@ namespace XIVChatPlugin {
 
             ImGui.PopTextWrapPos();
 
-            if (!this.pendingNames.TryGetValue(id, out string name)) {
+            if (!this._pendingNames.TryGetValue(id, out string name)) {
                 name = "No name";
             }
 
             if (WithWhiteText(() => ImGui.InputText("Client name", ref name, 100, ImGuiInputTextFlags.AutoSelectAll))) {
-                this.pendingNames[id] = name;
+                this._pendingNames[id] = name;
             }
 
             ImGui.Separator();
@@ -370,16 +370,16 @@ namespace XIVChatPlugin {
             ImGui.TextUnformatted("Do both keys match?");
             if (WithWhiteText(() => ImGui.Button("Yes"))) {
                 accepted.Writer.TryWrite(true);
-                this.plugin.Config.TrustedKeys[Guid.NewGuid()] = Tuple.Create(name, client.Handshake.RemotePublicKey);
-                this.plugin.Config.Save();
-                this.pendingNames.Remove(id);
+                this.Plugin.Config.TrustedKeys[Guid.NewGuid()] = Tuple.Create(name, client.Handshake.RemotePublicKey);
+                this.Plugin.Config.Save();
+                this._pendingNames.Remove(id);
                 ret = true;
             }
 
             ImGui.SameLine();
             if (WithWhiteText(() => ImGui.Button("No"))) {
                 accepted.Writer.TryWrite(false);
-                this.pendingNames.Remove(id);
+                this._pendingNames.Remove(id);
                 ret = true;
             }
 

@@ -33,7 +33,7 @@ namespace XIVChatPlugin {
             var colours = new List<Vector4>();
 
             var colour = new Vector4(0f, 0f, 0f, 1f);
-            for (int i = 0; i < bytes.Length; i++) {
+            for (var i = 0; i < bytes.Length; i++) {
                 var idx = i % 3;
 
                 if (i != 0 && idx == 0) {

@@ -6,13 +6,14 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using Dalamud.Plugin;
 using XIVChatCommon.Message;
 
 namespace XIVChatPlugin {
     public class GameFunctions : IDisposable {
-        private readonly Plugin plugin;
+        private Plugin Plugin { get; }
 
-        private delegate IntPtr GetUIModuleDelegate(IntPtr basePtr);
+        private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
 
         private delegate void EasierProcessChatBoxDelegate(IntPtr uiModule, IntPtr message, IntPtr unused, byte a4);
 
@@ -24,58 +25,113 @@ namespace XIVChatPlugin {
 
         private delegate IntPtr GetColourInfoDelegate(IntPtr handler, uint lookupResult);
 
-        private readonly Hook<RequestFriendListDelegate> friendListHook;
-        private readonly Hook<FormatFriendListNameDelegate> formatHook;
-        private readonly Hook<OnReceiveFriendListChunkDelegate> receiveChunkHook;
+        private delegate byte ChatChannelChangeDelegate(IntPtr a1, uint channel);
 
-        private readonly GetUIModuleDelegate getUiModule;
-        private readonly EasierProcessChatBoxDelegate easierProcessChatBox;
-        private readonly GetColourInfoDelegate getColourInfo;
+        private readonly Hook<RequestFriendListDelegate>? _friendListHook;
+        private readonly Hook<FormatFriendListNameDelegate>? _formatHook;
+        private readonly Hook<OnReceiveFriendListChunkDelegate>? _receiveChunkHook;
+        private readonly Hook<ChatChannelChangeDelegate>? _chatChannelChangeHook;
 
-        private readonly IntPtr uiModulePtr;
-        private readonly IntPtr colourHandler;
-        private readonly IntPtr colourLookup;
-        private IntPtr friendListManager = IntPtr.Zero;
+        private readonly GetUiModuleDelegate? _getUiModule;
+        private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
+        private readonly GetColourInfoDelegate? _getColourInfo;
+
+        private IntPtr UiModulePtr { get; }
+        private IntPtr ColourHandler { get; }
+        private IntPtr ColourLookup { get; }
+        private IntPtr _friendListManager = IntPtr.Zero;
 
         public bool RequestingFriendList { get; private set; }
 
-        private readonly List<Player> friends = new List<Player>();
+        private readonly List<Player> _friends = new List<Player>();
 
         public delegate void ReceiveFriendListHandler(List<Player> friends);
 
         public event ReceiveFriendListHandler? ReceiveFriendList;
 
         public GameFunctions(Plugin plugin) {
-            this.plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
+            this.Plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
 
-            var getUiModulePtr = this.plugin.Interface.TargetModuleScanner.ScanText("E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0");
-            var easierProcessChatBoxPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9");
-            var friendListPtr = this.plugin.Interface.TargetModuleScanner.ScanText("40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9");
-            var formatPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24 ??");
-            var recvChunkPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2");
-            var getColourPtr = this.plugin.Interface.TargetModuleScanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9 ?? ?? ?? ??");
+            var getUiModulePtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0");
+            var easierProcessChatBoxPtr = this.Plugin.ScanText("48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9");
+            var friendListPtr = this.Plugin.ScanText("40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9");
+            var formatPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24 ??");
+            var recvChunkPtr = this.Plugin.ScanText("48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2");
+            var getColourPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9 ?? ?? ?? ??");
+            var channelPtr = this.Plugin.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
 
-            this.uiModulePtr = this.plugin.Interface.TargetModuleScanner.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
-            this.colourHandler = this.plugin.Interface.TargetModuleScanner.GetStaticAddressFromSig("48 8B 05 ?? ?? ?? ?? 48 8B A8 ?? ?? ?? ?? 48 85 ED 0F 84 ?? ?? ?? ??");
-            this.colourLookup = this.plugin.Interface.TargetModuleScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D ??");
+            this.UiModulePtr = this.Plugin.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
 
-            this.getUiModule = Marshal.GetDelegateForFunctionPointer<GetUIModuleDelegate>(getUiModulePtr);
-            this.easierProcessChatBox = Marshal.GetDelegateForFunctionPointer<EasierProcessChatBoxDelegate>(easierProcessChatBoxPtr);
-            this.getColourInfo = Marshal.GetDelegateForFunctionPointer<GetColourInfoDelegate>(getColourPtr);
+            if (this.UiModulePtr == IntPtr.Zero) {
+                PluginLog.Warning("Static pointer was null: {}", nameof(this.UiModulePtr));
+            }
 
-            this.friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, new RequestFriendListDelegate(this.OnRequestFriendList));
-            this.formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, new FormatFriendListNameDelegate(this.OnFormatFriendList));
-            this.receiveChunkHook = new Hook<OnReceiveFriendListChunkDelegate>(recvChunkPtr, new OnReceiveFriendListChunkDelegate(this.OnReceiveFriendList));
+            this.ColourHandler = this.Plugin.GetStaticAddressFromSig("48 8B 05 ?? ?? ?? ?? 48 8B A8 ?? ?? ?? ?? 48 85 ED 0F 84 ?? ?? ?? ??");
+            if (this.ColourHandler == IntPtr.Zero) {
+                PluginLog.Warning("Static pointer was null: {}", nameof(this.ColourHandler));
+            }
 
-            this.friendListHook.Enable();
-            this.formatHook.Enable();
-            this.receiveChunkHook.Enable();
+            this.ColourLookup = this.Plugin.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D ??");
+            if (this.ColourLookup == IntPtr.Zero) {
+                PluginLog.Warning("Static pointer was null: {}", nameof(this.ColourLookup));
+            }
+
+            if (getUiModulePtr != IntPtr.Zero) {
+                this._getUiModule = Marshal.GetDelegateForFunctionPointer<GetUiModuleDelegate>(getUiModulePtr);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(getUiModulePtr));
+            }
+
+            if (easierProcessChatBoxPtr != IntPtr.Zero) {
+                this._easierProcessChatBox = Marshal.GetDelegateForFunctionPointer<EasierProcessChatBoxDelegate>(easierProcessChatBoxPtr);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(easierProcessChatBoxPtr));
+            }
+
+            if (getColourPtr != IntPtr.Zero) {
+                this._getColourInfo = Marshal.GetDelegateForFunctionPointer<GetColourInfoDelegate>(getColourPtr);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(getColourPtr));
+            }
+
+            if (friendListPtr != IntPtr.Zero) {
+                this._friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, new RequestFriendListDelegate(this.OnRequestFriendList));
+            } else {
+                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(friendListPtr));
+            }
+
+            if (formatPtr != IntPtr.Zero) {
+                this._formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, new FormatFriendListNameDelegate(this.OnFormatFriendList));
+            } else {
+                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(formatPtr));
+            }
+
+            if (recvChunkPtr != IntPtr.Zero) {
+                this._receiveChunkHook = new Hook<OnReceiveFriendListChunkDelegate>(recvChunkPtr, new OnReceiveFriendListChunkDelegate(this.OnReceiveFriendList));
+            } else {
+                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(recvChunkPtr));
+            }
+
+            if (channelPtr != IntPtr.Zero) {
+                this._chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(channelPtr, new ChatChannelChangeDelegate(this.ChangeChatChannelDetour));
+            } else {
+                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(channelPtr));
+            }
+
+            this._friendListHook?.Enable();
+            this._formatHook?.Enable();
+            this._receiveChunkHook?.Enable();
+            this._chatChannelChangeHook?.Enable();
         }
 
         // This function looks up a channel's user-defined colour.
         //
         // If this function would ever return 0, it returns null instead.
         public uint? GetChannelColour(ChatCode channel) {
+            if (this.ColourLookup == IntPtr.Zero || this.ColourHandler == IntPtr.Zero) {
+                return null;
+            }
+
             // Colours are retrieved by looking up their code in a lookup table. Some codes share a colour, so they're lumped into a parent code here.
             // Only codes >= 10 (say) have configurable colours.
             // After getting the lookup value for the code, it is passed into a function with a handler which returns a pointer.
@@ -90,9 +146,9 @@ namespace XIVChatPlugin {
                     return channel.DefaultColour();
             }
 
-            var lookupResult = (uint)Marshal.ReadInt32(this.colourLookup, (int)parent * 4);
-            var info = this.getColourInfo(Marshal.ReadIntPtr(this.colourHandler) + 16, lookupResult);
-            var rgb = (uint)Marshal.ReadInt32(info, 32) & 0xFFFFFF;
+            var lookupResult = (uint) Marshal.ReadInt32(this.ColourLookup, (int) parent * 4);
+            var info = this._getColourInfo(Marshal.ReadIntPtr(this.ColourHandler) + 16, lookupResult);
+            var rgb = (uint) Marshal.ReadInt32(info, 32) & 0xFFFFFF;
 
             if (rgb == 0) {
                 return null;
@@ -102,39 +158,51 @@ namespace XIVChatPlugin {
         }
 
         public void ProcessChatBox(string message) {
-            IntPtr uiModule = this.getUiModule(Marshal.ReadIntPtr(this.uiModulePtr));
+            if (this._easierProcessChatBox == null || this.UiModulePtr == IntPtr.Zero) {
+                return;
+            }
+
+            var uiModule = this._getUiModule(Marshal.ReadIntPtr(this.UiModulePtr));
 
             if (uiModule == IntPtr.Zero) {
-                throw new ApplicationException("uiModule was null");
+                throw new ArgumentException("pointer was null", nameof(uiModule));
             }
 
             using var payload = new ChatPayload(message);
-            IntPtr mem1 = Marshal.AllocHGlobal(400);
+            var mem1 = Marshal.AllocHGlobal(400);
             Marshal.StructureToPtr(payload, mem1, false);
 
-            this.easierProcessChatBox(uiModule, mem1, IntPtr.Zero, 0);
+            this._easierProcessChatBox(uiModule, mem1, IntPtr.Zero, 0);
 
             Marshal.FreeHGlobal(mem1);
         }
 
         public bool RequestFriendList() {
-            if (this.friendListManager == IntPtr.Zero) {
+            if (this._friendListManager == IntPtr.Zero || this._friendListHook == null) {
                 return false;
             }
 
             this.RequestingFriendList = true;
-            this.friendListHook.Original(this.friendListManager);
+            this._friendListHook.Original(this._friendListManager);
             return true;
         }
 
+        private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
+            // a1 + 0xfd0 is the chat channel byte (including for when clicking on shout)
+            this.Plugin.Server.OnChatChannelChange(channel);
+            return this._chatChannelChangeHook!.Original(a1, channel);
+        }
+
         private byte OnRequestFriendList(IntPtr manager) {
-            this.friendListManager = manager;
-            return this.friendListHook.Original(manager);
+            this._friendListManager = manager;
+            // NOTE: if this is being called, hook isn't null
+            return this._friendListHook!.Original(manager);
         }
 
         private int OnFormatFriendList(long a1, long a2, long a3, int a4, IntPtr data, long a6) {
             // have to call this first to populate cross-world info
-            var ret = this.formatHook.Original(a1, a2, a3, a4, data, a6);
+            // NOTE: if this is being called, hook isn't null
+            var ret = this._formatHook!.Original(a1, a2, a3, a4, data, a6);
 
             if (!this.RequestingFriendList) {
                 return ret;
@@ -144,13 +212,13 @@ namespace XIVChatPlugin {
 
             string? jobName = null;
             if (entry.job > 0) {
-                jobName = this.plugin.Interface.Data.GetExcelSheet<ClassJob>().GetRow(entry.job)?.Name;
+                jobName = this.Plugin.Interface.Data.GetExcelSheet<ClassJob>().GetRow(entry.job)?.Name;
             }
 
             // FIXME: remove this try/catch when lumina fixes bug with .Value
             string? territoryName;
             try {
-                territoryName = this.plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(entry.territoryId)?.PlaceName?.Value?.Name;
+                territoryName = this.Plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(entry.territoryId)?.PlaceName?.Value?.Name;
             } catch (NullReferenceException) {
                 territoryName = null;
             }
@@ -161,9 +229,9 @@ namespace XIVChatPlugin {
                 Status = entry.flags,
 
                 CurrentWorld = entry.currentWorldId,
-                CurrentWorldName = this.plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.currentWorldId)?.Name,
+                CurrentWorldName = this.Plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.currentWorldId)?.Name,
                 HomeWorld = entry.homeWorldId,
-                HomeWorldName = this.plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.homeWorldId)?.Name,
+                HomeWorldName = this.Plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.homeWorldId)?.Name,
 
                 Territory = entry.territoryId,
                 TerritoryName = territoryName,
@@ -172,18 +240,19 @@ namespace XIVChatPlugin {
                 JobName = jobName,
 
                 GrandCompany = entry.grandCompany,
-                GrandCompanyName = this.plugin.Interface.Data.GetExcelSheet<GrandCompany>().GetRow(entry.grandCompany)?.Name,
+                GrandCompanyName = this.Plugin.Interface.Data.GetExcelSheet<GrandCompany>().GetRow(entry.grandCompany)?.Name,
 
                 Languages = entry.langsEnabled,
                 MainLanguage = entry.mainLanguage,
             };
-            this.friends.Add(player);
+            this._friends.Add(player);
 
             return ret;
         }
 
         private IntPtr OnReceiveFriendList(IntPtr a1, IntPtr data) {
-            var ret = this.receiveChunkHook.Original(a1, data);
+            // NOTE: if this is being called, hook isn't null
+            var ret = this._receiveChunkHook!.Original(a1, data);
 
             // + 0xc
             // 1 = party
@@ -201,8 +270,8 @@ namespace XIVChatPlugin {
                 goto Return;
             }
 
-            this.ReceiveFriendList?.Invoke(this.friends);
-            this.friends.Clear();
+            this.ReceiveFriendList?.Invoke(this._friends);
+            this._friends.Clear();
             this.RequestingFriendList = false;
 
             Return:
@@ -210,9 +279,10 @@ namespace XIVChatPlugin {
         }
 
         public void Dispose() {
-            this.friendListHook.Dispose();
-            this.formatHook.Dispose();
-            this.receiveChunkHook.Dispose();
+            this._friendListHook?.Dispose();
+            this._formatHook?.Dispose();
+            this._receiveChunkHook?.Dispose();
+            this._chatChannelChangeHook?.Dispose();
         }
     }
 
@@ -237,7 +307,7 @@ namespace XIVChatPlugin {
             Marshal.Copy(stringBytes, 0, this.textPtr, stringBytes.Length);
             Marshal.WriteByte(this.textPtr + stringBytes.Length, 0);
 
-            this.textLen = (ulong)(stringBytes.Length + 1);
+            this.textLen = (ulong) (stringBytes.Length + 1);
 
             this.unk1 = 64;
             this.unk2 = 0;

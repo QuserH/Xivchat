@@ -13,7 +13,7 @@ using System.Reflection;
 
 namespace XIVChatPlugin {
     public class Plugin : IDalamudPlugin {
-        private bool disposedValue;
+        private bool _disposedValue;
 
         public string Name => "XIVChat";
 
@@ -28,14 +28,10 @@ namespace XIVChatPlugin {
         #pragma warning disable 8618
         public DalamudPluginInterface Interface { get; private set; }
         public Configuration Config { get; private set; }
-        private PluginUI Ui { get; set; }
+        private PluginUi Ui { get; set; }
         public Server Server { get; private set; }
         public GameFunctions Functions { get; private set; }
         #pragma warning restore 8618
-
-        private delegate byte ChatChannelChangeDelegate(IntPtr a1, uint channel);
-
-        private Hook<ChatChannelChangeDelegate>? chatChannelChangeHook;
 
         public void Initialize(DalamudPluginInterface pluginInterface) {
             this.Interface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface), "DalamudPluginInterface cannot be null");
@@ -51,15 +47,8 @@ namespace XIVChatPlugin {
             this.Config.Initialise(this);
 
             this.Functions = new GameFunctions(this);
-            try {
-                var funcPtr = this.Interface.TargetModuleScanner.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
-                this.chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(funcPtr, new ChatChannelChangeDelegate(this.ChangeChatChannelDetour));
-                this.chatChannelChangeHook.Enable();
-            } catch (KeyNotFoundException) {
-                PluginLog.LogError("Could not sig chat channel change function");
-            }
 
-            this.Ui = new PluginUI(this);
+            this.Ui = new PluginUi(this);
 
             this.LaunchServer();
 
@@ -75,7 +64,23 @@ namespace XIVChatPlugin {
             });
         }
 
-        public void LaunchServer() {
+        internal IntPtr ScanText(string sig) {
+            try {
+                return this.Interface.TargetModuleScanner.ScanText(sig);
+            } catch (KeyNotFoundException) {
+                return IntPtr.Zero;
+            }
+        }
+
+        internal IntPtr GetStaticAddressFromSig(string sig) {
+            try {
+                return this.Interface.TargetModuleScanner.GetStaticAddressFromSig(sig);
+            } catch (KeyNotFoundException) {
+                return IntPtr.Zero;
+            }
+        }
+
+        private void LaunchServer() {
             this.Server = new Server(this);
             this.Server.Spawn();
         }
@@ -85,19 +90,13 @@ namespace XIVChatPlugin {
             this.LaunchServer();
         }
 
-        private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
-            // a1 + 0xfd0 is the chat channel byte (including for when clicking on shout)
-            this.Server.OnChatChannelChange(channel);
-            return this.chatChannelChangeHook!.Original(a1, channel);
-        }
-
         private void OnCommand(string command, string args) {
             this.Ui.OpenSettings(null, null);
         }
 
         [SuppressMessage("ReSharper", "DelegateSubtraction")]
         protected virtual void Dispose(bool disposing) {
-            if (this.disposedValue) {
+            if (this._disposedValue) {
                 return;
             }
 
@@ -112,11 +111,9 @@ namespace XIVChatPlugin {
                 this.Interface.ClientState.OnLogout -= this.Server.OnLogOut;
                 this.Interface.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
                 this.Interface.CommandManager.RemoveHandler("/xivchat");
-
-                this.chatChannelChangeHook?.Dispose();
             }
 
-            this.disposedValue = true;
+            this._disposedValue = true;
         }
 
         public void Dispose() {

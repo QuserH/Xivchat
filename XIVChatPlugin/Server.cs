@@ -120,7 +120,7 @@ namespace XIVChatPlugin {
                     // magic + string length + string + port + key
                     var payload = new byte[1 + 1 + utf8.Length + portBytes.Length + key.Length]; // assuming names can only be 32 bytes here
                     payload[0] = 14;
-                    payload[1] = (byte)utf8.Length;
+                    payload[1] = (byte) utf8.Length;
                     Array.Copy(utf8, 0, payload, 2, utf8.Length);
                     Array.Copy(portBytes, 0, payload, 2 + utf8.Length, portBytes.Length);
                     Array.Copy(key, 0, payload, 2 + utf8.Length + portBytes.Length, key.Length);
@@ -180,7 +180,7 @@ namespace XIVChatPlugin {
                 return;
             }
 
-            var chatCode = new ChatCode((ushort)type);
+            var chatCode = new ChatCode((ushort) type);
 
             if (!this.plugin.Config.SendBattle && chatCode.IsBattle()) {
                 return;
@@ -207,7 +207,7 @@ namespace XIVChatPlugin {
 
             var msg = new ServerMessage(
                 DateTime.UtcNow,
-                (ChatType)type,
+                (ChatType) type,
                 sender.Encode(),
                 message.Encode(),
                 chunks
@@ -340,7 +340,7 @@ namespace XIVChatPlugin {
                             continue;
                         }
 
-                        var op = (ClientOperation)msg[0];
+                        var op = (ClientOperation) msg[0];
 
                         var payload = new byte[msg.Length - 1];
                         Array.Copy(msg, 1, payload, 0, payload.Length);
@@ -430,7 +430,8 @@ namespace XIVChatPlugin {
 
                 try {
                     conn.Close();
-                } catch (ObjectDisposedException) { }
+                } catch (ObjectDisposedException) {
+                }
 
                 await listen;
 
@@ -439,7 +440,8 @@ namespace XIVChatPlugin {
             }).ContinueWith(_ => {
                 try {
                     conn.Close();
-                } catch (ObjectDisposedException) { }
+                } catch (ObjectDisposedException) {
+                }
             });
         }
 
@@ -469,7 +471,7 @@ namespace XIVChatPlugin {
                 return cached;
             }
 
-            var logKind = this.plugin.Interface.Data.GetExcelSheet<LogKind>().GetRow((ushort)type);
+            var logKind = this.plugin.Interface.Data.GetExcelSheet<LogKind>().GetRow((ushort) type);
 
             if (logKind == null) {
                 return null;
@@ -555,8 +557,8 @@ namespace XIVChatPlugin {
             void Append(string text) {
                 chunks.Add(new TextChunk(text) {
                     FallbackColour = defaultColour,
-                    Foreground = foreground.Count > 0 ? foreground.Peek() : (uint?)null,
-                    Glow = glow.Count > 0 ? glow.Peek() : (uint?)null,
+                    Foreground = foreground.Count > 0 ? foreground.Peek() : (uint?) null,
+                    Glow = glow.Count > 0 ? glow.Peek() : (uint?) null,
                     Italic = italic,
                 });
             }
@@ -564,11 +566,11 @@ namespace XIVChatPlugin {
             foreach (var payload in msg.Payloads) {
                 switch (payload.Type) {
                     case PayloadType.EmphasisItalic:
-                        var newStatus = ((EmphasisItalicPayload)payload).IsEnabled;
+                        var newStatus = ((EmphasisItalicPayload) payload).IsEnabled;
                         italic = newStatus;
                         break;
                     case PayloadType.UIForeground:
-                        var foregroundPayload = (UIForegroundPayload)payload;
+                        var foregroundPayload = (UIForegroundPayload) payload;
                         if (foregroundPayload.IsEnabled) {
                             foreground.Push(foregroundPayload.UIColor.UIForeground);
                         } else if (foreground.Count > 0) {
@@ -577,7 +579,7 @@ namespace XIVChatPlugin {
 
                         break;
                     case PayloadType.UIGlow:
-                        var glowPayload = (UIGlowPayload)payload;
+                        var glowPayload = (UIGlowPayload) payload;
                         if (glowPayload.IsEnabled) {
                             glow.Push(glowPayload.UIColor.UIGlow);
                         } else if (glow.Count > 0) {
@@ -589,20 +591,20 @@ namespace XIVChatPlugin {
                         chunks.Add(new IconChunk {
                             index = 54,
                         });
-                        var autoText = ((AutoTranslatePayload)payload).Text;
+                        var autoText = ((AutoTranslatePayload) payload).Text;
                         Append(autoText.Substring(2, autoText.Length - 4));
                         chunks.Add(new IconChunk {
                             index = 55,
                         });
                         break;
                     case PayloadType.Icon:
-                        var index = ((IconPayload)payload).IconIndex;
+                        var index = ((IconPayload) payload).Icon;
                         chunks.Add(new IconChunk {
-                            index = (byte)index,
+                            index = (byte) index,
                         });
                         break;
                     case PayloadType.Unknown:
-                        var rawPayload = (RawPayload)payload;
+                        var rawPayload = (RawPayload) payload;
                         if (rawPayload.Data[1] == 0x13) {
                             foreground.Pop();
                             glow.Pop();
@@ -647,8 +649,8 @@ namespace XIVChatPlugin {
 
             foreach (var word in input.Split(' ')) {
                 if (word.Length > limit) {
-                    int wordParts = (int)Math.Ceiling((float)word.Length / limit);
-                    for (int i = 0; i < wordParts; i++) {
+                    var wordParts = (int) Math.Ceiling((float) word.Length / limit);
+                    for (var i = 0; i < wordParts; i++) {
                         var start = i == 0 ? 0 : (i * limit);
                         var partLength = limit;
                         if (prefix.Length != 0) {
@@ -738,7 +740,7 @@ namespace XIVChatPlugin {
         }
 
         public void OnChatChannelChange(uint channel) {
-            var inputChannel = (InputChannel)channel;
+            var inputChannel = (InputChannel) channel;
             this.currentChannel = inputChannel;
 
             var localisedName = this.LocalisedChannelName(inputChannel);
@@ -810,7 +812,8 @@ namespace XIVChatPlugin {
                             // time out after 5 seconds
                             client.Conn.SendTimeout = 5_000;
                             await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, ServerShutdown.Instance);
-                        } catch (Exception) { }
+                        } catch (Exception) {
+                        }
                     }
 
                     // cancel threads for open clients
