@@ -2,13 +2,13 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
-using Windows.Web.Http;
+using System.Net.Http;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
 namespace XIVChat_Desktop {
     public partial class LicenceWindow {
-        public App App => (App)Application.Current;
+        public App App => (App) Application.Current;
 
         private readonly bool startAfterSuccess;
 
@@ -80,7 +80,7 @@ namespace XIVChat_Desktop {
             };
 
             var client = new HttpClient();
-            var res = await client.PostAsync(uri, new HttpFormUrlEncodedContent(data));
+            var res = await client.PostAsync(uri, new FormUrlEncodedContent(data));
             var response = JsonConvert.DeserializeObject<LicenceResponse>(await res.Content.ReadAsStringAsync());
 
             return response;
