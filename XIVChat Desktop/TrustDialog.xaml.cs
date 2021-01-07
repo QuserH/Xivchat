@@ -24,14 +24,14 @@ namespace XIVChat_Desktop {
 
             this.ClientPublicKey.Text = ToHexString(this.App.Config.KeyPair.PublicKey);
             var clientColours = BreakIntoColours(this.App.Config.KeyPair.PublicKey);
-            for (int i = 0; i < this.ClientPublicKeyColours.Children.Count; i++) {
+            for (var i = 0; i < this.ClientPublicKeyColours.Children.Count; i++) {
                 var rect = (Rectangle)this.ClientPublicKeyColours.Children[i];
                 rect.Fill = new SolidColorBrush(clientColours[i]);
             }
 
             this.ServerPublicKey.Text = ToHexString(remoteKey);
             var serverColours = BreakIntoColours(remoteKey);
-            for (int i = 0; i < this.ServerPublicKeyColours.Children.Count; i++) {
+            for (var i = 0; i < this.ServerPublicKeyColours.Children.Count; i++) {
                 var rect = (Rectangle)this.ServerPublicKeyColours.Children[i];
                 rect.Fill = new SolidColorBrush(serverColours[i]);
             }

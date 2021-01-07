@@ -136,7 +136,7 @@ namespace XIVChat_Desktop {
         private T? FindElementByName<T>(DependencyObject element, string sChildName) where T : FrameworkElement {
             T? childElement = null;
             var nChildCount = VisualTreeHelper.GetChildrenCount(element);
-            for (int i = 0; i < nChildCount; i++) {
+            for (var i = 0; i < nChildCount; i++) {
                 if (!(VisualTreeHelper.GetChild(element, i) is FrameworkElement child)) {
                     continue;
                 }
