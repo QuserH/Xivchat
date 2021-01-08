@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Import Project="..\packages\DalamudPackager.1.1.0\build\DalamudPackager.props" Condition="Exists('..\packages\DalamudPackager.1.1.0\build\DalamudPackager.props')" />
+    <Import Project="..\packages\DalamudPackager.1.2.0\build\DalamudPackager.props" Condition="Exists('..\packages\DalamudPackager.1.2.0\build\DalamudPackager.props')" />
     <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
     <PropertyGroup>
         <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -134,7 +134,6 @@
         </ProjectReference>
     </ItemGroup>
     <ItemGroup>
-        <Content Include="DalamudPackager.targets" />
         <Content Include="ILRepack.targets" />
         <Content Include="Resources\lib\libsodium.dll" />
         <Content Include="XIVChat.yaml" />
@@ -145,8 +144,8 @@
         <ErrorText>This project references NuGet package(s) that are missing on this computer. Enable NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105.The missing file is {0}.</ErrorText>
       </PropertyGroup>
       <Error Condition="!Exists('..\packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets'))" />
-      <Error Condition="!Exists('..\packages\DalamudPackager.1.1.0\build\DalamudPackager.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\DalamudPackager.1.1.0\build\DalamudPackager.props'))" />
-      <Error Condition="!Exists('..\packages\DalamudPackager.1.1.0\build\DalamudPackager.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\DalamudPackager.1.1.0\build\DalamudPackager.targets'))" />
+      <Error Condition="!Exists('..\packages\DalamudPackager.1.2.0\build\DalamudPackager.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\DalamudPackager.1.2.0\build\DalamudPackager.props'))" />
+      <Error Condition="!Exists('..\packages\DalamudPackager.1.2.0\build\DalamudPackager.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\DalamudPackager.1.2.0\build\DalamudPackager.targets'))" />
     </Target>
     <Import Project="..\packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets" Condition="Exists('..\packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets')" />
     <Target Name="CleanReferenceCopyLocalPaths" AfterTargets="ILRepacker">
@@ -159,5 +158,5 @@
         </ItemGroup>
         <RemoveDir Directories="@(Directories)" Condition="%(Files)=='0'" />
     </Target>
-    <Import Project="..\packages\DalamudPackager.1.1.0\build\DalamudPackager.targets" Condition="Exists('..\packages\DalamudPackager.1.1.0\build\DalamudPackager.targets')" />
+    <Import Project="..\packages\DalamudPackager.1.2.0\build\DalamudPackager.targets" Condition="Exists('..\packages\DalamudPackager.1.2.0\build\DalamudPackager.targets')" />
 </Project>
