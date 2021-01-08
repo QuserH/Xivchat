@@ -415,6 +415,11 @@ namespace XIVChatPlugin {
                                 client.Preferences = preferences;
 
                                 break;
+                            case ClientOperation.Channel:
+                                var channel = ClientChannel.Decode(payload);
+                                this.plugin.Functions.ChangeChatChannel(channel.Channel);
+
+                                break;
                         }
                     }
                 });
@@ -700,9 +705,7 @@ namespace XIVChatPlugin {
                     continue;
                 }
 
-                Task.Run(async () => {
-                    await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, message);
-                });
+                Task.Run(async () => { await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, message); });
             }
         }
 

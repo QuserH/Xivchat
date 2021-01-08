@@ -565,7 +565,7 @@ namespace XIVChatCommon.Message {
         OtherPet = 2048,
     }
 
-    public enum InputChannel : byte {
+    public enum InputChannel : uint {
         Tell = 0,
         Say = 1,
         Party = 2,

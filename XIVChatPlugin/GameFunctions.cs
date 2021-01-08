@@ -11,6 +11,8 @@ using XIVChatCommon.Message;
 
 namespace XIVChatPlugin {
     public class GameFunctions : IDisposable {
+        private const int ChannelOffset = 4048; // update 5.4-HF1
+
         private Plugin Plugin { get; }
 
         private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
@@ -40,6 +42,7 @@ namespace XIVChatPlugin {
         private IntPtr ColourHandler { get; }
         private IntPtr ColourLookup { get; }
         private IntPtr _friendListManager = IntPtr.Zero;
+        private IntPtr _chatManager = IntPtr.Zero;
 
         public bool RequestingFriendList { get; private set; }
 
@@ -124,6 +127,15 @@ namespace XIVChatPlugin {
             this._chatChannelChangeHook?.Enable();
         }
 
+        public void ChangeChatChannel(InputChannel channel) {
+            if (this._chatManager == IntPtr.Zero || this._chatChannelChangeHook == null) {
+                return;
+            }
+
+            Marshal.WriteInt32(this._chatManager + ChannelOffset, (int) channel);
+            this._chatChannelChangeHook.Original(this._chatManager, (uint) channel);
+        }
+
         // This function looks up a channel's user-defined colour.
         //
         // If this function would ever return 0, it returns null instead.
@@ -188,6 +200,7 @@ namespace XIVChatPlugin {
         }
 
         private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
+            this._chatManager = a1;
             // a1 + 0xfd0 is the chat channel byte (including for when clicking on shout)
             this.Plugin.Server.OnChatChannelChange(channel);
             return this._chatChannelChangeHook!.Original(a1, channel);
