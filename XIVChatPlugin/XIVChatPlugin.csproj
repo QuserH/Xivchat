@@ -134,6 +134,7 @@
         </ProjectReference>
     </ItemGroup>
     <ItemGroup>
+        <Content Include="DalamudPackager.targets" />
         <Content Include="ILRepack.targets" />
         <Content Include="Resources\lib\libsodium.dll" />
         <Content Include="XIVChat.yaml" />
