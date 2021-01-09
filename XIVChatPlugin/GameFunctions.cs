@@ -72,7 +72,7 @@ namespace XIVChatPlugin {
             var channelPtr = this.Plugin.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
             var channelCommandPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 0F B7 44 37 ??");
             var xivStringCtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 44 2B F7 ");
-            var xivStringDtorPtr = this.Plugin.ScanText("");
+            var xivStringDtorPtr = this.Plugin.ScanText("E8 ? ? ? ? B0 6E");
 
             this.UiModulePtr = this.Plugin.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
             if (this.UiModulePtr == IntPtr.Zero) {

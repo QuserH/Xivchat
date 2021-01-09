@@ -596,6 +596,28 @@ namespace XIVChatCommon.Message {
         Linkshell8 = 26,
     }
 
+    public static class InputChannelExt {
+        public static uint LinkshellIndex(this InputChannel channel) => channel switch {
+            InputChannel.Linkshell1 => 0,
+            InputChannel.Linkshell2 => 1,
+            InputChannel.Linkshell3 => 2,
+            InputChannel.Linkshell4 => 3,
+            InputChannel.Linkshell5 => 4,
+            InputChannel.Linkshell6 => 5,
+            InputChannel.Linkshell7 => 6,
+            InputChannel.Linkshell8 => 7,
+            InputChannel.CrossLinkshell1 => 0,
+            InputChannel.CrossLinkshell2 => 1,
+            InputChannel.CrossLinkshell3 => 2,
+            InputChannel.CrossLinkshell4 => 3,
+            InputChannel.CrossLinkshell5 => 4,
+            InputChannel.CrossLinkshell6 => 5,
+            InputChannel.CrossLinkshell7 => 6,
+            InputChannel.CrossLinkshell8 => 7,
+            _ => 0,
+        };
+}
+
     public enum PlayerListType : byte {
         Party = 1,
         Friend = 2,
