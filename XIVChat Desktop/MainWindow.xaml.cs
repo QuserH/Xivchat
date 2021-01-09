@@ -103,9 +103,28 @@ namespace XIVChat_Desktop {
             this.InsertTellCommand(sender.Name, worldName);
         }
 
+        public static readonly RoutedUICommand ChangeChannel = new RoutedUICommand(
+            "ChangeChannel",
+            "ChangeChannel",
+            typeof(MainWindow)
+        );
+
+        private void ChangeChannel_CanExecute(object sender, CanExecuteRoutedEventArgs e) {
+            e.CanExecute = this.App.Connected;
+        }
+
+        private void ChangeChannel_Execute(object sender, ExecutedRoutedEventArgs e) {
+            if (!(e.Parameter is InputChannel)) {
+                return;
+            }
+
+            var param = (InputChannel) e.Parameter;
+            this.App.Connection?.ChangeChannel(param);
+        }
+
         #endregion
 
-        public App App => (App)Application.Current;
+        public App App => (App) Application.Current;
 
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
         public ObservableCollection<Player> FriendList { get; } = new ObservableCollection<Player>();
@@ -202,7 +221,7 @@ namespace XIVChat_Desktop {
 
             var diff = this.Messages.Count - this.App.Config.LocalBacklogMessages;
             if (diff > 0) {
-                this.Messages.RemoveRange(0, (int)diff);
+                this.Messages.RemoveRange(0, (int) diff);
             }
 
             // scroll to the bottom if previously at the bottom
@@ -230,7 +249,7 @@ namespace XIVChat_Desktop {
 
             var diff = this.Messages.Count - this.App.Config.LocalBacklogMessages;
             if (diff > 0) {
-                this.Messages.RemoveRange(0, (int)diff);
+                this.Messages.RemoveRange(0, (int) diff);
             }
 
             // scroll to the bottom if previously at the bottom
@@ -371,6 +390,18 @@ namespace XIVChat_Desktop {
 
         private void FriendList_Click(object sender, RoutedEventArgs e) {
             new FriendList(this).Show();
+        }
+
+        private void Channel_MouseDown(object sender, MouseButtonEventArgs e) {
+            e.Handled = true;
+
+            if (e.ChangedButton != MouseButton.Left) {
+                return;
+            }
+
+            var channel = (TextBlock) sender;
+            channel.ContextMenu!.PlacementTarget = channel;
+            channel.ContextMenu!.IsOpen = true;
         }
     }
 }
