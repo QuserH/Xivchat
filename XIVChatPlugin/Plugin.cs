@@ -43,7 +43,7 @@ namespace XIVChatPlugin {
             Environment.SetEnvironmentVariable("PATH", $"{path};{newPath}");
             #endif
 
-            this.Config = (Configuration?)this.Interface.GetPluginConfig() ?? new Configuration();
+            this.Config = (Configuration?) this.Interface.GetPluginConfig() ?? new Configuration();
             this.Config.Initialise(this);
 
             this.Functions = new GameFunctions(this);

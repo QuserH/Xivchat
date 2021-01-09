@@ -11,8 +11,6 @@ using XIVChatCommon.Message;
 
 namespace XIVChatPlugin {
     public class GameFunctions : IDisposable {
-        private const int ChannelOffset = 4048; // update 5.4-HF1
-
         private Plugin Plugin { get; }
 
         private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
@@ -29,6 +27,12 @@ namespace XIVChatPlugin {
 
         private delegate byte ChatChannelChangeDelegate(IntPtr a1, uint channel);
 
+        private delegate IntPtr ChannelChangeCommandDelegate(IntPtr a1, int inputChannel, uint linkshellIdx, IntPtr tellTarget, char canChangeChannel);
+
+        private delegate IntPtr XivStringCtorDelegate(IntPtr memory);
+
+        private delegate IntPtr XivStringDtorDelegate(IntPtr memory);
+
         private readonly Hook<RequestFriendListDelegate>? _friendListHook;
         private readonly Hook<FormatFriendListNameDelegate>? _formatHook;
         private readonly Hook<OnReceiveFriendListChunkDelegate>? _receiveChunkHook;
@@ -37,12 +41,16 @@ namespace XIVChatPlugin {
         private readonly GetUiModuleDelegate? _getUiModule;
         private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
         private readonly GetColourInfoDelegate? _getColourInfo;
+        private readonly ChannelChangeCommandDelegate? _channelChangeCommand;
+        private readonly XivStringCtorDelegate? _xivStringCtor;
+        private readonly XivStringDtorDelegate? _xivStringDtor;
 
         private IntPtr UiModulePtr { get; }
         private IntPtr ColourHandler { get; }
         private IntPtr ColourLookup { get; }
         private IntPtr _friendListManager = IntPtr.Zero;
         private IntPtr _chatManager = IntPtr.Zero;
+        private IntPtr _emptyXivString = IntPtr.Zero;
 
         public bool RequestingFriendList { get; private set; }
 
@@ -62,9 +70,11 @@ namespace XIVChatPlugin {
             var recvChunkPtr = this.Plugin.ScanText("48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2");
             var getColourPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9 ?? ?? ?? ??");
             var channelPtr = this.Plugin.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
+            var channelCommandPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 0F B7 44 37 ??");
+            var xivStringCtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 44 2B F7 ");
+            var xivStringDtorPtr = this.Plugin.ScanText("");
 
             this.UiModulePtr = this.Plugin.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
-
             if (this.UiModulePtr == IntPtr.Zero) {
                 PluginLog.Warning("Static pointer was null: {}", nameof(this.UiModulePtr));
             }
@@ -97,6 +107,24 @@ namespace XIVChatPlugin {
                 PluginLog.Warning("Pointer was null, disabling function: {}", nameof(getColourPtr));
             }
 
+            if (channelCommandPtr != IntPtr.Zero) {
+                this._channelChangeCommand = Marshal.GetDelegateForFunctionPointer<ChannelChangeCommandDelegate>(channelCommandPtr);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(channelCommandPtr));
+            }
+
+            if (xivStringCtorPtr != IntPtr.Zero) {
+                this._xivStringCtor = Marshal.GetDelegateForFunctionPointer<XivStringCtorDelegate>(xivStringCtorPtr);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(xivStringCtorPtr));
+            }
+
+            if (xivStringDtorPtr != IntPtr.Zero) {
+                this._xivStringDtor = Marshal.GetDelegateForFunctionPointer<XivStringDtorDelegate>(xivStringDtorPtr);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(xivStringDtorPtr));
+            }
+
             if (friendListPtr != IntPtr.Zero) {
                 this._friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, new RequestFriendListDelegate(this.OnRequestFriendList));
             } else {
@@ -125,15 +153,19 @@ namespace XIVChatPlugin {
             this._formatHook?.Enable();
             this._receiveChunkHook?.Enable();
             this._chatChannelChangeHook?.Enable();
+
+            if (this._xivStringCtor != null && this._xivStringDtor != null) {
+                this._emptyXivString = Marshal.AllocHGlobal(0x68);
+                this._xivStringCtor(this._emptyXivString);
+            }
         }
 
         public void ChangeChatChannel(InputChannel channel) {
-            if (this._chatManager == IntPtr.Zero || this._chatChannelChangeHook == null) {
+            if (this._chatManager == IntPtr.Zero || this._channelChangeCommand == null || this._emptyXivString == IntPtr.Zero) {
                 return;
             }
 
-            Marshal.WriteInt32(this._chatManager + ChannelOffset, (int) channel);
-            this._chatChannelChangeHook.Original(this._chatManager, (uint) channel);
+            this._channelChangeCommand(this._chatManager, (int) channel, channel.LinkshellIndex(), this._emptyXivString, '\x01');
         }
 
         // This function looks up a channel's user-defined colour.
@@ -296,6 +328,11 @@ namespace XIVChatPlugin {
             this._formatHook?.Dispose();
             this._receiveChunkHook?.Dispose();
             this._chatChannelChangeHook?.Dispose();
+
+            if (this._emptyXivString != IntPtr.Zero) {
+                this._xivStringDtor?.Invoke(this._emptyXivString);
+                Marshal.FreeHGlobal(this._emptyXivString);
+            }
         }
     }
 
