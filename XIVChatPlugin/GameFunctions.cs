@@ -71,82 +71,82 @@ namespace XIVChatPlugin {
             var getColourPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9 ?? ?? ?? ??");
             var channelPtr = this.Plugin.ScanText("40 55 48 8D 6C 24 ?? 48 81 EC A0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 0D ?? ?? ?? ?? 33 C0 48 83 C1 10 89 45 ?? C7 45 ?? 01 00 00 00");
             var channelCommandPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 0F B7 44 37 ??");
-            var xivStringCtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 44 2B F7 ");
-            var xivStringDtorPtr = this.Plugin.ScanText("E8 ? ? ? ? B0 6E");
+            var xivStringCtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 44 2B F7");
+            var xivStringDtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? B0 6E");
 
             this.UiModulePtr = this.Plugin.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
             if (this.UiModulePtr == IntPtr.Zero) {
-                PluginLog.Warning("Static pointer was null: {}", nameof(this.UiModulePtr));
+                PluginLog.Warning("Static pointer was null: {0}", nameof(this.UiModulePtr));
             }
 
             this.ColourHandler = this.Plugin.GetStaticAddressFromSig("48 8B 05 ?? ?? ?? ?? 48 8B A8 ?? ?? ?? ?? 48 85 ED 0F 84 ?? ?? ?? ??");
             if (this.ColourHandler == IntPtr.Zero) {
-                PluginLog.Warning("Static pointer was null: {}", nameof(this.ColourHandler));
+                PluginLog.Warning("Static pointer was null: {0}", nameof(this.ColourHandler));
             }
 
             this.ColourLookup = this.Plugin.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D ??");
             if (this.ColourLookup == IntPtr.Zero) {
-                PluginLog.Warning("Static pointer was null: {}", nameof(this.ColourLookup));
+                PluginLog.Warning("Static pointer was null: {0}", nameof(this.ColourLookup));
             }
 
             if (getUiModulePtr != IntPtr.Zero) {
                 this._getUiModule = Marshal.GetDelegateForFunctionPointer<GetUiModuleDelegate>(getUiModulePtr);
             } else {
-                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(getUiModulePtr));
+                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(getUiModulePtr));
             }
 
             if (easierProcessChatBoxPtr != IntPtr.Zero) {
                 this._easierProcessChatBox = Marshal.GetDelegateForFunctionPointer<EasierProcessChatBoxDelegate>(easierProcessChatBoxPtr);
             } else {
-                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(easierProcessChatBoxPtr));
+                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(easierProcessChatBoxPtr));
             }
 
             if (getColourPtr != IntPtr.Zero) {
                 this._getColourInfo = Marshal.GetDelegateForFunctionPointer<GetColourInfoDelegate>(getColourPtr);
             } else {
-                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(getColourPtr));
+                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(getColourPtr));
             }
 
             if (channelCommandPtr != IntPtr.Zero) {
                 this._channelChangeCommand = Marshal.GetDelegateForFunctionPointer<ChannelChangeCommandDelegate>(channelCommandPtr);
             } else {
-                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(channelCommandPtr));
+                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(channelCommandPtr));
             }
 
             if (xivStringCtorPtr != IntPtr.Zero) {
                 this._xivStringCtor = Marshal.GetDelegateForFunctionPointer<XivStringCtorDelegate>(xivStringCtorPtr);
             } else {
-                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(xivStringCtorPtr));
+                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(xivStringCtorPtr));
             }
 
             if (xivStringDtorPtr != IntPtr.Zero) {
                 this._xivStringDtor = Marshal.GetDelegateForFunctionPointer<XivStringDtorDelegate>(xivStringDtorPtr);
             } else {
-                PluginLog.Warning("Pointer was null, disabling function: {}", nameof(xivStringDtorPtr));
+                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(xivStringDtorPtr));
             }
 
             if (friendListPtr != IntPtr.Zero) {
                 this._friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, new RequestFriendListDelegate(this.OnRequestFriendList));
             } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(friendListPtr));
+                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(friendListPtr));
             }
 
             if (formatPtr != IntPtr.Zero) {
                 this._formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, new FormatFriendListNameDelegate(this.OnFormatFriendList));
             } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(formatPtr));
+                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(formatPtr));
             }
 
             if (recvChunkPtr != IntPtr.Zero) {
                 this._receiveChunkHook = new Hook<OnReceiveFriendListChunkDelegate>(recvChunkPtr, new OnReceiveFriendListChunkDelegate(this.OnReceiveFriendList));
             } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(recvChunkPtr));
+                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(recvChunkPtr));
             }
 
             if (channelPtr != IntPtr.Zero) {
                 this._chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(channelPtr, new ChatChannelChangeDelegate(this.ChangeChatChannelDetour));
             } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {}", nameof(channelPtr));
+                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelPtr));
             }
 
             this._friendListHook?.Enable();
@@ -338,18 +338,18 @@ namespace XIVChatPlugin {
 
     [StructLayout(LayoutKind.Explicit)]
     [SuppressMessage("ReSharper", "PrivateFieldCanBeConvertedToLocalVariable")]
-    readonly struct ChatPayload : IDisposable {
+    internal readonly struct ChatPayload : IDisposable {
         [FieldOffset(0)]
-        readonly IntPtr textPtr;
+        private readonly IntPtr textPtr;
 
         [FieldOffset(16)]
-        readonly ulong textLen;
+        private readonly ulong textLen;
 
         [FieldOffset(8)]
-        readonly ulong unk1;
+        private readonly ulong unk1;
 
         [FieldOffset(24)]
-        readonly ulong unk2;
+        private readonly ulong unk2;
 
         internal ChatPayload(string text) {
             byte[] stringBytes = Encoding.UTF8.GetBytes(text);
@@ -369,13 +369,13 @@ namespace XIVChatPlugin {
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct FriendListEntryRaw {
-        readonly ulong unk1;
+    internal struct FriendListEntryRaw {
+        private readonly ulong unk1;
         internal readonly ulong flags;
-        readonly uint unk2;
+        private readonly uint unk2;
 
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        readonly byte[] unk3;
+        private readonly byte[] unk3;
 
         internal readonly ushort currentWorldId;
         internal readonly ushort homeWorldId;
@@ -385,15 +385,15 @@ namespace XIVChatPlugin {
         internal readonly byte langsEnabled;
 
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        readonly byte[] unk4;
+        private readonly byte[] unk4;
 
         internal readonly byte job;
 
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-        readonly byte[] name;
+        private readonly byte[] name;
 
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 5)]
-        readonly byte[] fc;
+        private readonly byte[] fc;
 
         private static string? HandleString(IEnumerable<byte> bytes) {
             byte[] nonNull = bytes.TakeWhile(b => b != 0).ToArray();
