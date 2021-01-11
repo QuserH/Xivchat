@@ -15,6 +15,7 @@
                 TargetKind="Dll"
                 TargetPlatformVersion="v4"
                 LibraryPath="$(OutputPath)"
+                DebugInfo="true"
                 OutputFile="$(OutputPath)\$(AssemblyName).dll"/>
     </Target>
 </Project>
