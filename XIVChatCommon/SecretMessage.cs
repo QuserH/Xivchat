@@ -46,6 +46,7 @@ namespace XIVChatCommon {
             await s.WriteAsync(len, 0, len.Length, token);
             await s.WriteAsync(nonce, 0, nonce.Length, token);
             await s.WriteAsync(ciphertext, 0, ciphertext.Length, token);
+            await s.FlushAsync(token);
         }
 
         public async static Task SendSecretMessage(Stream s, byte[] key, IEncodable message, CancellationToken token = default) {

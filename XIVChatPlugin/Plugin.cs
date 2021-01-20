@@ -1,5 +1,4 @@
 ﻿using Dalamud.Game.Command;
-using Dalamud.Hooking;
 using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
@@ -8,8 +7,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 #endif
 using System.Reflection;
-
-// TODO: hostable relay server (run one but have option to run your own)?
 
 namespace XIVChatPlugin {
     public class Plugin : IDalamudPlugin {
@@ -25,13 +22,12 @@ namespace XIVChatPlugin {
             this.Location = path;
         }
 
-        #pragma warning disable 8618
-        public DalamudPluginInterface Interface { get; private set; }
-        public Configuration Config { get; private set; }
-        private PluginUi Ui { get; set; }
-        public Server Server { get; private set; }
-        public GameFunctions Functions { get; private set; }
-        #pragma warning restore 8618
+        public DalamudPluginInterface Interface { get; private set; } = null!;
+        public Configuration Config { get; private set; } = null!;
+        private PluginUi Ui { get; set; } = null!;
+        public Server Server { get; private set; } = null!;
+        public Relay? Relay { get; private set; }
+        public GameFunctions Functions { get; private set; } = null!;
 
         public void Initialize(DalamudPluginInterface pluginInterface) {
             this.Interface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface), "DalamudPluginInterface cannot be null");
@@ -62,6 +58,25 @@ namespace XIVChatPlugin {
             this.Interface.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
                 HelpMessage = "Opens the config for the XIVChat plugin",
             });
+        }
+
+        internal void StartRelay() {
+            if (this.Relay != null) {
+                return;
+            }
+
+            this.Relay = new Relay(this);
+            this.Relay.Start();
+            PluginLog.Log("started");
+        }
+
+        internal void StopRelay() {
+            if (this.Relay == null) {
+                return;
+            }
+
+            this.Relay.Dispose();
+            this.Relay = null;
         }
 
         internal IntPtr ScanText(string sig) {
@@ -101,6 +116,7 @@ namespace XIVChatPlugin {
             }
 
             if (disposing) {
+                this.Relay?.Dispose();
                 this.Server.Dispose();
 
                 this.Interface.UiBuilder.OnBuildUi -= this.Ui.Draw;

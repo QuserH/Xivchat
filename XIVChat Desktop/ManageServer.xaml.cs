@@ -5,7 +5,7 @@ namespace XIVChat_Desktop {
     /// Interaction logic for ManageServer.xaml
     /// </summary>
     public partial class ManageServer {
-        public App App => (App)Application.Current;
+        public App App => (App) Application.Current;
         public SavedServer? Server { get; private set; }
 
         private readonly bool isNewServer;
@@ -35,6 +35,16 @@ namespace XIVChat_Desktop {
         private void Save_Click(object sender, RoutedEventArgs e) {
             var serverName = this.ServerName.Text;
             var serverHost = this.ServerHost.Text;
+            var relayAuth = this.RelayAuth.Text.Trim();
+            var relayTarget = this.RelayTarget.Text.Trim();
+
+            if (relayAuth.Length == 0) {
+                relayAuth = null;
+            }
+
+            if (relayTarget.Length == 0) {
+                relayTarget = null;
+            }
 
             if (serverName.Length == 0 || serverHost.Length == 0) {
                 MessageBox.Show("Server must have a name and host.");
@@ -55,13 +65,18 @@ namespace XIVChat_Desktop {
                 this.Server = new SavedServer(
                     serverName,
                     serverHost,
-                    port
+                    port,
+                    relayAuth,
+                    relayTarget
                 );
+
                 this.App.Config.Servers.Add(this.Server);
             } else {
                 this.Server!.Name = serverName;
                 this.Server.Host = serverHost;
                 this.Server.Port = port;
+                this.Server.RelayAuth = relayAuth;
+                this.Server.RelayTarget = relayTarget;
             }
 
             this.App.Config.Save();

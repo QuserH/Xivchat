@@ -11,9 +11,13 @@ namespace XIVChatPlugin {
         private Plugin Plugin { get; }
 
         private bool _showSettings;
-        private bool ShowSettings { get => this._showSettings; set => this._showSettings = value; }
 
-        private readonly Dictionary<Guid, Tuple<Client, Channel<bool>>> _pending = new Dictionary<Guid, Tuple<Client, Channel<bool>>>();
+        private bool ShowSettings {
+            get => this._showSettings;
+            set => this._showSettings = value;
+        }
+
+        private readonly Dictionary<Guid, Tuple<BaseClient, Channel<bool>>> _pending = new Dictionary<Guid, Tuple<BaseClient, Channel<bool>>>();
         private readonly Dictionary<Guid, string> _pendingNames = new Dictionary<Guid, string>(0);
 
         public PluginUi(Plugin plugin) {
@@ -42,9 +46,11 @@ namespace XIVChatPlugin {
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, Colours.ButtonActive);
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Colours.ButtonHovered);
 
-            this.DrawInner();
-
-            ImGui.PopStyleColor(8);
+            try {
+                this.DrawInner();
+            } finally {
+                ImGui.PopStyleColor(8);
+            }
         }
 
         private static T WithWhiteText<T>(Func<T> func) {
@@ -107,6 +113,12 @@ namespace XIVChatPlugin {
                 if (WithWhiteText(() => ImGui.Button("Regenerate"))) {
                     this.Plugin.Server.RegenerateKeyPair();
                 }
+
+                ImGui.SameLine();
+
+                if (WithWhiteText(() => ImGui.Button("Copy"))) {
+                    ImGui.SetClipboardText(serverPublic);
+                }
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Settings", ImGuiTreeNodeFlags.DefaultOpen))) {
@@ -114,7 +126,7 @@ namespace XIVChatPlugin {
 
                 int port = this.Plugin.Config.Port;
                 if (WithWhiteText(() => ImGui.InputInt("##port", ref port))) {
-                    var realPort = (ushort)Math.Min(ushort.MaxValue, Math.Max(1, port));
+                    var realPort = (ushort) Math.Min(ushort.MaxValue, Math.Max(1, port));
                     this.Plugin.Config.Port = realPort;
                     this.Plugin.Config.Save();
 
@@ -131,7 +143,7 @@ namespace XIVChatPlugin {
 
                 int backlogCount = this.Plugin.Config.BacklogCount;
                 if (WithWhiteText(() => ImGui.DragInt("Backlog messages", ref backlogCount, 1f, 0, ushort.MaxValue))) {
-                    this.Plugin.Config.BacklogCount = (ushort)Math.Max(0, Math.Min(ushort.MaxValue, backlogCount));
+                    this.Plugin.Config.BacklogCount = (ushort) Math.Max(0, Math.Min(ushort.MaxValue, backlogCount));
                     this.Plugin.Config.Save();
                 }
 
@@ -167,6 +179,40 @@ namespace XIVChatPlugin {
 
                 ImGui.SameLine();
                 HelpMarker("If this is disabled, XIVChat Server will only allow clients with already-trusted keys to connect.");
+
+                ImGui.Spacing();
+
+                var allowRelay = this.Plugin.Config.AllowRelayConnections;
+                if (WithWhiteText(() => ImGui.Checkbox("Allow relay connections", ref allowRelay))) {
+                    if (allowRelay) {
+                        this.Plugin.StartRelay();
+                    } else {
+                        this.Plugin.StopRelay();
+                    }
+
+                    this.Plugin.Config.AllowRelayConnections = allowRelay;
+                    this.Plugin.Config.Save();
+                }
+
+                ImGui.SameLine();
+                HelpMarker("If this is enabled, connections from the XIVChat Relay will be accepted.");
+
+                ImGui.Spacing();
+
+                var relayAuth = this.Plugin.Config.RelayAuth ?? "";
+                WithWhiteText(() => ImGui.TextUnformatted("Relay authentication code"));
+                ImGui.PushItemWidth(-1f);
+                if (ImGui.InputText("###relay-auth", ref relayAuth, 32)) {
+                    relayAuth = relayAuth.Trim();
+                    if (relayAuth.Length == 0) {
+                        relayAuth = null;
+                    }
+
+                    this.Plugin.Config.RelayAuth = relayAuth;
+                    this.Plugin.Config.Save();
+                }
+
+                ImGui.PopItemWidth();
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Trusted keys"))) {
@@ -208,7 +254,10 @@ namespace XIVChatPlugin {
 
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("Connected clients"))) {
-                if (this.Plugin.Server.Clients.Count == 0) {
+                var clients = this.Plugin.Server.Clients
+                    .Where(client => client.Value.Connected)
+                    .ToList();
+                if (clients.Count == 0) {
                     ImGui.TextUnformatted("None");
                 } else {
                     ImGui.Columns(3);
@@ -219,26 +268,29 @@ namespace XIVChatPlugin {
                     ImGui.NextColumn();
                     ImGui.NextColumn();
 
-                    foreach (var client in this.Plugin.Server.Clients) {
-                        EndPoint remote;
+                    foreach (var client in clients) {
+                        if (!client.Value.Connected) {
+                            continue;
+                        }
+
+                        IPAddress? remote;
                         try {
-                            remote = client.Value.Conn.Client.RemoteEndPoint;
+                            remote = client.Value.Remote;
                         } catch (ObjectDisposedException) {
                             continue;
                         }
 
-                        string ipAddress;
-                        if (remote is IPEndPoint ip) {
-                            ipAddress = ip.Address.ToString();
-                        } else {
-                            ipAddress = "Unknown";
+                        var ipAddress = remote?.ToString() ?? "Unknown";
+
+                        if (client.Value is RelayConnected) {
+                            ipAddress += " (R)";
                         }
 
                         ImGui.TextUnformatted(ipAddress);
 
                         ImGui.NextColumn();
 
-                        var trustedKey = this.Plugin.Config.TrustedKeys.Values.FirstOrDefault(entry => entry.Item2.SequenceEqual(client.Value.Handshake!.RemotePublicKey));
+                        var trustedKey = this.Plugin.Config.TrustedKeys.Values.FirstOrDefault(entry => client.Value.Handshake != null && entry.Item2.SequenceEqual(client.Value.Handshake.RemotePublicKey));
                         if (trustedKey != null && !trustedKey.Equals(default(Tuple<string, byte[]>))) {
                             ImGui.TextUnformatted(trustedKey!.Item1);
                             if (ImGui.IsItemHovered()) {
@@ -316,12 +368,12 @@ namespace XIVChatPlugin {
         }
 
         private void AcceptPending() {
-            while (this.Plugin.Server.pendingClients.Reader.TryRead(out var item)) {
+            while (this.Plugin.Server.PendingClients.Reader.TryRead(out var item)) {
                 this._pending[Guid.NewGuid()] = item;
             }
         }
 
-        private bool DrawPending(Guid id, Client client, Channel<bool, bool> accepted) {
+        private bool DrawPending(Guid id, BaseClient client, Channel<bool, bool> accepted) {
             var ret = false;
 
             var clientPublic = client.Handshake!.RemotePublicKey;

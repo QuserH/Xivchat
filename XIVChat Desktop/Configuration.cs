@@ -122,31 +122,49 @@ namespace XIVChat_Desktop {
 
     [JsonObject]
     public class SavedServer : INotifyPropertyChanged {
-        private string name;
-        private string host;
-        private ushort port;
+        private string _name;
+        private string _host;
+        private ushort _port;
+        private string? _relayAuth;
+        private string? _relayTarget;
 
         public string Name {
-            get => this.name;
+            get => this._name;
             set {
-                this.name = value;
+                this._name = value;
                 this.OnPropertyChanged(nameof(this.Name));
             }
         }
 
         public string Host {
-            get => this.host;
+            get => this._host;
             set {
-                this.host = value;
+                this._host = value;
                 this.OnPropertyChanged(nameof(this.Host));
             }
         }
 
         public ushort Port {
-            get => this.port;
+            get => this._port;
             set {
-                this.port = value;
+                this._port = value;
                 this.OnPropertyChanged(nameof(this.Port));
+            }
+        }
+
+        public string? RelayAuth {
+            get => this._relayAuth;
+            set {
+                this._relayAuth = value;
+                this.OnPropertyChanged(nameof(this.RelayAuth));
+            }
+        }
+
+        public string? RelayTarget {
+            get => this._relayTarget;
+            set {
+                this._relayTarget = value;
+                this.OnPropertyChanged(nameof(this.RelayTarget));
             }
         }
 
@@ -156,10 +174,12 @@ namespace XIVChat_Desktop {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        public SavedServer(string name, string host, ushort port) {
-            this.name = name;
-            this.host = host;
-            this.port = port;
+        public SavedServer(string name, string host, ushort port, string? relayAuth, string? relayTarget) {
+            this._name = name;
+            this._host = host;
+            this._port = port;
+            this._relayAuth = relayAuth;
+            this._relayTarget = relayTarget;
         }
 
         protected bool Equals(SavedServer other) {

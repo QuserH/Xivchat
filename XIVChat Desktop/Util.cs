@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Windows.Controls;
@@ -9,6 +10,14 @@ using System.Windows.Threading;
 
 namespace XIVChat_Desktop {
     public static class Util {
+        // GOOD HEAVENS! I REALISE HOW INEFFICIENT THIS IS
+        public static byte[] StringToByteArray(string hex) {
+            return Enumerable.Range(0, hex.Length)
+                .Where(x => x % 2 == 0)
+                .Select(x => Convert.ToByte(hex.Substring(x, 2), 16))
+                .ToArray();
+        }
+
         public static IEnumerable<List<T>> Chunks<T>(this List<T> locations, int nSize) {
             for (var i = 0; i < locations.Count; i += nSize) {
                 yield return locations.GetRange(i, Math.Min(nSize, locations.Count - i));

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -16,10 +17,30 @@ using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public class Connection : INotifyPropertyChanged {
+        #if DEBUG
+        private static readonly IEnumerable<byte> RelayPublicKey = new byte[] {
+            8, 202, 178, 253, 125, 176, 212, 227, 110, 108, 113, 80, 110, 126, 57, 248, 182, 251, 122, 48, 80, 49, 57, 202, 119, 126, 69, 66, 170, 25, 126, 115,
+        };
+        #else
+        private static readonly IEnumerable<byte> RelayPublicKey = new byte[] {
+            194, 81, 22, 123, 80, 172, 145, 167, 212, 251, 198, 173, 55, 160, 11, 18, 247, 11, 210, 6, 98, 43, 102, 73, 54, 255, 214, 233, 144, 193, 98, 47
+        };
+        #endif
+
+        #if DEBUG
+        private const string RelayHost = "localhost";
+        private const ushort RelayPort = 14725;
+        #else
+        private const string RelayHost = "relay.xiv.chat";
+        private const ushort RelayPort = 14777;
+        #endif
+
         private readonly App app;
 
         private readonly string host;
         private readonly ushort port;
+        private readonly string? relayAuth;
+        private readonly string? relayTarget;
 
         private TcpClient? client;
 
@@ -47,11 +68,13 @@ namespace XIVChat_Desktop {
             }
         }
 
-        public Connection(App app, string host, ushort port) {
+        public Connection(App app, string host, ushort port, string? relayAuth = null, string? relayTarget = null) {
             this.app = app;
 
             this.host = host;
             this.port = port;
+            this.relayAuth = relayAuth;
+            this.relayTarget = relayTarget;
         }
 
         public void SendMessage(string message) {
@@ -80,13 +103,49 @@ namespace XIVChat_Desktop {
         }
 
         public async Task Connect() {
-            this.client = new TcpClient(this.host, this.port);
+            var usingRelay = this.relayAuth != null;
+
+            var host = usingRelay ? RelayHost : this.host;
+            var port = usingRelay ? RelayPort : this.port;
+
+            this.client = new TcpClient(host, port);
+
             var stream = this.client.GetStream();
 
-            // write the magic bytes
-            await stream.WriteAsync(new byte[] {
-                14, 20, 67,
-            });
+            switch (usingRelay) {
+                // do relay auth before connecting if necessary
+                case true: {
+                    var relayHandshake = await KeyExchange.ClientHandshake(this.app.Config.KeyPair, stream);
+
+                    // ensure the relay's public key is what we expect
+                    if (!relayHandshake.RemotePublicKey.SequenceEqual(RelayPublicKey)) {
+                        this.app.Dispatch(() => {
+                            MessageBox.Show("Unexpected relay public key.");
+                        });
+                        return;
+                    }
+
+                    // send auth token
+                    var authBytes = Encoding.UTF8.GetBytes(this.relayAuth!);
+                    await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, authBytes);
+
+                    // TODO: receive response
+
+                    // send the public key of the server
+                    var pk = Util.StringToByteArray(this.relayTarget!);
+                    await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, pk);
+
+                    // TODO: receive response
+                    break;
+                }
+                // only send magic bytes if not using the relay
+                case false:
+                    // write the magic bytes
+                    await stream.WriteAsync(new byte[] {
+                        14, 20, 67,
+                    });
+                    break;
+            }
 
             // do the handshake
             var handshake = await KeyExchange.ClientHandshake(this.app.Config.KeyPair, stream);

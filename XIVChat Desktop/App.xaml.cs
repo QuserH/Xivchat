@@ -129,12 +129,12 @@ namespace XIVChat_Desktop {
             this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Connected)));
         }
 
-        public void Connect(string host, ushort port) {
+        public void Connect(string host, ushort port, string? relayAuth, string? relayTarget) {
             if (this.Connected) {
                 return;
             }
 
-            this.Connection = new Connection(this, host, port);
+            this.Connection = new Connection(this, host, port, relayAuth, relayTarget);
             this.Connection.ReceiveMessage += this.OnReceiveMessage;
             Task.Run(this.Connection.Connect);
         }

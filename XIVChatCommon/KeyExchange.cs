@@ -54,6 +54,7 @@ namespace XIVChatCommon {
 
             // send our public key
             await stream.WriteAsync(server.PublicKey, 0, server.PublicKey.Length);
+            await stream.FlushAsync();
 
             // get shared secret and derive keys
             var keys = ServerSessionKeys(server, clientPublic);

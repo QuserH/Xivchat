@@ -31,7 +31,7 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            this.App.Connect(server.Host, server.Port);
+            this.App.Connect(server.Host, server.Port, server.RelayAuth, server.RelayTarget);
 
             this.Close();
         }

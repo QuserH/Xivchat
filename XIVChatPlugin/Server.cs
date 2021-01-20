@@ -9,7 +9,6 @@ using Sodium;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -24,37 +23,37 @@ using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
     public class Server : IDisposable {
-        private readonly Plugin plugin;
+        private readonly Plugin _plugin;
 
-        private readonly CancellationTokenSource tokenSource = new CancellationTokenSource();
-        private readonly ConcurrentQueue<string> toGame = new ConcurrentQueue<string>();
+        private readonly CancellationTokenSource _tokenSource = new CancellationTokenSource();
+        private readonly ConcurrentQueue<string> _toGame = new ConcurrentQueue<string>();
 
-        private readonly ConcurrentDictionary<Guid, Client> clients = new ConcurrentDictionary<Guid, Client>();
-        public IReadOnlyDictionary<Guid, Client> Clients => this.clients;
-        public readonly Channel<Tuple<Client, Channel<bool>>> pendingClients = Channel.CreateUnbounded<Tuple<Client, Channel<bool>>>();
+        private readonly ConcurrentDictionary<Guid, BaseClient> _clients = new ConcurrentDictionary<Guid, BaseClient>();
+        public IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
+        public readonly Channel<Tuple<BaseClient, Channel<bool>>> PendingClients = Channel.CreateUnbounded<Tuple<BaseClient, Channel<bool>>>();
 
-        private readonly HashSet<Guid> waitingForFriendList = new HashSet<Guid>();
+        private readonly HashSet<Guid> _waitingForFriendList = new HashSet<Guid>();
 
-        private readonly LinkedList<ServerMessage> backlog = new LinkedList<ServerMessage>();
+        private readonly LinkedList<ServerMessage> _backlog = new LinkedList<ServerMessage>();
 
-        private TcpListener? listener;
+        private TcpListener? _listener;
 
-        private bool sendPlayerData;
+        private bool _sendPlayerData;
 
-        private volatile bool running;
-        private bool Running => this.running;
+        private volatile bool _running;
+        private bool Running => this._running;
 
-        private InputChannel currentChannel = InputChannel.Say;
+        private InputChannel _currentChannel = InputChannel.Say;
 
         private const int MaxMessageSize = 128_000;
 
         public Server(Plugin plugin) {
-            this.plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
-            if (this.plugin.Config.KeyPair == null) {
+            this._plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
+            if (this._plugin.Config.KeyPair == null) {
                 this.RegenerateKeyPair();
             }
 
-            this.plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
+            this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
         }
 
         private void SpawnPairingModeTask() {
@@ -75,12 +74,12 @@ namespace XIVChatPlugin {
                 Task<UdpReceiveResult>? receiveTask = null;
 
                 while (this.Running) {
-                    if (!this.plugin.Config.PairingMode) {
+                    if (!this._plugin.Config.PairingMode) {
                         await Task.Delay(5_000);
                         continue;
                     }
 
-                    var playerName = this.plugin.Interface.ClientState.LocalPlayer?.Name;
+                    var playerName = this._plugin.Interface.ClientState.LocalPlayer?.Name;
 
                     if (playerName != null) {
                         lastPlayerName = playerName;
@@ -115,8 +114,8 @@ namespace XIVChatPlugin {
                     }
 
                     var utf8 = Encoding.UTF8.GetBytes(lastPlayerName);
-                    var portBytes = BitConverter.GetBytes(this.plugin.Config.Port).Reverse().ToArray();
-                    var key = this.plugin.Config.KeyPair!.PublicKey;
+                    var portBytes = BitConverter.GetBytes(this._plugin.Config.Port).Reverse().ToArray();
+                    var key = this._plugin.Config.KeyPair!.PublicKey;
                     // magic + string length + string + port + key
                     var payload = new byte[1 + 1 + utf8.Length + portBytes.Length + key.Length]; // assuming names can only be 32 bytes here
                     payload[0] = 14;
@@ -135,43 +134,48 @@ namespace XIVChatPlugin {
         private async void OnReceiveFriendList(List<Player> friends) {
             var msg = new ServerPlayerList(PlayerListType.Friend, friends.ToArray());
 
-            foreach (var id in this.waitingForFriendList) {
+            foreach (var id in this._waitingForFriendList) {
                 if (!this.Clients.TryGetValue(id, out var client)) {
                     continue;
                 }
 
                 try {
-                    await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake!.Keys.tx, msg, client.TokenSource.Token);
+                    await SecretMessage.SendSecretMessage(client, client.Handshake!.Keys.tx, msg, client.TokenSource.Token);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
             }
 
-            this.waitingForFriendList.Clear();
+            this._waitingForFriendList.Clear();
         }
 
         public void Spawn() {
-            var port = this.plugin.Config.Port;
+            var port = this._plugin.Config.Port;
 
             Task.Run(async () => {
-                this.listener = new TcpListener(IPAddress.Any, port);
-                this.listener.Start();
+                this._listener = new TcpListener(IPAddress.Any, port);
+                this._listener.Start();
 
-                this.running = true;
+                this._running = true;
                 PluginLog.Log("Running...");
                 this.SpawnPairingModeTask();
-                while (!this.tokenSource.IsCancellationRequested) {
-                    var conn = await this.listener.GetTcpClient(this.tokenSource);
-                    this.SpawnClientTask(conn);
+                while (!this._tokenSource.IsCancellationRequested) {
+                    var conn = await this._listener.GetTcpClient(this._tokenSource);
+                    if (conn == null) {
+                        continue;
+                    }
+
+                    var client = new TcpConnected(conn);
+                    this.SpawnClientTask(client, true);
                 }
 
-                this.running = false;
+                this._running = false;
             });
         }
 
         public void RegenerateKeyPair() {
-            this.plugin.Config.KeyPair = PublicKeyBox.GenerateKeyPair();
-            this.plugin.Config.Save();
+            this._plugin.Config.KeyPair = PublicKeyBox.GenerateKeyPair();
+            this._plugin.Config.Save();
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "delegate")]
@@ -182,13 +186,13 @@ namespace XIVChatPlugin {
 
             var chatCode = new ChatCode((ushort) type);
 
-            if (!this.plugin.Config.SendBattle && chatCode.IsBattle()) {
+            if (!this._plugin.Config.SendBattle && chatCode.IsBattle()) {
                 return;
             }
 
             var chunks = new List<Chunk>();
 
-            var colour = this.plugin.Functions.GetChannelColour(chatCode) ?? chatCode.DefaultColour();
+            var colour = this._plugin.Functions.GetChannelColour(chatCode) ?? chatCode.DefaultColour();
 
             if (sender.Payloads.Count > 0) {
                 var format = this.FormatFor(chatCode.Type);
@@ -213,126 +217,119 @@ namespace XIVChatPlugin {
                 chunks
             );
 
-            this.backlog.AddLast(msg);
-            while (this.backlog.Count > this.plugin.Config.BacklogCount) {
-                this.backlog.RemoveFirst();
+            this._backlog.AddLast(msg);
+            while (this._backlog.Count > this._plugin.Config.BacklogCount) {
+                this._backlog.RemoveFirst();
             }
 
-            foreach (var client in this.clients.Values) {
+            foreach (var client in this._clients.Values) {
                 client.Queue.Writer.TryWrite(msg);
             }
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "delegate")]
         public void OnFrameworkUpdate(Framework framework) {
-            if (this.sendPlayerData && this.plugin.Interface.ClientState.LocalPlayer != null) {
+            if (this._sendPlayerData && this._plugin.Interface.ClientState.LocalPlayer != null) {
                 this.BroadcastPlayerData();
-                this.sendPlayerData = false;
+                this._sendPlayerData = false;
             }
 
-            if (!this.toGame.TryDequeue(out var message)) {
+            if (!this._toGame.TryDequeue(out var message)) {
                 return;
             }
 
-            this.plugin.Functions.ProcessChatBox(message);
+            this._plugin.Functions.ProcessChatBox(message);
         }
 
         private static readonly IReadOnlyList<byte> Magic = new byte[] {
             14, 20, 67,
         };
 
-        private void SpawnClientTask(TcpClient? conn) {
-            if (conn == null) {
-                return;
-            }
+        internal void SpawnClientTask(BaseClient client, bool requiresMagic) {
+            var id = Guid.NewGuid();
+            this._clients[id] = client;
 
             Task.Run(async () => {
-                var stream = conn.GetStream();
+                if (requiresMagic) {
+                    // get ready for reading magic bytes
+                    var magic = new byte[Magic.Count];
+                    var read = 0;
 
-                // get ready for reading magic bytes
-                var magic = new byte[Magic.Count];
-                var read = 0;
+                    // only listen for magic for five seconds
+                    using var cts = new CancellationTokenSource();
+                    cts.CancelAfter(TimeSpan.FromSeconds(5));
 
-                // only listen for magic for five seconds
-                using var cts = new CancellationTokenSource();
-                cts.CancelAfter(TimeSpan.FromSeconds(5));
+                    // read magic bytes
+                    while (read < magic.Length) {
+                        if (cts.IsCancellationRequested) {
+                            return;
+                        }
 
-                // read magic bytes
-                while (read < magic.Length) {
-                    if (cts.IsCancellationRequested) {
-                        return;
+                        read += await client.ReadAsync(magic, read, magic.Length - read, cts.Token);
                     }
 
-                    read += await stream.ReadAsync(magic, read, magic.Length - read, cts.Token);
+                    // ignore this connection if incorrect magic bytes
+                    if (!magic.SequenceEqual(Magic)) {
+                        return;
+                    }
                 }
 
-                // ignore this connection if incorrect magic bytes
-                if (!magic.SequenceEqual(Magic)) {
-                    return;
-                }
-
-                var handshake = await KeyExchange.ServerHandshake(this.plugin.Config.KeyPair!, stream);
-                var newClient = new Client(conn) {
-                    Handshake = handshake,
-                };
+                var handshake = await KeyExchange.ServerHandshake(this._plugin.Config.KeyPair!, client);
+                client.Handshake = handshake;
 
                 // if this public key isn't trusted, prompt first
-                if (!this.plugin.Config.TrustedKeys.Values.Any(entry => entry.Item2.SequenceEqual(handshake.RemotePublicKey))) {
+                if (!this._plugin.Config.TrustedKeys.Values.Any(entry => entry.Item2.SequenceEqual(handshake.RemotePublicKey))) {
                     // if configured to not accept new clients, reject connection
-                    if (!this.plugin.Config.AcceptNewClients) {
+                    if (!this._plugin.Config.AcceptNewClients) {
                         return;
                     }
 
                     var accepted = Channel.CreateBounded<bool>(1);
 
-                    await this.pendingClients.Writer.WriteAsync(Tuple.Create(newClient, accepted), this.tokenSource.Token);
-                    if (!await accepted.Reader.ReadAsync(this.tokenSource.Token)) {
+                    await this.PendingClients.Writer.WriteAsync(Tuple.Create(client, accepted), this._tokenSource.Token);
+                    if (!await accepted.Reader.ReadAsync(this._tokenSource.Token)) {
                         return;
                     }
                 }
 
-                var id = Guid.NewGuid();
-                newClient.Connected = true;
-                this.clients[id] = newClient;
+                client.Connected = true;
 
                 // send availability
-                var available = this.plugin.Interface.ClientState.LocalPlayer != null;
+                var available = this._plugin.Interface.ClientState.LocalPlayer != null;
                 try {
-                    await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, new Availability(available), this.tokenSource.Token);
+                    await SecretMessage.SendSecretMessage(client, handshake.Keys.tx, new Availability(available), this._tokenSource.Token);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
 
                 // send player data
                 try {
-                    await this.SendPlayerData(newClient);
+                    await this.SendPlayerData(client);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
 
                 // send current channel
                 try {
-                    var channel = this.currentChannel;
+                    var channel = this._currentChannel;
                     await SecretMessage.SendSecretMessage(
-                        stream,
+                        client,
                         handshake.Keys.tx,
                         new ServerChannel(
                             channel,
                             this.LocalisedChannelName(channel)
                         ),
-                        this.tokenSource.Token
+                        this._tokenSource.Token
                     );
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send message: {ex.Message}");
                 }
 
                 var listen = Task.Run(async () => {
-                    conn.ReceiveTimeout = 5_000;
-
-                    while (this.clients.TryGetValue(id, out var client) && client.Connected && !client.TokenSource.IsCancellationRequested && conn.Connected) {
+                    while (this._clients.TryGetValue(id, out var client) && client.Connected && !client.TokenSource.IsCancellationRequested) {
                         byte[] msg;
                         try {
-                            msg = await SecretMessage.ReadSecretMessage(stream, handshake.Keys.rx, client.TokenSource.Token);
+                            msg = await SecretMessage.ReadSecretMessage(client, handshake.Keys.rx, client.TokenSource.Token);
                         } catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut) {
                             continue;
                         } catch (Exception ex) {
@@ -340,114 +337,113 @@ namespace XIVChatPlugin {
                             continue;
                         }
 
-                        var op = (ClientOperation) msg[0];
-
-                        var payload = new byte[msg.Length - 1];
-                        Array.Copy(msg, 1, payload, 0, payload.Length);
-
-                        switch (op) {
-                            case ClientOperation.Ping:
-                                try {
-                                    await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, Pong.Instance, client.TokenSource.Token);
-                                } catch (Exception ex) {
-                                    PluginLog.LogError($"Could not send message: {ex.Message}");
-                                }
-
-                                break;
-                            case ClientOperation.Message:
-                                var clientMessage = ClientMessage.Decode(payload);
-                                foreach (var part in Wrap(clientMessage.Content)) {
-                                    this.toGame.Enqueue(part);
-                                }
-
-                                break;
-                            case ClientOperation.Shutdown:
-                                client.Disconnect();
-                                break;
-                            case ClientOperation.Backlog:
-                                // ReSharper disable once LocalVariableHidesMember
-                                var backlog = ClientBacklog.Decode(payload);
-
-                                var backlogMessages = new List<ServerMessage>();
-
-                                var node = this.backlog.Last;
-                                while (node != null) {
-                                    if (backlogMessages.Count >= backlog.Amount) {
-                                        break;
-                                    }
-
-                                    backlogMessages.Add(node.Value);
-                                    node = node.Previous;
-                                }
-
-                                if (!client.GetPreference(ClientPreference.BacklogNewestMessagesFirst, false)) {
-                                    backlogMessages.Reverse();
-                                }
-
-                                await SendBacklogs(backlogMessages.ToArray(), stream, client);
-                                break;
-                            case ClientOperation.CatchUp:
-                                var catchUp = ClientCatchUp.Decode(payload);
-                                // I'm not sure why this needs to be done, but apparently it does
-                                var after = catchUp.After.AddMilliseconds(1);
-                                var msgs = this.MessagesAfter(after);
-
-                                if (client.GetPreference(ClientPreference.BacklogNewestMessagesFirst, false)) {
-                                    msgs = msgs.Reverse();
-                                }
-
-                                await SendBacklogs(msgs, stream, client);
-                                break;
-                            case ClientOperation.PlayerList:
-                                var playerList = ClientPlayerList.Decode(payload);
-
-                                if (playerList.Type == PlayerListType.Friend) {
-                                    this.waitingForFriendList.Add(id);
-
-                                    if (!this.plugin.Functions.RequestingFriendList && !this.plugin.Functions.RequestFriendList()) {
-                                        this.plugin.Interface.Framework.Gui.Chat.PrintError($"[{this.plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
-                                    }
-                                }
-
-                                break;
-                            case ClientOperation.Preferences:
-                                var preferences = ClientPreferences.Decode(payload);
-                                client.Preferences = preferences;
-
-                                break;
-                            case ClientOperation.Channel:
-                                var channel = ClientChannel.Decode(payload);
-                                this.plugin.Functions.ChangeChatChannel(channel.Channel);
-
-                                break;
-                        }
+                        await this.ProcessMessage(id, client, handshake, msg);
                     }
                 });
 
-                while (this.clients.TryGetValue(id, out var client) && client.Connected && !client.TokenSource.IsCancellationRequested && conn.Connected) {
+                while (this._clients.TryGetValue(id, out var client) && client.Connected && !client.TokenSource.IsCancellationRequested) {
                     try {
                         var msg = await client.Queue.Reader.ReadAsync(client.TokenSource.Token);
-                        await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, msg, client.TokenSource.Token);
+                        await SecretMessage.SendSecretMessage(client, handshake.Keys.tx, msg, client.TokenSource.Token);
                     } catch (Exception ex) {
                         PluginLog.LogError($"Could not send message: {ex.Message}");
                     }
                 }
 
-                try {
-                    conn.Close();
-                } catch (ObjectDisposedException) {
-                }
+                client.Disconnect();
 
                 await listen;
 
-                this.clients.TryRemove(id, out _);
+                this._clients.TryRemove(id, out _);
                 PluginLog.Log($"Client thread ended: {id}");
             }).ContinueWith(_ => {
-                try {
-                    conn.Close();
-                } catch (ObjectDisposedException) {
-                }
+                client.Disconnect();
+                this._clients.TryRemove(id, out var _);
             });
+        }
+
+        private async Task ProcessMessage(Guid id, BaseClient client, HandshakeInfo handshake, byte[] msg) {
+            var op = (ClientOperation) msg[0];
+
+            var payload = new byte[msg.Length - 1];
+            Array.Copy(msg, 1, payload, 0, payload.Length);
+
+            switch (op) {
+                case ClientOperation.Ping:
+                    try {
+                        await SecretMessage.SendSecretMessage(client, handshake.Keys.tx, Pong.Instance, client.TokenSource.Token);
+                    } catch (Exception ex) {
+                        PluginLog.LogError($"Could not send message: {ex.Message}");
+                    }
+
+                    break;
+                case ClientOperation.Message:
+                    var clientMessage = ClientMessage.Decode(payload);
+                    foreach (var part in Wrap(clientMessage.Content)) {
+                        this._toGame.Enqueue(part);
+                    }
+
+                    break;
+                case ClientOperation.Shutdown:
+                    client.Disconnect();
+                    break;
+                case ClientOperation.Backlog:
+                    // ReSharper disable once LocalVariableHidesMember
+                    var backlog = ClientBacklog.Decode(payload);
+
+                    var backlogMessages = new List<ServerMessage>();
+
+                    var node = this._backlog.Last;
+                    while (node != null) {
+                        if (backlogMessages.Count >= backlog.Amount) {
+                            break;
+                        }
+
+                        backlogMessages.Add(node.Value);
+                        node = node.Previous;
+                    }
+
+                    if (!client.GetPreference(ClientPreference.BacklogNewestMessagesFirst, false)) {
+                        backlogMessages.Reverse();
+                    }
+
+                    await SendBacklogs(backlogMessages.ToArray(), client);
+                    break;
+                case ClientOperation.CatchUp:
+                    var catchUp = ClientCatchUp.Decode(payload);
+                    // I'm not sure why this needs to be done, but apparently it does
+                    var after = catchUp.After.AddMilliseconds(1);
+                    var msgs = this.MessagesAfter(after);
+
+                    if (client.GetPreference(ClientPreference.BacklogNewestMessagesFirst, false)) {
+                        msgs = msgs.Reverse();
+                    }
+
+                    await SendBacklogs(msgs, client);
+                    break;
+                case ClientOperation.PlayerList:
+                    var playerList = ClientPlayerList.Decode(payload);
+
+                    if (playerList.Type == PlayerListType.Friend) {
+                        this._waitingForFriendList.Add(id);
+
+                        if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
+                            this._plugin.Interface.Framework.Gui.Chat.PrintError($"[{this._plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
+                        }
+                    }
+
+                    break;
+                case ClientOperation.Preferences:
+                    var preferences = ClientPreferences.Decode(payload);
+                    client.Preferences = preferences;
+
+                    break;
+                case ClientOperation.Channel:
+                    var channel = ClientChannel.Decode(payload);
+                    this._plugin.Functions.ChangeChatChannel(channel.Channel);
+
+                    break;
+            }
         }
 
         public class NameFormatting {
@@ -476,14 +472,14 @@ namespace XIVChatPlugin {
                 return cached;
             }
 
-            var logKind = this.plugin.Interface.Data.GetExcelSheet<LogKind>().GetRow((ushort) type);
+            var logKind = this._plugin.Interface.Data.GetExcelSheet<LogKind>().GetRow((ushort) type);
 
             if (logKind == null) {
                 return null;
             }
 
             var format = logKind.Format;
-            var sestring = this.plugin.Interface.SeStringManager.Parse(format.RawData.ToArray());
+            var sestring = this._plugin.Interface.SeStringManager.Parse(format.RawData.ToArray());
 
             static bool IsStringParam(Payload payload, byte num) {
                 var data = payload.Encode();
@@ -519,14 +515,14 @@ namespace XIVChatPlugin {
             return nameFormatting;
         }
 
-        private static async Task SendBacklogs(IEnumerable<ServerMessage> messages, Stream stream, Client client) {
+        private static async Task SendBacklogs(IEnumerable<ServerMessage> messages, BaseClient client) {
             var size = 5 + SecretMessage.MacSize(); // assume 5 bytes for payload lead-in, although it's likely to be less
             var responseMessages = new List<ServerMessage>();
 
             async Task SendBacklog() {
                 var resp = new ServerBacklog(responseMessages.ToArray());
                 try {
-                    await SecretMessage.SendSecretMessage(stream, client.Handshake!.Keys.tx, resp, client.TokenSource.Token);
+                    await SecretMessage.SendSecretMessage(client, client.Handshake!.Keys.tx, resp, client.TokenSource.Token);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send backlog: {ex.Message}");
                 }
@@ -628,7 +624,7 @@ namespace XIVChatPlugin {
             return chunks;
         }
 
-        private IEnumerable<ServerMessage> MessagesAfter(DateTime time) => this.backlog.Where(msg => msg.Timestamp > time).ToArray();
+        private IEnumerable<ServerMessage> MessagesAfter(DateTime time) => this._backlog.Where(msg => msg.Timestamp > time).ToArray();
 
         private static IEnumerable<string> Wrap(string input) {
             const int limit = 500;
@@ -701,11 +697,13 @@ namespace XIVChatPlugin {
 
         private void BroadcastMessage(IEncodable message) {
             foreach (var client in this.Clients.Values) {
-                if (client.Handshake == null || client.Conn == null) {
+                if (client.Handshake == null) {
                     continue;
                 }
 
-                Task.Run(async () => { await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, message); });
+                Task.Run(async () => {
+                    await SecretMessage.SendSecretMessage(client, client.Handshake.Keys.tx, message);
+                });
             }
         }
 
@@ -739,12 +737,12 @@ namespace XIVChatPlugin {
                 _ => 0,
             };
 
-            return this.plugin.Interface.Data.GetExcelSheet<LogFilter>().GetRow(rowId).Name;
+            return this._plugin.Interface.Data.GetExcelSheet<LogFilter>().GetRow(rowId).Name;
         }
 
         public void OnChatChannelChange(uint channel) {
             var inputChannel = (InputChannel) channel;
-            this.currentChannel = inputChannel;
+            this._currentChannel = inputChannel;
 
             var localisedName = this.LocalisedChannelName(inputChannel);
 
@@ -757,27 +755,27 @@ namespace XIVChatPlugin {
         }
 
         private PlayerData? GeneratePlayerData() {
-            var player = this.plugin.Interface.ClientState.LocalPlayer;
+            var player = this._plugin.Interface.ClientState.LocalPlayer;
             if (player == null) {
                 return null;
             }
 
             var homeWorld = player.HomeWorld.GameData.Name;
             var currentWorld = player.CurrentWorld.GameData.Name;
-            var territory = this.plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(this.plugin.Interface.ClientState.TerritoryType);
+            var territory = this._plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(this._plugin.Interface.ClientState.TerritoryType);
             var location = territory?.PlaceName?.Value?.Name ?? "???";
             var name = player.Name;
 
             return new PlayerData(homeWorld, currentWorld, location, name);
         }
 
-        private async Task SendPlayerData(Client client) {
+        private async Task SendPlayerData(BaseClient client) {
             var playerData = this.GeneratePlayerData();
             if (playerData == null) {
                 return;
             }
 
-            await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake!.Keys.tx, playerData);
+            await SecretMessage.SendSecretMessage(client, client.Handshake!.Keys.tx, playerData);
         }
 
         private void BroadcastPlayerData() {
@@ -794,7 +792,7 @@ namespace XIVChatPlugin {
         public void OnLogIn(object sender, EventArgs e) {
             this.BroadcastAvailability(true);
             // send player data on next framework update
-            this.sendPlayerData = true;
+            this._sendPlayerData = true;
         }
 
         public void OnLogOut(object sender, EventArgs e) {
@@ -802,20 +800,19 @@ namespace XIVChatPlugin {
             this.BroadcastPlayerData();
         }
 
-        public void OnTerritoryChange(object sender, ushort territoryId) => this.sendPlayerData = true;
+        public void OnTerritoryChange(object sender, ushort territoryId) => this._sendPlayerData = true;
 
         public void Dispose() {
             // stop accepting new clients
-            this.tokenSource.Cancel();
-            foreach (var client in this.clients.Values) {
+            this._tokenSource.Cancel();
+            foreach (var client in this._clients.Values) {
                 Task.Run(async () => {
                     // tell clients we're shutting down
                     if (client.Handshake != null) {
                         try {
-                            // time out after 5 seconds
-                            client.Conn.SendTimeout = 5_000;
-                            await SecretMessage.SendSecretMessage(client.Conn.GetStream(), client.Handshake.Keys.tx, ServerShutdown.Instance);
+                            await SecretMessage.SendSecretMessage(client, client.Handshake.Keys.tx, ServerShutdown.Instance);
                         } catch (Exception) {
+                            // ignored
                         }
                     }
 
@@ -824,36 +821,7 @@ namespace XIVChatPlugin {
                 });
             }
 
-            this.plugin.Functions.ReceiveFriendList -= this.OnReceiveFriendList;
-        }
-    }
-
-    public class Client {
-        public bool Connected { get; set; }
-        public TcpClient Conn { get; }
-        public HandshakeInfo? Handshake { get; set; }
-        public ClientPreferences? Preferences { get; set; }
-        public CancellationTokenSource TokenSource { get; } = new CancellationTokenSource();
-        public Channel<ServerMessage> Queue { get; } = Channel.CreateUnbounded<ServerMessage>();
-
-        public Client(TcpClient conn) {
-            this.Conn = conn;
-        }
-
-        public void Disconnect() {
-            this.Connected = false;
-            this.TokenSource.Cancel();
-            this.Conn.Close();
-        }
-
-        public T GetPreference<T>(ClientPreference pref, T def = default) {
-            var prefs = this.Preferences;
-
-            if (prefs == null) {
-                return def;
-            }
-
-            return prefs.TryGetValue(pref, out T result) ? result : def;
+            this._plugin.Functions.ReceiveFriendList -= this.OnReceiveFriendList;
         }
     }
 
