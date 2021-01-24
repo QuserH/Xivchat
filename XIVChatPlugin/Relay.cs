@@ -132,9 +132,10 @@ namespace XIVChatPlugin {
                     this.Plugin.Server.SpawnClientTask(client, false);
                     break;
                 case RelayClientDisconnect disconnect:
+                    var clientPk = disconnect.PublicKey.ToArray();
                     var id = this.Plugin.Server.Clients
                         .Where(client => client.Value is RelayConnected)
-                        .Where(client => client.Value.Handshake?.RemotePublicKey == disconnect.PublicKey.ToArray())
+                        .Where(client => client.Value.Handshake?.RemotePublicKey?.SequenceEqual(clientPk) ?? false)
                         .Select(client => client.Key)
                         .FirstOrDefault();
                     if (id != default) {
