@@ -10,11 +10,10 @@
                      WindowStartupLocation="CenterOwner"
                      SizeToContent="WidthAndHeight"
                      Title="Manage server"
+                     Initialized="ManageServer_OnInitialized"
                      d:DataContext="{d:DesignInstance local:ManageServer}">
     <Grid Margin="8">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -32,8 +31,10 @@
                Grid.Column="0">
             Server type
         </Label>
-        <ComboBox Grid.Row="0"
+        <ComboBox x:Name="TypeBox"
+                  Grid.Row="0"
                   Grid.Column="1"
+                  SelectionChanged="TypeBox_OnSelectionChanged"
                   SelectedIndex="0">
             <ComboBoxItem>Direct</ComboBoxItem>
             <ComboBoxItem>Relay</ComboBoxItem>
@@ -50,7 +51,8 @@
                  x:Name="ServerName"
                  Text="{Binding Server.Name, Mode=OneTime}" />
 
-        <Label VerticalAlignment="Center"
+        <Label x:Name="ServerHostLabel"
+               VerticalAlignment="Center"
                Grid.Row="2"
                Grid.Column="0">
             IP Address
@@ -61,7 +63,8 @@
                  x:Name="ServerHost"
                  Text="{Binding Server.Host, Mode=OneTime}" />
 
-        <Label VerticalAlignment="Center"
+        <Label x:Name="ServerPortLabel"
+               VerticalAlignment="Center"
                Grid.Row="3"
                Grid.Column="0">
             Port
@@ -73,32 +76,34 @@
                  Text="{Binding Server.Port, Mode=OneTime}"
                  ui:ControlHelper.PlaceholderText="14777" />
 
-        <Label VerticalAlignment="Center"
-               Grid.Row="4"
+        <Label x:Name="RelayAuthLabel"
+               VerticalAlignment="Center"
+               Grid.Row="2"
                Grid.Column="0">
             Relay auth
         </Label>
         <TextBox Margin="4,4,0,0"
-                 Grid.Row="4"
+                 Grid.Row="2"
                  Grid.Column="1"
                  x:Name="RelayAuth"
                  Text="{Binding Server.RelayAuth, Mode=OneTime}"
-                 ui:ControlHelper.PlaceholderText="Optional (only enter if using relay)" />
+                 ui:ControlHelper.PlaceholderText="Your authentication code" />
 
-        <Label VerticalAlignment="Center"
-               Grid.Row="5"
+        <Label x:Name="RelayTargetLabel"
+               VerticalAlignment="Center"
+               Grid.Row="3"
                Grid.Column="0">
             Server public key
         </Label>
         <TextBox Margin="4,4,0,0"
-                 Grid.Row="5"
+                 Grid.Row="3"
                  Grid.Column="1"
                  x:Name="RelayTarget"
                  Text="{Binding Server.RelayTarget, Mode=OneTime}"
-                 ui:ControlHelper.PlaceholderText="Optional (only enter if using relay)" />
+                 ui:ControlHelper.PlaceholderText="AABBCCDD..." />
 
         <WrapPanel Margin="0,8,0,0"
-                   Grid.Row="6"
+                   Grid.Row="4"
                    Grid.ColumnSpan="2"
                    Grid.Column="0"
                    HorizontalAlignment="Right">

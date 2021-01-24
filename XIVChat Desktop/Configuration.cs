@@ -9,7 +9,6 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
@@ -30,55 +29,19 @@ namespace XIVChat_Desktop {
 
         public bool AlwaysOnTop { get; set; }
 
-        private double fontSize = 14d;
-
-        public double FontSize {
-            get => this.fontSize;
-            set {
-                this.fontSize = value;
-                this.OnPropertyChanged(nameof(this.FontSize));
-            }
-        }
+        public double FontSize { get; set; } = 14d;
 
         public ushort BacklogMessages { get; set; } = 500;
 
         public uint LocalBacklogMessages { get; set; } = 10_000;
 
-        private double opacity = 1.0;
+        public double Opacity { get; set; } = 1.0;
 
-        public double Opacity {
-            get => this.opacity;
-            set {
-                this.opacity = value;
-                this.OnPropertyChanged(nameof(this.Opacity));
-            }
-        }
+        public bool CompactMode { get; set; }
 
-        private bool compactMode;
-
-        public bool CompactMode {
-            get => this.compactMode;
-            set {
-                this.compactMode = value;
-                this.OnPropertyChanged(nameof(this.CompactMode));
-            }
-        }
-
-        private Theme theme = Theme.System;
-
-        public Theme Theme {
-            get => this.theme;
-            set {
-                this.theme = value;
-                this.OnPropertyChanged(nameof(this.Theme));
-            }
-        }
+        public Theme Theme { get; set; } = Theme.System;
 
         public ObservableCollection<Notification> Notifications { get; set; } = new ObservableCollection<Notification>();
-
-        private void OnPropertyChanged(string propName) {
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
-        }
 
         #region io
 
@@ -98,6 +61,7 @@ namespace XIVChat_Desktop {
             using var json = new JsonTextReader(reader);
 
             var serializer = new JsonSerializer {
+                TypeNameHandling = TypeNameHandling.Auto,
                 ObjectCreationHandling = ObjectCreationHandling.Replace,
             };
             return serializer.Deserialize<Configuration>(json);
@@ -113,81 +77,39 @@ namespace XIVChat_Desktop {
             using var file = File.CreateText(path);
             using var json = new JsonTextWriter(file);
 
-            var serialiser = new JsonSerializer();
+            var serialiser = new JsonSerializer {
+                TypeNameHandling = TypeNameHandling.Auto,
+            };
             serialiser.Serialize(json, this);
         }
 
         #endregion
     }
 
-    [JsonObject]
-    public class SavedServer : INotifyPropertyChanged {
-        private string _name;
-        private string _host;
-        private ushort _port;
-        private string? _relayAuth;
-        private string? _relayTarget;
-
-        public string Name {
-            get => this._name;
-            set {
-                this._name = value;
-                this.OnPropertyChanged(nameof(this.Name));
-            }
-        }
-
-        public string Host {
-            get => this._host;
-            set {
-                this._host = value;
-                this.OnPropertyChanged(nameof(this.Host));
-            }
-        }
-
-        public ushort Port {
-            get => this._port;
-            set {
-                this._port = value;
-                this.OnPropertyChanged(nameof(this.Port));
-            }
-        }
-
-        public string? RelayAuth {
-            get => this._relayAuth;
-            set {
-                this._relayAuth = value;
-                this.OnPropertyChanged(nameof(this.RelayAuth));
-            }
-        }
-
-        public string? RelayTarget {
-            get => this._relayTarget;
-            set {
-                this._relayTarget = value;
-                this.OnPropertyChanged(nameof(this.RelayTarget));
-            }
-        }
-
+    public abstract class SavedServer : INotifyPropertyChanged {
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        public string Name { get; set; }
+    }
+
+    [JsonObject]
+    public class DirectServer : SavedServer {
+        public string Host { get; set; }
+
+        public ushort Port { get; set; }
+
+        public DirectServer(string name, string host, ushort port) {
+            this.Name = name;
+            this.Host = host;
+            this.Port = port;
         }
 
-        public SavedServer(string name, string host, ushort port, string? relayAuth, string? relayTarget) {
-            this._name = name;
-            this._host = host;
-            this._port = port;
-            this._relayAuth = relayAuth;
-            this._relayTarget = relayTarget;
-        }
-
-        protected bool Equals(SavedServer other) {
+        protected bool Equals(DirectServer other) {
             return this.Name == other.Name && this.Host == other.Host && this.Port == other.Port;
         }
 
         public override bool Equals(object? obj) {
-            if (obj is null) {
+            if (ReferenceEquals(null, obj)) {
                 return false;
             }
 
@@ -195,12 +117,47 @@ namespace XIVChat_Desktop {
                 return true;
             }
 
-            return obj.GetType() == this.GetType() && this.Equals((SavedServer)obj);
+            return obj.GetType() == this.GetType() && this.Equals((DirectServer) obj);
         }
 
-        [SuppressMessage("ReSharper", "NonReadonlyMemberInGetHashCode")]
         public override int GetHashCode() {
-            return HashCode.Combine(this.Name, this.Host, this.Port);
+            unchecked {
+                return (this.Host.GetHashCode() * 397) ^ this.Port.GetHashCode();
+            }
+        }
+    }
+
+    [JsonObject]
+    public class RelayServer : SavedServer {
+        public string RelayAuth { get; set; }
+        public string RelayTarget { get; set; }
+
+        public RelayServer(string name, string relayAuth, string relayTarget) {
+            this.Name = name;
+            this.RelayAuth = relayAuth;
+            this.RelayTarget = relayTarget;
+        }
+
+        protected bool Equals(RelayServer other) {
+            return this.Name == other.Name && this.RelayAuth == other.RelayAuth && this.RelayTarget == other.RelayTarget;
+        }
+
+        public override bool Equals(object? obj) {
+            if (ReferenceEquals(null, obj)) {
+                return false;
+            }
+
+            if (ReferenceEquals(this, obj)) {
+                return true;
+            }
+
+            return obj.GetType() == this.GetType() && this.Equals((RelayServer) obj);
+        }
+
+        public override int GetHashCode() {
+            unchecked {
+                return (this.RelayAuth.GetHashCode() * 397) ^ this.RelayTarget.GetHashCode();
+            }
         }
     }
 
@@ -223,33 +180,18 @@ namespace XIVChat_Desktop {
 
     [JsonObject]
     public class Tab : IEnumerable<ServerMessage>, INotifyCollectionChanged, INotifyPropertyChanged {
-        private string name;
-        private bool processMarkdown;
-
-        public Tab(string name) {
-            this.name = name;
-        }
-
-        public string Name {
-            get => this.name;
-            set {
-                this.name = value;
-                this.OnPropertyChanged(nameof(this.Name));
-            }
-        }
+        public string Name { get; set; }
 
         public Filter Filter { get; set; } = new Filter();
 
-        public bool ProcessMarkdown {
-            get => this.processMarkdown;
-            set {
-                this.processMarkdown = value;
-                this.OnPropertyChanged(nameof(this.ProcessMarkdown));
-            }
-        }
+        public bool ProcessMarkdown { get; set; }
 
         [JsonIgnore]
         public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
+
+        public Tab(string name) {
+            this.Name = name;
+        }
 
         private void NotifyReset() {
             this.CollectionChanged?.Invoke(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
@@ -278,21 +220,21 @@ namespace XIVChat_Desktop {
             this.NotifyReset();
         }
 
-        private int lastSequence = -1;
-        private int insertAt;
+        private int _lastSequence = -1;
+        private int _insertAt;
 
         public void AddReversedChunk(ServerMessage[] messages, int sequence, Configuration config) {
-            if (sequence != this.lastSequence) {
-                this.lastSequence = sequence;
-                this.insertAt = this.Messages.Count;
+            if (sequence != this._lastSequence) {
+                this._lastSequence = sequence;
+                this._insertAt = this.Messages.Count;
             }
 
             var filtered = messages
                 .Where(msg => msg.Channel == 0 || this.Filter.Allowed(msg))
                 .ToList();
 
-            this.Messages.InsertRange(this.insertAt, filtered);
-            this.NotifyAddItemsAt(filtered, this.insertAt);
+            this.Messages.InsertRange(this._insertAt, filtered);
+            this.NotifyAddItemsAt(filtered, this._insertAt);
 
             this.Prune(config);
         }
@@ -314,8 +256,8 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            var removed = this.Messages.Take((int)diff).ToList();
-            this.Messages.RemoveRange(0, (int)diff);
+            var removed = this.Messages.Take((int) diff).ToList();
+            this.Messages.RemoveRange(0, (int) diff);
             this.NotifyRemoveItemsAt(removed, 0);
         }
 
@@ -365,10 +307,6 @@ namespace XIVChat_Desktop {
 
         public event NotifyCollectionChangedEventHandler? CollectionChanged;
         public event PropertyChangedEventHandler? PropertyChanged;
-
-        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
     }
 
     [JsonObject]
@@ -376,7 +314,7 @@ namespace XIVChat_Desktop {
         public HashSet<FilterType> Types { get; set; } = new HashSet<FilterType>();
 
         public virtual bool Allowed(ServerMessage message) {
-            var code = new ChatCode((ushort)message.Channel);
+            var code = new ChatCode((ushort) message.Channel);
             return this.Types.Any(type => type.Allowed(code));
         }
     }
@@ -388,7 +326,7 @@ namespace XIVChat_Desktop {
         public List<ChatType> Channels { get; set; } = new List<ChatType>();
         public List<string> Substrings { get; set; } = new List<string>();
 
-        private IReadOnlyCollection<String> regexes = new List<string>();
+        private IReadOnlyCollection<string> regexes = new List<string>();
 
         public IReadOnlyCollection<string> Regexes {
             get => this.regexes;

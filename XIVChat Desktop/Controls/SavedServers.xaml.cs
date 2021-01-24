@@ -11,13 +11,13 @@ namespace XIVChat_Desktop.Controls {
         private Window Window => Window.GetWindow(this)!;
 
         public IEnumerable<SavedServer> ItemsSource {
-            get { return (IEnumerable<SavedServer>)this.GetValue(ItemsSourceProperty); }
-            set { this.SetValue(ItemsSourceProperty, value); }
+            get => (IEnumerable<SavedServer>)this.GetValue(ItemsSourceProperty);
+            set => this.SetValue(ItemsSourceProperty, value);
         }
 
         public Visibility ControlsVisibility {
-            get { return (Visibility)this.GetValue(ControlsVisibilityProperty); }
-            set { this.SetValue(ControlsVisibilityProperty, value); }
+            get => (Visibility)this.GetValue(ControlsVisibilityProperty);
+            set => this.SetValue(ControlsVisibilityProperty, value);
         }
 
         public SavedServer? SelectedServer {

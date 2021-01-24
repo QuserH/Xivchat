@@ -72,7 +72,7 @@ namespace XIVChat_Desktop {
                         continue;
                     }
 
-                    var saved = new SavedServer(server.playerName, server.address, server.port, null, null);
+                    var saved = new DirectServer(server.playerName, server.address, server.port);
                     if (this.Servers.Contains(saved)) {
                         continue;
                     }

@@ -31,7 +31,9 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            this.App.Connect(server.Host, server.Port, server.RelayAuth, server.RelayTarget);
+            if (server is DirectServer direct) {
+                this.App.Connect(direct.Host, direct.Port);
+            }
 
             this.Close();
         }

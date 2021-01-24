@@ -10,9 +10,11 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using MessagePack;
 using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
+using XIVChatCommon.Message.Relay;
 using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
@@ -58,23 +60,18 @@ namespace XIVChat_Desktop {
         public event PropertyChangedEventHandler? PropertyChanged;
         public string? CurrentChannel { get; private set; }
 
-        private bool available;
+        public bool Available { get; set; }
 
-        public bool Available {
-            get => this.available;
-            private set {
-                this.available = value;
-                this.OnPropertyChanged(nameof(this.Available));
-            }
-        }
-
-        public Connection(App app, string host, ushort port, string? relayAuth = null, string? relayTarget = null) {
+        public Connection(App app, string host, ushort port) {
             this.app = app;
 
             this.host = host;
             this.port = port;
-            this.relayAuth = relayAuth;
-            this.relayTarget = relayTarget;
+        }
+
+        // ReSharper disable once UnusedMember.Local
+        private void OnAvailableChanged() {
+            this.app.Window.OnPropertyChanged(nameof(MainWindow.InputPlaceholder));
         }
 
         public void SendMessage(string message) {
@@ -112,39 +109,47 @@ namespace XIVChat_Desktop {
 
             var stream = this.client.GetStream();
 
-            switch (usingRelay) {
-                // do relay auth before connecting if necessary
-                case true: {
-                    var relayHandshake = await KeyExchange.ClientHandshake(this.app.Config.KeyPair, stream);
+            // write the magic bytes
+            await stream.WriteAsync(new byte[] {
+                14, 20, 67,
+            });
 
-                    // ensure the relay's public key is what we expect
-                    if (!relayHandshake.RemotePublicKey.SequenceEqual(RelayPublicKey)) {
-                        this.app.Dispatch(() => {
-                            MessageBox.Show("Unexpected relay public key.");
-                        });
-                        return;
-                    }
+            // authenticate with relay if necessary
+            if (usingRelay) {
+                var relayHandshake = await KeyExchange.ClientHandshake(this.app.Config.KeyPair, stream);
 
-                    // send auth token
-                    var authBytes = Encoding.UTF8.GetBytes(this.relayAuth!);
-                    await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, authBytes);
-
-                    // TODO: receive response
-
-                    // send the public key of the server
-                    var pk = Util.StringToByteArray(this.relayTarget!);
-                    await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, pk);
-
-                    // TODO: receive response
-                    break;
-                }
-                // only send magic bytes if not using the relay
-                case false:
-                    // write the magic bytes
-                    await stream.WriteAsync(new byte[] {
-                        14, 20, 67,
+                // ensure the relay's public key is what we expect
+                if (!relayHandshake.RemotePublicKey.SequenceEqual(RelayPublicKey)) {
+                    this.app.Dispatch(() => {
+                        MessageBox.Show("Unexpected relay public key.");
                     });
-                    break;
+                    return;
+                }
+
+                async Task<RelaySuccess> ReadSuccess() {
+                    var response = await SecretMessage.ReadSecretMessage(stream, relayHandshake.Keys.rx);
+                    return MessagePackSerializer.Deserialize<RelaySuccess>(response);
+                }
+
+                // send auth token
+                var authBytes = Encoding.UTF8.GetBytes(this.relayAuth!);
+                await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, authBytes);
+
+                var authSuccess = await ReadSuccess();
+                if (!authSuccess.Success) {
+                    this.app.Dispatch(() => MessageBox.Show($"Relay rejected authentication code:\n{authSuccess.Info}"));
+                    return;
+                }
+
+                // send the public key of the server
+                var pk = Util.StringToByteArray(this.relayTarget!);
+                await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, pk);
+
+                var targetSuccess = await ReadSuccess();
+                if (!targetSuccess.Success) {
+                    this.app.Dispatch(() => MessageBox.Show($"Relay rejected server public key:\n{targetSuccess.Info}"));
+                    return;
+                }
             }
 
             // do the handshake
@@ -360,11 +365,7 @@ namespace XIVChat_Desktop {
                 case ServerOperation.Channel:
                     var channel = ServerChannel.Decode(payload);
 
-                    this.CurrentChannel = channel.name;
-
-                    this.app.Dispatch(() => {
-                        this.OnPropertyChanged(nameof(this.CurrentChannel));
-                    });
+                    this.app.Dispatch(() => this.CurrentChannel = channel.name);
                     break;
                 case ServerOperation.Backlog:
                     var backlog = ServerBacklog.Decode(payload);
@@ -420,23 +421,6 @@ namespace XIVChat_Desktop {
                 window.Location.Content = playerData?.location;
                 window.Location.Visibility = visibility;
             });
-        }
-
-        private void OnPropertyChanged(string prop) {
-            Action action;
-
-            if (prop == nameof(this.Available)) {
-                action = () => {
-                    this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Available)));
-                    this.app.Window.OnPropertyChanged(nameof(MainWindow.InputPlaceholder));
-                };
-            } else {
-                action = () => {
-                    this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
-                };
-            }
-
-            this.app.Dispatch(action);
         }
     }
 }

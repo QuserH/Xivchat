@@ -30,16 +30,7 @@ namespace XIVChat_Desktop {
 
         public string? LastHost { get; set; }
 
-        private Connection? connection;
-
-        public Connection? Connection {
-            get => this.connection;
-            set {
-                this.connection = value;
-                this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Connection)));
-                this.ConnectionStatusChanged();
-            }
-        }
+        public Connection? Connection { get; set; }
 
         public bool Connected => this.Connection != null;
 
@@ -125,16 +116,12 @@ namespace XIVChat_Desktop {
             };
         }
 
-        private void ConnectionStatusChanged() {
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(this.Connected)));
-        }
-
-        public void Connect(string host, ushort port, string? relayAuth, string? relayTarget) {
+        public void Connect(string host, ushort port) {
             if (this.Connected) {
                 return;
             }
 
-            this.Connection = new Connection(this, host, port, relayAuth, relayTarget);
+            this.Connection = new Connection(this, host, port);
             this.Connection.ReceiveMessage += this.OnReceiveMessage;
             Task.Run(this.Connection.Connect);
         }
