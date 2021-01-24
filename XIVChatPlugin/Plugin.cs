@@ -48,6 +48,10 @@ namespace XIVChatPlugin {
 
             this.LaunchServer();
 
+            if (this.Config.AllowRelayConnections) {
+                this.StartRelay();
+            }
+
             this.Interface.UiBuilder.OnBuildUi += this.Ui.Draw;
             this.Interface.UiBuilder.OnOpenConfigUi += this.Ui.OpenSettings;
             this.Interface.Framework.OnUpdateEvent += this.Server.OnFrameworkUpdate;
