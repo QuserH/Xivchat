@@ -39,10 +39,11 @@ namespace XIVChat_Desktop {
 
         private readonly App app;
 
-        private readonly string host;
-        private readonly ushort port;
-        private readonly string? relayAuth;
-        private readonly string? relayTarget;
+        private bool _relay;
+        private readonly string? _host;
+        private readonly ushort? _port;
+        private readonly string? _relayAuth;
+        private readonly string? _relayTarget;
 
         private TcpClient? client;
 
@@ -62,11 +63,20 @@ namespace XIVChat_Desktop {
 
         public bool Available { get; set; }
 
-        public Connection(App app, string host, ushort port) {
+        public Connection(App app, DirectServer server) {
             this.app = app;
 
-            this.host = host;
-            this.port = port;
+            this._relay = false;
+            this._host = server.Host;
+            this._port = server.Port;
+        }
+
+        public Connection(App app, RelayServer server) {
+            this.app = app;
+
+            this._relay = true;
+            this._relayAuth = server.RelayAuth;
+            this._relayTarget = server.RelayTarget;
         }
 
         // ReSharper disable once UnusedMember.Local
@@ -100,10 +110,15 @@ namespace XIVChat_Desktop {
         }
 
         public async Task Connect() {
-            var usingRelay = this.relayAuth != null;
+            switch (this._relay) {
+                case false when this._host == null || this._port == null:
+                    throw new ApplicationException("Not using relay but host or port was null");
+                case true when this._relayAuth == null || this._relayTarget == null:
+                    throw new ApplicationException("Using relay but auth or target was null");
+            }
 
-            var host = usingRelay ? RelayHost : this.host;
-            var port = usingRelay ? RelayPort : this.port;
+            var host = this._host ?? RelayHost;
+            var port = this._port ?? RelayPort;
 
             this.client = new TcpClient(host, port);
 
@@ -115,7 +130,7 @@ namespace XIVChat_Desktop {
             });
 
             // authenticate with relay if necessary
-            if (usingRelay) {
+            if (this._relay) {
                 var relayHandshake = await KeyExchange.ClientHandshake(this.app.Config.KeyPair, stream);
 
                 // ensure the relay's public key is what we expect
@@ -132,7 +147,7 @@ namespace XIVChat_Desktop {
                 }
 
                 // send auth token
-                var authBytes = Encoding.UTF8.GetBytes(this.relayAuth!);
+                var authBytes = Encoding.UTF8.GetBytes(this._relayAuth!);
                 await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, authBytes);
 
                 var authSuccess = await ReadSuccess();
@@ -142,7 +157,7 @@ namespace XIVChat_Desktop {
                 }
 
                 // send the public key of the server
-                var pk = Util.StringToByteArray(this.relayTarget!);
+                var pk = Util.StringToByteArray(this._relayTarget!);
                 await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, pk);
 
                 var targetSuccess = await ReadSuccess();
@@ -171,7 +186,7 @@ namespace XIVChat_Desktop {
             }
 
             // clear messages if connecting to a different host
-            var currentHost = $"{this.host}:{this.port}";
+            var currentHost = $"{this._host}:{this._port}";
             var sameHost = this.app.LastHost == currentHost;
             if (!sameHost) {
                 this.app.Dispatch(() => {

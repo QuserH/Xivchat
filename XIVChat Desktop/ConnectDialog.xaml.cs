@@ -31,9 +31,7 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            if (server is DirectServer direct) {
-                this.App.Connect(direct.Host, direct.Port);
-            }
+            this.App.Connect(server);
 
             this.Close();
         }

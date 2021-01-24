@@ -116,14 +116,28 @@ namespace XIVChat_Desktop {
             };
         }
 
-        public void Connect(string host, ushort port) {
+        public void Connect(SavedServer server) {
             if (this.Connected) {
                 return;
             }
 
-            this.Connection = new Connection(this, host, port);
+            switch (server) {
+                case DirectServer direct:
+                    this.Connection = new Connection(this, direct);
+                    break;
+                case RelayServer relay:
+                    this.Connection = new Connection(this, relay);
+                    break;
+                default:
+                    MessageBox.Show("Unknown server type.");
+                    return;
+            }
+
             this.Connection.ReceiveMessage += this.OnReceiveMessage;
-            Task.Run(this.Connection.Connect);
+            Task.Run(async () => {
+                await this.Connection.Connect();
+                this.Dispatch(() => this.Connection = null);
+            });
         }
 
         public void Disconnect() {
