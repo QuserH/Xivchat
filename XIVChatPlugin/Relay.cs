@@ -40,7 +40,8 @@ namespace XIVChatPlugin {
         }
 
         public void Dispose() {
-            ((IDisposable) this.Connection).Dispose();
+            this.Connection.CloseAsync();
+            this.Running = false;
         }
 
         internal void Start() {
@@ -93,6 +94,14 @@ namespace XIVChatPlugin {
 
             Task.Run(async () => {
                 while (this.Running) {
+                    PluginLog.Debug("Sending ping to relay");
+                    this.Connection.Ping();
+                    await Task.Delay(TimeSpan.FromSeconds(30));
+                }
+            });
+
+            Task.Run(async () => {
+                while (this.Running) {
                     var message = await this.ToRelay.Reader.ReadAsync();
                     var bytes = MessagePackSerializer.Serialize(message);
 
@@ -122,6 +131,17 @@ namespace XIVChatPlugin {
 
                     this.Plugin.Server.SpawnClientTask(client, false);
                     break;
+                case RelayClientDisconnect disconnect:
+                    var id = this.Plugin.Server.Clients
+                        .Where(client => client.Value is RelayConnected)
+                        .Where(client => client.Value.Handshake?.RemotePublicKey == disconnect.PublicKey.ToArray())
+                        .Select(client => client.Key)
+                        .FirstOrDefault();
+                    if (id != default) {
+                        this.Plugin.Server.RemoveClient(id);
+                    }
+
+                    break;
                 case RelayedMessage relayed:
                     var relayedClient = this.Plugin.Server.Clients.Values
                         .Where(client => client is RelayConnected)
@@ -134,12 +154,12 @@ namespace XIVChatPlugin {
         }
 
         private void OnClose(object sender, CloseEventArgs e) {
-            // TODO ?
+            this.Running = false;
         }
 
         private void OnError(object sender, ErrorEventArgs e) {
-            PluginLog.LogError(e.Exception, e.Message);
-            // TODO ?
+            PluginLog.LogError(e.Exception, $"Error in relay connection: {e.Message}");
+            // TODO reconnect
         }
     }
 }

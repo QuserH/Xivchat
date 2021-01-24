@@ -19,6 +19,7 @@ namespace XIVChatCommon.Message.Relay {
     [Union(1, typeof(RelaySuccess))]
     [Union(2, typeof(RelayNewClient))]
     [Union(3, typeof(RelayedMessage))]
+    [Union(4, typeof(RelayClientDisconnect))]
     public interface IFromRelay {
     }
 
@@ -47,5 +48,11 @@ namespace XIVChatCommon.Message.Relay {
 
         [Key(1)]
         public List<byte> Message { get; set; }
+    }
+
+    [MessagePackObject]
+    public class RelayClientDisconnect : IFromRelay {
+        [Key(0)]
+        public List<byte> PublicKey { get; set; }
     }
 }

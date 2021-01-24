@@ -179,9 +179,9 @@ namespace XIVChatPlugin {
 
                 ImGui.SameLine();
                 HelpMarker("If this is disabled, XIVChat Server will only allow clients with already-trusted keys to connect.");
+            }
 
-                ImGui.Spacing();
-
+            if (WithWhiteText(() => ImGui.CollapsingHeader("Relay"))) {
                 var allowRelay = this.Plugin.Config.AllowRelayConnections;
                 if (WithWhiteText(() => ImGui.Checkbox("Allow relay connections", ref allowRelay))) {
                     if (allowRelay) {
@@ -202,7 +202,7 @@ namespace XIVChatPlugin {
                 var relayAuth = this.Plugin.Config.RelayAuth ?? "";
                 WithWhiteText(() => ImGui.TextUnformatted("Relay authentication code"));
                 ImGui.PushItemWidth(-1f);
-                if (ImGui.InputText("###relay-auth", ref relayAuth, 32)) {
+                if (ImGui.InputText("###relay-auth", ref relayAuth, 100, ImGuiInputTextFlags.Password)) {
                     relayAuth = relayAuth.Trim();
                     if (relayAuth.Length == 0) {
                         relayAuth = null;

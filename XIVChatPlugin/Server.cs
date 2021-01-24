@@ -357,9 +357,16 @@ namespace XIVChatPlugin {
                 this._clients.TryRemove(id, out _);
                 PluginLog.Log($"Client thread ended: {id}");
             }).ContinueWith(_ => {
-                client.Disconnect();
-                this._clients.TryRemove(id, out var _);
+                this.RemoveClient(id);
             });
+        }
+
+        internal void RemoveClient(Guid id) {
+            if (!this._clients.TryRemove(id, out var client)) {
+                return;
+            }
+
+            client.Disconnect();
         }
 
         private async Task ProcessMessage(Guid id, BaseClient client, HandshakeInfo handshake, byte[] msg) {
