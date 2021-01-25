@@ -9,6 +9,13 @@ using WebSocketSharp;
 using XIVChatCommon.Message.Relay;
 
 namespace XIVChatPlugin {
+    public enum ConnectionStatus {
+        Disconnected,
+        Connecting,
+        Negotiating,
+        Connected,
+    }
+
     public class Relay : IDisposable {
         #if DEBUG
         private const string RelayUrl = "ws://localhost:14555/";
@@ -22,6 +29,8 @@ namespace XIVChatPlugin {
 
         private bool Running { get; set; }
 
+        public ConnectionStatus Status { get; private set; }
+
         private Channel<IToRelay> ToRelay { get; } = Channel.CreateUnbounded<IToRelay>();
 
         internal Relay(Plugin plugin) {
@@ -32,7 +41,7 @@ namespace XIVChatPlugin {
                     EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12,
                 },
             };
-            PluginLog.Log($"using {RelayUrl}");
+
             this.Connection.OnOpen += this.OnOpen;
             this.Connection.OnMessage += this.OnMessage;
             this.Connection.OnClose += this.OnClose;
@@ -51,8 +60,8 @@ namespace XIVChatPlugin {
 
             this.Running = true;
 
+            this.Status = ConnectionStatus.Connecting;
             this.Connection.ConnectAsync();
-            PluginLog.Log("ran connect");
         }
 
         internal void ResendPublicKey() {
@@ -67,34 +76,28 @@ namespace XIVChatPlugin {
         }
 
         private void OnOpen(object sender, EventArgs e) {
-            PluginLog.Log("onopen");
+            this.Status = ConnectionStatus.Negotiating;
+
             var auth = this.Plugin.Config.RelayAuth;
             if (auth == null) {
-                PluginLog.Log("auth null");
                 return;
             }
 
             var keys = this.Plugin.Config.KeyPair;
             if (keys == null) {
-                PluginLog.Log("keys null");
                 return;
             }
 
-            PluginLog.Log("making registration message");
             var message = new RelayRegister {
                 AuthToken = auth,
                 PublicKey = keys.PublicKey,
             };
-            PluginLog.Log("serialising");
             var bytes = MessagePackSerializer.Serialize((IToRelay) message);
 
-            PluginLog.Log("sending");
             this.Connection.Send(bytes);
-            PluginLog.Log("sent registration");
 
             Task.Run(async () => {
                 while (this.Running) {
-                    PluginLog.Debug("Sending ping to relay");
                     this.Connection.Ping();
                     await Task.Delay(TimeSpan.FromSeconds(30));
                 }
@@ -111,11 +114,13 @@ namespace XIVChatPlugin {
         }
 
         private void OnMessage(object sender, MessageEventArgs e) {
-            PluginLog.Log(e.RawData.ToHexString());
             var message = MessagePackSerializer.Deserialize<IFromRelay>(e.RawData);
             switch (message) {
                 case RelaySuccess success:
-                    if (!success.Success) {
+                    if (success.Success) {
+                        this.Status = ConnectionStatus.Connected;
+                    } else {
+                        this.Status = ConnectionStatus.Disconnected;
                         this.Plugin.StopRelay();
                     }
 
@@ -156,11 +161,14 @@ namespace XIVChatPlugin {
 
         private void OnClose(object sender, CloseEventArgs e) {
             this.Running = false;
+            this.Status = ConnectionStatus.Disconnected;
         }
 
         private void OnError(object sender, ErrorEventArgs e) {
             PluginLog.LogError(e.Exception, $"Error in relay connection: {e.Message}");
-            // TODO reconnect
+            this.Running = false;
+            this.Status = ConnectionStatus.Disconnected;
+            this.Start();
         }
     }
 }

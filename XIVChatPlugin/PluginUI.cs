@@ -199,6 +199,10 @@ namespace XIVChatPlugin {
 
                 ImGui.Spacing();
 
+                ImGui.TextUnformatted($"Connection status: {this.Plugin.Relay?.Status ?? ConnectionStatus.Disconnected}");
+
+                ImGui.Spacing();
+
                 var relayAuth = this.Plugin.Config.RelayAuth ?? "";
                 WithWhiteText(() => ImGui.TextUnformatted("Relay authentication code"));
                 ImGui.PushItemWidth(-1f);

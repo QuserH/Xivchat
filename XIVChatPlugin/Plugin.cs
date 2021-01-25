@@ -71,7 +71,6 @@ namespace XIVChatPlugin {
 
             this.Relay = new Relay(this);
             this.Relay.Start();
-            PluginLog.Log("started");
         }
 
         internal void StopRelay() {
