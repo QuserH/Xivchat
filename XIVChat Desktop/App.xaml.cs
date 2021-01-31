@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Markup;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Windows.UI.Notifications;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Toolkit.Uwp.Notifications;
 using ModernWpf;
+using Sentry;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -20,7 +22,7 @@ namespace XIVChat_Desktop {
     /// <summary>
     /// Interaction logic for App.xaml
     /// </summary>
-    public partial class App : INotifyPropertyChanged {
+    public partial class App : INotifyPropertyChanged, IDisposable {
         public MainWindow Window { get; private set; } = null!;
         public Configuration Config { get; private set; } = null!;
 
@@ -35,6 +37,17 @@ namespace XIVChat_Desktop {
         public bool Connected => this.Connection != null;
 
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        private IDisposable Sentry { get; }
+
+        public App() {
+            this.Sentry = SentrySdk.Init("https://cc5b1feb6e5945d7bcacc577e5d13f88@o513776.ingest.sentry.io/5616282");
+            this.DispatcherUnhandledException += UploadException;
+        }
+
+        private static void UploadException(object sender, DispatcherUnhandledExceptionEventArgs e) {
+            SentrySdk.CaptureException(e.Exception);
+        }
 
         private async void Application_Startup(object sender, StartupEventArgs e) {
             Notifications.Initialise();
@@ -197,6 +210,10 @@ namespace XIVChat_Desktop {
             } else {
                 Win10Notify(title, text, attribution);
             }
+        }
+
+        public void Dispose() {
+            this.Sentry.Dispose();
         }
     }
 }

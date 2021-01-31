@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using MessagePack;
+using Sentry;
 using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
@@ -120,6 +121,16 @@ namespace XIVChat_Desktop {
             var host = this._host ?? RelayHost;
             var port = this._port ?? RelayPort;
 
+            SentrySdk.AddBreadcrumb(
+                category: "connection",
+                message: "Attempted connection",
+                data: new Dictionary<string, string> {
+                    ["host"] = host,
+                    ["port"] = port.ToString(),
+                    ["relayTarget"] = this._relayAuth ?? "none",
+                }
+            );
+
             this.client = new TcpClient(host, port);
 
             var stream = this.client.GetStream();
@@ -181,6 +192,10 @@ namespace XIVChat_Desktop {
                 var trusted = await trustChannel.Reader.ReadAsync(this.cancel.Token);
 
                 if (!trusted) {
+                    SentrySdk.AddBreadcrumb(
+                        category: "connection",
+                        message: "Failed trust process"
+                    );
                     goto Close;
                 }
             }
@@ -198,6 +213,11 @@ namespace XIVChat_Desktop {
             this.app.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Connected");
             });
+
+            SentrySdk.AddBreadcrumb(
+                category: "connection",
+                message: "Established connection"
+            );
 
             // tell the server our preferences
             var preferences = new ClientPreferences {
@@ -336,6 +356,11 @@ namespace XIVChat_Desktop {
             this.app.Dispatch(() => {
                 this.app.Window.AddSystemMessage("Disconnected");
             });
+
+            SentrySdk.AddBreadcrumb(
+                category: "connection",
+                message: "Disconnected from server"
+            );
 
             // wait up to a second to send the shutdown packet
             await Task.WhenAny(Task.Delay(1_000), SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, ClientShutdown.Instance));
