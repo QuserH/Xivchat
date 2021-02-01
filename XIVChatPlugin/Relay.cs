@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Channels;
@@ -22,6 +23,8 @@ namespace XIVChatPlugin {
         #else
         private const string RelayUrl = "wss://relay.xiv.chat/";
         #endif
+
+        private bool Disposed { get; set; }
 
         private Plugin Plugin { get; }
 
@@ -49,6 +52,7 @@ namespace XIVChatPlugin {
         }
 
         public void Dispose() {
+            this.Disposed = true;
             this.Connection.CloseAsync();
             this.Running = false;
         }
@@ -73,6 +77,15 @@ namespace XIVChatPlugin {
             var pk = keys.PublicKey.ToHexString();
 
             this.Connection.Send(pk);
+        }
+
+        internal void DisconnectClient(IEnumerable<byte> pk) {
+            var msg = new RelayClientDisconnect {
+                PublicKey = pk.ToList(),
+            };
+            var bytes = MessagePackSerializer.Serialize((IToRelay) msg);
+
+            this.Connection.Send(bytes);
         }
 
         private void OnOpen(object sender, EventArgs e) {
@@ -120,6 +133,7 @@ namespace XIVChatPlugin {
                     if (success.Success) {
                         this.Status = ConnectionStatus.Connected;
                     } else {
+                        PluginLog.LogWarning($"Relay: {success.Info}");
                         this.Status = ConnectionStatus.Disconnected;
                         this.Plugin.StopRelay();
                     }
@@ -162,13 +176,20 @@ namespace XIVChatPlugin {
         private void OnClose(object sender, CloseEventArgs e) {
             this.Running = false;
             this.Status = ConnectionStatus.Disconnected;
+
+            if (!e.WasClean && !this.Disposed) {
+                Task.Run(async () => await Task.Delay(3_000)).ContinueWith(_ => this.Start());
+            }
         }
 
         private void OnError(object sender, ErrorEventArgs e) {
             PluginLog.LogError(e.Exception, $"Error in relay connection: {e.Message}");
             this.Running = false;
             this.Status = ConnectionStatus.Disconnected;
-            this.Start();
+
+            if (!this.Disposed) {
+                Task.Run(async () => await Task.Delay(3_000)).ContinueWith(_ => this.Start());
+            }
         }
     }
 }

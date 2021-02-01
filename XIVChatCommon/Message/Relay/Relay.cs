@@ -4,6 +4,7 @@ using MessagePack;
 namespace XIVChatCommon.Message.Relay {
     [Union(1, typeof(RelayRegister))]
     [Union(2, typeof(RelayedMessage))]
+    [Union(3, typeof(RelayClientDisconnect))]
     public interface IToRelay {
     }
 
@@ -51,7 +52,7 @@ namespace XIVChatCommon.Message.Relay {
     }
 
     [MessagePackObject]
-    public class RelayClientDisconnect : IFromRelay {
+    public class RelayClientDisconnect : IFromRelay, IToRelay {
         [Key(0)]
         public List<byte> PublicKey { get; set; }
     }

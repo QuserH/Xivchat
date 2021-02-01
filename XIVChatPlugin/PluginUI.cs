@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Numerics;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 
 namespace XIVChatPlugin {
     public class PluginUi {
@@ -311,7 +312,12 @@ namespace XIVChatPlugin {
                         ImGui.NextColumn();
 
                         if (WithWhiteText(() => ImGui.Button($"Disconnect##{client.Key}"))) {
-                            client.Value.Disconnect();
+                            if (client.Value is RelayConnected) {
+                                Task.Run(() => this.Plugin.Relay?.DisconnectClient(client.Value.Handshake!.RemotePublicKey))
+                                    .ContinueWith(_ => client.Value.Disconnect());
+                            } else {
+                                client.Value.Disconnect();
+                            }
                         }
 
                         ImGui.NextColumn();
