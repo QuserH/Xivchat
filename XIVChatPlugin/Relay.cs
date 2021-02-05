@@ -74,9 +74,13 @@ namespace XIVChatPlugin {
                 return;
             }
 
-            var pk = keys.PublicKey.ToHexString();
+            var msg = new RelayRegister {
+                AuthToken = "",
+                PublicKey = keys.PublicKey,
+            };
+            var bytes = MessagePackSerializer.Serialize((IToRelay) msg);
 
-            this.Connection.Send(pk);
+            this.Connection.Send(bytes);
         }
 
         internal void DisconnectClient(IEnumerable<byte> pk) {

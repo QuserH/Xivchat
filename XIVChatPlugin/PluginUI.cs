@@ -113,6 +113,7 @@ namespace XIVChatPlugin {
 
                 if (WithWhiteText(() => ImGui.Button("Regenerate"))) {
                     this.Plugin.Server.RegenerateKeyPair();
+                    this.Plugin.Relay?.ResendPublicKey();
                 }
 
                 ImGui.SameLine();
