@@ -24,6 +24,8 @@ namespace XIVChatPlugin {
         private const string RelayUrl = "wss://relay.xiv.chat/";
         #endif
 
+        public static string? ConnectionError { get; private set; }
+
         private bool Disposed { get; set; }
 
         private Plugin Plugin { get; }
@@ -135,9 +137,11 @@ namespace XIVChatPlugin {
             switch (message) {
                 case RelaySuccess success:
                     if (success.Success) {
+                        ConnectionError = null;
                         this.Status = ConnectionStatus.Connected;
                     } else {
                         PluginLog.LogWarning($"Relay: {success.Info}");
+                        ConnectionError = success.Info;
                         this.Status = ConnectionStatus.Disconnected;
                         this.Plugin.StopRelay();
                     }
