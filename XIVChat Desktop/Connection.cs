@@ -157,23 +157,19 @@ namespace XIVChat_Desktop {
                     return MessagePackSerializer.Deserialize<RelaySuccess>(response);
                 }
 
-                // send auth token
-                var authBytes = Encoding.UTF8.GetBytes(this._relayAuth!);
-                await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, authBytes);
+                // create registration message
+                var reg = new RelayRegister {
+                    AuthToken = this._relayAuth!,
+                    PublicKey = Util.StringToByteArray(this._relayTarget!),
+                };
+                var regBytes = MessagePackSerializer.Serialize(reg);
 
-                var authSuccess = await ReadSuccess();
-                if (!authSuccess.Success) {
-                    this.app.Dispatch(() => MessageBox.Show($"Relay rejected authentication code:\n{authSuccess.Info}"));
-                    return;
-                }
+                // send registration message
+                await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, regBytes);
 
-                // send the public key of the server
-                var pk = Util.StringToByteArray(this._relayTarget!);
-                await SecretMessage.SendSecretMessage(stream, relayHandshake.Keys.tx, pk);
-
-                var targetSuccess = await ReadSuccess();
-                if (!targetSuccess.Success) {
-                    this.app.Dispatch(() => MessageBox.Show($"Relay rejected server public key:\n{targetSuccess.Info}"));
+                var regSuccess = await ReadSuccess();
+                if (!regSuccess.Success) {
+                    this.app.Dispatch(() => MessageBox.Show($"Relay rejected connection:\n{regSuccess.Info}"));
                     return;
                 }
             }
