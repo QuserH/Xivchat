@@ -289,7 +289,7 @@ namespace XIVChatPlugin {
                         var ipAddress = remote?.ToString() ?? "Unknown";
 
                         if (client.Value is RelayConnected) {
-                            ipAddress += " (R)";
+                            ipAddress = "(R) " + ipAddress;
                         }
 
                         ImGui.TextUnformatted(ipAddress);
