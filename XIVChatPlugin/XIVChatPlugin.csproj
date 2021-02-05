@@ -57,12 +57,12 @@
             <Private>False</Private>
         </Reference>
         <Reference Include="MessagePack, Version=2.2.0.0, Culture=neutral, PublicKeyToken=b4a0369545f0a1be">
-            <HintPath>..\packages\MessagePack.2.2.60\lib\netstandard2.0\MessagePack.dll</HintPath>
-            <Private>True</Private>
+          <HintPath>..\packages\MessagePack.2.2.85\lib\netstandard2.0\MessagePack.dll</HintPath>
+          <Private>True</Private>
         </Reference>
         <Reference Include="MessagePack.Annotations, Version=2.2.0.0, Culture=neutral, PublicKeyToken=b4a0369545f0a1be">
-            <HintPath>..\packages\MessagePack.Annotations.2.2.60\lib\netstandard2.0\MessagePack.Annotations.dll</HintPath>
-            <Private>True</Private>
+          <HintPath>..\packages\MessagePack.Annotations.2.2.85\lib\netstandard2.0\MessagePack.Annotations.dll</HintPath>
+          <Private>True</Private>
         </Reference>
         <Reference Include="Microsoft.Bcl.AsyncInterfaces, Version=5.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51">
           <HintPath>..\packages\Microsoft.Bcl.AsyncInterfaces.5.0.0\lib\net461\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
