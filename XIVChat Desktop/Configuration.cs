@@ -10,6 +10,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -17,6 +18,8 @@ namespace XIVChat_Desktop {
     [JsonObject]
     public class Configuration : INotifyPropertyChanged {
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        public uint ConfigVersion => 2;
 
         public string? LicenceKey { get; set; }
 
@@ -45,11 +48,44 @@ namespace XIVChat_Desktop {
 
         #region io
 
+        private static readonly JsonSerializerSettings Settings = new JsonSerializerSettings {
+            TypeNameHandling = TypeNameHandling.Auto,
+            ObjectCreationHandling = ObjectCreationHandling.Replace,
+        };
+
         private static string FilePath() => Path.Join(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "XIVChat for Windows",
             "config.json"
         );
+
+        public static void Migrate(string path) {
+            // read the json into a generic object
+            var json = File.ReadAllText(path);
+            var obj = JsonConvert.DeserializeObject<JObject>(json);
+
+            // read the version
+            uint version = 1;
+            if (obj.TryGetValue(nameof(ConfigVersion), out var token)) {
+                version = token.Value<uint>();
+            }
+
+            // we only have migration logic for version 1, so quit if that's not the version
+            if (version != 1) {
+                return;
+            }
+
+            // migrate from v1
+            foreach (var server in obj["Servers"]!.Values<JObject>()) {
+                server.AddFirst(new JProperty("$type", "XIVChat_Desktop.DirectServer, XIVChat Desktop"));
+            }
+
+            obj.Add("ConfigVersion", 2);
+
+            // write migrated json back to the path
+            var migrated = JsonConvert.SerializeObject(obj);
+            File.WriteAllText(path, migrated);
+        }
 
         public static Configuration? Load() {
             var path = FilePath();
@@ -57,14 +93,11 @@ namespace XIVChat_Desktop {
                 return null;
             }
 
-            using var reader = File.OpenText(path);
-            using var json = new JsonTextReader(reader);
+            // migrate earlier config versions
+            Migrate(path);
 
-            var serializer = new JsonSerializer {
-                TypeNameHandling = TypeNameHandling.Auto,
-                ObjectCreationHandling = ObjectCreationHandling.Replace,
-            };
-            return serializer.Deserialize<Configuration>(json);
+            var json = File.ReadAllText(path);
+            return JsonConvert.DeserializeObject<Configuration>(json, Settings);
         }
 
         public void Save() {
@@ -74,13 +107,8 @@ namespace XIVChat_Desktop {
                 Directory.CreateDirectory(dir);
             }
 
-            using var file = File.CreateText(path);
-            using var json = new JsonTextWriter(file);
-
-            var serialiser = new JsonSerializer {
-                TypeNameHandling = TypeNameHandling.Auto,
-            };
-            serialiser.Serialize(json, this);
+            var json = JsonConvert.SerializeObject(this, Settings);
+            File.WriteAllText(path, json);
         }
 
         #endregion
