@@ -19,6 +19,8 @@
                      AllowsTransparency="True"
                      Opacity="{Binding App.Config.Opacity}"
                      Icon="/Resources/logo.ico"
+                     SourceInitialized="MainWindow_OnSourceInitialized"
+                     Closing="MainWindow_OnClosing"
                      d:DataContext="{d:DesignInstance local:MainWindow}">
     <Grid>
         <Grid.RowDefinitions>

@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using WpfWindowPlacement;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -402,6 +403,15 @@ namespace XIVChat_Desktop {
             var channel = (TextBlock) sender;
             channel.ContextMenu!.PlacementTarget = channel;
             channel.ContextMenu!.IsOpen = true;
+        }
+
+        private void MainWindow_OnSourceInitialized(object? sender, EventArgs e) {
+            this.SetPlacement(this.App.Config.WindowPlacement);
+        }
+
+        private void MainWindow_OnClosing(object sender, CancelEventArgs e) {
+            this.App.Config.WindowPlacement = this.GetPlacement();
+            this.App.Config.Save();
         }
     }
 }

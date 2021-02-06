@@ -11,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
+using WpfWindowPlacement;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -45,6 +46,8 @@ namespace XIVChat_Desktop {
         public Theme Theme { get; set; } = Theme.System;
 
         public ObservableCollection<Notification> Notifications { get; set; } = new ObservableCollection<Notification>();
+
+        public WindowPlacement WindowPlacement { get; set; }
 
         #region io
 
