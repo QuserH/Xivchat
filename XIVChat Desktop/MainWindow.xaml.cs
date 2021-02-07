@@ -187,6 +187,32 @@ namespace XIVChat_Desktop {
         public MainWindow() {
             this.InitializeComponent();
             this.DataContext = this;
+
+            this.App.Config.PropertyChanged += (_, args) => {
+                if (args.PropertyName != nameof(Configuration.CompactMode)) {
+                    return;
+                }
+
+                this.CalculateCompactMargins();
+            };
+        }
+
+        private void CalculateCompactMargins() {
+            var thickness = this.Tabs.Margin;
+            thickness.Bottom = this.App.Config.CompactMode ? 0 : 8;
+            thickness.Left = thickness.Bottom;
+            thickness.Right = thickness.Bottom;
+            this.Tabs.Margin = thickness;
+
+            var tabGrid = this.FindElementByName<Grid>(this.Tabs, "TabGrid");
+            if (tabGrid == null) {
+                return;
+            }
+
+            var tgThickness = tabGrid.Margin;
+            tgThickness.Left = this.App.Config.CompactMode ? 8 : 0;
+            tgThickness.Right = tgThickness.Left;
+            tabGrid.Margin = tgThickness;
         }
 
         private void CheckForUpdate(bool showMessage = false) {
@@ -487,6 +513,10 @@ namespace XIVChat_Desktop {
 
         private void CheckForUpdates_Click(object sender, RoutedEventArgs e) {
             this.CheckForUpdate(true);
+        }
+
+        private void TabGrid_OnInitialized(object? sender, EventArgs e) {
+            this.CalculateCompactMargins();
         }
     }
 }

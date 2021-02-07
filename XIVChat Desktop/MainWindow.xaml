@@ -133,6 +133,7 @@
             <TabControl.ContentTemplate>
                 <DataTemplate>
                     <Grid x:Name="TabGrid"
+                          Initialized="TabGrid_OnInitialized"
                           d:DataContext="{d:DesignInstance local:Tab}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
