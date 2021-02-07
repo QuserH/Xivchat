@@ -38,11 +38,13 @@ namespace XIVChat_Desktop {
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private IDisposable Sentry { get; }
+        private IDisposable? Sentry { get; }
 
         public App() {
+            #if RELEASE
             this.Sentry = SentrySdk.Init("https://cc5b1feb6e5945d7bcacc577e5d13f88@o513776.ingest.sentry.io/5616282");
             this.DispatcherUnhandledException += UploadException;
+            #endif
         }
 
         private static void UploadException(object sender, DispatcherUnhandledExceptionEventArgs e) {
@@ -213,7 +215,7 @@ namespace XIVChat_Desktop {
         }
 
         public void Dispose() {
-            this.Sentry.Dispose();
+            this.Sentry?.Dispose();
         }
     }
 }
