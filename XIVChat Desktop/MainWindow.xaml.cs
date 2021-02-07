@@ -10,6 +10,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using AutoUpdaterDotNET;
+using Sentry;
 using WpfWindowPlacement;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
@@ -19,6 +21,8 @@ namespace XIVChat_Desktop {
     /// Interaction logic for MainWindow.xaml
     /// </summary>
     public partial class MainWindow : INotifyPropertyChanged {
+        public event PropertyChangedEventHandler? PropertyChanged;
+
         #region commands
 
         private void AlwaysTrue_CanExecute(object sender, CanExecuteRoutedEventArgs e) {
@@ -160,13 +164,15 @@ namespace XIVChat_Desktop {
         public List<ServerMessage> Messages { get; } = new();
         public ObservableCollection<Player> FriendList { get; } = new();
 
-        private int historyIndex = -1;
+        private bool ShowMessageForNoUpdate { get; set; }
+
+        private int _historyIndex = -1;
 
         private int HistoryIndex {
-            get => this.historyIndex;
+            get => this._historyIndex;
             set {
                 var idx = Math.Min(this.History.Count - 1, Math.Max(-1, value));
-                this.historyIndex = idx;
+                this._historyIndex = idx;
             }
         }
 
@@ -181,6 +187,15 @@ namespace XIVChat_Desktop {
         public MainWindow() {
             this.InitializeComponent();
             this.DataContext = this;
+        }
+
+        private void CheckForUpdate(bool showMessage = false) {
+            this.ShowMessageForNoUpdate = showMessage;
+            AutoUpdater.Start("https://xiv.chat/updates/windows/versions.xml");
+        }
+
+        internal void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
+            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
         private T? FindElementByName<T>(DependencyObject element, string sChildName) where T : FrameworkElement {
@@ -228,13 +243,13 @@ namespace XIVChat_Desktop {
             this.AddMessage(message);
         }
 
-        private int lastSequence = -1;
-        private int insertAt;
+        private int _lastSequence = -1;
+        private int _insertAt;
 
         public void AddReversedChunk(ServerMessage[] messages, int sequence) {
-            if (sequence != this.lastSequence) {
-                this.lastSequence = sequence;
-                this.insertAt = this.Messages.Count;
+            if (sequence != this._lastSequence) {
+                this._lastSequence = sequence;
+                this._insertAt = this.Messages.Count;
             }
 
             // detect if scroller is at the bottom
@@ -244,7 +259,7 @@ namespace XIVChat_Desktop {
             var wasAtBottom = Math.Abs(scroller.VerticalOffset - scrollerHeight) < .0001;
 
             // add messages to main list
-            this.Messages.InsertRange(this.insertAt, messages);
+            this.Messages.InsertRange(this._insertAt, messages);
             // add message to each tab if the filter allows for it
             foreach (var tab in this.App.Config.Tabs) {
                 tab.AddReversedChunk(messages, sequence, this.App.Config);
@@ -400,12 +415,6 @@ namespace XIVChat_Desktop {
             new ServerScan(this).Show();
         }
 
-        public event PropertyChangedEventHandler? PropertyChanged;
-
-        internal void OnPropertyChanged([CallerMemberName] string? propertyName = null) {
-            this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
         private void Export_Click(object sender, RoutedEventArgs e) {
             new Export(this).Show();
         }
@@ -442,6 +451,42 @@ namespace XIVChat_Desktop {
         private void MainWindow_OnClosing(object sender, CancelEventArgs e) {
             this.App.Config.WindowPlacement = this.GetPlacement();
             this.App.Config.Save();
+        }
+
+        private void MainWindow_OnInitialized(object? sender, EventArgs e) {
+            // always set the event, even if we don't check at startup
+            AutoUpdater.CheckForUpdateEvent += args => {
+                if (args.Error != null) {
+                    if (args.Error is WebException web) {
+                        SentrySdk.CaptureException(web);
+                    }
+
+                    return;
+                }
+
+                if (!args.IsUpdateAvailable) {
+                    if (this.ShowMessageForNoUpdate) {
+                        this.Dispatch(() => {
+                            this.ShowMessageForNoUpdate = false;
+                            MessageBox.Show("You are running the latest version.");
+                        });
+                    }
+
+                    return;
+                }
+
+                new UpdateWindow(this, args).Show();
+            };
+
+            if (!this.App.Config.CheckForUpdates) {
+                return;
+            }
+
+            this.CheckForUpdate();
+        }
+
+        private void CheckForUpdates_Click(object sender, RoutedEventArgs e) {
+            this.CheckForUpdate(true);
         }
     }
 }

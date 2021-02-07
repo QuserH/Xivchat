@@ -20,6 +20,7 @@
                      Opacity="{Binding App.Config.Opacity}"
                      SourceInitialized="MainWindow_OnSourceInitialized"
                      Closing="MainWindow_OnClosing"
+                     Initialized="MainWindow_OnInitialized"
                      d:DataContext="{d:DesignInstance local:MainWindow}">
     <local:XivChatWindow.CommandBindings>
         <CommandBinding Command="local:MainWindow.OpenLink"
@@ -53,6 +54,8 @@
                 <MenuItem Header="Configuration"
                           Click="Configuration_Click" />
                 <Separator />
+                <MenuItem Header="Check for updates"
+                          Click="CheckForUpdates_Click" />
                 <MenuItem Header="Exit"
                           Click="Exit_Click" />
             </MenuItem>

@@ -50,6 +50,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="Autoupdater.NET.Official" Version="1.6.4" />
         <PackageReference Include="Fody" Version="6.3.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

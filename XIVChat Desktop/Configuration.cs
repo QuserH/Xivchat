@@ -49,6 +49,8 @@ namespace XIVChat_Desktop {
 
         public WindowPlacement WindowPlacement { get; set; }
 
+        public bool CheckForUpdates { get; set; } = true;
+
         #region io
 
         private static readonly JsonSerializerSettings Settings = new() {

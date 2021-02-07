@@ -15,6 +15,31 @@
                      Title="Configuration"
                      d:DataContext="{d:DesignInstance local:ConfigWindow}">
     <TabControl>
+        <TabItem Header="General">
+            <Grid Margin="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <CheckBox Content="Check for updates on startup"
+                              IsChecked="{Binding Config.CheckForUpdates}" />
+                    <TextBox ui:ControlHelper.Header="Backlog messages to request"
+                             HorizontalAlignment="Left"
+                             PreviewTextInput="NumericInputFilter"
+                             Text="{Binding Config.BacklogMessages, Converter={StaticResource UShortConverter}}"
+                             Width="200" />
+                </StackPanel>
+
+                <Button Grid.Row="2"
+                        HorizontalAlignment="Right"
+                        Click="Save_Click">
+                    Save
+                </Button>
+            </Grid>
+        </TabItem>
         <TabItem Header="Servers">
             <cc:SavedServers ItemsSource="{Binding Config.Servers}"
                              ItemDoubleClick="SavedServers_ItemDoubleClick"
@@ -53,29 +78,6 @@
                              Text="{Binding Config.LocalBacklogMessages, Converter={StaticResource UIntConverter}}"
                              Width="200" />
                 </StackPanel>
-
-                <Button Grid.Row="2"
-                        HorizontalAlignment="Right"
-                        Click="Save_Click">
-                    Save
-                </Button>
-            </Grid>
-        </TabItem>
-        <TabItem Header="Connection">
-            <Grid Margin="8">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <TextBox Grid.Row="0"
-                         Grid.Column="0"
-                         ui:ControlHelper.Header="Backlog messages to request"
-                         HorizontalAlignment="Left"
-                         PreviewTextInput="NumericInputFilter"
-                         Text="{Binding Config.BacklogMessages, Converter={StaticResource UShortConverter}}"
-                         Width="200" />
 
                 <Button Grid.Row="2"
                         HorizontalAlignment="Right"
