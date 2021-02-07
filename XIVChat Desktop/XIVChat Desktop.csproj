@@ -70,6 +70,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\MdXaml\MdXaml\MdXaml.csproj" />
         <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj" />
     </ItemGroup>
 

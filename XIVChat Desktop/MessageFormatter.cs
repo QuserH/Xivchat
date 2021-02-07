@@ -6,12 +6,16 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using MdXaml;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
-    public class MessageFormatter {
+    public static class MessageFormatter {
         private static readonly BitmapFrame FontIcon = BitmapFrame.Create(new Uri("pack://application:,,,/Resources/fonticon_ps4.tex.png"));
+        private static readonly Markdown Markdown = new() {
+            HyperlinkCommand = MainWindow.OpenLink,
+        };
 
         public static IEnumerable<Inline> ChunksToTextBlock(ServerMessage message, double lineHeight, bool processMarkdown, bool showTimestamp) {
             var elements = new List<Inline>();
@@ -37,7 +41,7 @@ namespace XIVChat_Desktop {
                         var style = textChunk.Italic ? FontStyles.Italic : FontStyles.Normal;
 
                         if (processMarkdown) {
-                            var inlines = Markdown.MarkdownToInlines(textChunk.Content);
+                            var inlines = Markdown.RunSpanGamut(textChunk.Content);
 
                             foreach (var inline in inlines) {
                                 inline.Foreground = brush;

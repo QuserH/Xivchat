@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
@@ -121,6 +123,34 @@ namespace XIVChat_Desktop {
 
             var param = (InputChannel) e.Parameter;
             this.App.Connection?.ChangeChannel(param);
+        }
+
+        public static readonly RoutedUICommand OpenLink = new(
+            "OpenLink",
+            "OpenLink",
+            typeof(MainWindow)
+        );
+
+        private void OpenLink_CanExecute(object sender, CanExecuteRoutedEventArgs e) {
+            e.CanExecute = true;
+        }
+
+        private void OpenLink_Execute(object sender, ExecutedRoutedEventArgs e) {
+            if (!(e.Parameter is string param)) {
+                return;
+            }
+
+            try {
+                var uri = new Uri(param);
+                if (uri.Scheme == "http" || uri.Scheme == "https") {
+                    Process.Start(new ProcessStartInfo {
+                        FileName = uri.ToString(),
+                        UseShellExecute = true,
+                    });
+                }
+            } catch (Exception ex) {
+                Console.WriteLine(ex.ToString());
+            }
         }
 
         #endregion

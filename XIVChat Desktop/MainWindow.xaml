@@ -22,6 +22,12 @@
                      SourceInitialized="MainWindow_OnSourceInitialized"
                      Closing="MainWindow_OnClosing"
                      d:DataContext="{d:DesignInstance local:MainWindow}">
+    <local:XivChatWindow.CommandBindings>
+        <CommandBinding Command="local:MainWindow.OpenLink"
+                        Executed="OpenLink_Execute"
+                        CanExecute="OpenLink_CanExecute" />
+    </local:XivChatWindow.CommandBindings>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />

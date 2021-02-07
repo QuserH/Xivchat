@@ -13,6 +13,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "XIVChat Desktop", "XIVChat 
 EndProject
 Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "XIVChat Desktop Installer", "XIVChat Desktop Installer\XIVChat Desktop Installer.wixproj", "{6017ABE2-E82F-476D-B3DA-18B634E092F2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MdXaml", "MdXaml\MdXaml\MdXaml.csproj", "{084B2C7D-8C0B-4774-A6E1-D804EE1A6D24}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{D2773EAE-6B9E-4017-9681-585AAB5A99F4}.Release|Any CPU.Build.0 = Release|Any CPU
 		{6017ABE2-E82F-476D-B3DA-18B634E092F2}.Debug|Any CPU.ActiveCfg = Debug|x64
 		{6017ABE2-E82F-476D-B3DA-18B634E092F2}.Release|Any CPU.ActiveCfg = Release|x64
+		{084B2C7D-8C0B-4774-A6E1-D804EE1A6D24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{084B2C7D-8C0B-4774-A6E1-D804EE1A6D24}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{084B2C7D-8C0B-4774-A6E1-D804EE1A6D24}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{084B2C7D-8C0B-4774-A6E1-D804EE1A6D24}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
