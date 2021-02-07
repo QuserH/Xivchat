@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -105,6 +106,12 @@ namespace XIVChat_Desktop {
                         });
                         break;
                 }
+            }
+
+            // add a trailing empty run if there's a hyperlink
+            // this works around a crash
+            if (elements.Any(elem => elem is Hyperlink)) {
+                elements.Add(new Run(""));
             }
 
             return elements;
