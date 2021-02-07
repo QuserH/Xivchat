@@ -25,7 +25,7 @@ namespace XIVChat_Desktop {
             e.CanExecute = true;
         }
 
-        public static readonly RoutedUICommand EditTab = new RoutedUICommand(
+        public static readonly RoutedUICommand EditTab = new(
             "EditTab",
             "EditTab",
             typeof(MainWindow)
@@ -39,7 +39,7 @@ namespace XIVChat_Desktop {
             new ManageTab(this, tab).Show();
         }
 
-        public static readonly RoutedUICommand DeleteTab = new RoutedUICommand(
+        public static readonly RoutedUICommand DeleteTab = new(
             "DeleteTab",
             "DeleteTab",
             typeof(MainWindow)
@@ -54,7 +54,7 @@ namespace XIVChat_Desktop {
             this.App.Config.Save();
         }
 
-        public static readonly RoutedUICommand AddTab = new RoutedUICommand(
+        public static readonly RoutedUICommand AddTab = new(
             "AddTab",
             "AddTab",
             typeof(MainWindow)
@@ -64,7 +64,7 @@ namespace XIVChat_Desktop {
             new ManageTab(this, null).Show();
         }
 
-        public static readonly RoutedUICommand ManageTabs = new RoutedUICommand(
+        public static readonly RoutedUICommand ManageTabs = new(
             "ManageTabs",
             "ManageTabs",
             typeof(MainWindow)
@@ -74,7 +74,7 @@ namespace XIVChat_Desktop {
             new ManageTabs(this).Show();
         }
 
-        public static readonly RoutedUICommand MessageSendTell = new RoutedUICommand(
+        public static readonly RoutedUICommand MessageSendTell = new(
             "MessageSendTell",
             "MessageSendTell",
             typeof(MainWindow)
@@ -106,7 +106,7 @@ namespace XIVChat_Desktop {
             this.InsertTellCommand(sender.Name, worldName);
         }
 
-        public static readonly RoutedUICommand ChangeChannel = new RoutedUICommand(
+        public static readonly RoutedUICommand ChangeChannel = new(
             "ChangeChannel",
             "ChangeChannel",
             typeof(MainWindow)
@@ -157,8 +157,8 @@ namespace XIVChat_Desktop {
 
         public App App => (App) Application.Current;
 
-        public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
-        public ObservableCollection<Player> FriendList { get; } = new ObservableCollection<Player>();
+        public List<ServerMessage> Messages { get; } = new();
+        public ObservableCollection<Player> FriendList { get; } = new();
 
         private int historyIndex = -1;
 
@@ -174,7 +174,7 @@ namespace XIVChat_Desktop {
 
         private string? HistoryBuffer { get; set; }
 
-        private List<string> History { get; } = new List<string>();
+        private List<string> History { get; } = new();
 
         public string InputPlaceholder => this.App.Connection?.Available == true ? "Send a message…" : "Chat is currently unavailable";
 

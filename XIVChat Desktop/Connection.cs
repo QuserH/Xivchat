@@ -53,7 +53,7 @@ namespace XIVChat_Desktop {
         private readonly Channel<byte[]> incoming = Channel.CreateUnbounded<byte[]>();
         private readonly Channel<byte> cancelChannel = Channel.CreateBounded<byte>(2);
 
-        public readonly CancellationTokenSource cancel = new CancellationTokenSource();
+        public readonly CancellationTokenSource cancel = new();
 
         public delegate void ReceiveMessageDelegate(ServerMessage message);
 

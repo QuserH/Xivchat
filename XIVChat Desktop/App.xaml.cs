@@ -15,9 +15,6 @@ using Sentry;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
-// TODO: search messages
-// TODO: notifications for targeted messages (like emote targeting you)
-
 namespace XIVChat_Desktop {
     /// <summary>
     /// Interaction logic for App.xaml
@@ -26,7 +23,7 @@ namespace XIVChat_Desktop {
         public MainWindow Window { get; private set; } = null!;
         public Configuration Config { get; private set; } = null!;
 
-        private Lazy<TaskbarIcon> TaskbarIcon { get; } = new Lazy<TaskbarIcon>(() => new TaskbarIcon {
+        private Lazy<TaskbarIcon> TaskbarIcon { get; } = new(() => new TaskbarIcon {
             IconSource = new BitmapImage(new Uri("pack://application:,,,/Resources/logo.ico")),
         });
 
@@ -77,7 +74,7 @@ namespace XIVChat_Desktop {
                 MessageBox.Show($"Could not save configuration file. {ex.Message}");
             }
 
-            this.Config.PropertyChanged += (o, args) => {
+            this.Config.PropertyChanged += (_, args) => {
                 if (args.PropertyName != nameof(Configuration.Theme)) {
                     return;
                 }

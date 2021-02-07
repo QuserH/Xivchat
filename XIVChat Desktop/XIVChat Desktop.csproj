@@ -8,11 +8,10 @@
         <AssemblyName>XIVChat Desktop</AssemblyName>
         <Nullable>enable</Nullable>
         <Company>XIVChat</Company>
-        <AssemblyVersion>1.0.1</AssemblyVersion>
-        <FileVersion>1.0.1</FileVersion>
+        <Version>1.0.1</Version>
         <ApplicationIcon>Resources\logo.ico</ApplicationIcon>
         <ApplicationManifest>app.manifest</ApplicationManifest>
-        <PackageVersion>1.0.1</PackageVersion>
+        <LangVersion>latest</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -52,8 +51,8 @@
 
     <ItemGroup>
         <PackageReference Include="Fody" Version="6.3.0">
-          <PrivateAssets>all</PrivateAssets>
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.0.8" />
         <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="6.1.1" />

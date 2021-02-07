@@ -22,7 +22,7 @@ namespace XIVChat_Desktop {
 
         public ExportFilter Filter => (ExportFilter)this.ExportTab.Filter;
 
-        public ObservableCollection<ServerMessage.SenderPlayer> Senders { get; } = new ObservableCollection<ServerMessage.SenderPlayer>();
+        public ObservableCollection<ServerMessage.SenderPlayer> Senders { get; } = new();
 
         private bool showTimestamps = true;
 
@@ -153,7 +153,7 @@ namespace XIVChat_Desktop {
         }
 
         public class ExportFilter : Filter {
-            public ObservableCollection<ServerMessage.SenderPlayer> Senders { get; } = new ObservableCollection<ServerMessage.SenderPlayer>();
+            public ObservableCollection<ServerMessage.SenderPlayer> Senders { get; } = new();
 
             public DateTime? Before { get; set; }
             public DateTime? After { get; set; }

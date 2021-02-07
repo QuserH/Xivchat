@@ -14,11 +14,11 @@ using Sodium;
 
 namespace XIVChat_Desktop {
     public partial class ServerScan {
-        private readonly CancellationTokenSource cts = new CancellationTokenSource();
+        private readonly CancellationTokenSource cts = new();
         private readonly Channel<byte> cancelChannel = Channel.CreateBounded<byte>(1);
         private Task? udpThread;
 
-        public ObservableCollection<SavedServer> Servers { get; } = new ObservableCollection<SavedServer>();
+        public ObservableCollection<SavedServer> Servers { get; } = new();
 
         public ServerScan(Window owner) {
             this.Owner = owner;

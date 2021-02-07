@@ -18,7 +18,7 @@ namespace XIVChat_Desktop.Controls {
         }
     }
 
-    class TextEditorWrapper {
+    internal class TextEditorWrapper {
         private static readonly Type TextEditorType = Type.GetType("System.Windows.Documents.TextEditor, PresentationFramework")!;
         private static readonly PropertyInfo IsReadOnlyProp = TextEditorType.GetProperty("IsReadOnly", BindingFlags.Instance | BindingFlags.NonPublic)!;
         private static readonly PropertyInfo TextViewProp = TextEditorType.GetProperty("TextView", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -48,14 +48,14 @@ namespace XIVChat_Desktop.Controls {
             var textContainer = TextContainerProp.GetValue(tb);
 
             var editor = new TextEditorWrapper(textContainer!, tb, false);
-            IsReadOnlyProp.SetValue(editor.editor, true);
-            TextViewProp.SetValue(editor.editor, TextContainerTextViewProp.GetValue(textContainer));
+            IsReadOnlyProp.SetValue(editor._editor, true);
+            TextViewProp.SetValue(editor._editor, TextContainerTextViewProp.GetValue(textContainer));
         }
 
-        private readonly object editor;
+        private readonly object _editor;
 
         private TextEditorWrapper(object textContainer, FrameworkElement uiScope, bool isUndoEnabled) {
-            this.editor = Activator.CreateInstance(
+            this._editor = Activator.CreateInstance(
                 TextEditorType,
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.CreateInstance,
                 null,

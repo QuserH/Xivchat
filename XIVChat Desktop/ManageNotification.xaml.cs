@@ -10,7 +10,7 @@ namespace XIVChat_Desktop {
     public partial class ManageNotification {
         #region Commands
 
-        public static readonly RoutedUICommand AddEmpty = new RoutedUICommand(
+        public static readonly RoutedUICommand AddEmpty = new(
             "AddEmpty",
             "AddEmpty",
             typeof(ManageNotification)

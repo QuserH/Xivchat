@@ -26,8 +26,8 @@ namespace XIVChat_Desktop {
 
         public KeyPair KeyPair { get; set; } = PublicKeyBox.GenerateKeyPair();
 
-        public ObservableCollection<SavedServer> Servers { get; set; } = new ObservableCollection<SavedServer>();
-        public HashSet<TrustedKey> TrustedKeys { get; set; } = new HashSet<TrustedKey>();
+        public ObservableCollection<SavedServer> Servers { get; set; } = new();
+        public HashSet<TrustedKey> TrustedKeys { get; set; } = new();
 
         public ObservableCollection<Tab> Tabs { get; set; } = Tab.Defaults();
 
@@ -45,13 +45,13 @@ namespace XIVChat_Desktop {
 
         public Theme Theme { get; set; } = Theme.System;
 
-        public ObservableCollection<Notification> Notifications { get; set; } = new ObservableCollection<Notification>();
+        public ObservableCollection<Notification> Notifications { get; set; } = new();
 
         public WindowPlacement WindowPlacement { get; set; }
 
         #region io
 
-        private static readonly JsonSerializerSettings Settings = new JsonSerializerSettings {
+        private static readonly JsonSerializerSettings Settings = new() {
             TypeNameHandling = TypeNameHandling.Auto,
             ObjectCreationHandling = ObjectCreationHandling.Replace,
         };
@@ -213,12 +213,12 @@ namespace XIVChat_Desktop {
     public class Tab : IEnumerable<ServerMessage>, INotifyCollectionChanged, INotifyPropertyChanged {
         public string Name { get; set; }
 
-        public Filter Filter { get; set; } = new Filter();
+        public Filter Filter { get; set; } = new();
 
         public bool ProcessMarkdown { get; set; }
 
         [JsonIgnore]
-        public List<ServerMessage> Messages { get; } = new List<ServerMessage>();
+        public List<ServerMessage> Messages { get; } = new();
 
         public Tab(string name) {
             this.Name = name;
@@ -317,10 +317,10 @@ namespace XIVChat_Desktop {
                 .ToHashSet();
 
             return new ObservableCollection<Tab> {
-                new Tab("General") {
+                new("General") {
                     Filter = GeneralFilter(),
                 },
-                new Tab("Battle") {
+                new("Battle") {
                     Filter = new Filter {
                         Types = battleFilters,
                     },
@@ -342,7 +342,7 @@ namespace XIVChat_Desktop {
 
     [JsonObject]
     public class Filter {
-        public HashSet<FilterType> Types { get; set; } = new HashSet<FilterType>();
+        public HashSet<FilterType> Types { get; set; } = new();
 
         public virtual bool Allowed(ServerMessage message) {
             var code = new ChatCode((ushort) message.Channel);
@@ -354,8 +354,8 @@ namespace XIVChat_Desktop {
     public class Notification {
         public string Name { get; set; }
         public bool MatchAll { get; set; }
-        public List<ChatType> Channels { get; set; } = new List<ChatType>();
-        public List<string> Substrings { get; set; } = new List<string>();
+        public List<ChatType> Channels { get; set; } = new();
+        public List<string> Substrings { get; set; } = new();
 
         private IReadOnlyCollection<string> regexes = new List<string>();
 

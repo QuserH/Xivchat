@@ -11,7 +11,7 @@ using XIVChatCommon.Message;
 
 namespace XIVChat_Desktop {
     public partial class FriendList : INotifyPropertyChanged {
-        public static readonly RoutedUICommand SendTell = new RoutedUICommand(
+        public static readonly RoutedUICommand SendTell = new(
             "SendTell",
             "SendTell",
             typeof(FriendList)
