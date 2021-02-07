@@ -16,11 +16,11 @@ using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public partial class Export : INotifyPropertyChanged {
-        public App App => (App)Application.Current;
+        public App App => (App) Application.Current;
 
         public Tab ExportTab { get; }
 
-        public ExportFilter Filter => (ExportFilter)this.ExportTab.Filter;
+        public ExportFilter Filter => (ExportFilter) this.ExportTab.Filter;
 
         public ObservableCollection<ServerMessage.SenderPlayer> Senders { get; } = new();
 
@@ -52,7 +52,7 @@ namespace XIVChat_Desktop {
         }
 
         private void SetUpFilters() {
-            foreach (var category in (FilterCategory[])Enum.GetValues(typeof(FilterCategory))) {
+            foreach (var category in (FilterCategory[]) Enum.GetValues(typeof(FilterCategory))) {
                 var tabContent = new WrapPanel {
                     Margin = new Thickness(8),
                     Orientation = Orientation.Vertical,
@@ -84,7 +84,7 @@ namespace XIVChat_Desktop {
                             continue;
                         }
 
-                        var check = (CheckBox)child;
+                        var check = (CheckBox) child;
                         check.IsChecked = isChecked;
                     }
 
@@ -140,7 +140,7 @@ namespace XIVChat_Desktop {
         private void SetUpSenders() {
             // var senders = this.ExportTab.Messages
             var senders = this.App.Window.Messages
-                .Where(msg => ((ExportFilter)this.ExportTab.Filter).AllowedMinusSenders(msg))
+                .Where(msg => ((ExportFilter) this.ExportTab.Filter).AllowedMinusSenders(msg))
                 .Select(msg => msg.GetSenderPlayer())
                 .Where(sender => sender != null)
                 .ToImmutableSortedSet();
@@ -222,7 +222,7 @@ namespace XIVChat_Desktop {
 
             var player = this.Senders[idx];
 
-            var filter = (ExportFilter)this.ExportTab.Filter;
+            var filter = (ExportFilter) this.ExportTab.Filter;
             filter.AddSender(player);
 
             this.Repopulate();
@@ -234,7 +234,7 @@ namespace XIVChat_Desktop {
                 return;
             }
 
-            var filter = (ExportFilter)this.ExportTab.Filter;
+            var filter = (ExportFilter) this.ExportTab.Filter;
 
             var player = filter.Senders.ElementAt(idx);
 
@@ -250,20 +250,6 @@ namespace XIVChat_Desktop {
         }
 
         private async void Save_Click(object sender, RoutedEventArgs e) {
-            // create a new flowdocument for saving
-            var flow = new FlowDocument();
-
-            // turn every message in the tab into a paragraph in the flowdocument
-            foreach (var message in this.ExportTab.Messages) {
-                this.Dispatch(DispatcherPriority.Background, () => {
-                    var paragraph = new Paragraph();
-                    // this has to be done on the main thread
-                    var inlines = MessageFormatter.ChunksToTextBlock(message, this.App.Config.FontSize, this.ExportTab.ProcessMarkdown, this.ShowTimestamps);
-                    paragraph.Inlines.AddRange(inlines);
-                    flow.Blocks.Add(paragraph);
-                });
-            }
-
             // ask the user where to save
             var saveDialog = new SaveFileDialog {
                 Filter = $"{DataFormats.Text} (*.txt)|*.txt|{DataFormats.Rtf} (*.rtf)|*.rtf",
@@ -278,6 +264,34 @@ namespace XIVChat_Desktop {
                 "rtf" => DataFormats.Rtf,
                 _ => DataFormats.Text,
             };
+
+            // create a new flowdocument for saving
+            var flow = new FlowDocument();
+            var done = 0;
+
+            // turn every message in the tab into a paragraph in the flowdocument
+            foreach (var message in this.ExportTab.Messages) {
+                this.Dispatch(DispatcherPriority.Background, () => {
+                    var paragraph = new Paragraph();
+                    // this has to be done on the main thread
+                    var inlines = MessageFormatter.ChunksToTextBlock(message, new MessageFormatter.Options {
+                        LineHeight = this.App.Config.FontSize,
+                        ProcessMarkdown = this.ExportTab.ProcessMarkdown,
+                        ShowTimestamp = this.ShowTimestamps,
+                        CrossWorldIconMode = dataFormat == DataFormats.Text
+                            ? MessageFormatter.CrossWorldIconMode.Text
+                            : MessageFormatter.CrossWorldIconMode.Icon,
+                    });
+                    paragraph.Inlines.AddRange(inlines);
+                    flow.Blocks.Add(paragraph);
+                    done += 1;
+                });
+            }
+
+            while (done != this.ExportTab.Messages.Count) {
+                await Task.Delay(100);
+            }
+
             // save the data into memory (this apparently has to happen on the main thread or we'd save directly into a
             // file)
             await using var memoryStream = new MemoryStream();
@@ -294,25 +308,25 @@ namespace XIVChat_Desktop {
             MessageBox.Show("Exported successfully.");
         }
 
-        private bool ignoreDateChanges;
+        private bool _ignoreDateChanges;
 
         private void AfterDatePicker_OnSelectedDateChanged(object? sender, SelectionChangedEventArgs e) {
-            if (this.ignoreDateChanges) {
+            if (this._ignoreDateChanges) {
                 return;
             }
 
-            var datePicker = (DatePicker)sender!;
+            var datePicker = (DatePicker) sender!;
             this.Filter.After = UpdateDate(this.Filter.After?.ToLocalTime(), datePicker.SelectedDate)?.ToUniversalTime();
 
-            this.ignoreDateChanges = true;
+            this._ignoreDateChanges = true;
             this.AfterTimePicker.SelectedDateTime = this.Filter.After?.ToLocalTime();
-            this.ignoreDateChanges = false;
+            this._ignoreDateChanges = false;
 
             this.Repopulate();
         }
 
         private void AfterTimePicker_OnSelectedDateTimeChanged(object sender, RoutedPropertyChangedEventArgs<DateTime?> e) {
-            if (this.ignoreDateChanges) {
+            if (this._ignoreDateChanges) {
                 return;
             }
 
@@ -322,22 +336,22 @@ namespace XIVChat_Desktop {
         }
 
         private void BeforeDatePicker_OnSelectedDateChanged(object? sender, SelectionChangedEventArgs e) {
-            if (this.ignoreDateChanges) {
+            if (this._ignoreDateChanges) {
                 return;
             }
 
-            var datePicker = (DatePicker)sender!;
+            var datePicker = (DatePicker) sender!;
             this.Filter.Before = UpdateDate(this.Filter.Before?.ToLocalTime(), datePicker.SelectedDate)?.ToUniversalTime();
 
-            this.ignoreDateChanges = true;
+            this._ignoreDateChanges = true;
             this.BeforeTimePicker.SelectedDateTime = this.Filter.Before?.ToLocalTime();
-            this.ignoreDateChanges = false;
+            this._ignoreDateChanges = false;
 
             this.Repopulate();
         }
 
         private void BeforeTimePicker_OnSelectedDateTimeChanged(object sender, RoutedPropertyChangedEventArgs<DateTime?> e) {
-            if (this.ignoreDateChanges) {
+            if (this._ignoreDateChanges) {
                 return;
             }
 
@@ -381,16 +395,16 @@ namespace XIVChat_Desktop {
         }
 
         private void BeforeClear_Click(object sender, RoutedEventArgs e) {
-            this.ignoreDateChanges = true;
+            this._ignoreDateChanges = true;
             this.BeforeDatePicker.SelectedDate = null;
-            this.ignoreDateChanges = false;
+            this._ignoreDateChanges = false;
             this.BeforeTimePicker.SelectedDateTime = null;
         }
 
         private void AfterClear_Click(object sender, RoutedEventArgs e) {
-            this.ignoreDateChanges = true;
+            this._ignoreDateChanges = true;
             this.AfterDatePicker.SelectedDate = null;
-            this.ignoreDateChanges = false;
+            this._ignoreDateChanges = false;
             this.AfterTimePicker.SelectedDateTime = null;
         }
     }

@@ -8,7 +8,7 @@ namespace XIVChat_Desktop.Controls {
     public class MessageTextBlock : SelectableTextBlock {
         public MessageTextBlock() {
             this.SetBinding(FontSizeProperty, new Binding("Config.FontSize") {
-                Source = (App)Application.Current,
+                Source = (App) Application.Current,
             });
             this.TextWrapping = TextWrapping.Wrap;
         }
@@ -21,7 +21,7 @@ namespace XIVChat_Desktop.Controls {
         );
 
         public ServerMessage? Message {
-            get => (ServerMessage)this.GetValue(MessageProperty);
+            get => (ServerMessage) this.GetValue(MessageProperty);
             set => this.SetValue(MessageProperty, value);
         }
 
@@ -33,7 +33,7 @@ namespace XIVChat_Desktop.Controls {
         );
 
         public bool ProcessMarkdown {
-            get => (bool)this.GetValue(ProcessMarkdownProperty);
+            get => (bool) this.GetValue(ProcessMarkdownProperty);
             set => this.SetValue(ProcessMarkdownProperty, value);
         }
 
@@ -45,7 +45,7 @@ namespace XIVChat_Desktop.Controls {
         );
 
         public bool ShowTimestamps {
-            get => (bool)this.GetValue(ShowTimestampsProperty);
+            get => (bool) this.GetValue(ShowTimestampsProperty);
             set => this.SetValue(ShowTimestampsProperty, value);
         }
 
@@ -60,7 +60,7 @@ namespace XIVChat_Desktop.Controls {
                 return;
             }
 
-            var config = ((App)Application.Current).Config;
+            var config = ((App) Application.Current).Config;
             if (config.Notifications.Any(notif => notif.Matches(message))) {
                 textBlock.Background = new SolidColorBrush(Color.FromArgb(128, 200, 100, 100));
             }
@@ -70,12 +70,11 @@ namespace XIVChat_Desktop.Controls {
 
             // Create new formatted text
             var lineHeight = textBlock.FontFamily.LineSpacing * textBlock.FontSize;
-            var inlines = MessageFormatter.ChunksToTextBlock(
-                message,
-                lineHeight,
-                textBlock.ProcessMarkdown,
-                textBlock.ShowTimestamps
-            );
+            var inlines = MessageFormatter.ChunksToTextBlock(message, new MessageFormatter.Options {
+                LineHeight = lineHeight,
+                ProcessMarkdown = textBlock.ProcessMarkdown,
+                ShowTimestamp = textBlock.ShowTimestamps,
+            });
             foreach (var inline in inlines) {
                 textBlock.Inlines.Add(inline);
             }

@@ -12,15 +12,28 @@ using XIVChatCommon.Message.Server;
 
 namespace XIVChat_Desktop {
     public static class MessageFormatter {
+        public enum CrossWorldIconMode {
+            Icon,
+            Text,
+        }
+
+        public class Options {
+            public double LineHeight { get; set; }
+            public bool ProcessMarkdown { get; set; }
+            public bool ShowTimestamp { get; set; }
+            public CrossWorldIconMode CrossWorldIconMode { get; set; } = CrossWorldIconMode.Icon;
+        }
+
         private static readonly BitmapFrame FontIcon = BitmapFrame.Create(new Uri("pack://application:,,,/Resources/fonticon_ps4.tex.png"));
+
         private static readonly Markdown Markdown = new() {
             HyperlinkCommand = MainWindow.OpenLink,
         };
 
-        public static IEnumerable<Inline> ChunksToTextBlock(ServerMessage message, double lineHeight, bool processMarkdown, bool showTimestamp) {
+        public static IEnumerable<Inline> ChunksToTextBlock(ServerMessage message, Options options) {
             var elements = new List<Inline>();
 
-            if (showTimestamp) {
+            if (options.ShowTimestamp) {
                 var timestampString = message.Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentUICulture);
                 elements.Add(new Run($"[{timestampString}]") {
                     Foreground = new SolidColorBrush(Colors.White),
@@ -32,15 +45,15 @@ namespace XIVChat_Desktop {
                     case TextChunk textChunk:
                         var colour = textChunk.Foreground ?? textChunk.FallbackColour ?? 0;
 
-                        var r = (byte)((colour >> 24) & 0xFF);
-                        var g = (byte)((colour >> 16) & 0xFF);
-                        var b = (byte)((colour >> 8) & 0xFF);
-                        var a = (byte)(colour & 0xFF);
+                        var r = (byte) ((colour >> 24) & 0xFF);
+                        var g = (byte) ((colour >> 16) & 0xFF);
+                        var b = (byte) ((colour >> 8) & 0xFF);
+                        var a = (byte) (colour & 0xFF);
 
                         var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
                         var style = textChunk.Italic ? FontStyles.Italic : FontStyles.Normal;
 
-                        if (processMarkdown) {
+                        if (options.ProcessMarkdown) {
                             var inlines = Markdown.RunSpanGamut(textChunk.Content);
 
                             foreach (var inline in inlines) {
@@ -60,18 +73,32 @@ namespace XIVChat_Desktop {
 
                         break;
                     case IconChunk iconChunk:
+                        if (options.CrossWorldIconMode == CrossWorldIconMode.Text && iconChunk.index == 88) {
+                            // find the last non-timestamp run
+                            var lastRun = elements.FindLast(elem => (!options.ShowTimestamp || elements.Count > 1) && elem is Run);
+                            var foreground = lastRun?.Foreground;
+                            var fontStyle = lastRun?.FontStyle ?? FontStyles.Normal;
+
+                            elements.Add(new Run("@") {
+                                Foreground = foreground,
+                                FontStyle = fontStyle,
+                            });
+
+                            break;
+                        }
+
                         var bounds = GetBounds(iconChunk.index);
                         if (bounds == null) {
                             break;
                         }
 
-                        var width = lineHeight / bounds.Value.Height * bounds.Value.Width;
+                        var width = options.LineHeight / bounds.Value.Height * bounds.Value.Width;
 
                         var cropped = new CroppedBitmap(FontIcon, bounds.Value);
                         var image = new Image {
                             Source = cropped,
                             Width = width,
-                            Height = lineHeight,
+                            Height = options.LineHeight,
                         };
                         elements.Add(new InlineUIContainer(image) {
                             BaselineAlignment = BaselineAlignment.Bottom,
