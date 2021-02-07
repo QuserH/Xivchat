@@ -10,7 +10,8 @@
                      mc:Ignorable="d"
                      SizeToContent="Height"
                      Width="600"
-                     Title="Update available">
+                     Title="Update available"
+                     d:DataContext="{d:DesignInstance local:UpdateWindow}">
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition />
@@ -32,8 +33,15 @@
                    HorizontalAlignment="Right"
                    Orientation="Horizontal"
                    Margin="0,8,0,0">
-            <Button Margin="0,0,8,0" Click="Close_Click">Close</Button>
-            <Button Click="Update_Click">Update</Button>
+            <Button Margin="0,0,8,0"
+                    IsEnabled="{Binding Downloading, Converter={StaticResource NotConverter}}"
+                    Click="Close_Click">
+                Close
+            </Button>
+            <Button IsEnabled="{Binding Downloading, Converter={StaticResource NotConverter}}"
+                    Click="Update_Click">
+                Update
+            </Button>
         </WrapPanel>
     </Grid>
 </local:XivChatWindow>

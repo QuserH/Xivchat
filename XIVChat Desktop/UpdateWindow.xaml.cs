@@ -1,11 +1,16 @@
-﻿using System.Net.Http;
+﻿using System.ComponentModel;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows;
 using AutoUpdaterDotNET;
 
 namespace XIVChat_Desktop {
-    public partial class UpdateWindow {
+    public partial class UpdateWindow : INotifyPropertyChanged {
+        public event PropertyChangedEventHandler? PropertyChanged;
+
         private App App => (App) Application.Current;
+
+        public bool Downloading { get; set; }
 
         private UpdateInfoEventArgs Info { get; }
 
@@ -38,7 +43,10 @@ namespace XIVChat_Desktop {
         }
 
         private void Update_Click(object sender, RoutedEventArgs e) {
+            this.Downloading = true;
+
             if (!AutoUpdater.DownloadUpdate(this.Info)) {
+                this.Downloading = false;
                 return;
             }
 
