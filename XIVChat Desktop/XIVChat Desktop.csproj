@@ -8,7 +8,7 @@
         <AssemblyName>XIVChat Desktop</AssemblyName>
         <Nullable>enable</Nullable>
         <Company>XIVChat</Company>
-        <Version>1.0.1</Version>
+        <Version>1.1.0</Version>
         <ApplicationIcon>Resources\logo.ico</ApplicationIcon>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <LangVersion>latest</LangVersion>

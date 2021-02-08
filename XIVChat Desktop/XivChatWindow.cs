@@ -5,6 +5,7 @@ using System.Windows.Media.Imaging;
 
 namespace XIVChat_Desktop {
     public class XivChatWindow : Window {
+        // NOTE: making this protected breaks WPF
         // ReSharper disable once MemberCanBeProtected.Global
         public XivChatWindow() {
             this.Icon = new BitmapImage(new Uri("pack://application:,,,/Resources/logo.ico"));
