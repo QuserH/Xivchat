@@ -49,10 +49,11 @@ namespace XIVChatCommon {
             await s.FlushAsync(token);
         }
 
-        public async static Task SendSecretMessage(Stream s, byte[] key, IEncodable message, CancellationToken token = default) {
+        public static async Task SendSecretMessage(Stream s, byte[] key, IEncodable message, CancellationToken token = default) {
             await SendSecretMessage(s, key, message.Encode(), token);
         }
 
-        public static int MacSize() => 16;
+        public const int MacSize = 16;
+        public const int NonceSize = 24;
     }
 }

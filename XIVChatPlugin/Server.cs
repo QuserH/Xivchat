@@ -523,7 +523,8 @@ namespace XIVChatPlugin {
         }
 
         private static async Task SendBacklogs(IEnumerable<ServerMessage> messages, BaseClient client) {
-            var size = 5 + SecretMessage.MacSize(); // assume 5 bytes for payload lead-in, although it's likely to be less
+            const int defaultSize = 5 + SecretMessage.NonceSize + SecretMessage.MacSize;
+            var size = defaultSize;
             var responseMessages = new List<ServerMessage>();
 
             async Task SendBacklog() {
@@ -542,7 +543,7 @@ namespace XIVChatPlugin {
                 if (size + len >= MaxMessageSize) {
                     await SendBacklog();
 
-                    size = 5 + SecretMessage.MacSize();
+                    size = defaultSize;
                     responseMessages.Clear();
                 }
 
