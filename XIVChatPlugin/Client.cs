@@ -8,9 +8,9 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using XIVChatCommon;
+using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Relay;
-using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
     public abstract class BaseClient : Stream {
@@ -22,9 +22,9 @@ namespace XIVChatPlugin {
 
         public IPAddress? Remote { get; set; }
 
-        public CancellationTokenSource TokenSource { get; } = new CancellationTokenSource();
+        public CancellationTokenSource TokenSource { get; } = new();
 
-        public Channel<ServerMessage> Queue { get; } = Channel.CreateUnbounded<ServerMessage>();
+        public Channel<IEncodable> Queue { get; } = Channel.CreateUnbounded<IEncodable>();
 
         public void Disconnect() {
             this.Connected = false;
@@ -134,8 +134,8 @@ namespace XIVChatPlugin {
 
         internal ChannelWriter<byte[]> FromRelayWriter => this.FromRelay.Writer;
 
-        private List<byte> ReadBuffer { get; } = new List<byte>();
-        private List<byte> WriteBuffer { get; } = new List<byte>();
+        private List<byte> ReadBuffer { get; } = new();
+        private List<byte> WriteBuffer { get; } = new();
 
         public RelayConnected(byte[] publicKey, IPAddress remote, ChannelWriter<IToRelay> toRelay, Channel<byte[]> fromRelay) {
             this.PublicKey = publicKey;

@@ -22,7 +22,7 @@ namespace XIVChatPlugin {
         public bool AllowRelayConnections { get; set; }
         public string? RelayAuth { get; set; }
 
-        public Dictionary<Guid, Tuple<string, byte[]>> TrustedKeys { get; set; } = new Dictionary<Guid, Tuple<string, byte[]>>();
+        public Dictionary<Guid, Tuple<string, byte[]>> TrustedKeys { get; set; } = new();
         public KeyPair? KeyPair { get; set; }
 
         public void Initialise(Plugin plugin) {

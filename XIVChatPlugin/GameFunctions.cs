@@ -54,7 +54,7 @@ namespace XIVChatPlugin {
 
         public bool RequestingFriendList { get; private set; }
 
-        private readonly List<Player> _friends = new List<Player>();
+        private readonly List<Player> _friends = new();
 
         public delegate void ReceiveFriendListHandler(List<Player> friends);
 

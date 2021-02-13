@@ -18,23 +18,23 @@ namespace XIVChatPlugin {
             set => this._showSettings = value;
         }
 
-        private readonly Dictionary<Guid, Tuple<BaseClient, Channel<bool>>> _pending = new Dictionary<Guid, Tuple<BaseClient, Channel<bool>>>();
-        private readonly Dictionary<Guid, string> _pendingNames = new Dictionary<Guid, string>(0);
+        private readonly Dictionary<Guid, Tuple<BaseClient, Channel<bool>>> _pending = new();
+        private readonly Dictionary<Guid, string> _pendingNames = new(0);
 
         public PluginUi(Plugin plugin) {
             this.Plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
         }
 
         private static class Colours {
-            public static readonly Vector4 Primary = new Vector4(2 / 255f, 204 / 255f, 238 / 255f, 1.0f);
-            public static readonly Vector4 PrimaryDark = new Vector4(2 / 255f, 180 / 255f, 211 / 255f, 1.0f);
-            public static readonly Vector4 Background = new Vector4(46 / 255f, 46 / 255f, 46 / 255f, 1.0f);
-            public static readonly Vector4 Text = new Vector4(190 / 255f, 190 / 255f, 190 / 255f, 1.0f);
-            public static readonly Vector4 Button = new Vector4(90 / 255f, 89 / 255f, 90 / 255f, 1.0f);
-            public static readonly Vector4 ButtonActive = new Vector4(123 / 255f, 122 / 255f, 124 / 255f, 1.0f);
-            public static readonly Vector4 ButtonHovered = new Vector4(108 / 255f, 107 / 255f, 109 / 255f, 1.0f);
+            public static readonly Vector4 Primary = new(2 / 255f, 204 / 255f, 238 / 255f, 1.0f);
+            public static readonly Vector4 PrimaryDark = new(2 / 255f, 180 / 255f, 211 / 255f, 1.0f);
+            public static readonly Vector4 Background = new(46 / 255f, 46 / 255f, 46 / 255f, 1.0f);
+            public static readonly Vector4 Text = new(190 / 255f, 190 / 255f, 190 / 255f, 1.0f);
+            public static readonly Vector4 Button = new(90 / 255f, 89 / 255f, 90 / 255f, 1.0f);
+            public static readonly Vector4 ButtonActive = new(123 / 255f, 122 / 255f, 124 / 255f, 1.0f);
+            public static readonly Vector4 ButtonHovered = new(108 / 255f, 107 / 255f, 109 / 255f, 1.0f);
 
-            public static readonly Vector4 White = new Vector4(1f, 1f, 1f, 1f);
+            public static readonly Vector4 White = new(1f, 1f, 1f, 1f);
         }
 
         public void Draw() {

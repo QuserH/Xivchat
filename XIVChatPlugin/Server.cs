@@ -25,20 +25,22 @@ namespace XIVChatPlugin {
     public class Server : IDisposable {
         private readonly Plugin _plugin;
 
-        private readonly CancellationTokenSource _tokenSource = new CancellationTokenSource();
-        private readonly ConcurrentQueue<string> _toGame = new ConcurrentQueue<string>();
+        private readonly CancellationTokenSource _tokenSource = new();
+        private readonly ConcurrentQueue<string> _toGame = new();
 
-        private readonly ConcurrentDictionary<Guid, BaseClient> _clients = new ConcurrentDictionary<Guid, BaseClient>();
+        private readonly ConcurrentDictionary<Guid, BaseClient> _clients = new();
         public IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
         public readonly Channel<Tuple<BaseClient, Channel<bool>>> PendingClients = Channel.CreateUnbounded<Tuple<BaseClient, Channel<bool>>>();
 
-        private readonly HashSet<Guid> _waitingForFriendList = new HashSet<Guid>();
+        private readonly HashSet<Guid> _waitingForFriendList = new();
 
-        private readonly LinkedList<ServerMessage> _backlog = new LinkedList<ServerMessage>();
+        private readonly LinkedList<ServerMessage> _backlog = new();
 
         private TcpListener? _listener;
 
         private bool _sendPlayerData;
+        private readonly ConcurrentQueue<Guid> _awaitingPlayerData = new();
+        private readonly ConcurrentQueue<Guid> _awaitingAvailability = new();
 
         private volatile bool _running;
         private bool Running => this._running;
@@ -139,11 +141,7 @@ namespace XIVChatPlugin {
                     continue;
                 }
 
-                try {
-                    await SecretMessage.SendSecretMessage(client, client.Handshake!.Keys.tx, msg, client.TokenSource.Token);
-                } catch (Exception ex) {
-                    PluginLog.LogError($"Could not send message: {ex.Message}");
-                }
+                await client.Queue.Writer.WriteAsync(msg);
             }
 
             this._waitingForFriendList.Clear();
@@ -229,9 +227,32 @@ namespace XIVChatPlugin {
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "delegate")]
         public void OnFrameworkUpdate(Framework framework) {
-            if (this._sendPlayerData && this._plugin.Interface.ClientState.LocalPlayer != null) {
-                this.BroadcastPlayerData();
-                this._sendPlayerData = false;
+            var player = this._plugin.Interface.ClientState.LocalPlayer;
+            if (player != null) {
+                if (this._sendPlayerData) {
+                    this.BroadcastPlayerData();
+                    this._sendPlayerData = false;
+                }
+
+                while (this._awaitingPlayerData.TryDequeue(out var id)) {
+                    if (!this.Clients.TryGetValue(id, out var client)) {
+                        continue;
+                    }
+
+                    var playerData = this.GeneratePlayerData();
+                    if (playerData != null) {
+                        client.Queue.Writer.TryWrite(playerData);
+                    }
+                }
+            }
+
+            while (this._awaitingAvailability.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
+                    continue;
+                }
+
+                var available = player != null;
+                client.Queue.Writer.TryWrite(new Availability(available));
             }
 
             if (!this._toGame.TryDequeue(out var message)) {
@@ -294,20 +315,11 @@ namespace XIVChatPlugin {
 
                 client.Connected = true;
 
-                // send availability
-                var available = this._plugin.Interface.ClientState.LocalPlayer != null;
-                try {
-                    await SecretMessage.SendSecretMessage(client, handshake.Keys.tx, new Availability(available), this._tokenSource.Token);
-                } catch (Exception ex) {
-                    PluginLog.LogError($"Could not send message: {ex.Message}");
-                }
+                // queue sending availability for this client
+                this._awaitingAvailability.Enqueue(id);
 
-                // send player data
-                try {
-                    await this.SendPlayerData(client);
-                } catch (Exception ex) {
-                    PluginLog.LogError($"Could not send message: {ex.Message}");
-                }
+                // queue sending player data for this client
+                this._awaitingPlayerData.Enqueue(id);
 
                 // send current channel
                 try {
@@ -378,7 +390,7 @@ namespace XIVChatPlugin {
             switch (op) {
                 case ClientOperation.Ping:
                     try {
-                        await SecretMessage.SendSecretMessage(client, handshake.Keys.tx, Pong.Instance, client.TokenSource.Token);
+                        await client.Queue.Writer.WriteAsync(Pong.Instance);
                     } catch (Exception ex) {
                         PluginLog.LogError($"Could not send message: {ex.Message}");
                     }
@@ -459,20 +471,20 @@ namespace XIVChatPlugin {
             public bool IsPresent { get; private set; } = true;
 
             public static NameFormatting Empty() {
-                return new NameFormatting {
+                return new() {
                     IsPresent = false,
                 };
             }
 
             public static NameFormatting Of(string before, string after) {
-                return new NameFormatting {
+                return new() {
                     Before = before,
                     After = after,
                 };
             }
         }
 
-        private Dictionary<ChatType, NameFormatting> Formats { get; } = new Dictionary<ChatType, NameFormatting>();
+        private Dictionary<ChatType, NameFormatting> Formats { get; } = new();
 
         private NameFormatting? FormatFor(ChatType type) {
             if (this.Formats.TryGetValue(type, out var cached)) {
@@ -530,7 +542,7 @@ namespace XIVChatPlugin {
             async Task SendBacklog() {
                 var resp = new ServerBacklog(responseMessages.ToArray());
                 try {
-                    await SecretMessage.SendSecretMessage(client, client.Handshake!.Keys.tx, resp, client.TokenSource.Token);
+                    await client.Queue.Writer.WriteAsync(resp);
                 } catch (Exception ex) {
                     PluginLog.LogError($"Could not send backlog: {ex.Message}");
                 }
@@ -705,13 +717,7 @@ namespace XIVChatPlugin {
 
         private void BroadcastMessage(IEncodable message) {
             foreach (var client in this.Clients.Values) {
-                if (client.Handshake == null) {
-                    continue;
-                }
-
-                Task.Run(async () => {
-                    await SecretMessage.SendSecretMessage(client, client.Handshake.Keys.tx, message);
-                });
+                client.Queue.Writer.TryWrite(message);
             }
         }
 
@@ -775,15 +781,6 @@ namespace XIVChatPlugin {
             var name = player.Name;
 
             return new PlayerData(homeWorld, currentWorld, location, name);
-        }
-
-        private async Task SendPlayerData(BaseClient client) {
-            var playerData = this.GeneratePlayerData();
-            if (playerData == null) {
-                return;
-            }
-
-            await SecretMessage.SendSecretMessage(client, client.Handshake!.Keys.tx, playerData);
         }
 
         private void BroadcastPlayerData() {
