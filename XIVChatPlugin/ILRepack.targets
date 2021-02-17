@@ -3,10 +3,8 @@
     <Target Name="ILRepacker" AfterTargets="Build">
         <ItemGroup>
             <InputAssemblies Include="$(OutputPath)\XIVChat.dll"/>
-            <InputAssemblies Include="$(OutputPath)\XIVChatCommon.dll"/>
-            <InputAssemblies Include="$(OutputPath)\M*.dll"/>
-            <InputAssemblies Include="$(OutputPath)\S*.dll"/>
-            <InputAssemblies Include="$(OutputPath)\websocket*.dll"/>
+            <InputAssemblies Include="$(OutputPath)\*.dll"
+                             Exclude="$(OutputPath)\XIVChat.dll;$(OutputPath)\libsodium.dll"/>
         </ItemGroup>
 
         <ILRepack
@@ -18,5 +16,13 @@
                 LibraryPath="$(OutputPath)"
                 DebugInfo="true"
                 OutputFile="$(OutputPath)\$(AssemblyName).dll"/>
+
+        <Delete Files="@(ReferenceCopyLocalPaths->'$(OutDir)%(DestinationSubDirectory)%(Filename)%(Extension)')"/>
+        <ItemGroup>
+            <Directories Include="$([System.IO.Directory]::GetDirectories('$(OutDir)%(DestinationSubDirectory)', '*', System.IO.SearchOption.AllDirectories))"/>
+            <Directories>
+                <Files>$([System.IO.Directory]::GetFiles("%(Directories.Identity)", "*", System.IO.SearchOption.AllDirectories).get_Length())</Files>
+            </Directories>
+        </ItemGroup>
     </Target>
 </Project>
