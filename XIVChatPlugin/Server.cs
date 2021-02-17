@@ -228,22 +228,18 @@ namespace XIVChatPlugin {
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "delegate")]
         public void OnFrameworkUpdate(Framework framework) {
             var player = this._plugin.Interface.ClientState.LocalPlayer;
-            if (player != null) {
-                if (this._sendPlayerData) {
-                    this.BroadcastPlayerData();
-                    this._sendPlayerData = false;
+            if (player != null && this._sendPlayerData) {
+                this.BroadcastPlayerData();
+                this._sendPlayerData = false;
+            }
+
+            while (this._awaitingPlayerData.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client)) {
+                    continue;
                 }
 
-                while (this._awaitingPlayerData.TryDequeue(out var id)) {
-                    if (!this.Clients.TryGetValue(id, out var client)) {
-                        continue;
-                    }
-
-                    var playerData = this.GeneratePlayerData();
-                    if (playerData != null) {
-                        client.Queue.Writer.TryWrite(playerData);
-                    }
-                }
+                var playerData = (IEncodable?) this.GeneratePlayerData() ?? EmptyPlayerData.Instance;
+                client.Queue.Writer.TryWrite(playerData);
             }
 
             while (this._awaitingAvailability.TryDequeue(out var id)) {
@@ -784,12 +780,7 @@ namespace XIVChatPlugin {
         }
 
         private void BroadcastPlayerData() {
-            var playerData = this.GeneratePlayerData();
-
-            if (playerData == null) {
-                this.BroadcastMessage(EmptyPlayerData.Instance);
-                return;
-            }
+            var playerData = (IEncodable?) this.GeneratePlayerData() ?? EmptyPlayerData.Instance;
 
             this.BroadcastMessage(playerData);
         }
