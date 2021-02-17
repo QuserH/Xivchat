@@ -725,7 +725,8 @@ namespace XIVChatCommon.Message {
         Online = 47,
     }
 
-    public abstract class IEncodable {
+    // ReSharper disable once IdentifierTypo
+    public abstract class Encodable {
         protected abstract byte Code { get; }
         protected abstract byte[] PayloadEncode();
 

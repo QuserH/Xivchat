@@ -24,7 +24,7 @@ namespace XIVChatPlugin {
 
         public CancellationTokenSource TokenSource { get; } = new();
 
-        public Channel<IEncodable> Queue { get; } = Channel.CreateUnbounded<IEncodable>();
+        public Channel<Encodable> Queue { get; } = Channel.CreateUnbounded<Encodable>();
 
         public void Disconnect() {
             this.Connected = false;

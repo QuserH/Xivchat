@@ -20,7 +20,7 @@ namespace XIVChatCommon.Message.Server {
 
     #region Pong
 
-    public class Pong : IEncodable {
+    public class Pong : Encodable {
         public static Pong Instance { get; } = new();
 
         [IgnoreMember]
@@ -36,7 +36,7 @@ namespace XIVChatCommon.Message.Server {
     #region Message
 
     [MessagePackObject]
-    public class ServerMessage : IEncodable {
+    public class ServerMessage : Encodable {
         [MessagePackFormatter(typeof(MillisecondsDateTimeFormatter))]
         [Key(0)]
         public DateTime Timestamp { get; set; }
@@ -201,7 +201,7 @@ namespace XIVChatCommon.Message.Server {
 
     #region Shutdown
 
-    public class ServerShutdown : IEncodable {
+    public class ServerShutdown : Encodable {
         public static ServerShutdown Instance { get; } = new();
 
         [IgnoreMember]
@@ -217,7 +217,7 @@ namespace XIVChatCommon.Message.Server {
     #region Player data
 
     [MessagePackObject]
-    public class PlayerData : IEncodable {
+    public class PlayerData : Encodable {
         [Key(0)]
         public readonly string homeWorld;
 
@@ -250,7 +250,7 @@ namespace XIVChatCommon.Message.Server {
     }
 
     [MessagePackObject]
-    public class EmptyPlayerData : IEncodable {
+    public class EmptyPlayerData : Encodable {
         public static EmptyPlayerData Instance { get; } = new();
 
         [IgnoreMember]
@@ -266,7 +266,7 @@ namespace XIVChatCommon.Message.Server {
     #region Availability
 
     [MessagePackObject]
-    public class Availability : IEncodable {
+    public class Availability : Encodable {
         [Key(0)]
         public readonly bool available;
 
@@ -291,7 +291,7 @@ namespace XIVChatCommon.Message.Server {
     #region Channel
 
     [MessagePackObject]
-    public class ServerChannel : IEncodable {
+    public class ServerChannel : Encodable {
         [Key(0)]
         public readonly byte channel;
 
@@ -324,7 +324,7 @@ namespace XIVChatCommon.Message.Server {
     #region Backlog
 
     [MessagePackObject]
-    public class ServerBacklog : IEncodable {
+    public class ServerBacklog : Encodable {
         [Key(0)]
         public readonly ServerMessage[] messages;
 
@@ -348,7 +348,7 @@ namespace XIVChatCommon.Message.Server {
     #region Player list
 
     [MessagePackObject]
-    public class ServerPlayerList : IEncodable {
+    public class ServerPlayerList : Encodable {
         [Key(0)]
         public PlayerListType Type { get; set; }
 

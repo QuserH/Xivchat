@@ -238,7 +238,7 @@ namespace XIVChatPlugin {
                     continue;
                 }
 
-                var playerData = (IEncodable?) this.GeneratePlayerData() ?? EmptyPlayerData.Instance;
+                var playerData = (Encodable?) this.GeneratePlayerData() ?? EmptyPlayerData.Instance;
                 client.Queue.Writer.TryWrite(playerData);
             }
 
@@ -711,7 +711,7 @@ namespace XIVChatPlugin {
             return parts.ToArray();
         }
 
-        private void BroadcastMessage(IEncodable message) {
+        private void BroadcastMessage(Encodable message) {
             foreach (var client in this.Clients.Values) {
                 client.Queue.Writer.TryWrite(message);
             }
@@ -780,7 +780,7 @@ namespace XIVChatPlugin {
         }
 
         private void BroadcastPlayerData() {
-            var playerData = (IEncodable?) this.GeneratePlayerData() ?? EmptyPlayerData.Instance;
+            var playerData = (Encodable?) this.GeneratePlayerData() ?? EmptyPlayerData.Instance;
 
             this.BroadcastMessage(playerData);
         }

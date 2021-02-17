@@ -18,7 +18,7 @@ namespace XIVChatCommon.Message.Client {
 
     #region Ping
 
-    public class Ping : IEncodable {
+    public class Ping : Encodable {
         public static Ping Instance { get; } = new();
 
         [IgnoreMember]
@@ -34,7 +34,7 @@ namespace XIVChatCommon.Message.Client {
     #region Message
 
     [MessagePackObject]
-    public class ClientMessage : IEncodable {
+    public class ClientMessage : Encodable {
         [Key(0)]
         public string Content { get; set; }
 
@@ -58,7 +58,7 @@ namespace XIVChatCommon.Message.Client {
 
     #region Shutdown
 
-    public class ClientShutdown : IEncodable {
+    public class ClientShutdown : Encodable {
         public static ClientShutdown Instance { get; } = new();
 
         [IgnoreMember]
@@ -74,7 +74,7 @@ namespace XIVChatCommon.Message.Client {
     #region Backlog/catch-up
 
     [MessagePackObject]
-    public class ClientBacklog : IEncodable {
+    public class ClientBacklog : Encodable {
         [Key(0)]
         public ushort Amount { get; set; }
 
@@ -90,7 +90,7 @@ namespace XIVChatCommon.Message.Client {
     }
 
     [MessagePackObject]
-    public class ClientCatchUp : IEncodable {
+    public class ClientCatchUp : Encodable {
         [MessagePackFormatter(typeof(MillisecondsDateTimeFormatter))]
         [Key(0)]
         public DateTime After { get; set; }
@@ -115,7 +115,7 @@ namespace XIVChatCommon.Message.Client {
     #region Player list
 
     [MessagePackObject]
-    public class ClientPlayerList : IEncodable {
+    public class ClientPlayerList : Encodable {
         [Key(0)]
         public PlayerListType Type { get; set; }
 
@@ -135,7 +135,7 @@ namespace XIVChatCommon.Message.Client {
     #region Preferences
 
     [MessagePackObject]
-    public class ClientPreferences : IEncodable {
+    public class ClientPreferences : Encodable {
         [Key(0)]
         public Dictionary<ClientPreference, object> Preferences { get; set; } = new();
 
@@ -190,7 +190,7 @@ namespace XIVChatCommon.Message.Client {
     #region Channel
 
     [MessagePackObject]
-    public class ClientChannel : IEncodable {
+    public class ClientChannel : Encodable {
         protected override byte Code => (byte) ClientOperation.Channel;
 
         [Key(0)]
