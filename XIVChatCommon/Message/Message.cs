@@ -746,7 +746,7 @@ namespace XIVChatCommon.Message {
     }
 
     public class MillisecondsDateTimeFormatter : IMessagePackFormatter<DateTime> {
-        private static readonly DateTime Epoch = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+        private static readonly DateTime Epoch = new(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
 
         public DateTime Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options) {
             var millis = reader.ReadInt64();

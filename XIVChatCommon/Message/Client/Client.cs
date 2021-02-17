@@ -19,7 +19,7 @@ namespace XIVChatCommon.Message.Client {
     #region Ping
 
     public class Ping : IEncodable {
-        public static Ping Instance { get; } = new Ping();
+        public static Ping Instance { get; } = new();
 
         [IgnoreMember]
         protected override byte Code => (byte) ClientOperation.Ping;
@@ -59,7 +59,7 @@ namespace XIVChatCommon.Message.Client {
     #region Shutdown
 
     public class ClientShutdown : IEncodable {
-        public static ClientShutdown Instance { get; } = new ClientShutdown();
+        public static ClientShutdown Instance { get; } = new();
 
         [IgnoreMember]
         protected override byte Code => (byte) ClientOperation.Shutdown;
@@ -137,7 +137,7 @@ namespace XIVChatCommon.Message.Client {
     [MessagePackObject]
     public class ClientPreferences : IEncodable {
         [Key(0)]
-        public Dictionary<ClientPreference, object> Preferences { get; set; } = new Dictionary<ClientPreference, object>();
+        public Dictionary<ClientPreference, object> Preferences { get; set; } = new();
 
         protected override byte Code => (byte) ClientOperation.Preferences;
 

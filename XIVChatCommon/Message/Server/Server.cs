@@ -21,7 +21,7 @@ namespace XIVChatCommon.Message.Server {
     #region Pong
 
     public class Pong : IEncodable {
-        public static Pong Instance { get; } = new Pong();
+        public static Pong Instance { get; } = new();
 
         [IgnoreMember]
         protected override byte Code => (byte)ServerOperation.Pong;
@@ -202,7 +202,7 @@ namespace XIVChatCommon.Message.Server {
     #region Shutdown
 
     public class ServerShutdown : IEncodable {
-        public static ServerShutdown Instance { get; } = new ServerShutdown();
+        public static ServerShutdown Instance { get; } = new();
 
         [IgnoreMember]
         protected override byte Code => (byte)ServerOperation.Shutdown;
@@ -251,7 +251,7 @@ namespace XIVChatCommon.Message.Server {
 
     [MessagePackObject]
     public class EmptyPlayerData : IEncodable {
-        public static EmptyPlayerData Instance { get; } = new EmptyPlayerData();
+        public static EmptyPlayerData Instance { get; } = new();
 
         [IgnoreMember]
         protected override byte Code => (byte)ServerOperation.PlayerData;
