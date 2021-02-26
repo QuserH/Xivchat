@@ -14,6 +14,7 @@ namespace XIVChat_Desktop {
             this.SetValue(TextOptions.TextHintingModeProperty, TextHintingMode.Fixed);
 
             this.ContentRendered += this.FixRendering;
+            this.Loaded += MaximiseHelper.FixMaximise;
         }
 
         private void FixRendering(object? sender, EventArgs eventArgs) {
