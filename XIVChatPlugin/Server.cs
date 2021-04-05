@@ -1,7 +1,4 @@
-﻿using Dalamud.Game.Chat;
-using Dalamud.Game.Chat.SeStringHandling;
-using Dalamud.Game.Chat.SeStringHandling.Payloads;
-using Dalamud.Game.Internal;
+﻿using Dalamud.Game.Internal;
 using Dalamud.Plugin;
 using Lumina.Excel.GeneratedSheets;
 using MessagePack;
@@ -16,6 +13,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;

@@ -2,9 +2,13 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <Target Name="ILRepacker" AfterTargets="Build">
         <ItemGroup>
-            <InputAssemblies Include="$(OutputPath)\XIVChat.dll"/>
+            <InputAssemblies Include="$(OutputPath)\$(AssemblyName).dll"/>
             <InputAssemblies Include="$(OutputPath)\*.dll"
-                             Exclude="$(OutputPath)\XIVChat.dll;$(OutputPath)\libsodium.dll"/>
+                             Exclude="$(OutputPath)\$(AssemblyName).dll;
+                                      $(OutputPath)\libsodium.dll;
+                                      $(OutputPath)\System.Buffers.dll;
+                                      $(OutputPath)\System.Memory.dll;
+                                      $(OutputPath)\System.Numerics.Vectors.dll"/>
         </ItemGroup>
 
         <ILRepack
