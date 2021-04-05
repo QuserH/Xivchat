@@ -5,7 +5,7 @@
         <TargetFramework>net48</TargetFramework>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <Version>1.5.0</Version>
+        <Version>1.5.1</Version>
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="Dalamud, Version=5.2.4.2, Culture=neutral, PublicKeyToken=null">
