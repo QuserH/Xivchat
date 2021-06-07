@@ -6,7 +6,7 @@ using System.Windows.Interop;
 namespace XIVChat_Desktop {
     public static class MaximiseHelper {
         public static void FixMaximise(object? sender, EventArgs e) {
-            if (!(sender is Window window)) {
+            if (sender is not Window window) {
                 return;
             }
 

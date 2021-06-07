@@ -310,7 +310,7 @@ namespace XIVChat_Desktop {
             // detect if scroller is at the bottom
             var scroller = this.FindElementByName<ScrollViewer>(this.Tabs, "scroller");
             var verticalOffset = scroller!.VerticalOffset;
-            var wasAtBottom = Math.Abs(verticalOffset - scroller.ScrollableHeight) < .0001;
+            var wasAtBottom = Math.Abs(verticalOffset - scroller.ScrollableHeight) < .1;
 
             // add message to main list
             this.Messages.Add(message);
@@ -358,7 +358,7 @@ namespace XIVChat_Desktop {
         }
 
         private void Input_Submit(object sender, KeyEventArgs e) {
-            if (!(sender is TextBox textBox)) {
+            if (sender is not TextBox textBox) {
                 return;
             }
 

@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Linq;
 using System.Net.Sockets;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -261,7 +260,7 @@ namespace XIVChat_Desktop {
                                     Console.WriteLine(inner.StackTrace);
                                 }
                             });
-                            if (!(ex.InnerException is CryptographicException)) {
+                            if (ex.InnerException is not CryptographicException) {
                                 this.app.Disconnect();
                                 break;
                             }

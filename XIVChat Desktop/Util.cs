@@ -77,7 +77,7 @@ namespace XIVChat_Desktop {
         public static bool IsWhitespace(this char c) {
             // 2.1 Characters and lines
             // A whitespace character is a space(U + 0020), tab(U + 0009), newline(U + 000A), line tabulation (U + 000B), form feed (U + 000C), or carriage return (U + 000D).
-            return c <= ' ' && (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r');
+            return c is <= ' ' and (' ' or '\t' or '\n' or '\v' or '\f' or '\r');
         }
 
         public static string? WorldName(ushort id) {
@@ -715,7 +715,7 @@ namespace XIVChat_Desktop {
 
     public class RegexValidator : ValidationRule {
         public override ValidationResult Validate(object value, CultureInfo cultureInfo) {
-            if (!(value is string text)) {
+            if (value is not string text) {
                 return new ValidationResult(false, "Value is not text.");
             }
 
@@ -728,7 +728,7 @@ namespace XIVChat_Desktop {
     public class StringWrapper : INotifyPropertyChanged {
         private string value;
 
-        public String Value {
+        public string Value {
             get => this.value;
             set {
                 this.value = value;
