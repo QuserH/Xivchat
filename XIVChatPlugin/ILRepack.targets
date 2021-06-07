@@ -6,6 +6,7 @@
             <InputAssemblies Include="$(OutputPath)\*.dll"
                              Exclude="$(OutputPath)\$(AssemblyName).dll;
                                       $(OutputPath)\libsodium.dll;
+                                      $(OutputPath)\xivchat_native_tools.dll;
                                       $(OutputPath)\System.Buffers.dll;
                                       $(OutputPath)\System.Memory.dll;
                                       $(OutputPath)\System.Numerics.Vectors.dll"/>

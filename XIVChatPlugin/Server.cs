@@ -6,6 +6,7 @@ using Sodium;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -23,7 +24,24 @@ using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
     public class Server : IDisposable {
+        private const int MaxMessageLength = 500;
+
+        private static readonly string[] PublicPrefixes = {
+            "/t ",
+            "/tell ",
+            "/reply ",
+            "/r ",
+            "/say ",
+            "/s ",
+            "/shout ",
+            "/sh ",
+            "/yell ",
+            "/y ",
+        };
+
         private readonly Plugin _plugin;
+
+        private readonly Stopwatch _sendWatch = new();
 
         private readonly CancellationTokenSource _tokenSource = new();
         private readonly ConcurrentQueue<string> _toGame = new();
@@ -50,10 +68,12 @@ namespace XIVChatPlugin {
         private const int MaxMessageSize = 128_000;
 
         public Server(Plugin plugin) {
-            this._plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
+            this._plugin = plugin;
             if (this._plugin.Config.KeyPair == null) {
                 this.RegenerateKeyPair();
             }
+
+            this._sendWatch.Start();
 
             this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
         }
@@ -194,7 +214,7 @@ namespace XIVChatPlugin {
 
             if (sender.Payloads.Count > 0) {
                 var format = this.FormatFor(chatCode.Type);
-                if (format != null && format.IsPresent) {
+                if (format is { IsPresent: true }) {
                     chunks.Add(new TextChunk(format.Before) {
                         FallbackColour = colour,
                     });
@@ -251,9 +271,24 @@ namespace XIVChatPlugin {
                 client.Queue.Writer.TryWrite(new Availability(available));
             }
 
+            int time;
+            if (this._toGame.TryPeek(out var peek) && PublicPrefixes.Any(prefix => peek.StartsWith(prefix))) {
+                time = 1_000;
+            } else if (this._currentChannel is InputChannel.Tell or InputChannel.Say or InputChannel.Shout or InputChannel.Yell) {
+                time = 1_000;
+            } else {
+                time = 250;
+            }
+
+            if (this._sendWatch.Elapsed < TimeSpan.FromMilliseconds(time)) {
+                return;
+            }
+
             if (!this._toGame.TryDequeue(out var message)) {
                 return;
             }
+
+            this._sendWatch.Restart();
 
             this._plugin.Functions.ProcessChatBox(message);
         }
@@ -575,7 +610,7 @@ namespace XIVChatPlugin {
                 chunks.Add(new TextChunk(text) {
                     FallbackColour = defaultColour,
                     Foreground = foreground.Count > 0 ? foreground.Peek() : (uint?) null,
-                    Glow = glow.Count > 0 ? glow.Peek() : (uint?) null,
+                    Glow = glow.Count > 0 ? glow.Peek() : null,
                     Italic = italic,
                 });
             }
@@ -643,9 +678,7 @@ namespace XIVChatPlugin {
         private IEnumerable<ServerMessage> MessagesAfter(DateTime time) => this._backlog.Where(msg => msg.Timestamp > time).ToArray();
 
         private static IEnumerable<string> Wrap(string input) {
-            const int limit = 500;
-
-            if (input.Length <= limit) {
+            if (input.Length <= MaxMessageLength) {
                 return new[] {
                     input,
                 };
@@ -656,59 +689,22 @@ namespace XIVChatPlugin {
                 var space = input.IndexOf(' ');
                 if (space != -1) {
                     prefix = input.Substring(0, space);
-                    input = input.Substring(space + 1);
-                }
-            }
-
-            var parts = new List<string>();
-
-            var builder = new StringBuilder(limit);
-
-            foreach (var word in input.Split(' ')) {
-                if (word.Length > limit) {
-                    var wordParts = (int) Math.Ceiling((float) word.Length / limit);
-                    for (var i = 0; i < wordParts; i++) {
-                        var start = i == 0 ? 0 : (i * limit);
-                        var partLength = limit;
-                        if (prefix.Length != 0) {
-                            start = start == 0 ? 0 : (start - (prefix.Length + 1) * i);
-                            partLength = partLength - prefix.Length - 1;
+                    // handle wrapping tells
+                    if (prefix is "/tell" or "/t") {
+                        var tellSpace = input.IndexOfCount(' ', 3);
+                        if (tellSpace != -1) {
+                            prefix = input.Substring(0, tellSpace);
+                            input = input.Substring(tellSpace + 1);
                         }
-
-                        var part = word.Length - start < partLength ? word.Substring(start) : word.Substring(start, partLength);
-                        if (part.Length == 0) {
-                            continue;
-                        }
-
-                        if (prefix.Length != 0) {
-                            part = prefix + " " + part;
-                        }
-
-                        parts.Add(part);
+                    } else {
+                        input = input.Substring(space + 1);
                     }
-
-                    continue;
                 }
-
-                if (builder.Length + word.Length > limit) {
-                    parts.Add(builder.ToString().TrimEnd(' '));
-                    builder.Clear();
-                }
-
-                if (builder.Length == 0 && prefix.Length != 0) {
-                    builder.Append(prefix);
-                    builder.Append(' ');
-                }
-
-                builder.Append(word);
-                builder.Append(' ');
             }
 
-            if (builder.Length != 0) {
-                parts.Add(builder.ToString().TrimEnd(' '));
-            }
-
-            return parts.ToArray();
+            return NativeTools.Wrap(input, MaxMessageLength)
+                .Select(text => $"{prefix} {text}")
+                .ToArray();
         }
 
         private void BroadcastMessage(Encodable message) {

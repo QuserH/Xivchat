@@ -6,25 +6,26 @@
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
         <Version>1.5.1</Version>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>
-        <Reference Include="Dalamud, Version=5.2.4.2, Culture=neutral, PublicKeyToken=null">
+        <Reference Include="Dalamud">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\Dalamud.dll</HintPath>
             <Private>False</Private>
         </Reference>
-        <Reference Include="ImGui.NET, Version=1.72.0.0, Culture=neutral, PublicKeyToken=null">
+        <Reference Include="ImGui.NET">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\ImGui.NET.dll</HintPath>
             <Private>False</Private>
         </Reference>
-        <Reference Include="ImGuiScene, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+        <Reference Include="ImGuiScene">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\ImGuiScene.dll</HintPath>
             <Private>False</Private>
         </Reference>
-        <Reference Include="Lumina, Version=2.0.0.0, Culture=neutral, PublicKeyToken=null">
+        <Reference Include="Lumina">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\Lumina.dll</HintPath>
             <Private>False</Private>
         </Reference>
-        <Reference Include="Lumina.Excel, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+        <Reference Include="Lumina.Excel">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\Lumina.Excel.dll</HintPath>
             <Private>False</Private>
         </Reference>
@@ -40,7 +41,8 @@
     <ItemGroup>
         <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj"/>
     </ItemGroup>
-    <Target Name="CopyLibsodium" AfterTargets="AfterBuild">
+    <Target Name="CopyNativeLibraries" AfterTargets="AfterBuild">
         <Copy SourceFiles="Resources\lib\libsodium.dll" DestinationFolder="$(OutDir)"/>
+        <Copy SourceFiles="Resources\lib\xivchat_native_tools.dll" DestinationFolder="$(OutDir)"/>
     </Target>
 </Project>
