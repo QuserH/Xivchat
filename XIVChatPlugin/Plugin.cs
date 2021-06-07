@@ -3,18 +3,20 @@ using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-// #if DEBUG
+#if DEBUG
 using System.IO;
-// #endif
+#endif
 using System.Reflection;
 
 namespace XIVChatPlugin {
+    // ReSharper disable once ClassNeverInstantiated.Global
     public class Plugin : IDalamudPlugin {
         private bool _disposedValue;
 
         public string Name => "XIVChat";
 
         // ReSharper disable once MemberCanBePrivate.Global
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         internal string Location { get; private set; } = Assembly.GetExecutingAssembly().Location;
 
         [SuppressMessage("ReSharper", "UnusedMember.Local")]
@@ -33,13 +35,13 @@ namespace XIVChatPlugin {
             this.Interface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface), "DalamudPluginInterface cannot be null");
 
             // load libsodium.so from debug location if in debug mode
-            // #if DEBUG
+            #if DEBUG
             string path = Environment.GetEnvironmentVariable("PATH")!;
             string newPath = Path.GetDirectoryName(this.Location)!;
             Environment.SetEnvironmentVariable("PATH", $"{path};{newPath}");
-            // #endif
+            #endif
 
-            this.Config = (Configuration?) this.Interface.GetPluginConfig() ?? new Configuration();
+            this.Config = this.Interface.GetPluginConfig() as Configuration ?? new Configuration();
             this.Config.Initialise(this);
 
             this.Functions = new GameFunctions(this);

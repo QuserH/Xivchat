@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 
 namespace XIVChatPlugin {
+    [Serializable]
     public class Configuration : IPluginConfiguration {
         private Plugin? _plugin;
 
@@ -26,7 +27,7 @@ namespace XIVChatPlugin {
         public KeyPair? KeyPair { get; set; }
 
         public void Initialise(Plugin plugin) {
-            this._plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
+            this._plugin = plugin;
         }
 
         public void Save() {

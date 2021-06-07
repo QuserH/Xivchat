@@ -9,26 +9,6 @@ namespace XIVChatPlugin {
             return string.Join(separator, bytes.Select(b => b.ToString(upper ? "X2" : "x2")));
         }
 
-        //public static List<uint> ToColours(this byte[] bytes) {
-        //    var colours = new List<uint>();
-
-        //    uint colour = 0xFF;
-        //    for (int i = 0; i < bytes.Length; i++) {
-        //        var idx = i % 3;
-
-        //        if (i != 0 && idx == 0) {
-        //            colours.Add(colour);
-        //            colour = 0xFF;
-        //        }
-
-        //        colour |= (uint)bytes[i] << ((4 - idx - 1) * 8);
-        //    }
-
-        //    colours.Add(colour);
-
-        //    return colours;
-        //}
-
         public static List<Vector4> ToColours(this byte[] bytes) {
             var colours = new List<Vector4>();
 

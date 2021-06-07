@@ -61,7 +61,7 @@ namespace XIVChatPlugin {
         public event ReceiveFriendListHandler? ReceiveFriendList;
 
         public GameFunctions(Plugin plugin) {
-            this.Plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
+            this.Plugin = plugin;
 
             var getUiModulePtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0");
             var easierProcessChatBoxPtr = this.Plugin.ScanText("48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9");

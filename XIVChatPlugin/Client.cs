@@ -37,7 +37,7 @@ namespace XIVChatPlugin {
             }
         }
 
-        public T GetPreference<T>(ClientPreference pref, T def = default) {
+        public T? GetPreference<T>(ClientPreference pref, T? def = default) {
             var prefs = this.Preferences;
 
             if (prefs == null) {

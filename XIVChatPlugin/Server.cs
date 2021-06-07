@@ -380,7 +380,7 @@ namespace XIVChatPlugin {
                             continue;
                         }
 
-                        await this.ProcessMessage(id, client, handshake, msg);
+                        await this.ProcessMessage(id, client, msg);
                     }
                 });
 
@@ -412,7 +412,7 @@ namespace XIVChatPlugin {
             client.Disconnect();
         }
 
-        private async Task ProcessMessage(Guid id, BaseClient client, HandshakeInfo handshake, byte[] msg) {
+        private async Task ProcessMessage(Guid id, BaseClient client, byte[] msg) {
             var op = (ClientOperation) msg[0];
 
             var payload = new byte[msg.Length - 1];
@@ -613,7 +613,7 @@ namespace XIVChatPlugin {
             void Append(string text) {
                 chunks.Add(new TextChunk(text) {
                     FallbackColour = defaultColour,
-                    Foreground = foreground.Count > 0 ? foreground.Peek() : (uint?) null,
+                    Foreground = foreground.Count > 0 ? foreground.Peek() : null,
                     Glow = glow.Count > 0 ? glow.Peek() : null,
                     Italic = italic,
                 });
