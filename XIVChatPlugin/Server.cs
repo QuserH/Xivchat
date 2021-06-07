@@ -429,7 +429,11 @@ namespace XIVChatPlugin {
                     break;
                 case ClientOperation.Message:
                     var clientMessage = ClientMessage.Decode(payload);
-                    foreach (var part in Wrap(clientMessage.Content)) {
+                    var sanitised = clientMessage.Content
+                        .Replace("\r\n", " ")
+                        .Replace('\r', ' ')
+                        .Replace('\n', ' ');
+                    foreach (var part in Wrap(sanitised)) {
                         this._toGame.Enqueue(part);
                     }
 
