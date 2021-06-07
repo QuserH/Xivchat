@@ -50,15 +50,7 @@
                 <Shortcut Id="ApplicationStartMenuShortcut"
                           Name="XIVChat for Windows"
                           Target="[INSTALLFOLDER]XIVChat Desktop.exe"
-                          WorkingDirectory="INSTALLFOLDER">
-                    <!-- AUMID -->
-                    <ShortcutProperty Key="System.AppUserModel.ID"
-                                      Value="XIVChat.XIVChat_Desktop"/>
-
-                    <!-- COM CLSID -->
-                    <ShortcutProperty Key="System.AppUserModel.ToastActivatorCLSID"
-                                      Value="{F12BCC85-6FEE-4A9A-BBB8-08DFAA7BE1A8}"/>
-                </Shortcut>
+                          WorkingDirectory="INSTALLFOLDER"/>
                 <RemoveFolder Id="RemoveApplicationProgramsFolder"
                               Directory="ApplicationProgramsFolder"
                               On="uninstall"/>
