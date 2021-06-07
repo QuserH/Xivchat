@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-    <Product Id="*" Name="XIVChat for Windows" Language="1033" Version="1.1.1"
+    <Product Id="*" Name="XIVChat for Windows" Language="1033" Version="1.1.2"
              Manufacturer="XIVChat"
              UpgradeCode="D792BC67-EE1E-46D7-8C68-1A794875E1D1">
         <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"/>
@@ -33,6 +33,7 @@
             </Publish>
         </UI>
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
+        <Property Id="REINSTALLMODE" Value="amus"/>
     </Product>
 
     <Fragment>

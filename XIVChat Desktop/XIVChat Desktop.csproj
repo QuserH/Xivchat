@@ -1,14 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
-        <TargetFramework>netcoreapp3.1</TargetFramework>
+        <TargetFramework>net5.0-windows10.0.18362.0</TargetFramework>
+        <TargetPlatformIdentifier>Windows</TargetPlatformIdentifier>
         <RootNamespace>XIVChat_Desktop</RootNamespace>
         <UseWPF>true</UseWPF>
         <AssemblyName>XIVChat Desktop</AssemblyName>
         <Nullable>enable</Nullable>
         <Company>XIVChat</Company>
-        <Version>1.1.1</Version>
+        <Version>1.1.2</Version>
         <ApplicationIcon>Resources\logo.ico</ApplicationIcon>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <LangVersion>latest</LangVersion>

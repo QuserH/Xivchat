@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Markup;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Toolkit.Uwp.Notifications;
@@ -49,8 +50,6 @@ namespace XIVChat_Desktop {
         }
 
         private async void Application_Startup(object sender, StartupEventArgs e) {
-            Notifications.Initialise();
-
             try {
                 this.Config = Configuration.Load() ?? new Configuration();
             } catch (Exception ex) {
@@ -87,7 +86,8 @@ namespace XIVChat_Desktop {
             LocaliseAllElements();
 
             // I guess this gets initialised where you call it the first time, so initialise it on the UI thread
-            this.Dispatcher.Invoke(() => { });
+            this.Dispatcher.Invoke(() => {
+            });
 
             #if RELEASE
             if (string.IsNullOrWhiteSpace(this.Config.LicenceKey) || !(await LicenceWindow.LicenceInfo(this.Config.LicenceKey)).Valid()) {
@@ -172,9 +172,11 @@ namespace XIVChat_Desktop {
 
             var content = builder.GetToastContent();
 
-            var toast = new ToastNotification(content.GetXml());
+            var document = new XmlDocument();
+            document.LoadXml(content.GetContent());
+            var toast = new ToastNotification(document);
 
-            DesktopNotificationManagerCompat.CreateToastNotifier().Show(toast);
+            ToastNotificationManagerCompat.CreateToastNotifier().Show(toast);
         }
 
         private void Notify(string title, string text) {
