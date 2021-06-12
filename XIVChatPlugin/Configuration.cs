@@ -16,6 +16,8 @@ namespace XIVChatPlugin {
 
         public bool SendBattle { get; set; } = true;
 
+        public bool MessagesCountAsInput { get; set; } = true;
+
         public bool PairingMode { get; set; } = true;
 
         public bool AcceptNewClients { get; set; } = true;

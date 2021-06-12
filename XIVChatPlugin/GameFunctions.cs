@@ -17,6 +17,8 @@ namespace XIVChatPlugin {
 
         private delegate void EasierProcessChatBoxDelegate(IntPtr uiModule, IntPtr message, IntPtr unused, byte a4);
 
+        private delegate byte IsInputDelegate(IntPtr a1);
+
         private delegate byte RequestFriendListDelegate(IntPtr manager);
 
         private delegate int FormatFriendListNameDelegate(long a1, long a2, long a3, int a4, IntPtr data, long a6);
@@ -33,6 +35,7 @@ namespace XIVChatPlugin {
 
         private delegate IntPtr XivStringDtorDelegate(IntPtr memory);
 
+        private readonly Hook<IsInputDelegate>? _isInputHook;
         private readonly Hook<RequestFriendListDelegate>? _friendListHook;
         private readonly Hook<FormatFriendListNameDelegate>? _formatHook;
         private readonly Hook<OnReceiveFriendListChunkDelegate>? _receiveChunkHook;
@@ -45,6 +48,7 @@ namespace XIVChatPlugin {
         private readonly XivStringCtorDelegate? _xivStringCtor;
         private readonly XivStringDtorDelegate? _xivStringDtor;
 
+        internal bool HadInput { get; set; }
         private IntPtr UiModulePtr { get; }
         private IntPtr ColourHandler { get; }
         private IntPtr ColourLookup { get; }
@@ -65,6 +69,7 @@ namespace XIVChatPlugin {
 
             var getUiModulePtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0");
             var easierProcessChatBoxPtr = this.Plugin.ScanText("48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9");
+            var inputPtr = this.Plugin.ScanText("80 B9 ?? ?? ?? ?? ?? 0F 9C C0");
             var friendListPtr = this.Plugin.ScanText("40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9");
             var formatPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24 ??");
             var recvChunkPtr = this.Plugin.ScanText("48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2");
@@ -149,15 +154,30 @@ namespace XIVChatPlugin {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelPtr));
             }
 
+            if (inputPtr != IntPtr.Zero) {
+                this._isInputHook = new Hook<IsInputDelegate>(inputPtr, new IsInputDelegate(this.IsInputDetour));
+                this._isInputHook.Enable();
+            }
+
             this._friendListHook?.Enable();
             this._formatHook?.Enable();
             this._receiveChunkHook?.Enable();
             this._chatChannelChangeHook?.Enable();
+            this._isInputHook?.Enable();
 
             if (this._xivStringCtor != null && this._xivStringDtor != null) {
                 this._emptyXivString = Marshal.AllocHGlobal(0x68);
                 this._xivStringCtor(this._emptyXivString);
             }
+        }
+
+        private byte IsInputDetour(IntPtr a1) {
+            if (!this.Plugin.Config.MessagesCountAsInput || !this.HadInput) {
+                return this._isInputHook!.Original(a1);
+            }
+
+            this.HadInput = false;
+            return 1;
         }
 
         public void ChangeChatChannel(InputChannel channel) {
@@ -205,6 +225,8 @@ namespace XIVChatPlugin {
             if (this._easierProcessChatBox == null || this.UiModulePtr == IntPtr.Zero) {
                 return;
             }
+
+            this.HadInput = true;
 
             var uiModule = this._getUiModule(Marshal.ReadIntPtr(this.UiModulePtr));
 
@@ -328,6 +350,7 @@ namespace XIVChatPlugin {
             this._formatHook?.Dispose();
             this._receiveChunkHook?.Dispose();
             this._chatChannelChangeHook?.Dispose();
+            this._isInputHook?.Dispose();
 
             if (this._emptyXivString != IntPtr.Zero) {
                 this._xivStringDtor?.Invoke(this._emptyXivString);
