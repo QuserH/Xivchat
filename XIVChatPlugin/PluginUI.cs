@@ -162,6 +162,17 @@ namespace XIVChatPlugin {
 
                 ImGui.Spacing();
 
+                var messagesCountAsInput = this.Plugin.Config.MessagesCountAsInput;
+                if (WithWhiteText(() => ImGui.Checkbox("Count messages as user input", ref messagesCountAsInput))) {
+                    this.Plugin.Config.MessagesCountAsInput = messagesCountAsInput;
+                    this.Plugin.Config.Save();
+                }
+
+                ImGui.SameLine();
+                HelpMarker("If this is enabled, sending a message from any client will count as user input, resetting the AFK timer.");
+
+                ImGui.Spacing();
+
                 var pairingMode = this.Plugin.Config.PairingMode;
                 if (WithWhiteText(() => ImGui.Checkbox("Pairing mode", ref pairingMode))) {
                     this.Plugin.Config.PairingMode = pairingMode;
