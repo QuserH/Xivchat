@@ -64,7 +64,7 @@ namespace XIVChatPlugin {
         private IntPtr ColourLookup { get; }
         private IntPtr _friendListManager = IntPtr.Zero;
         private IntPtr _chatManager = IntPtr.Zero;
-        private IntPtr _emptyXivString = IntPtr.Zero;
+        private readonly IntPtr _emptyXivString = IntPtr.Zero;
 
         public bool RequestingFriendList { get; private set; }
 
