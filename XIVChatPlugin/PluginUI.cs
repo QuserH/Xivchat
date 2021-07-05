@@ -8,7 +8,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace XIVChatPlugin {
-    public class PluginUi {
+    internal class PluginUi {
         private Plugin Plugin { get; }
 
         private bool _showSettings;
@@ -21,23 +21,23 @@ namespace XIVChatPlugin {
         private readonly Dictionary<Guid, Tuple<BaseClient, Channel<bool>>> _pending = new();
         private readonly Dictionary<Guid, string> _pendingNames = new(0);
 
-        public PluginUi(Plugin plugin) {
+        internal PluginUi(Plugin plugin) {
             this.Plugin = plugin ?? throw new ArgumentNullException(nameof(plugin), "Plugin cannot be null");
         }
 
         private static class Colours {
-            public static readonly Vector4 Primary = new(2 / 255f, 204 / 255f, 238 / 255f, 1.0f);
-            public static readonly Vector4 PrimaryDark = new(2 / 255f, 180 / 255f, 211 / 255f, 1.0f);
-            public static readonly Vector4 Background = new(46 / 255f, 46 / 255f, 46 / 255f, 1.0f);
-            public static readonly Vector4 Text = new(190 / 255f, 190 / 255f, 190 / 255f, 1.0f);
-            public static readonly Vector4 Button = new(90 / 255f, 89 / 255f, 90 / 255f, 1.0f);
-            public static readonly Vector4 ButtonActive = new(123 / 255f, 122 / 255f, 124 / 255f, 1.0f);
-            public static readonly Vector4 ButtonHovered = new(108 / 255f, 107 / 255f, 109 / 255f, 1.0f);
+            internal static readonly Vector4 Primary = new(2 / 255f, 204 / 255f, 238 / 255f, 1.0f);
+            internal static readonly Vector4 PrimaryDark = new(2 / 255f, 180 / 255f, 211 / 255f, 1.0f);
+            internal static readonly Vector4 Background = new(46 / 255f, 46 / 255f, 46 / 255f, 1.0f);
+            internal static readonly Vector4 Text = new(190 / 255f, 190 / 255f, 190 / 255f, 1.0f);
+            internal static readonly Vector4 Button = new(90 / 255f, 89 / 255f, 90 / 255f, 1.0f);
+            internal static readonly Vector4 ButtonActive = new(123 / 255f, 122 / 255f, 124 / 255f, 1.0f);
+            internal static readonly Vector4 ButtonHovered = new(108 / 255f, 107 / 255f, 109 / 255f, 1.0f);
 
-            public static readonly Vector4 White = new(1f, 1f, 1f, 1f);
+            internal static readonly Vector4 White = new(1f, 1f, 1f, 1f);
         }
 
-        public void Draw() {
+        internal void Draw() {
             ImGui.PushStyleColor(ImGuiCol.TitleBg, Colours.PrimaryDark);
             ImGui.PushStyleColor(ImGuiCol.TitleBgActive, Colours.Primary);
             ImGui.PushStyleColor(ImGuiCol.TitleBgCollapsed, Colours.PrimaryDark);
@@ -102,7 +102,7 @@ namespace XIVChatPlugin {
                 }
             }
 
-            if (!this.ShowSettings || !Begin(this.Plugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
+            if (!this.ShowSettings || !Begin(this.Plugin.DalamudPlugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
                 return;
             }
 

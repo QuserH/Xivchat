@@ -10,7 +10,7 @@ using Dalamud.Plugin;
 using XIVChatCommon.Message;
 
 namespace XIVChatPlugin {
-    public class GameFunctions : IDisposable {
+    internal class GameFunctions : IDisposable {
         private Plugin Plugin { get; }
 
         private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
@@ -66,15 +66,15 @@ namespace XIVChatPlugin {
         private IntPtr _chatManager = IntPtr.Zero;
         private readonly IntPtr _emptyXivString = IntPtr.Zero;
 
-        public bool RequestingFriendList { get; private set; }
+        internal bool RequestingFriendList { get; private set; }
 
         private readonly List<Player> _friends = new();
 
-        public delegate void ReceiveFriendListHandler(List<Player> friends);
+        internal delegate void ReceiveFriendListHandler(List<Player> friends);
 
-        public event ReceiveFriendListHandler? ReceiveFriendList;
+        internal event ReceiveFriendListHandler? ReceiveFriendList;
 
-        public GameFunctions(Plugin plugin) {
+        internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
 
             var getUiModulePtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0");
@@ -208,7 +208,7 @@ namespace XIVChatPlugin {
             return 1;
         }
 
-        public void ChangeChatChannel(InputChannel channel) {
+        internal void ChangeChatChannel(InputChannel channel) {
             if (this._chatManager == IntPtr.Zero || this._channelChangeCommand == null || this._emptyXivString == IntPtr.Zero) {
                 return;
             }
@@ -219,7 +219,7 @@ namespace XIVChatPlugin {
         // This function looks up a channel's user-defined colour.
         //
         // If this function would ever return 0, it returns null instead.
-        public uint? GetChannelColour(ChatCode channel) {
+        internal uint? GetChannelColour(ChatCode channel) {
             if (this.ColourLookup == IntPtr.Zero || this.ColourHandler == IntPtr.Zero) {
                 return null;
             }
@@ -249,7 +249,7 @@ namespace XIVChatPlugin {
             return 0xFF | (rgb << 8);
         }
 
-        public void ProcessChatBox(string message) {
+        internal void ProcessChatBox(string message) {
             if (this._easierProcessChatBox == null || this.UiModulePtr == IntPtr.Zero) {
                 return;
             }
@@ -271,7 +271,7 @@ namespace XIVChatPlugin {
             Marshal.FreeHGlobal(mem1);
         }
 
-        public bool RequestFriendList() {
+        internal bool RequestFriendList() {
             if (this._friendListManager == IntPtr.Zero || this._friendListHook == null) {
                 return false;
             }
@@ -452,7 +452,7 @@ namespace XIVChatPlugin {
             return nonNull.Length == 0 ? null : Encoding.UTF8.GetString(nonNull);
         }
 
-        public string? Name() => HandleString(this.name);
-        public string? FreeCompany() => HandleString(this.fc);
+        internal string? Name() => HandleString(this.name);
+        internal string? FreeCompany() => HandleString(this.fc);
     }
 }

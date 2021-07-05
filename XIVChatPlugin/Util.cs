@@ -5,11 +5,11 @@ using System.Numerics;
 
 namespace XIVChatPlugin {
     internal static class Util {
-        public static string ToHexString(this IEnumerable<byte> bytes, bool upper = false, string separator = "") {
+        internal static string ToHexString(this IEnumerable<byte> bytes, bool upper = false, string separator = "") {
             return string.Join(separator, bytes.Select(b => b.ToString(upper ? "X2" : "x2")));
         }
 
-        public static List<Vector4> ToColours(this byte[] bytes) {
+        internal static List<Vector4> ToColours(this byte[] bytes) {
             var colours = new List<Vector4>();
 
             var colour = new Vector4(0f, 0f, 0f, 1f);
@@ -41,7 +41,7 @@ namespace XIVChatPlugin {
             return colours;
         }
 
-        public static int IndexOfCount(this string source, char toFind, int position) {
+        internal static int IndexOfCount(this string source, char toFind, int position) {
             var index = -1;
             for (var i = 0; i < position; i++) {
                 index = source.IndexOf(toFind, index + 1);
@@ -54,14 +54,14 @@ namespace XIVChatPlugin {
             return index;
         }
 
-        public static byte[] Terminate(this byte[] bytes) {
+        internal static byte[] Terminate(this byte[] bytes) {
             var terminated = new byte[bytes.Length + 1];
             Array.Copy(bytes, terminated, bytes.Length);
             terminated[terminated.Length - 1] = 0;
             return terminated;
         }
 
-        public static unsafe byte[] ReadTerminated(byte* mem) {
+        internal static unsafe byte[] ReadTerminated(byte* mem) {
             var bytes = new List<byte>();
             while (*mem != 0) {
                 bytes.Add(*mem);

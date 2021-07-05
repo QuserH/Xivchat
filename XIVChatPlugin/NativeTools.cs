@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 namespace XIVChatPlugin {
-    public static unsafe class NativeTools {
+    internal static unsafe class NativeTools {
         [StructLayout(LayoutKind.Sequential)]
         private readonly struct RawVec {
             public readonly byte** pointer;
@@ -18,7 +18,7 @@ namespace XIVChatPlugin {
         [DllImport("xivchat_native_tools.dll")]
         private static extern void wrap_free(RawVec* raw);
 
-        public static IEnumerable<string> Wrap(string input, uint width) {
+        internal static IEnumerable<string> Wrap(string input, uint width) {
             RawVec* raw;
             fixed (byte* ptr = Encoding.UTF8.GetBytes(input).Terminate()) {
                 raw = wrap(ptr, width);

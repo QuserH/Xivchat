@@ -13,20 +13,20 @@ using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Relay;
 
 namespace XIVChatPlugin {
-    public abstract class BaseClient : Stream {
-        public virtual bool Connected { get; set; }
+    internal abstract class BaseClient : Stream {
+        internal virtual bool Connected { get; set; }
 
-        public HandshakeInfo? Handshake { get; set; }
+        internal HandshakeInfo? Handshake { get; set; }
 
-        public ClientPreferences? Preferences { get; set; }
+        internal ClientPreferences? Preferences { get; set; }
 
-        public IPAddress? Remote { get; set; }
+        internal IPAddress? Remote { get; set; }
 
-        public CancellationTokenSource TokenSource { get; } = new();
+        internal CancellationTokenSource TokenSource { get; } = new();
 
-        public Channel<Encodable> Queue { get; } = Channel.CreateUnbounded<Encodable>();
+        internal Channel<Encodable> Queue { get; } = Channel.CreateUnbounded<Encodable>();
 
-        public void Disconnect() {
+        internal void Disconnect() {
             this.Connected = false;
             this.TokenSource.Cancel();
 
@@ -37,7 +37,7 @@ namespace XIVChatPlugin {
             }
         }
 
-        public T? GetPreference<T>(ClientPreference pref, T? def = default) {
+        internal T? GetPreference<T>(ClientPreference pref, T? def = default) {
             var prefs = this.Preferences;
 
             if (prefs == null) {
@@ -48,12 +48,12 @@ namespace XIVChatPlugin {
         }
     }
 
-    public sealed class TcpConnected : BaseClient {
+    internal sealed class TcpConnected : BaseClient {
         private TcpClient Client { get; }
         private readonly Stream _streamImplementation;
         private bool _connected;
 
-        public override bool Connected {
+        internal override bool Connected {
             get {
                 var ret = this._connected;
                 try {
@@ -67,7 +67,7 @@ namespace XIVChatPlugin {
             set => this._connected = value;
         }
 
-        public TcpConnected(TcpClient client) {
+        internal TcpConnected(TcpClient client) {
             this.Client = client;
 
             this.Client.ReceiveTimeout = 5_000;
@@ -126,7 +126,7 @@ namespace XIVChatPlugin {
         }
     }
 
-    public sealed class RelayConnected : BaseClient {
+    internal sealed class RelayConnected : BaseClient {
         internal byte[] PublicKey { get; }
 
         private ChannelWriter<IToRelay> ToRelay { get; }
@@ -137,7 +137,7 @@ namespace XIVChatPlugin {
         private List<byte> ReadBuffer { get; } = new();
         private List<byte> WriteBuffer { get; } = new();
 
-        public RelayConnected(byte[] publicKey, IPAddress remote, ChannelWriter<IToRelay> toRelay, Channel<byte[]> fromRelay) {
+        internal RelayConnected(byte[] publicKey, IPAddress remote, ChannelWriter<IToRelay> toRelay, Channel<byte[]> fromRelay) {
             this.PublicKey = publicKey;
             this.Remote = remote;
             this.Connected = true;

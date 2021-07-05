@@ -10,21 +10,21 @@ using WebSocketSharp;
 using XIVChatCommon.Message.Relay;
 
 namespace XIVChatPlugin {
-    public enum ConnectionStatus {
+    internal enum ConnectionStatus {
         Disconnected,
         Connecting,
         Negotiating,
         Connected,
     }
 
-    public class Relay : IDisposable {
+    internal class Relay : IDisposable {
         #if DEBUG
         private const string RelayUrl = "ws://localhost:14555/";
         #else
         private const string RelayUrl = "wss://relay.xiv.chat/";
         #endif
 
-        public static string? ConnectionError { get; private set; }
+        internal static string? ConnectionError { get; private set; }
 
         private bool Disposed { get; set; }
 
@@ -34,7 +34,7 @@ namespace XIVChatPlugin {
 
         private bool Running { get; set; }
 
-        public ConnectionStatus Status { get; private set; }
+        internal ConnectionStatus Status { get; private set; }
 
         private Channel<IToRelay> ToRelay { get; } = Channel.CreateUnbounded<IToRelay>();
 

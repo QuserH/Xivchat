@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace XIVChatPlugin {
     [Serializable]
-    public class Configuration : IPluginConfiguration {
+    internal class Configuration : IPluginConfiguration {
         private Plugin? _plugin;
 
         public int Version { get; set; } = 1;
@@ -28,11 +28,11 @@ namespace XIVChatPlugin {
         public Dictionary<Guid, Tuple<string, byte[]>> TrustedKeys { get; set; } = new();
         public KeyPair? KeyPair { get; set; }
 
-        public void Initialise(Plugin plugin) {
+        internal void Initialise(Plugin plugin) {
             this._plugin = plugin;
         }
 
-        public void Save() {
+        internal void Save() {
             this._plugin?.Interface.SavePluginConfig(this);
         }
     }

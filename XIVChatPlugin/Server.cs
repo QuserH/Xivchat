@@ -23,7 +23,7 @@ using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
-    public class Server : IDisposable {
+    internal class Server : IDisposable {
         private const int MaxMessageLength = 500;
 
         private static readonly string[] PublicPrefixes = {
@@ -47,8 +47,8 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<string> _toGame = new();
 
         private readonly ConcurrentDictionary<Guid, BaseClient> _clients = new();
-        public IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
-        public readonly Channel<Tuple<BaseClient, Channel<bool>>> PendingClients = Channel.CreateUnbounded<Tuple<BaseClient, Channel<bool>>>();
+        internal IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
+        internal readonly Channel<Tuple<BaseClient, Channel<bool>>> PendingClients = Channel.CreateUnbounded<Tuple<BaseClient, Channel<bool>>>();
 
         private readonly HashSet<Guid> _waitingForFriendList = new();
 
@@ -67,7 +67,7 @@ namespace XIVChatPlugin {
 
         private const int MaxMessageSize = 128_000;
 
-        public Server(Plugin plugin) {
+        internal Server(Plugin plugin) {
             this._plugin = plugin;
             if (this._plugin.Config.KeyPair == null) {
                 this.RegenerateKeyPair();
@@ -167,7 +167,7 @@ namespace XIVChatPlugin {
             this._waitingForFriendList.Clear();
         }
 
-        public void Spawn() {
+        internal void Spawn() {
             var port = this._plugin.Config.Port;
 
             Task.Run(async () => {
@@ -191,13 +191,12 @@ namespace XIVChatPlugin {
             });
         }
 
-        public void RegenerateKeyPair() {
+        internal void RegenerateKeyPair() {
             this._plugin.Config.KeyPair = PublicKeyBox.GenerateKeyPair();
             this._plugin.Config.Save();
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "delegate")]
-        public void OnChat(XivChatType type, uint senderId, ref SeString sender, ref SeString message, ref bool isHandled) {
+        internal void OnChat(XivChatType type, uint senderId, ref SeString sender, ref SeString message, ref bool isHandled) {
             if (isHandled) {
                 return;
             }
@@ -245,8 +244,7 @@ namespace XIVChatPlugin {
             }
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "delegate")]
-        public void OnFrameworkUpdate(Framework framework) {
+        internal void OnFrameworkUpdate(Framework framework) {
             var player = this._plugin.Interface.ClientState.LocalPlayer;
             if (player != null && this._sendPlayerData) {
                 this.BroadcastPlayerData();
@@ -482,7 +480,7 @@ namespace XIVChatPlugin {
                         this._waitingForFriendList.Add(id);
 
                         if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
-                            this._plugin.Interface.Framework.Gui.Chat.PrintError($"[{this._plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
+                            this._plugin.Interface.Framework.Gui.Chat.PrintError($"[{this._plugin.DalamudPlugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
                         }
                     }
 
@@ -500,18 +498,18 @@ namespace XIVChatPlugin {
             }
         }
 
-        public class NameFormatting {
-            public string Before { get; private set; } = string.Empty;
-            public string After { get; private set; } = string.Empty;
-            public bool IsPresent { get; private set; } = true;
+        internal class NameFormatting {
+            internal string Before { get; private set; } = string.Empty;
+            internal string After { get; private set; } = string.Empty;
+            internal bool IsPresent { get; private set; } = true;
 
-            public static NameFormatting Empty() {
+            internal static NameFormatting Empty() {
                 return new() {
                     IsPresent = false,
                 };
             }
 
-            public static NameFormatting Of(string before, string after) {
+            internal static NameFormatting Of(string before, string after) {
                 return new() {
                     Before = before,
                     After = after,
@@ -750,7 +748,7 @@ namespace XIVChatPlugin {
             return this._plugin.Interface.Data.GetExcelSheet<LogFilter>().GetRow(rowId).Name;
         }
 
-        public void OnChatChannelChange(uint channel) {
+        internal void OnChatChannelChange(uint channel) {
             var inputChannel = (InputChannel) channel;
             this._currentChannel = inputChannel;
 
@@ -785,18 +783,18 @@ namespace XIVChatPlugin {
             this.BroadcastMessage(playerData);
         }
 
-        public void OnLogIn(object sender, EventArgs e) {
+        internal void OnLogIn(object sender, EventArgs e) {
             this.BroadcastAvailability(true);
             // send player data on next framework update
             this._sendPlayerData = true;
         }
 
-        public void OnLogOut(object sender, EventArgs e) {
+        internal void OnLogOut(object sender, EventArgs e) {
             this.BroadcastAvailability(false);
             this.BroadcastPlayerData();
         }
 
-        public void OnTerritoryChange(object sender, ushort territoryId) => this._sendPlayerData = true;
+        internal void OnTerritoryChange(object sender, ushort territoryId) => this._sendPlayerData = true;
 
         public void Dispose() {
             // stop accepting new clients
@@ -822,7 +820,7 @@ namespace XIVChatPlugin {
     }
 
     internal static class TcpListenerExt {
-        public static async Task<TcpClient?> GetTcpClient(this TcpListener listener, CancellationTokenSource source) {
+        internal static async Task<TcpClient?> GetTcpClient(this TcpListener listener, CancellationTokenSource source) {
             using (source.Token.Register(listener.Stop)) {
                 try {
                     var client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);

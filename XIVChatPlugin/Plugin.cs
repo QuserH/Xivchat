@@ -2,42 +2,31 @@
 using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 #if DEBUG
 using System.IO;
 #endif
-using System.Reflection;
 
 namespace XIVChatPlugin {
-    // ReSharper disable once ClassNeverInstantiated.Global
-    public class Plugin : IDalamudPlugin {
+    internal class Plugin : IDisposable {
         private bool _disposedValue;
 
-        public string Name => "XIVChat";
+        internal DalamudPluginInterface Interface { get; }
+        internal DalamudPlugin DalamudPlugin { get; }
+        internal Configuration Config { get; }
+        private PluginUi Ui { get; }
+        internal Server Server { get; private set; } = null!;
+        internal Relay? Relay { get; private set; }
+        internal GameFunctions Functions { get; }
+        private List<IDisposable> Ipcs { get; } = new();
 
-        // ReSharper disable once MemberCanBePrivate.Global
-        // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        internal string Location { get; private set; } = Assembly.GetExecutingAssembly().Location;
-
-        [SuppressMessage("ReSharper", "UnusedMember.Local")]
-        private void SetLocation(string path) {
-            this.Location = path;
-        }
-
-        public DalamudPluginInterface Interface { get; private set; } = null!;
-        public Configuration Config { get; private set; } = null!;
-        private PluginUi Ui { get; set; } = null!;
-        public Server Server { get; private set; } = null!;
-        public Relay? Relay { get; private set; }
-        public GameFunctions Functions { get; private set; } = null!;
-
-        public void Initialize(DalamudPluginInterface pluginInterface) {
-            this.Interface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface), "DalamudPluginInterface cannot be null");
+        internal Plugin(DalamudPlugin dalamudPlugin, DalamudPluginInterface pluginInterface) {
+            this.Interface = pluginInterface;
+            this.DalamudPlugin = dalamudPlugin;
 
             // load libsodium.so from debug location if in debug mode
             #if DEBUG
             string path = Environment.GetEnvironmentVariable("PATH")!;
-            string newPath = Path.GetDirectoryName(this.Location)!;
+            string newPath = Path.GetDirectoryName(this.DalamudPlugin.Location)!;
             Environment.SetEnvironmentVariable("PATH", $"{path};{newPath}");
             #endif
 
@@ -64,6 +53,32 @@ namespace XIVChatPlugin {
             this.Interface.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
                 HelpMessage = "Opens the config for the XIVChat plugin",
             });
+
+            this.Ipcs.Add(new Ipc.PeepingTom(this));
+        }
+
+        public void Dispose() {
+            if (this._disposedValue) {
+                return;
+            }
+
+            this._disposedValue = true;
+
+            this.Relay?.Dispose();
+            this.Server.Dispose();
+
+            this.Interface.UiBuilder.OnBuildUi -= this.Ui.Draw;
+            this.Interface.UiBuilder.OnOpenConfigUi -= this.Ui.OpenSettings;
+            this.Interface.Framework.OnUpdateEvent -= this.Server.OnFrameworkUpdate;
+            this.Interface.Framework.Gui.Chat.OnChatMessage -= this.Server.OnChat;
+            this.Interface.ClientState.OnLogin -= this.Server.OnLogIn;
+            this.Interface.ClientState.OnLogout -= this.Server.OnLogOut;
+            this.Interface.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
+            this.Interface.CommandManager.RemoveHandler("/xivchat");
+
+            foreach (var ipc in this.Ipcs) {
+                ipc.Dispose();
+            }
         }
 
         internal void StartRelay() {
@@ -105,42 +120,13 @@ namespace XIVChatPlugin {
             this.Server.Spawn();
         }
 
-        public void RelaunchServer() {
+        internal void RelaunchServer() {
             this.Server.Dispose();
             this.LaunchServer();
         }
 
         private void OnCommand(string command, string args) {
             this.Ui.OpenSettings(null, null);
-        }
-
-        [SuppressMessage("ReSharper", "DelegateSubtraction")]
-        protected virtual void Dispose(bool disposing) {
-            if (this._disposedValue) {
-                return;
-            }
-
-            if (disposing) {
-                this.Relay?.Dispose();
-                this.Server.Dispose();
-
-                this.Interface.UiBuilder.OnBuildUi -= this.Ui.Draw;
-                this.Interface.UiBuilder.OnOpenConfigUi -= this.Ui.OpenSettings;
-                this.Interface.Framework.OnUpdateEvent -= this.Server.OnFrameworkUpdate;
-                this.Interface.Framework.Gui.Chat.OnChatMessage -= this.Server.OnChat;
-                this.Interface.ClientState.OnLogin -= this.Server.OnLogIn;
-                this.Interface.ClientState.OnLogout -= this.Server.OnLogOut;
-                this.Interface.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
-                this.Interface.CommandManager.RemoveHandler("/xivchat");
-            }
-
-            this._disposedValue = true;
-        }
-
-        public void Dispose() {
-            // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-            this.Dispose(true);
-            GC.SuppressFinalize(this);
         }
     }
 }
