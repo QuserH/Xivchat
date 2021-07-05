@@ -63,6 +63,8 @@
                       WindowChrome.IsHitTestVisibleInChrome="{Binding App.Config.CompactMode}">
                 <MenuItem Header="Friend list"
                           Click="FriendList_Click" />
+                <MenuItem Header="Targeting"
+                          Click="Targeting_Click" />
             </MenuItem>
         </Menu>
         <TabControl x:Name="Tabs"

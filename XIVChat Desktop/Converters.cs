@@ -51,7 +51,7 @@ namespace XIVChat_Desktop {
 
     public class SenderPlayerConverter : IValueConverter {
         public object? Convert(object value, Type targetType, object parameter, CultureInfo culture) {
-            if (!(value is ServerMessage.SenderPlayer sender)) {
+            if (value is not ServerMessage.SenderPlayer sender) {
                 return null;
             }
 
@@ -63,7 +63,7 @@ namespace XIVChat_Desktop {
             if (worldName != null) {
                 s.Append(" (");
                 s.Append(worldName);
-                s.Append(")");
+                s.Append(')');
             }
 
             return s.ToString();
@@ -100,11 +100,11 @@ namespace XIVChat_Desktop {
 
     public class NotConverter : IValueConverter {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture) {
-            return !((bool)value);
+            return !(bool) value;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
-            return !((bool)value);
+            return !(bool) value;
         }
     }
 
@@ -113,11 +113,11 @@ namespace XIVChat_Desktop {
         public T FalseValue { get; set; } = default!;
 
         public object? Convert(object value, Type targetType, object parameter, CultureInfo culture) {
-            return (bool)value ? this.TrueValue : this.FalseValue;
+            return (bool) value ? this.TrueValue : this.FalseValue;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) {
-            var val = (T)value;
+            var val = (T) value;
             return EqualityComparer<T>.Default.Equals(val, this.TrueValue);
         }
     }

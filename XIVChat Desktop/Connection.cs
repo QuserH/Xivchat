@@ -217,9 +217,8 @@ namespace XIVChat_Desktop {
             // tell the server our preferences
             var preferences = new ClientPreferences {
                 Preferences = new Dictionary<ClientPreference, object> {
-                    {
-                        ClientPreference.BacklogNewestMessagesFirst, true
-                    },
+                    [ClientPreference.BacklogNewestMessagesFirst] = true,
+                    [ClientPreference.TargetingListSupport] = true,
                 },
             };
             await SecretMessage.SendSecretMessage(stream, handshake.Keys.tx, preferences, this.cancel.Token);
@@ -418,16 +417,24 @@ namespace XIVChat_Desktop {
                 case ServerOperation.PlayerList:
                     var playerList = ServerPlayerList.Decode(payload);
 
-                    if (playerList.Type == PlayerListType.Friend) {
-                        var players = playerList.Players
-                            .OrderBy(player => !player.HasStatus(PlayerStatus.Online));
+                    switch (playerList.Type) {
+                        case PlayerListType.Friend: {
+                            var players = playerList.Players
+                                .OrderBy(player => !player.HasStatus(PlayerStatus.Online));
 
-                        this.app.Dispatch(() => {
-                            this.app.Window.FriendList.Clear();
-                            foreach (var player in players) {
-                                this.app.Window.FriendList.Add(player);
-                            }
-                        });
+                            this.app.Dispatch(() => {
+                                this.app.Window.FriendList.Clear();
+                                foreach (var player in players) {
+                                    this.app.Window.FriendList.Add(player);
+                                }
+                            });
+                            break;
+                        }
+                        case PlayerListType.Targeting:
+                            this.app.Dispatch(() => {
+                                this.app.Window.UpdateTargeting(playerList.Players);
+                            });
+                            break;
                     }
 
                     break;

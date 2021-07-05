@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -163,6 +164,7 @@ namespace XIVChat_Desktop {
 
         public List<ServerMessage> Messages { get; } = new();
         public ObservableCollection<Player> FriendList { get; } = new();
+        public List<TargetingPlayer> Targeting { get; set; } = new();
 
         private bool ShowMessageForNoUpdate { get; set; }
 
@@ -349,6 +351,31 @@ namespace XIVChat_Desktop {
             }
         }
 
+        internal void UpdateTargeting(IEnumerable<Player> players) {
+            var now = DateTime.UtcNow;
+            var data = players as Player[] ?? players.ToArray();
+
+            var newPlayers = data
+                .Where(player => this.Targeting.All(t => t.Player.Name != player.Name && t.Player.HomeWorld != player.HomeWorld))
+                .Select(player => new TargetingPlayer(player, true, now));
+
+            var oldPlayers = this.Targeting
+                .Select(t => {
+                    var timestamp = t.Timestamp;
+                    var current = data.Any(current => current.Name == t.Player.Name && current.HomeWorld == t.Player.HomeWorld);
+                    if (current || t.Current) {
+                        timestamp = now;
+                    }
+
+                    return new TargetingPlayer(t.Player, current, timestamp);
+                })
+                .Concat(newPlayers)
+                .OrderByDescending(t => t.Current)
+                .ThenByDescending(t => t.Timestamp);
+
+            this.Targeting = oldPlayers.ToList();
+        }
+
         private void Connect_Click(object sender, RoutedEventArgs e) {
             new ConnectDialog(this).ShowDialog();
         }
@@ -517,6 +544,28 @@ namespace XIVChat_Desktop {
 
         private void TabGrid_OnInitialized(object? sender, EventArgs e) {
             this.CalculateCompactMargins();
+        }
+
+        private void Targeting_Click(object sender, RoutedEventArgs e) {
+            new Targeting(this).Show();
+        }
+    }
+
+    public class TargetingPlayer {
+        public Player Player { get; }
+        public bool Current { get; }
+        public DateTime Timestamp { get; }
+
+        public string UiTimestamp => this.Current
+            ? "Now"
+            : DateTime.UtcNow - this.Timestamp >= TimeSpan.FromDays(1)
+                ? this.Timestamp.ToLocalTime().ToString("dd/MM")
+                : this.Timestamp.ToLocalTime().ToString("t");
+
+        public TargetingPlayer(Player player, bool current, DateTime timestamp) {
+            this.Player = player;
+            this.Current = current;
+            this.Timestamp = timestamp;
         }
     }
 }
