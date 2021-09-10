@@ -2,26 +2,69 @@
 using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using Dalamud.Data;
+using Dalamud.Game;
+using Dalamud.Game.ClientState;
+using Dalamud.Game.ClientState.Objects;
+using Dalamud.Game.Gui;
+using Dalamud.IoC;
 #if DEBUG
 using System.IO;
 #endif
 
 namespace XIVChatPlugin {
-    internal class Plugin : IDisposable {
+    internal class Plugin : IDalamudPlugin {
+        public string Name => "XIVChat";
+
         private bool _disposedValue;
 
-        internal DalamudPluginInterface Interface { get; }
-        internal DalamudPlugin DalamudPlugin { get; }
+        [PluginService]
+        internal DalamudPluginInterface Interface { get; private init; } = null!;
+
+        [PluginService]
+        internal ChatGui ChatGui { get; private init; } = null!;
+
+        [PluginService]
+        internal ClientState ClientState { get; private init; } = null!;
+
+        [PluginService]
+        private CommandManager CommandManager { get; init; } = null!;
+
+        [PluginService]
+        internal DataManager DataManager { get; private init; } = null!;
+
+        [PluginService]
+        private Framework Framework { get; init; } = null!;
+
+        [PluginService]
+        internal ObjectTable ObjectTable { get; private init; } = null!;
+
+        [PluginService]
+        private SigScanner SigScanner { get; init; } = null!;
+
         internal Configuration Config { get; }
         private PluginUi Ui { get; }
-        internal Server Server { get; private set; } = null!;
+        internal Server Server { get; private set; }
         internal Relay? Relay { get; private set; }
         internal GameFunctions Functions { get; }
+        internal InternalEvents Events { get; }
         private List<IDisposable> Ipcs { get; } = new();
 
-        internal Plugin(DalamudPlugin dalamudPlugin, DalamudPluginInterface pluginInterface) {
-            this.Interface = pluginInterface;
-            this.DalamudPlugin = dalamudPlugin;
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once AutoPropertyCanBeMadeGetOnly.Local
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
+        // ReSharper disable once MemberCanBePrivate.Global
+        internal string Location { get; private set; } = Assembly.GetExecutingAssembly().Location;
+
+        [SuppressMessage("ReSharper", "UnusedMember.Local")]
+        private void SetLocation(string path) {
+            this.Location = path;
+        }
+
+        public Plugin() {
+            this.Events = new InternalEvents();
 
             // load libsodium.so from debug location if in debug mode
             #if DEBUG
@@ -43,14 +86,14 @@ namespace XIVChatPlugin {
                 this.StartRelay();
             }
 
-            this.Interface.UiBuilder.OnBuildUi += this.Ui.Draw;
-            this.Interface.UiBuilder.OnOpenConfigUi += this.Ui.OpenSettings;
-            this.Interface.Framework.OnUpdateEvent += this.Server.OnFrameworkUpdate;
-            this.Interface.Framework.Gui.Chat.OnChatMessage += this.Server.OnChat;
-            this.Interface.ClientState.OnLogin += this.Server.OnLogIn;
-            this.Interface.ClientState.OnLogout += this.Server.OnLogOut;
-            this.Interface.ClientState.TerritoryChanged += this.Server.OnTerritoryChange;
-            this.Interface.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
+            this.Interface.UiBuilder.Draw += this.Ui.Draw;
+            this.Interface.UiBuilder.OpenConfigUi += this.Ui.OpenSettings;
+            this.Framework.Update += this.Server!.OnFrameworkUpdate;
+            this.ChatGui.ChatMessage += this.Server.OnChat;
+            this.ClientState.Login += this.Server.OnLogIn;
+            this.ClientState.Logout += this.Server.OnLogOut;
+            this.ClientState.TerritoryChanged += this.Server.OnTerritoryChange;
+            this.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
                 HelpMessage = "Opens the config for the XIVChat plugin",
             });
 
@@ -67,14 +110,14 @@ namespace XIVChatPlugin {
             this.Relay?.Dispose();
             this.Server.Dispose();
 
-            this.Interface.UiBuilder.OnBuildUi -= this.Ui.Draw;
-            this.Interface.UiBuilder.OnOpenConfigUi -= this.Ui.OpenSettings;
-            this.Interface.Framework.OnUpdateEvent -= this.Server.OnFrameworkUpdate;
-            this.Interface.Framework.Gui.Chat.OnChatMessage -= this.Server.OnChat;
-            this.Interface.ClientState.OnLogin -= this.Server.OnLogIn;
-            this.Interface.ClientState.OnLogout -= this.Server.OnLogOut;
-            this.Interface.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
-            this.Interface.CommandManager.RemoveHandler("/xivchat");
+            this.Interface.UiBuilder.Draw -= this.Ui.Draw;
+            this.Interface.UiBuilder.OpenConfigUi -= this.Ui.OpenSettings;
+            this.Framework.Update -= this.Server.OnFrameworkUpdate;
+            this.ChatGui.ChatMessage -= this.Server.OnChat;
+            this.ClientState.Login -= this.Server.OnLogIn;
+            this.ClientState.Logout -= this.Server.OnLogOut;
+            this.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
+            this.CommandManager.RemoveHandler("/xivchat");
 
             foreach (var ipc in this.Ipcs) {
                 ipc.Dispose();
@@ -101,7 +144,7 @@ namespace XIVChatPlugin {
 
         internal IntPtr ScanText(string sig) {
             try {
-                return this.Interface.TargetModuleScanner.ScanText(sig);
+                return this.SigScanner.ScanText(sig);
             } catch (KeyNotFoundException) {
                 return IntPtr.Zero;
             }
@@ -109,7 +152,7 @@ namespace XIVChatPlugin {
 
         internal IntPtr GetStaticAddressFromSig(string sig) {
             try {
-                return this.Interface.TargetModuleScanner.GetStaticAddressFromSig(sig);
+                return this.SigScanner.GetStaticAddressFromSig(sig);
             } catch (KeyNotFoundException) {
                 return IntPtr.Zero;
             }
@@ -126,7 +169,7 @@ namespace XIVChatPlugin {
         }
 
         private void OnCommand(string command, string args) {
-            this.Ui.OpenSettings(null, null);
+            this.Ui.OpenSettings();
         }
     }
 }

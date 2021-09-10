@@ -137,7 +137,7 @@ namespace XIVChatPlugin {
         private List<byte> ReadBuffer { get; } = new();
         private List<byte> WriteBuffer { get; } = new();
 
-        internal RelayConnected(byte[] publicKey, IPAddress remote, ChannelWriter<IToRelay> toRelay, Channel<byte[]> fromRelay) {
+        internal RelayConnected(byte[] publicKey, IPAddress? remote, ChannelWriter<IToRelay> toRelay, Channel<byte[]> fromRelay) {
             this.PublicKey = publicKey;
             this.Remote = remote;
             this.Connected = true;

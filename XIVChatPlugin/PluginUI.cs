@@ -102,7 +102,12 @@ namespace XIVChatPlugin {
                 }
             }
 
-            if (!this.ShowSettings || !Begin(this.Plugin.DalamudPlugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
+            if (!this.ShowSettings) {
+                return;
+            }
+
+            if (!Begin(this.Plugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
+                ImGui.End();
                 return;
             }
 
@@ -345,16 +350,6 @@ namespace XIVChatPlugin {
                 }
             }
 
-            if (WithWhiteText(() => ImGui.CollapsingHeader("ACT/Teamcraft issues?"))) {
-                ImGui.PushTextWrapPos(ImGui.GetFontSize() * 20);
-                ImGui.TextUnformatted("Click on the button below to visit a website showing a workaround for ACT and Teamcraft having issues.");
-                ImGui.PopTextWrapPos();
-
-                if (WithWhiteText(() => ImGui.Button("Open website"))) {
-                    System.Diagnostics.Process.Start("https://xiv.chat/server/workaround");
-                }
-            }
-
             ImGui.End();
         }
 
@@ -391,7 +386,7 @@ namespace XIVChatPlugin {
             ImGui.Dummy(new Vector2(0, 16 + spacing.Y * 2));
         }
 
-        public void OpenSettings(object? sender, EventArgs? args) {
+        public void OpenSettings() {
             this.ShowSettings = true;
         }
 
@@ -437,7 +432,7 @@ namespace XIVChatPlugin {
 
             ImGui.PopTextWrapPos();
 
-            if (!this._pendingNames.TryGetValue(id, out string name)) {
+            if (!this._pendingNames.TryGetValue(id, out var name)) {
                 name = "No name";
             }
 

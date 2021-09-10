@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Security.Authentication;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using Dalamud.Plugin;
+using Dalamud.Logging;
 using MessagePack;
 using WebSocketSharp;
 using XIVChatCommon.Message.Relay;
@@ -19,9 +21,9 @@ namespace XIVChatPlugin {
 
     internal class Relay : IDisposable {
         #if DEBUG
-        private const string RelayUrl = "ws://localhost:14555/";
+        private static readonly Uri RelayUrl = new("ws://localhost:14555/", UriKind.Absolute);
         #else
-        private const string RelayUrl = "wss://relay.xiv.chat/";
+        private static readonly Uri RelayUrl = new("wss://relay.xiv.chat/", UriKind.Absolute);
         #endif
 
         internal static string? ConnectionError { get; private set; }
@@ -41,9 +43,9 @@ namespace XIVChatPlugin {
         internal Relay(Plugin plugin) {
             this.Plugin = plugin;
 
-            this.Connection = new WebSocket(RelayUrl) {
+            this.Connection = new WebSocket(RelayUrl.ToString()) {
                 SslConfiguration = {
-                    EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                 },
             };
 
@@ -55,7 +57,7 @@ namespace XIVChatPlugin {
 
         public void Dispose() {
             this.Disposed = true;
-            this.Connection.CloseAsync();
+            new Thread(() => this.Connection.Close(CloseStatusCode.Normal)).Start();
             this.Running = false;
         }
 
@@ -67,7 +69,7 @@ namespace XIVChatPlugin {
             this.Running = true;
 
             this.Status = ConnectionStatus.Connecting;
-            this.Connection.ConnectAsync();
+            new Thread(() => this.Connection.Connect()).Start();
         }
 
         internal void ResendPublicKey() {
@@ -94,7 +96,7 @@ namespace XIVChatPlugin {
             this.Connection.Send(bytes);
         }
 
-        private void OnOpen(object sender, EventArgs e) {
+        private void OnOpen(object? o, EventArgs eventArgs) {
             this.Status = ConnectionStatus.Negotiating;
 
             var auth = this.Plugin.Config.RelayAuth;
@@ -132,8 +134,8 @@ namespace XIVChatPlugin {
             });
         }
 
-        private void OnMessage(object sender, MessageEventArgs e) {
-            var message = MessagePackSerializer.Deserialize<IFromRelay>(e.RawData);
+        private void OnMessage(object? sender, MessageEventArgs args) {
+            var message = MessagePackSerializer.Deserialize<IFromRelay>(args.RawData);
             switch (message) {
                 case RelaySuccess success:
                     if (success.Success) {
@@ -148,7 +150,9 @@ namespace XIVChatPlugin {
 
                     break;
                 case RelayNewClient newClient:
+                    #pragma warning disable CA1806
                     IPAddress.TryParse(newClient.Address, out var remote);
+                    #pragma warning restore CA1806
                     var client = new RelayConnected(
                         newClient.PublicKey.ToArray(),
                         remote,
@@ -181,17 +185,17 @@ namespace XIVChatPlugin {
             }
         }
 
-        private void OnClose(object sender, CloseEventArgs e) {
+        private void OnClose(object? sender, CloseEventArgs args) {
             this.Running = false;
             this.Status = ConnectionStatus.Disconnected;
 
-            if (!e.WasClean && !this.Disposed) {
+            if (!args.WasClean && !this.Disposed) {
                 Task.Run(async () => await Task.Delay(3_000)).ContinueWith(_ => this.Start());
             }
         }
 
-        private void OnError(object sender, ErrorEventArgs e) {
-            PluginLog.LogError(e.Exception, $"Error in relay connection: {e.Message}");
+        private void OnError(object? sender, ErrorEventArgs args) {
+            PluginLog.LogError(args.Exception, $"Error in relay connection: {args.Message}");
             this.Running = false;
             this.Status = ConnectionStatus.Disconnected;
 

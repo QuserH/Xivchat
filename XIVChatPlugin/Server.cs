@@ -1,6 +1,4 @@
-﻿using Dalamud.Game.Internal;
-using Dalamud.Plugin;
-using Lumina.Excel.GeneratedSheets;
+﻿using Lumina.Excel.GeneratedSheets;
 using MessagePack;
 using Sodium;
 using System;
@@ -14,9 +12,11 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Dalamud.Game;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Dalamud.Logging;
 using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
@@ -91,7 +91,7 @@ namespace XIVChatPlugin {
                 var multicastAddr = IPAddress.Parse("224.0.0.147");
                 udp.JoinMulticastGroup(multicastAddr);
 
-                string? lastPlayerName = null;
+                SeString? lastPlayerName = null;
 
                 Task<UdpReceiveResult>? receiveTask = null;
 
@@ -101,7 +101,7 @@ namespace XIVChatPlugin {
                         continue;
                     }
 
-                    var playerName = this._plugin.Interface.ClientState.LocalPlayer?.Name;
+                    var playerName = this._plugin.ClientState.LocalPlayer?.Name;
 
                     if (playerName != null) {
                         lastPlayerName = playerName;
@@ -135,7 +135,7 @@ namespace XIVChatPlugin {
                         continue;
                     }
 
-                    var utf8 = Encoding.UTF8.GetBytes(lastPlayerName);
+                    var utf8 = Encoding.UTF8.GetBytes(lastPlayerName.TextValue);
                     var portBytes = BitConverter.GetBytes(this._plugin.Config.Port).Reverse().ToArray();
                     var key = this._plugin.Config.KeyPair!.PublicKey;
                     // magic + string length + string + port + key
@@ -244,8 +244,8 @@ namespace XIVChatPlugin {
             }
         }
 
-        internal void OnFrameworkUpdate(Framework framework) {
-            var player = this._plugin.Interface.ClientState.LocalPlayer;
+        internal void OnFrameworkUpdate(Framework framework1) {
+            var player = this._plugin.ClientState.LocalPlayer;
             if (player != null && this._sendPlayerData) {
                 this.BroadcastPlayerData();
                 this._sendPlayerData = false;
@@ -382,6 +382,8 @@ namespace XIVChatPlugin {
                     }
                 });
 
+                this._plugin.Events.FireNewClientEvent(id, client);
+
                 while (this._clients.TryGetValue(id, out var client) && client.Connected && !client.TokenSource.IsCancellationRequested) {
                     try {
                         var msg = await client.Queue.Reader.ReadAsync(client.TokenSource.Token);
@@ -480,7 +482,7 @@ namespace XIVChatPlugin {
                         this._waitingForFriendList.Add(id);
 
                         if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
-                            this._plugin.Interface.Framework.Gui.Chat.PrintError($"[{this._plugin.DalamudPlugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
+                            this._plugin.ChatGui.PrintError($"[{this._plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
                         }
                     }
 
@@ -524,14 +526,13 @@ namespace XIVChatPlugin {
                 return cached;
             }
 
-            var logKind = this._plugin.Interface.Data.GetExcelSheet<LogKind>().GetRow((ushort) type);
+            var logKind = this._plugin.DataManager.GetExcelSheet<LogKind>()!.GetRow((ushort) type);
 
             if (logKind == null) {
                 return null;
             }
 
-            var format = logKind.Format;
-            var sestring = this._plugin.Interface.SeStringManager.Parse(format.RawData.ToArray());
+            var format = (SeString) logKind.Format;
 
             static bool IsStringParam(Payload payload, byte num) {
                 var data = payload.Encode();
@@ -539,19 +540,19 @@ namespace XIVChatPlugin {
                 return data.Length >= 5 && data[1] == 0x29 && data[4] == num + 1;
             }
 
-            var firstStringParam = sestring.Payloads.FindIndex(payload => IsStringParam(payload, 1));
-            var secondStringParam = sestring.Payloads.FindIndex(payload => IsStringParam(payload, 2));
+            var firstStringParam = format.Payloads.FindIndex(payload => IsStringParam(payload, 1));
+            var secondStringParam = format.Payloads.FindIndex(payload => IsStringParam(payload, 2));
 
             if (firstStringParam == -1 || secondStringParam == -1) {
                 return NameFormatting.Empty();
             }
 
-            var before = sestring.Payloads
+            var before = format.Payloads
                 .GetRange(0, firstStringParam)
                 .Where(payload => payload is ITextProvider)
                 .Cast<ITextProvider>()
                 .Select(text => text.Text);
-            var after = sestring.Payloads
+            var after = format.Payloads
                 .GetRange(firstStringParam + 1, secondStringParam - firstStringParam)
                 .Where(payload => payload is ITextProvider)
                 .Cast<ITextProvider>()
@@ -690,16 +691,16 @@ namespace XIVChatPlugin {
             if (input.StartsWith("/")) {
                 var space = input.IndexOf(' ');
                 if (space != -1) {
-                    prefix = input.Substring(0, space);
+                    prefix = input[..space];
                     // handle wrapping tells
                     if (prefix is "/tell" or "/t") {
                         var tellSpace = input.IndexOfCount(' ', 3);
                         if (tellSpace != -1) {
-                            prefix = input.Substring(0, tellSpace);
-                            input = input.Substring(tellSpace + 1);
+                            prefix = input[..tellSpace];
+                            input = input[(tellSpace + 1)..];
                         }
                     } else {
-                        input = input.Substring(space + 1);
+                        input = input[(space + 1)..];
                     }
                 }
             }
@@ -745,7 +746,7 @@ namespace XIVChatPlugin {
                 _ => 0,
             };
 
-            return this._plugin.Interface.Data.GetExcelSheet<LogFilter>().GetRow(rowId).Name;
+            return this._plugin.DataManager.GetExcelSheet<LogFilter>()!.GetRow(rowId)?.Name ?? string.Empty;
         }
 
         internal void OnChatChannelChange(uint channel) {
@@ -763,16 +764,16 @@ namespace XIVChatPlugin {
         }
 
         private PlayerData? GeneratePlayerData() {
-            var player = this._plugin.Interface.ClientState.LocalPlayer;
+            var player = this._plugin.ClientState.LocalPlayer;
             if (player == null) {
                 return null;
             }
 
             var homeWorld = player.HomeWorld.GameData.Name;
             var currentWorld = player.CurrentWorld.GameData.Name;
-            var territory = this._plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(this._plugin.Interface.ClientState.TerritoryType);
+            var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>()!.GetRow(this._plugin.ClientState.TerritoryType);
             var location = territory?.PlaceName?.Value?.Name ?? "???";
-            var name = player.Name;
+            var name = player.Name.TextValue;
 
             return new PlayerData(homeWorld, currentWorld, location, name);
         }
@@ -783,18 +784,18 @@ namespace XIVChatPlugin {
             this.BroadcastMessage(playerData);
         }
 
-        internal void OnLogIn(object sender, EventArgs e) {
+        internal void OnLogIn(object? sender, EventArgs e) {
             this.BroadcastAvailability(true);
             // send player data on next framework update
             this._sendPlayerData = true;
         }
 
-        internal void OnLogOut(object sender, EventArgs e) {
+        internal void OnLogOut(object? sender, EventArgs e) {
             this.BroadcastAvailability(false);
             this.BroadcastPlayerData();
         }
 
-        internal void OnTerritoryChange(object sender, ushort territoryId) => this._sendPlayerData = true;
+        internal void OnTerritoryChange(object? sender, ushort territoryId) => this._sendPlayerData = true;
 
         public void Dispose() {
             // stop accepting new clients
@@ -821,7 +822,7 @@ namespace XIVChatPlugin {
 
     internal static class TcpListenerExt {
         internal static async Task<TcpClient?> GetTcpClient(this TcpListener listener, CancellationTokenSource source) {
-            using (source.Token.Register(listener.Stop)) {
+            await using (source.Token.Register(listener.Stop)) {
                 try {
                     var client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
                     return client;

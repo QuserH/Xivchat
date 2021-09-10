@@ -2,11 +2,13 @@
     <PropertyGroup>
         <RootNamespace>XIVChatPlugin</RootNamespace>
         <AssemblyName>XIVChat</AssemblyName>
-        <TargetFramework>net48</TargetFramework>
+        <TargetFramework>net5-windows</TargetFramework>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <Version>1.6.0</Version>
+        <Version>1.7.0</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="Dalamud">
@@ -17,10 +19,6 @@
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\ImGui.NET.dll</HintPath>
             <Private>False</Private>
         </Reference>
-        <Reference Include="ImGuiScene">
-            <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\ImGuiScene.dll</HintPath>
-            <Private>False</Private>
-        </Reference>
         <Reference Include="Lumina">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\Lumina.dll</HintPath>
             <Private>False</Private>
@@ -29,21 +27,25 @@
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\Lumina.Excel.dll</HintPath>
             <Private>False</Private>
         </Reference>
-        <Reference Include="Microsoft.CSharp" />
+        <Reference Include="PeepingTom.Ipc">
+            <HintPath>..\..\PeepingTom\Peeping Tom.Ipc\bin\Release\net5.0-windows\Peeping Tom.Ipc.dll</HintPath>
+        </Reference>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="DalamudPackager" Version="1.2.1" />
-        <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.18.2" />
-        <PackageReference Include="MessagePack" Version="2.2.85" />
-        <PackageReference Include="Sodium.Core" Version="1.2.3" />
-        <PackageReference Include="System.Threading.Channels" Version="5.0.0" />
-        <PackageReference Include="WebSocketSharp" Version="1.0.3-rc11" />
+        <PackageReference Include="DalamudPackager" Version="2.1.2"/>
+        <PackageReference Include="MessagePack" Version="2.3.75"/>
+        <PackageReference Include="Sodium.Core" Version="1.2.3"/>
+        <PackageReference Include="System.Threading.Channels" Version="5.0.0"/>
+        <PackageReference Include="WebSocketSharp-netstandard" Version="1.0.1"/>
     </ItemGroup>
     <ItemGroup>
-        <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj" />
+        <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj"/>
     </ItemGroup>
     <Target Name="CopyNativeLibraries" AfterTargets="AfterBuild">
-        <Copy SourceFiles="Resources\lib\libsodium.dll" DestinationFolder="$(OutDir)" />
-        <Copy SourceFiles="Resources\lib\xivchat_native_tools.dll" DestinationFolder="$(OutDir)" />
+        <Copy SourceFiles="Resources\lib\libsodium.dll" DestinationFolder="$(OutDir)"/>
+        <Copy SourceFiles="Resources\lib\xivchat_native_tools.dll" DestinationFolder="$(OutDir)"/>
     </Target>
+    <ItemGroup>
+        <Content Include="Resources\icon.png" Link="images/icon.png" CopyToOutputDirectory="PreserveNewest" Visible="false"/>
+    </ItemGroup>
 </Project>

@@ -6,7 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
-using Dalamud.Plugin;
+using Dalamud.Logging;
 using XIVChatCommon.Message;
 
 namespace XIVChatPlugin {
@@ -142,37 +142,37 @@ namespace XIVChatPlugin {
             }
 
             if (friendListPtr != IntPtr.Zero) {
-                this._friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, new RequestFriendListDelegate(this.OnRequestFriendList));
+                this._friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, this.OnRequestFriendList);
             } else {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(friendListPtr));
             }
 
             if (formatPtr != IntPtr.Zero) {
-                this._formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, new FormatFriendListNameDelegate(this.OnFormatFriendList));
+                this._formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, this.OnFormatFriendList);
             } else {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(formatPtr));
             }
 
             if (recvChunkPtr != IntPtr.Zero) {
-                this._receiveChunkHook = new Hook<OnReceiveFriendListChunkDelegate>(recvChunkPtr, new OnReceiveFriendListChunkDelegate(this.OnReceiveFriendList));
+                this._receiveChunkHook = new Hook<OnReceiveFriendListChunkDelegate>(recvChunkPtr, this.OnReceiveFriendList);
             } else {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(recvChunkPtr));
             }
 
             if (channelPtr != IntPtr.Zero) {
-                this._chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(channelPtr, new ChatChannelChangeDelegate(this.ChangeChatChannelDetour));
+                this._chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(channelPtr, this.ChangeChatChannelDetour);
             } else {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelPtr));
             }
 
             if (inputPtr != IntPtr.Zero) {
-                this._isInputHook = new Hook<IsInputDelegate>(inputPtr, new IsInputDelegate(this.IsInputDetour));
+                this._isInputHook = new Hook<IsInputDelegate>(inputPtr, this.IsInputDetour);
             } else {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(inputPtr));
             }
 
             if (inputAfkPtr != IntPtr.Zero) {
-                this._isInputAfkHook = new Hook<IsInputAfkDelegate>(inputAfkPtr, new IsInputAfkDelegate(this.IsInputAfkDetour));
+                this._isInputAfkHook = new Hook<IsInputAfkDelegate>(inputAfkPtr, this.IsInputAfkDetour);
             } else {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(inputAfkPtr));
             }
@@ -220,7 +220,7 @@ namespace XIVChatPlugin {
         //
         // If this function would ever return 0, it returns null instead.
         internal uint? GetChannelColour(ChatCode channel) {
-            if (this.ColourLookup == IntPtr.Zero || this.ColourHandler == IntPtr.Zero) {
+            if (this._getColourInfo == null || this.ColourLookup == IntPtr.Zero || this.ColourHandler == IntPtr.Zero) {
                 return null;
             }
 
@@ -250,7 +250,7 @@ namespace XIVChatPlugin {
         }
 
         internal void ProcessChatBox(string message) {
-            if (this._easierProcessChatBox == null || this.UiModulePtr == IntPtr.Zero) {
+            if (this._easierProcessChatBox == null || this._getUiModule == null || this.UiModulePtr == IntPtr.Zero) {
                 return;
             }
 
@@ -307,13 +307,13 @@ namespace XIVChatPlugin {
 
             string? jobName = null;
             if (entry.job > 0) {
-                jobName = this.Plugin.Interface.Data.GetExcelSheet<ClassJob>().GetRow(entry.job)?.Name;
+                jobName = this.Plugin.DataManager.GetExcelSheet<ClassJob>()!.GetRow(entry.job)?.Name?.ToString();
             }
 
             // FIXME: remove this try/catch when lumina fixes bug with .Value
             string? territoryName;
             try {
-                territoryName = this.Plugin.Interface.Data.GetExcelSheet<TerritoryType>().GetRow(entry.territoryId)?.PlaceName?.Value?.Name;
+                territoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>()!.GetRow(entry.territoryId)?.PlaceName?.Value?.Name?.ToString();
             } catch (NullReferenceException) {
                 territoryName = null;
             }
@@ -324,9 +324,9 @@ namespace XIVChatPlugin {
                 Status = entry.flags,
 
                 CurrentWorld = entry.currentWorldId,
-                CurrentWorldName = this.Plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.currentWorldId)?.Name,
+                CurrentWorldName = this.Plugin.DataManager.GetExcelSheet<World>()!.GetRow(entry.currentWorldId)?.Name?.ToString(),
                 HomeWorld = entry.homeWorldId,
-                HomeWorldName = this.Plugin.Interface.Data.GetExcelSheet<World>().GetRow(entry.homeWorldId)?.Name,
+                HomeWorldName = this.Plugin.DataManager.GetExcelSheet<World>()!.GetRow(entry.homeWorldId)?.Name?.ToString(),
 
                 Territory = entry.territoryId,
                 TerritoryName = territoryName,
@@ -335,7 +335,7 @@ namespace XIVChatPlugin {
                 JobName = jobName,
 
                 GrandCompany = entry.grandCompany,
-                GrandCompanyName = this.Plugin.Interface.Data.GetExcelSheet<GrandCompany>().GetRow(entry.grandCompany)?.Name,
+                GrandCompanyName = this.Plugin.DataManager.GetExcelSheet<GrandCompany>()!.GetRow(entry.grandCompany)?.Name?.ToString(),
 
                 Languages = entry.langsEnabled,
                 MainLanguage = entry.mainLanguage,
