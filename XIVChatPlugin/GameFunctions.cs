@@ -6,11 +6,35 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Logging;
+using Dalamud.Memory;
 using XIVChatCommon.Message;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
     internal class GameFunctions : IDisposable {
+        private static class Signatures {
+            internal const string GetUiModule = "E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0";
+            internal const string ProcessChat = "48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9";
+            internal const string Input = "80 B9 ?? ?? ?? ?? ?? 0F 9C C0";
+            internal const string InputAfk = "E8 ?? ?? ?? ?? 0F 28 74 24 ?? 0F B6 F0";
+            internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
+            internal const string Format = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24";
+            internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
+
+            internal const string GetColour = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9";
+
+            internal const string Channel = "E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 85 D2 BB";
+            internal const string ChannelCommand = "E8 ?? ?? ?? ?? 0F B7 44 37";
+            internal const string ChannelNameChange = "E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 48 8D 4D B0 48 8B F8 E8 ?? ?? ?? ?? 41 8B D6";
+            internal const string XivStringCtor = "E8 ?? ?? ?? ?? 44 2B F7";
+            internal const string XivStringDtor = "E8 ?? ?? ?? ?? B0 6E";
+            internal const string UiModule = "48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8";
+            internal const string ColourHandler = "48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 48 85 C9 0F 84 ?? ?? ?? ?? 66 85 DB 0F 94 C2 E8 ?? ?? ?? ?? E9";
+            internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D";
+        }
+
         private Plugin Plugin { get; }
 
         private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
@@ -31,6 +55,8 @@ namespace XIVChatPlugin {
 
         private delegate byte ChatChannelChangeDelegate(IntPtr a1, uint channel);
 
+        private delegate IntPtr ChatChannelChangeNameDelegate(IntPtr a1);
+
         private delegate IntPtr ChannelChangeCommandDelegate(IntPtr a1, int inputChannel, uint linkshellIdx, IntPtr tellTarget, char canChangeChannel);
 
         private delegate IntPtr XivStringCtorDelegate(IntPtr memory);
@@ -43,6 +69,7 @@ namespace XIVChatPlugin {
         private readonly Hook<FormatFriendListNameDelegate>? _formatHook;
         private readonly Hook<OnReceiveFriendListChunkDelegate>? _receiveChunkHook;
         private readonly Hook<ChatChannelChangeDelegate>? _chatChannelChangeHook;
+        private readonly Hook<ChatChannelChangeNameDelegate>? _chatChannelChangeNameHook;
 
         private readonly GetUiModuleDelegate? _getUiModule;
         private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
@@ -50,6 +77,22 @@ namespace XIVChatPlugin {
         private readonly ChannelChangeCommandDelegate? _channelChangeCommand;
         private readonly XivStringCtorDelegate? _xivStringCtor;
         private readonly XivStringDtorDelegate? _xivStringDtor;
+
+        public ServerHousingLocation HousingLocation {
+            get {
+                var info = this.Plugin.Common.Functions.Housing.Location;
+                if (info == null) {
+                    return new ServerHousingLocation(null, null, false, null);
+                }
+
+                var ward = info.Ward;
+                var plot = info.Plot ?? info.Yard ?? info.Apartment;
+                var wing = (byte?) info.ApartmentWing;
+                var exterior = info.Yard != null;
+
+                return new ServerHousingLocation(ward, plot, exterior, wing);
+            }
+        }
 
         [Flags]
         private enum InputSetters {
@@ -77,30 +120,31 @@ namespace XIVChatPlugin {
         internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
 
-            var getUiModulePtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0");
-            var easierProcessChatBoxPtr = this.Plugin.ScanText("48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9");
-            var inputPtr = this.Plugin.ScanText("80 B9 ?? ?? ?? ?? ?? 0F 9C C0");
-            var inputAfkPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 0F 28 74 24 ?? 0F B6 F0");
-            var friendListPtr = this.Plugin.ScanText("40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9");
-            var formatPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24 ??");
-            var recvChunkPtr = this.Plugin.ScanText("48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2");
-            var getColourPtr = this.Plugin.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9 ?? ?? ?? ??");
-            var channelPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 85 D2 BB ?? ?? ?? ??");
-            var channelCommandPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 0F B7 44 37 ??");
-            var xivStringCtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? 44 2B F7");
-            var xivStringDtorPtr = this.Plugin.ScanText("E8 ?? ?? ?? ?? B0 6E");
+            var getUiModulePtr = this.Plugin.ScanText(Signatures.GetUiModule);
+            var easierProcessChatBoxPtr = this.Plugin.ScanText(Signatures.ProcessChat);
+            var inputPtr = this.Plugin.ScanText(Signatures.Input);
+            var inputAfkPtr = this.Plugin.ScanText(Signatures.InputAfk);
+            var friendListPtr = this.Plugin.ScanText(Signatures.FriendList);
+            var formatPtr = this.Plugin.ScanText(Signatures.Format);
+            var recvChunkPtr = this.Plugin.ScanText(Signatures.ReceiveChunk);
+            var getColourPtr = this.Plugin.ScanText(Signatures.GetColour);
+            var channelPtr = this.Plugin.ScanText(Signatures.Channel);
+            var channelNamePtr = this.Plugin.ScanText(Signatures.ChannelNameChange);
+            var channelCommandPtr = this.Plugin.ScanText(Signatures.ChannelCommand);
+            var xivStringCtorPtr = this.Plugin.ScanText(Signatures.XivStringCtor);
+            var xivStringDtorPtr = this.Plugin.ScanText(Signatures.XivStringDtor);
 
-            this.UiModulePtr = this.Plugin.GetStaticAddressFromSig("48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8 ?? ?? ?? ??");
+            this.UiModulePtr = this.Plugin.GetStaticAddressFromSig(Signatures.UiModule);
             if (this.UiModulePtr == IntPtr.Zero) {
                 PluginLog.Warning("Static pointer was null: {0}", nameof(this.UiModulePtr));
             }
 
-            this.ColourHandler = this.Plugin.GetStaticAddressFromSig("48 8B 05 ?? ?? ?? ?? 48 8B A8 ?? ?? ?? ?? 48 85 ED 0F 84 ?? ?? ?? ??");
+            this.ColourHandler = this.Plugin.GetStaticAddressFromSig(Signatures.ColourHandler);
             if (this.ColourHandler == IntPtr.Zero) {
                 PluginLog.Warning("Static pointer was null: {0}", nameof(this.ColourHandler));
             }
 
-            this.ColourLookup = this.Plugin.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D ??");
+            this.ColourLookup = this.Plugin.GetStaticAddressFromSig(Signatures.ColourLookup);
             if (this.ColourLookup == IntPtr.Zero) {
                 PluginLog.Warning("Static pointer was null: {0}", nameof(this.ColourLookup));
             }
@@ -165,6 +209,12 @@ namespace XIVChatPlugin {
                 PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelPtr));
             }
 
+            if (channelNamePtr != IntPtr.Zero) {
+                this._chatChannelChangeNameHook = new Hook<ChatChannelChangeNameDelegate>(channelNamePtr, this.ChangeChatChannelNameDetour);
+            } else {
+                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelNamePtr));
+            }
+
             if (inputPtr != IntPtr.Zero) {
                 this._isInputHook = new Hook<IsInputDelegate>(inputPtr, this.IsInputDetour);
             } else {
@@ -181,6 +231,7 @@ namespace XIVChatPlugin {
             this._formatHook?.Enable();
             this._receiveChunkHook?.Enable();
             this._chatChannelChangeHook?.Enable();
+            this._chatChannelChangeNameHook?.Enable();
             this._isInputHook?.Enable();
             this._isInputAfkHook?.Enable();
 
@@ -283,9 +334,43 @@ namespace XIVChatPlugin {
 
         private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
             this._chatManager = a1;
+            // Last ShB patch
             // a1 + 0xfd0 is the chat channel byte (including for when clicking on shout)
-            this.Plugin.Server.OnChatChannelChange(channel);
             return this._chatChannelChangeHook!.Original(a1, channel);
+        }
+
+        private unsafe IntPtr ChangeChatChannelNameDetour(IntPtr a1) {
+            // Last ShB patch
+            // +0x40 = chat channel (byte or uint?)
+            //         channel is 17 (maybe 18?) for tells
+            // +0x48 = pointer to channel name string
+            var ret = this._chatChannelChangeNameHook!.Original(a1);
+            if (a1 == IntPtr.Zero) {
+                return ret;
+            }
+
+            var channel = *(uint*) (a1 + 0x40);
+            if (channel is 17 or 18) {
+                channel = 0;
+            }
+
+            SeString? name = null;
+            var namePtrPtr = (byte**) (a1 + 0x48);
+            if (namePtrPtr != null) {
+                var namePtr = *namePtrPtr;
+                name = MemoryHelper.ReadSeStringNullTerminated((IntPtr) namePtr);
+                if (name.Payloads.Count == 0) {
+                    name = null;
+                }
+            }
+
+            if (name == null) {
+                return ret;
+            }
+
+            this.Plugin.Server.OnChatChannelChange(channel, name);
+
+            return ret;
         }
 
         private byte OnRequestFriendList(IntPtr manager) {
@@ -378,6 +463,7 @@ namespace XIVChatPlugin {
             this._formatHook?.Dispose();
             this._receiveChunkHook?.Dispose();
             this._chatChannelChangeHook?.Dispose();
+            this._chatChannelChangeNameHook?.Dispose();
             this._isInputHook?.Dispose();
             this._isInputAfkHook?.Dispose();
 

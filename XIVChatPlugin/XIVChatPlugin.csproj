@@ -32,11 +32,13 @@
         </Reference>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="DalamudPackager" Version="2.1.2"/>
-        <PackageReference Include="MessagePack" Version="2.3.75"/>
+        <PackageReference Include="DalamudLinter" Version="1.0.3"/>
+        <PackageReference Include="DalamudPackager" Version="2.1.5"/>
+        <PackageReference Include="MessagePack" Version="2.3.85"/>
         <PackageReference Include="Sodium.Core" Version="1.2.3"/>
-        <PackageReference Include="System.Threading.Channels" Version="5.0.0"/>
+        <PackageReference Include="System.Threading.Channels" Version="6.0.0"/>
         <PackageReference Include="WebSocketSharp-netstandard" Version="1.0.1"/>
+        <PackageReference Include="XivCommon" Version="4.0.0-alpha.1"/>
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj"/>

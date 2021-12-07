@@ -59,11 +59,15 @@ namespace XIVChatPlugin {
         private bool _sendPlayerData;
         private readonly ConcurrentQueue<Guid> _awaitingPlayerData = new();
         private readonly ConcurrentQueue<Guid> _awaitingAvailability = new();
+        private readonly ConcurrentQueue<Guid> _awaitingHousingLocation = new();
 
         private volatile bool _running;
         private bool Running => this._running;
 
         private InputChannel _currentChannel = InputChannel.Say;
+        private SeString? _currentChannelName;
+
+        private ServerHousingLocation _lastHousingLocation;
 
         private const int MaxMessageSize = 128_000;
 
@@ -72,6 +76,8 @@ namespace XIVChatPlugin {
             if (this._plugin.Config.KeyPair == null) {
                 this.RegenerateKeyPair();
             }
+
+            this._lastHousingLocation = this._plugin.Functions.HousingLocation;
 
             this._sendWatch.Start();
 
@@ -251,6 +257,12 @@ namespace XIVChatPlugin {
                 this._sendPlayerData = false;
             }
 
+            var housingLocation = this._plugin.Functions.HousingLocation;
+            if (!Equals(housingLocation, this._lastHousingLocation)) {
+                this.BroadcastMessage(housingLocation, ClientPreference.HousingLocationSupport);
+                this._lastHousingLocation = housingLocation;
+            }
+
             while (this._awaitingPlayerData.TryDequeue(out var id)) {
                 if (!this.Clients.TryGetValue(id, out var client)) {
                     continue;
@@ -267,6 +279,14 @@ namespace XIVChatPlugin {
 
                 var available = player != null;
                 client.Queue.Writer.TryWrite(new Availability(available));
+            }
+
+            while (this._awaitingHousingLocation.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
+                    continue;
+                }
+
+                client.Queue.Writer.TryWrite(this._lastHousingLocation);
             }
 
             int time;
@@ -358,7 +378,7 @@ namespace XIVChatPlugin {
                         handshake.Keys.tx,
                         new ServerChannel(
                             channel,
-                            this.LocalisedChannelName(channel)
+                            this._currentChannelName?.TextValue ?? this.LocalisedChannelName(channel)
                         ),
                         this._tokenSource.Token
                     );
@@ -491,6 +511,11 @@ namespace XIVChatPlugin {
                     var preferences = ClientPreferences.Decode(payload);
                     client.Preferences = preferences;
 
+                    // immediately queue housing location
+                    if (client.GetPreference(ClientPreference.HousingLocationSupport, false)) {
+                        this._awaitingHousingLocation.Enqueue(id);
+                    }
+
                     break;
                 case ClientOperation.Channel:
                     var channel = ClientChannel.Decode(payload);
@@ -574,7 +599,7 @@ namespace XIVChatPlugin {
             var responseMessages = new List<ServerMessage>();
 
             async Task SendBacklog() {
-                var resp = new ServerBacklog(responseMessages.ToArray());
+                var resp = new ServerBacklog(responseMessages.ToArray(), ++client.BacklogSequence);
                 try {
                     await client.Queue.Writer.WriteAsync(resp);
                 } catch (Exception ex) {
@@ -716,6 +741,14 @@ namespace XIVChatPlugin {
             }
         }
 
+        private void BroadcastMessage(Encodable message, ClientPreference preference) {
+            foreach (var client in this.Clients.Values) {
+                if (client.GetPreference(preference, false)) {
+                    client.Queue.Writer.TryWrite(message);
+                }
+            }
+        }
+
         private string LocalisedChannelName(InputChannel channel) {
             uint rowId = channel switch {
                 InputChannel.Tell => 3,
@@ -749,13 +782,24 @@ namespace XIVChatPlugin {
             return this._plugin.DataManager.GetExcelSheet<LogFilter>()!.GetRow(rowId)?.Name ?? string.Empty;
         }
 
-        internal void OnChatChannelChange(uint channel) {
+        internal void OnChatChannelChange(uint channel, SeString name) {
+            // for now, to avoid changing the protocol further, convert crossworld icon into font icon
+            for (var i = 0; i < name.Payloads.Count; i++) {
+                var payload = name.Payloads[i];
+                if (payload is IconPayload { Icon: BitmapFontIcon.CrossWorld }) {
+                    name.Payloads[i] = new TextPayload("\ue05d");
+                }
+            }
+
             var inputChannel = (InputChannel) channel;
+            if (inputChannel == this._currentChannel && name.Encode().SequenceEqual(this._currentChannelName?.Encode() ?? Array.Empty<byte>())) {
+                return;
+            }
+
             this._currentChannel = inputChannel;
+            this._currentChannelName = name;
 
-            var localisedName = this.LocalisedChannelName(inputChannel);
-
-            var msg = new ServerChannel(inputChannel, localisedName);
+            var msg = new ServerChannel(inputChannel, name.TextValue);
             this.BroadcastMessage(msg);
         }
 

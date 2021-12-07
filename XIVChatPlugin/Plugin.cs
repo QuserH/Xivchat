@@ -10,6 +10,7 @@ using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Gui;
 using Dalamud.IoC;
+using XivCommon;
 #if DEBUG
 using System.IO;
 #endif
@@ -44,6 +45,7 @@ namespace XIVChatPlugin {
         [PluginService]
         private SigScanner SigScanner { get; init; } = null!;
 
+        internal XivCommonBase Common { get; }
         internal Configuration Config { get; }
         private PluginUi Ui { get; }
         internal Server Server { get; private set; }
@@ -64,6 +66,7 @@ namespace XIVChatPlugin {
         }
 
         public Plugin() {
+            this.Common = new XivCommonBase();
             this.Events = new InternalEvents();
 
             // load libsodium.so from debug location if in debug mode
@@ -118,10 +121,13 @@ namespace XIVChatPlugin {
             this.ClientState.Logout -= this.Server.OnLogOut;
             this.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
             this.CommandManager.RemoveHandler("/xivchat");
+            this.Functions.Dispose();
 
             foreach (var ipc in this.Ipcs) {
                 ipc.Dispose();
             }
+
+            this.Common.Dispose();
         }
 
         internal void StartRelay() {

@@ -26,6 +26,8 @@ namespace XIVChatPlugin {
 
         internal Channel<Encodable> Queue { get; } = Channel.CreateUnbounded<Encodable>();
 
+        internal uint BacklogSequence { get; set; }
+
         internal void Disconnect() {
             this.Connected = false;
             this.TokenSource.Cancel();
