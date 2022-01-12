@@ -7,8 +7,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Dalamud.Game.Text.SeStringHandling;
-using Dalamud.Logging;
 using Dalamud.Memory;
+using Siggingway;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -37,6 +37,8 @@ namespace XIVChatPlugin {
 
         private Plugin Plugin { get; }
 
+        #region Delegates
+
         private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
 
         private delegate void EasierProcessChatBoxDelegate(IntPtr uiModule, IntPtr message, IntPtr unused, byte a4);
@@ -63,20 +65,67 @@ namespace XIVChatPlugin {
 
         private delegate IntPtr XivStringDtorDelegate(IntPtr memory);
 
+        #endregion
+
+        #region Hooks
+
+        [Signature(Signatures.Input, DetourName = nameof(IsInputDetour))]
         private readonly Hook<IsInputDelegate>? _isInputHook;
+
+        [Signature(Signatures.InputAfk, DetourName = nameof(IsInputAfkDetour))]
         private readonly Hook<IsInputAfkDelegate>? _isInputAfkHook;
+
+        [Signature(Signatures.FriendList, DetourName = nameof(OnRequestFriendList))]
         private readonly Hook<RequestFriendListDelegate>? _friendListHook;
+
+        [Signature(Signatures.Format, DetourName = nameof(OnFormatFriendList))]
         private readonly Hook<FormatFriendListNameDelegate>? _formatHook;
+
+        [Signature(Signatures.ReceiveChunk, DetourName = nameof(OnReceiveFriendList))]
         private readonly Hook<OnReceiveFriendListChunkDelegate>? _receiveChunkHook;
+
+        [Signature(Signatures.Channel, DetourName = nameof(ChangeChatChannelDetour))]
         private readonly Hook<ChatChannelChangeDelegate>? _chatChannelChangeHook;
+
+        [Signature(Signatures.ChannelNameChange, DetourName = nameof(ChangeChatChannelNameDetour))]
         private readonly Hook<ChatChannelChangeNameDelegate>? _chatChannelChangeNameHook;
 
+        #endregion
+
+        #region Functions
+
+        [Signature(Signatures.GetUiModule)]
         private readonly GetUiModuleDelegate? _getUiModule;
+
+        [Signature(Signatures.ProcessChat)]
         private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
+
+        [Signature(Signatures.GetColour)]
         private readonly GetColourInfoDelegate? _getColourInfo;
+
+        [Signature(Signatures.ChannelCommand)]
         private readonly ChannelChangeCommandDelegate? _channelChangeCommand;
+
+        [Signature(Signatures.XivStringCtor)]
         private readonly XivStringCtorDelegate? _xivStringCtor;
+
+        [Signature(Signatures.XivStringDtor)]
         private readonly XivStringDtorDelegate? _xivStringDtor;
+
+        #endregion
+
+        #region Pointers
+
+        [Signature(Signatures.UiModule, ScanType = ScanType.StaticAddress)]
+        private IntPtr UiModulePtr { get; init; }
+
+        [Signature(Signatures.ColourHandler, ScanType = ScanType.StaticAddress)]
+        private IntPtr ColourHandler { get; init; }
+
+        [Signature(Signatures.ColourLookup, ScanType = ScanType.StaticAddress)]
+        private IntPtr ColourLookup { get; init; }
+
+        #endregion
 
         public ServerHousingLocation HousingLocation {
             get {
@@ -102,9 +151,6 @@ namespace XIVChatPlugin {
         }
 
         private InputSetters HadInput { get; set; } = InputSetters.None;
-        private IntPtr UiModulePtr { get; }
-        private IntPtr ColourHandler { get; }
-        private IntPtr ColourLookup { get; }
         private IntPtr _friendListManager = IntPtr.Zero;
         private IntPtr _chatManager = IntPtr.Zero;
         private readonly IntPtr _emptyXivString = IntPtr.Zero;
@@ -119,113 +165,6 @@ namespace XIVChatPlugin {
 
         internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
-
-            var getUiModulePtr = this.Plugin.ScanText(Signatures.GetUiModule);
-            var easierProcessChatBoxPtr = this.Plugin.ScanText(Signatures.ProcessChat);
-            var inputPtr = this.Plugin.ScanText(Signatures.Input);
-            var inputAfkPtr = this.Plugin.ScanText(Signatures.InputAfk);
-            var friendListPtr = this.Plugin.ScanText(Signatures.FriendList);
-            var formatPtr = this.Plugin.ScanText(Signatures.Format);
-            var recvChunkPtr = this.Plugin.ScanText(Signatures.ReceiveChunk);
-            var getColourPtr = this.Plugin.ScanText(Signatures.GetColour);
-            var channelPtr = this.Plugin.ScanText(Signatures.Channel);
-            var channelNamePtr = this.Plugin.ScanText(Signatures.ChannelNameChange);
-            var channelCommandPtr = this.Plugin.ScanText(Signatures.ChannelCommand);
-            var xivStringCtorPtr = this.Plugin.ScanText(Signatures.XivStringCtor);
-            var xivStringDtorPtr = this.Plugin.ScanText(Signatures.XivStringDtor);
-
-            this.UiModulePtr = this.Plugin.GetStaticAddressFromSig(Signatures.UiModule);
-            if (this.UiModulePtr == IntPtr.Zero) {
-                PluginLog.Warning("Static pointer was null: {0}", nameof(this.UiModulePtr));
-            }
-
-            this.ColourHandler = this.Plugin.GetStaticAddressFromSig(Signatures.ColourHandler);
-            if (this.ColourHandler == IntPtr.Zero) {
-                PluginLog.Warning("Static pointer was null: {0}", nameof(this.ColourHandler));
-            }
-
-            this.ColourLookup = this.Plugin.GetStaticAddressFromSig(Signatures.ColourLookup);
-            if (this.ColourLookup == IntPtr.Zero) {
-                PluginLog.Warning("Static pointer was null: {0}", nameof(this.ColourLookup));
-            }
-
-            if (getUiModulePtr != IntPtr.Zero) {
-                this._getUiModule = Marshal.GetDelegateForFunctionPointer<GetUiModuleDelegate>(getUiModulePtr);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(getUiModulePtr));
-            }
-
-            if (easierProcessChatBoxPtr != IntPtr.Zero) {
-                this._easierProcessChatBox = Marshal.GetDelegateForFunctionPointer<EasierProcessChatBoxDelegate>(easierProcessChatBoxPtr);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(easierProcessChatBoxPtr));
-            }
-
-            if (getColourPtr != IntPtr.Zero) {
-                this._getColourInfo = Marshal.GetDelegateForFunctionPointer<GetColourInfoDelegate>(getColourPtr);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(getColourPtr));
-            }
-
-            if (channelCommandPtr != IntPtr.Zero) {
-                this._channelChangeCommand = Marshal.GetDelegateForFunctionPointer<ChannelChangeCommandDelegate>(channelCommandPtr);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(channelCommandPtr));
-            }
-
-            if (xivStringCtorPtr != IntPtr.Zero) {
-                this._xivStringCtor = Marshal.GetDelegateForFunctionPointer<XivStringCtorDelegate>(xivStringCtorPtr);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(xivStringCtorPtr));
-            }
-
-            if (xivStringDtorPtr != IntPtr.Zero) {
-                this._xivStringDtor = Marshal.GetDelegateForFunctionPointer<XivStringDtorDelegate>(xivStringDtorPtr);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling function: {0}", nameof(xivStringDtorPtr));
-            }
-
-            if (friendListPtr != IntPtr.Zero) {
-                this._friendListHook = new Hook<RequestFriendListDelegate>(friendListPtr, this.OnRequestFriendList);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(friendListPtr));
-            }
-
-            if (formatPtr != IntPtr.Zero) {
-                this._formatHook = new Hook<FormatFriendListNameDelegate>(formatPtr, this.OnFormatFriendList);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(formatPtr));
-            }
-
-            if (recvChunkPtr != IntPtr.Zero) {
-                this._receiveChunkHook = new Hook<OnReceiveFriendListChunkDelegate>(recvChunkPtr, this.OnReceiveFriendList);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(recvChunkPtr));
-            }
-
-            if (channelPtr != IntPtr.Zero) {
-                this._chatChannelChangeHook = new Hook<ChatChannelChangeDelegate>(channelPtr, this.ChangeChatChannelDetour);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelPtr));
-            }
-
-            if (channelNamePtr != IntPtr.Zero) {
-                this._chatChannelChangeNameHook = new Hook<ChatChannelChangeNameDelegate>(channelNamePtr, this.ChangeChatChannelNameDetour);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(channelNamePtr));
-            }
-
-            if (inputPtr != IntPtr.Zero) {
-                this._isInputHook = new Hook<IsInputDelegate>(inputPtr, this.IsInputDetour);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(inputPtr));
-            }
-
-            if (inputAfkPtr != IntPtr.Zero) {
-                this._isInputAfkHook = new Hook<IsInputAfkDelegate>(inputAfkPtr, this.IsInputAfkDetour);
-            } else {
-                PluginLog.Warning("Pointer was null, disabling hook: {0}", nameof(inputAfkPtr));
-            }
 
             this._friendListHook?.Enable();
             this._formatHook?.Enable();
