@@ -78,7 +78,7 @@ namespace XIVChatPlugin {
             }
 
             // PluginLog.Log($"start: {start.ToInt64():x}");
-            
+
             foreach (var offset in offsets) {
                 start = Marshal.ReadIntPtr(start + offset);
                 // PluginLog.Log($"  + {offset}: {start.ToInt64():x}");

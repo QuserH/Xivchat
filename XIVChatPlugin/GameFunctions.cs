@@ -8,14 +8,14 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Memory;
-using Siggingway;
+using Dalamud.Utility.Signatures;
+using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
-    internal class GameFunctions : IDisposable {
+    internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
-            internal const string GetUiModule = "E8 ?? ?? ?? ?? 48 83 7F ?? 00 48 8B F0";
             internal const string ProcessChat = "48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9";
             internal const string Input = "80 B9 ?? ?? ?? ?? ?? 0F 9C C0";
             internal const string InputAfk = "E8 ?? ?? ?? ?? 0F 28 74 24 ?? 0F B6 F0";
@@ -30,16 +30,12 @@ namespace XIVChatPlugin {
             internal const string ChannelNameChange = "E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 48 8D 4D B0 48 8B F8 E8 ?? ?? ?? ?? 41 8B D6";
             internal const string XivStringCtor = "E8 ?? ?? ?? ?? 44 2B F7";
             internal const string XivStringDtor = "E8 ?? ?? ?? ?? B0 6E";
-            internal const string UiModule = "48 8B 0D ?? ?? ?? ?? 48 8D 54 24 ?? 48 83 C1 10 E8";
-            internal const string ColourHandler = "48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 48 85 C9 0F 84 ?? ?? ?? ?? 66 85 DB 0F 94 C2 E8 ?? ?? ?? ?? E9";
             internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D";
         }
 
         private Plugin Plugin { get; }
 
         #region Delegates
-
-        private delegate IntPtr GetUiModuleDelegate(IntPtr basePtr);
 
         private delegate void EasierProcessChatBoxDelegate(IntPtr uiModule, IntPtr message, IntPtr unused, byte a4);
 
@@ -94,9 +90,6 @@ namespace XIVChatPlugin {
 
         #region Functions
 
-        [Signature(Signatures.GetUiModule)]
-        private readonly GetUiModuleDelegate? _getUiModule;
-
         [Signature(Signatures.ProcessChat)]
         private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
 
@@ -115,12 +108,6 @@ namespace XIVChatPlugin {
         #endregion
 
         #region Pointers
-
-        [Signature(Signatures.UiModule, ScanType = ScanType.StaticAddress)]
-        private IntPtr UiModulePtr { get; init; }
-
-        [Signature(Signatures.ColourHandler, ScanType = ScanType.StaticAddress)]
-        private IntPtr ColourHandler { get; init; }
 
         [Signature(Signatures.ColourLookup, ScanType = ScanType.StaticAddress)]
         private IntPtr ColourLookup { get; init; }
@@ -165,6 +152,8 @@ namespace XIVChatPlugin {
 
         internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
+            
+            SignatureHelper.Initialise(this);
 
             this._friendListHook?.Enable();
             this._formatHook?.Enable();
@@ -210,7 +199,7 @@ namespace XIVChatPlugin {
         //
         // If this function would ever return 0, it returns null instead.
         internal uint? GetChannelColour(ChatCode channel) {
-            if (this._getColourInfo == null || this.ColourLookup == IntPtr.Zero || this.ColourHandler == IntPtr.Zero) {
+            if (this._getColourInfo == null || this.ColourLookup == IntPtr.Zero) {
                 return null;
             }
 
@@ -228,9 +217,11 @@ namespace XIVChatPlugin {
                     return channel.DefaultColour();
             }
 
-            var lookupResult = (uint) Marshal.ReadInt32(this.ColourLookup, (int) parent * 4);
-            var info = this._getColourInfo(Marshal.ReadIntPtr(this.ColourHandler) + 16, lookupResult);
-            var rgb = (uint) Marshal.ReadInt32(info, 32) & 0xFFFFFF;
+            var framework = (IntPtr) Framework.Instance();
+
+            var lookupResult = *(uint*) (this.ColourLookup + (int) parent * 4);
+            var info = this._getColourInfo(framework + 16, lookupResult);
+            var rgb = *(uint*) (info + 32) & 0xFFFFFF;
 
             if (rgb == 0) {
                 return null;
@@ -240,23 +231,19 @@ namespace XIVChatPlugin {
         }
 
         internal void ProcessChatBox(string message) {
-            if (this._easierProcessChatBox == null || this._getUiModule == null || this.UiModulePtr == IntPtr.Zero) {
+            if (this._easierProcessChatBox == null) {
                 return;
             }
 
             this.HadInput = InputSetters.Normal | InputSetters.Afk;
 
-            var uiModule = this._getUiModule(Marshal.ReadIntPtr(this.UiModulePtr));
-
-            if (uiModule == IntPtr.Zero) {
-                throw new ArgumentException("pointer was null", nameof(uiModule));
-            }
+            var uiModule = Framework.Instance()->GetUiModule();
 
             using var payload = new ChatPayload(message);
             var mem1 = Marshal.AllocHGlobal(400);
             Marshal.StructureToPtr(payload, mem1, false);
 
-            this._easierProcessChatBox(uiModule, mem1, IntPtr.Zero, 0);
+            this._easierProcessChatBox((IntPtr) uiModule, mem1, IntPtr.Zero, 0);
 
             Marshal.FreeHGlobal(mem1);
         }
@@ -278,7 +265,7 @@ namespace XIVChatPlugin {
             return this._chatChannelChangeHook!.Original(a1, channel);
         }
 
-        private unsafe IntPtr ChangeChatChannelNameDetour(IntPtr a1) {
+        private IntPtr ChangeChatChannelNameDetour(IntPtr a1) {
             // Last ShB patch
             // +0x40 = chat channel (byte or uint?)
             //         channel is 17 (maybe 18?) for tells
@@ -385,7 +372,7 @@ namespace XIVChatPlugin {
                 goto Return;
             }
 
-            if (Marshal.ReadByte(data + 0xc) != 2 || Marshal.ReadInt16(data + 0x8) != 0) {
+            if (*(byte*) (data + 0xc) != 2 || *(ushort*) (data + 0x8) != 0) {
                 goto Return;
             }
 
@@ -429,7 +416,7 @@ namespace XIVChatPlugin {
         private readonly ulong unk2;
 
         internal ChatPayload(string text) {
-            byte[] stringBytes = Encoding.UTF8.GetBytes(text);
+            var stringBytes = Encoding.UTF8.GetBytes(text);
             this.textPtr = Marshal.AllocHGlobal(stringBytes.Length + 30);
             Marshal.Copy(stringBytes, 0, this.textPtr, stringBytes.Length);
             Marshal.WriteByte(this.textPtr + stringBytes.Length, 0);
@@ -473,7 +460,7 @@ namespace XIVChatPlugin {
         private readonly byte[] fc;
 
         private static string? HandleString(IEnumerable<byte> bytes) {
-            byte[] nonNull = bytes.TakeWhile(b => b != 0).ToArray();
+            var nonNull = bytes.TakeWhile(b => b != 0).ToArray();
             return nonNull.Length == 0 ? null : Encoding.UTF8.GetString(nonNull);
         }
 

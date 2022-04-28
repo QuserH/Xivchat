@@ -5,14 +5,20 @@
         <TargetFramework>net5-windows</TargetFramework>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <Version>1.7.1</Version>
+        <Version>1.7.2</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+        <DebugSymbols>true</DebugSymbols>
+        <DebugType>full</DebugType>
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="Dalamud">
             <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\Dalamud.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
+        <Reference Include="FFXIVClientStructs">
+            <HintPath>$(AppData)\XIVLauncher\addon\Hooks\dev\FFXIVClientStructs.dll</HintPath>
             <Private>False</Private>
         </Reference>
         <Reference Include="ImGui.NET">
@@ -33,13 +39,12 @@
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="DalamudLinter" Version="1.0.3"/>
-        <PackageReference Include="DalamudPackager" Version="2.1.5"/>
+        <PackageReference Include="DalamudPackager" Version="2.1.6"/>
         <PackageReference Include="MessagePack" Version="2.3.85"/>
-        <PackageReference Include="Siggingway" Version="1.1.0"/>
         <PackageReference Include="Sodium.Core" Version="1.2.3"/>
         <PackageReference Include="System.Threading.Channels" Version="6.0.0"/>
         <PackageReference Include="WebSocketSharp-netstandard" Version="1.0.1"/>
-        <PackageReference Include="XivCommon" Version="4.0.0"/>
+        <PackageReference Include="XivCommon" Version="5.0.1-alpha.1"/>
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\XIVChatCommon\XIVChatCommon.csproj"/>
