@@ -9,6 +9,6 @@
         Backlog = 7,
         PlayerList = 8,
         LinkshellList = 9,
-        TargetingList = 10,
+        HousingLocation = 10,
     }
 }

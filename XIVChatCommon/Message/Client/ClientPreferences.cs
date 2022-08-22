@@ -26,6 +26,9 @@ namespace XIVChatCommon.Message.Client {
 
         [Preference(typeof(bool))]
         TargetingListSupport = 1,
+        
+        [Preference(typeof(bool))]
+        HousingLocationSupport = 2,
     }
 
     public static class ClientPreferencesExtension {
