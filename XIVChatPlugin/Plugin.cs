@@ -72,7 +72,7 @@ namespace XIVChatPlugin {
             // load libsodium.so from debug location if in debug mode
             #if DEBUG
             string path = Environment.GetEnvironmentVariable("PATH")!;
-            string newPath = Path.GetDirectoryName(this.DalamudPlugin.Location)!;
+            string newPath = Path.GetDirectoryName(this.Location)!;
             Environment.SetEnvironmentVariable("PATH", $"{path};{newPath}");
             #endif
 
