@@ -20,7 +20,7 @@ namespace XIVChatPlugin {
             internal const string Input = "80 B9 ?? ?? ?? ?? ?? 0F 9C C0";
             internal const string InputAfk = "E8 ?? ?? ?? ?? 0F 28 74 24 ?? 0F B6 F0";
             internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
-            internal const string Format = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 41 56 48 83 EC 30 48 8B 6C 24";
+            internal const string Format = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 30 48 8B 6C 24";
             internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
 
             internal const string GetColour = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9";
@@ -152,7 +152,7 @@ namespace XIVChatPlugin {
 
         internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
-            
+
             SignatureHelper.Initialise(this);
 
             this._friendListHook?.Enable();
