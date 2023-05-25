@@ -686,8 +686,13 @@ namespace XIVChatPlugin {
                     case PayloadType.Unknown:
                         var rawPayload = (RawPayload) payload;
                         if (rawPayload.Data[1] == 0x13) {
-                            foreground.Pop();
-                            glow.Pop();
+                            if (foreground.Count > 0) {
+                                foreground.Pop();
+                            }
+
+                            if (glow.Count > 0) {
+                                glow.Pop();
+                            }
                         }
 
                         break;
