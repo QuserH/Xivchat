@@ -106,7 +106,7 @@ namespace XIVChatPlugin {
                 return;
             }
 
-            if (!Begin(this.Plugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
+            if (!Begin(Plugin.Name, ref this._showSettings, ImGuiWindowFlags.AlwaysAutoResize)) {
                 ImGui.End();
                 return;
             }

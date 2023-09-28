@@ -6,7 +6,6 @@ using System.Security.Authentication;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using Dalamud.Logging;
 using MessagePack;
 using WebSocketSharp;
 using XIVChatCommon.Message.Relay;
@@ -142,7 +141,7 @@ namespace XIVChatPlugin {
                         ConnectionError = null;
                         this.Status = ConnectionStatus.Connected;
                     } else {
-                        PluginLog.LogWarning($"Relay: {success.Info}");
+                        Plugin.Log.Warning($"Relay: {success.Info}");
                         ConnectionError = success.Info;
                         this.Status = ConnectionStatus.Disconnected;
                         this.Plugin.StopRelay();
@@ -195,7 +194,7 @@ namespace XIVChatPlugin {
         }
 
         private void OnError(object? sender, ErrorEventArgs args) {
-            PluginLog.LogError(args.Exception, $"Error in relay connection: {args.Message}");
+            Plugin.Log.Error(args.Exception, $"Error in relay connection: {args.Message}");
             this.Running = false;
             this.Status = ConnectionStatus.Disconnected;
 

@@ -12,11 +12,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using Dalamud.Game;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
-using Dalamud.Logging;
+using Dalamud.Plugin.Services;
 using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
@@ -155,7 +154,7 @@ namespace XIVChatPlugin {
                     await udp.SendAsync(payload, payload.Length, recv.RemoteEndPoint);
                 }
 
-                PluginLog.Log("Scan response thread done");
+                Plugin.Log.Info("Scan response thread done");
             });
         }
 
@@ -181,7 +180,7 @@ namespace XIVChatPlugin {
                 this._listener.Start();
 
                 this._running = true;
-                PluginLog.Log("Running...");
+                Plugin.Log.Info("Running...");
                 this.SpawnPairingModeTask();
                 while (!this._tokenSource.IsCancellationRequested) {
                     var conn = await this._listener.GetTcpClient(this._tokenSource);
@@ -250,7 +249,7 @@ namespace XIVChatPlugin {
             }
         }
 
-        internal void OnFrameworkUpdate(Framework framework1) {
+        internal void OnFrameworkUpdate(IFramework framework) {
             var player = this._plugin.ClientState.LocalPlayer;
             if (player != null && this._sendPlayerData) {
                 this.BroadcastPlayerData();
@@ -383,7 +382,7 @@ namespace XIVChatPlugin {
                         this._tokenSource.Token
                     );
                 } catch (Exception ex) {
-                    PluginLog.LogError($"Could not send message: {ex.Message}");
+                    Plugin.Log.Error($"Could not send message: {ex.Message}");
                 }
 
                 var listen = Task.Run(async () => {
@@ -394,7 +393,7 @@ namespace XIVChatPlugin {
                         } catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut) {
                             continue;
                         } catch (Exception ex) {
-                            PluginLog.LogError($"Could not read message: {ex.Message}");
+                            Plugin.Log.Error($"Could not read message: {ex.Message}");
                             continue;
                         }
 
@@ -409,7 +408,7 @@ namespace XIVChatPlugin {
                         var msg = await client.Queue.Reader.ReadAsync(client.TokenSource.Token);
                         await SecretMessage.SendSecretMessage(client, handshake.Keys.tx, msg, client.TokenSource.Token);
                     } catch (Exception ex) {
-                        PluginLog.LogError($"Could not send message: {ex.Message}");
+                        Plugin.Log.Error($"Could not send message: {ex.Message}");
                     }
                 }
 
@@ -418,7 +417,7 @@ namespace XIVChatPlugin {
                 await listen;
 
                 this._clients.TryRemove(id, out _);
-                PluginLog.Log($"Client thread ended: {id}");
+                Plugin.Log.Info($"Client thread ended: {id}");
             }).ContinueWith(_ => {
                 this.RemoveClient(id);
             });
@@ -443,7 +442,7 @@ namespace XIVChatPlugin {
                     try {
                         await client.Queue.Writer.WriteAsync(Pong.Instance);
                     } catch (Exception ex) {
-                        PluginLog.LogError($"Could not send message: {ex.Message}");
+                        Plugin.Log.Error($"Could not send message: {ex.Message}");
                     }
 
                     break;
@@ -502,7 +501,7 @@ namespace XIVChatPlugin {
                         this._waitingForFriendList.Add(id);
 
                         if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
-                            this._plugin.ChatGui.PrintError($"[{this._plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
+                            this._plugin.ChatGui.PrintError($"[{Plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
                         }
                     }
 
@@ -603,7 +602,7 @@ namespace XIVChatPlugin {
                 try {
                     await client.Queue.Writer.WriteAsync(resp);
                 } catch (Exception ex) {
-                    PluginLog.LogError($"Could not send backlog: {ex.Message}");
+                    Plugin.Log.Error($"Could not send backlog: {ex.Message}");
                 }
             }
 
@@ -833,18 +832,18 @@ namespace XIVChatPlugin {
             this.BroadcastMessage(playerData);
         }
 
-        internal void OnLogIn(object? sender, EventArgs e) {
+        internal void OnLogIn() {
             this.BroadcastAvailability(true);
             // send player data on next framework update
             this._sendPlayerData = true;
         }
 
-        internal void OnLogOut(object? sender, EventArgs e) {
+        internal void OnLogOut() {
             this.BroadcastAvailability(false);
             this.BroadcastPlayerData();
         }
 
-        internal void OnTerritoryChange(object? sender, ushort territoryId) => this._sendPlayerData = true;
+        internal void OnTerritoryChange(ushort @ushort) => this._sendPlayerData = true;
 
         public void Dispose() {
             // stop accepting new clients

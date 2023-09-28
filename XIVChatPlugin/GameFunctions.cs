@@ -153,7 +153,7 @@ namespace XIVChatPlugin {
         internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
 
-            SignatureHelper.Initialise(this);
+            this.Plugin.GameInteropProvider.InitializeFromAttributes(this);
 
             this._friendListHook?.Enable();
             this._formatHook?.Enable();

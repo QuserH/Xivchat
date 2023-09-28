@@ -77,11 +77,11 @@ namespace XIVChatPlugin {
                 return IntPtr.Zero;
             }
 
-            // PluginLog.Log($"start: {start.ToInt64():x}");
+            // Plugin.Log.Info($"start: {start.ToInt64():x}");
 
             foreach (var offset in offsets) {
                 start = Marshal.ReadIntPtr(start + offset);
-                // PluginLog.Log($"  + {offset}: {start.ToInt64():x}");
+                // Plugin.Log.Info($"  + {offset}: {start.ToInt64():x}");
                 if (start == IntPtr.Zero) {
                     return IntPtr.Zero;
                 }

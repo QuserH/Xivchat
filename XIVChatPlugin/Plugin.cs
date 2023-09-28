@@ -4,12 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using Dalamud.Data;
 using Dalamud.Game;
-using Dalamud.Game.ClientState;
-using Dalamud.Game.ClientState.Objects;
-using Dalamud.Game.Gui;
 using Dalamud.IoC;
+using Dalamud.Plugin.Services;
 using XivCommon;
 #if DEBUG
 using System.IO;
@@ -17,33 +14,39 @@ using System.IO;
 
 namespace XIVChatPlugin {
     internal class Plugin : IDalamudPlugin {
-        public string Name => "XIVChat";
+        internal static string Name => "XIVChat";
 
         private bool _disposedValue;
+
+        [PluginService]
+        internal static IPluginLog Log { get; private set; } = null!;
 
         [PluginService]
         internal DalamudPluginInterface Interface { get; private init; } = null!;
 
         [PluginService]
-        internal ChatGui ChatGui { get; private init; } = null!;
+        internal IChatGui ChatGui { get; private init; } = null!;
 
         [PluginService]
-        internal ClientState ClientState { get; private init; } = null!;
+        internal IClientState ClientState { get; private init; } = null!;
 
         [PluginService]
-        private CommandManager CommandManager { get; init; } = null!;
+        private ICommandManager CommandManager { get; init; } = null!;
 
         [PluginService]
-        internal DataManager DataManager { get; private init; } = null!;
+        internal IDataManager DataManager { get; private init; } = null!;
 
         [PluginService]
-        private Framework Framework { get; init; } = null!;
+        private IFramework Framework { get; init; } = null!;
 
         [PluginService]
-        internal ObjectTable ObjectTable { get; private init; } = null!;
+        internal IObjectTable ObjectTable { get; private init; } = null!;
 
         [PluginService]
-        private SigScanner SigScanner { get; init; } = null!;
+        internal IGameInteropProvider GameInteropProvider { get; private init; } = null!;
+
+        [PluginService]
+        private ISigScanner SigScanner { get; init; } = null!;
 
         internal XivCommonBase Common { get; }
         internal Configuration Config { get; }
