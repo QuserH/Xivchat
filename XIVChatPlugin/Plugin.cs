@@ -69,7 +69,7 @@ namespace XIVChatPlugin {
         }
 
         public Plugin() {
-            this.Common = new XivCommonBase();
+            this.Common = new XivCommonBase(this.Interface);
             this.Events = new InternalEvents();
 
             // load libsodium.so from debug location if in debug mode
