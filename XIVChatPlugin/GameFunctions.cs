@@ -10,6 +10,8 @@ using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Memory;
 using Dalamud.Utility.Signatures;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
+using FFXIVClientStructs.FFXIV.Client.System.Memory;
+using FFXIVClientStructs.FFXIV.Client.System.String;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 
@@ -17,10 +19,10 @@ namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
             internal const string ProcessChat = "48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9";
-            internal const string Input = "80 B9 ?? ?? ?? ?? ?? 0F 9C C0";
-            internal const string InputAfk = "E8 ?? ?? ?? ?? 0F 28 74 24 ?? 0F B6 F0";
+            internal const string Input = "E8 ?? ?? ?? ?? 4D 8B 47 18 84 C0";
+            internal const string InputAfk = "E8 ?? ?? ?? ?? 83 7F 08 00";
             internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
-            internal const string Format = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 30 48 8B 6C 24";
+            internal const string Format = "48 89 5C 24 ?? 55 57 41 56 48 83 EC 30 48 8B 6C 24";
             internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
 
             internal const string GetColour = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9";
@@ -28,9 +30,7 @@ namespace XIVChatPlugin {
             internal const string Channel = "E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 85 D2 BB";
             internal const string ChannelCommand = "E8 ?? ?? ?? ?? 0F B7 44 37";
             internal const string ChannelNameChange = "E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 48 8D 4D B0 48 8B F8 E8 ?? ?? ?? ?? 41 8B D6";
-            internal const string XivStringCtor = "E8 ?? ?? ?? ?? 44 2B F7";
-            internal const string XivStringDtor = "E8 ?? ?? ?? ?? B0 6E";
-            internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? 8B 14 ?? 85 D2 7E ?? 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8 ?? ?? ?? ?? 8B 70 ?? 41 8D 4D";
+            internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? 8B 14 81 85 D2 7E 13 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8";
         }
 
         private Plugin Plugin { get; }
@@ -99,12 +99,6 @@ namespace XIVChatPlugin {
         [Signature(Signatures.ChannelCommand)]
         private readonly ChannelChangeCommandDelegate? _channelChangeCommand;
 
-        [Signature(Signatures.XivStringCtor)]
-        private readonly XivStringCtorDelegate? _xivStringCtor;
-
-        [Signature(Signatures.XivStringDtor)]
-        private readonly XivStringDtorDelegate? _xivStringDtor;
-
         #endregion
 
         #region Pointers
@@ -163,10 +157,7 @@ namespace XIVChatPlugin {
             this._isInputHook?.Enable();
             this._isInputAfkHook?.Enable();
 
-            if (this._xivStringCtor != null && this._xivStringDtor != null) {
-                this._emptyXivString = Marshal.AllocHGlobal(0x68);
-                this._xivStringCtor(this._emptyXivString);
-            }
+            this._emptyXivString = (nint) Utf8String.CreateEmpty();
         }
 
         private byte IsInputDetour(IntPtr a1) {
@@ -393,9 +384,10 @@ namespace XIVChatPlugin {
             this._isInputHook?.Dispose();
             this._isInputAfkHook?.Dispose();
 
-            if (this._emptyXivString != IntPtr.Zero) {
-                this._xivStringDtor?.Invoke(this._emptyXivString);
-                Marshal.FreeHGlobal(this._emptyXivString);
+            if (this._emptyXivString != nint.Zero) {
+                var str = (Utf8String*) this._emptyXivString;
+                str->Dtor();
+                IMemorySpace.Free(str);
             }
         }
     }
