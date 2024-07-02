@@ -9,7 +9,7 @@ namespace XIVChatCommon.Message.Server {
         protected override byte Code => (byte)ServerOperation.PlayerData;
 
         protected override byte[] PayloadEncode() {
-            return new byte[0];
+            return [];
         }
     }
 }

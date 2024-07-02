@@ -7,7 +7,6 @@ using System.Reflection;
 using Dalamud.Game;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
-using XivCommon;
 #if DEBUG
 using System.IO;
 #endif
@@ -22,7 +21,7 @@ namespace XIVChatPlugin {
         internal static IPluginLog Log { get; private set; } = null!;
 
         [PluginService]
-        internal DalamudPluginInterface Interface { get; private init; } = null!;
+        internal IDalamudPluginInterface Interface { get; private init; } = null!;
 
         [PluginService]
         internal IChatGui ChatGui { get; private init; } = null!;
@@ -48,14 +47,13 @@ namespace XIVChatPlugin {
         [PluginService]
         private ISigScanner SigScanner { get; init; } = null!;
 
-        internal XivCommonBase Common { get; }
         internal Configuration Config { get; }
         private PluginUi Ui { get; }
         internal Server Server { get; private set; }
         internal Relay? Relay { get; private set; }
         internal GameFunctions Functions { get; }
         internal InternalEvents Events { get; }
-        private List<IDisposable> Ipcs { get; } = new();
+        private List<IDisposable> Ipcs { get; } = [];
 
         // ReSharper disable once UnusedMember.Global
         // ReSharper disable once AutoPropertyCanBeMadeGetOnly.Local
@@ -69,7 +67,6 @@ namespace XIVChatPlugin {
         }
 
         public Plugin() {
-            this.Common = new XivCommonBase(this.Interface);
             this.Events = new InternalEvents();
 
             // load libsodium.so from debug location if in debug mode
@@ -129,8 +126,6 @@ namespace XIVChatPlugin {
             foreach (var ipc in this.Ipcs) {
                 ipc.Dispose();
             }
-
-            this.Common.Dispose();
         }
 
         internal void StartRelay() {
@@ -151,19 +146,19 @@ namespace XIVChatPlugin {
             this.Relay = null;
         }
 
-        internal IntPtr ScanText(string sig) {
+        internal nint ScanText(string sig) {
             try {
                 return this.SigScanner.ScanText(sig);
             } catch (KeyNotFoundException) {
-                return IntPtr.Zero;
+                return nint.Zero;
             }
         }
 
-        internal IntPtr GetStaticAddressFromSig(string sig) {
+        internal nint GetStaticAddressFromSig(string sig) {
             try {
                 return this.SigScanner.GetStaticAddressFromSig(sig);
             } catch (KeyNotFoundException) {
-                return IntPtr.Zero;
+                return nint.Zero;
             }
         }
 

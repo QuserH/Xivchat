@@ -25,7 +25,7 @@ namespace XIVChatPlugin {
     internal class Server : IDisposable {
         private const int MaxMessageLength = 500;
 
-        private static readonly string[] PublicPrefixes = {
+        private static readonly string[] PublicPrefixes = [
             "/t ",
             "/tell ",
             "/reply ",
@@ -36,7 +36,7 @@ namespace XIVChatPlugin {
             "/sh ",
             "/yell ",
             "/y ",
-        };
+        ];
 
         private readonly Plugin _plugin;
 
@@ -49,9 +49,9 @@ namespace XIVChatPlugin {
         internal IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
         internal readonly Channel<Tuple<BaseClient, Channel<bool>>> PendingClients = Channel.CreateUnbounded<Tuple<BaseClient, Channel<bool>>>();
 
-        private readonly HashSet<Guid> _waitingForFriendList = new();
+        private readonly HashSet<Guid> _waitingForFriendList = [];
 
-        private readonly LinkedList<ServerMessage> _backlog = new();
+        private readonly LinkedList<ServerMessage> _backlog = [];
 
         private TcpListener? _listener;
 
@@ -201,7 +201,7 @@ namespace XIVChatPlugin {
             this._plugin.Config.Save();
         }
 
-        internal void OnChat(XivChatType type, uint senderId, ref SeString sender, ref SeString message, ref bool isHandled) {
+        internal void OnChat(XivChatType type, int senderId, ref SeString sender, ref SeString message, ref bool isHandled) {
             if (isHandled) {
                 return;
             }
@@ -558,12 +558,6 @@ namespace XIVChatPlugin {
 
             var format = (SeString) logKind.Format;
 
-            static bool IsStringParam(Payload payload, byte num) {
-                var data = payload.Encode();
-
-                return data.Length >= 5 && data[1] == 0x29 && data[4] == num + 1;
-            }
-
             var firstStringParam = format.Payloads.FindIndex(payload => IsStringParam(payload, 1));
             var secondStringParam = format.Payloads.FindIndex(payload => IsStringParam(payload, 2));
 
@@ -590,6 +584,12 @@ namespace XIVChatPlugin {
             this.Formats[type] = nameFormatting;
 
             return nameFormatting;
+
+            static bool IsStringParam(Payload payload, byte num) {
+                var data = payload.Encode();
+
+                return data is [_, 0x29, _, _, _, ..] && data[4] == num + 1;
+            }
         }
 
         private static async Task SendBacklogs(IEnumerable<ServerMessage> messages, BaseClient client) {
@@ -796,7 +796,7 @@ namespace XIVChatPlugin {
             }
 
             var inputChannel = (InputChannel) channel;
-            if (inputChannel == this._currentChannel && name.Encode().SequenceEqual(this._currentChannelName?.Encode() ?? Array.Empty<byte>())) {
+            if (inputChannel == this._currentChannel && name.Encode().SequenceEqual(this._currentChannelName?.Encode() ?? [])) {
                 return;
             }
 
@@ -860,7 +860,7 @@ namespace XIVChatPlugin {
                     }
 
                     // cancel threads for open clients
-                    client.TokenSource.Cancel();
+                    await client.TokenSource.CancelAsync();
                 });
             }
 

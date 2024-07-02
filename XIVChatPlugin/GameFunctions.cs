@@ -7,20 +7,22 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Dalamud.Game.Text.SeStringHandling;
-using Dalamud.Memory;
 using Dalamud.Utility.Signatures;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.System.Memory;
 using FFXIVClientStructs.FFXIV.Client.System.String;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
+using GrandCompany = Lumina.Excel.GeneratedSheets.GrandCompany;
 
 namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
             internal const string ProcessChat = "48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9";
             internal const string Input = "E8 ?? ?? ?? ?? 4D 8B 47 18 84 C0";
-            internal const string InputAfk = "E8 ?? ?? ?? ?? 83 7F 08 00";
+            internal const string InputAfk = "E8 ?? ?? ?? ?? 41 83 7F ?? ?? 4C 8D 2D";
             internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
             internal const string Format = "48 89 5C 24 ?? 55 57 41 56 48 83 EC 30 48 8B 6C 24";
             internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
@@ -37,29 +39,25 @@ namespace XIVChatPlugin {
 
         #region Delegates
 
-        private delegate void EasierProcessChatBoxDelegate(IntPtr uiModule, IntPtr message, IntPtr unused, byte a4);
+        private delegate void EasierProcessChatBoxDelegate(nint uiModule, nint message, nint unused, byte a4);
 
-        private delegate byte IsInputDelegate(IntPtr a1);
+        private delegate byte IsInputDelegate(nint a1);
 
         private delegate byte IsInputAfkDelegate();
 
-        private delegate byte RequestFriendListDelegate(IntPtr manager);
+        private delegate byte RequestFriendListDelegate(nint manager);
 
-        private delegate int FormatFriendListNameDelegate(long a1, long a2, long a3, int a4, IntPtr data, long a6);
+        private delegate int FormatFriendListNameDelegate(long a1, long a2, long a3, int a4, nint data, long a6);
 
-        private delegate IntPtr OnReceiveFriendListChunkDelegate(IntPtr a1, IntPtr data);
+        private delegate nint OnReceiveFriendListChunkDelegate(nint a1, nint data);
 
-        private delegate IntPtr GetColourInfoDelegate(IntPtr handler, uint lookupResult);
+        private delegate nint GetColourInfoDelegate(nint handler, uint lookupResult);
 
-        private delegate byte ChatChannelChangeDelegate(IntPtr a1, uint channel);
+        private delegate byte ChatChannelChangeDelegate(nint a1, uint channel);
 
-        private delegate IntPtr ChatChannelChangeNameDelegate(IntPtr a1);
+        private delegate nint ChatChannelChangeNameDelegate(nint a1);
 
-        private delegate IntPtr ChannelChangeCommandDelegate(IntPtr a1, int inputChannel, uint linkshellIdx, IntPtr tellTarget, char canChangeChannel);
-
-        private delegate IntPtr XivStringCtorDelegate(IntPtr memory);
-
-        private delegate IntPtr XivStringDtorDelegate(IntPtr memory);
+        private delegate nint ChannelChangeCommandDelegate(nint a1, int inputChannel, uint linkshellIdx, nint tellTarget, char canChangeChannel);
 
         #endregion
 
@@ -104,13 +102,13 @@ namespace XIVChatPlugin {
         #region Pointers
 
         [Signature(Signatures.ColourLookup, ScanType = ScanType.StaticAddress)]
-        private IntPtr ColourLookup { get; init; }
+        private nint ColourLookup { get; init; }
 
         #endregion
 
         public ServerHousingLocation HousingLocation {
             get {
-                var info = this.Plugin.Common.Functions.Housing.Location;
+                var info = XIVChatPlugin.HousingLocation.Current();
                 if (info == null) {
                     return new ServerHousingLocation(null, null, false, null);
                 }
@@ -132,13 +130,13 @@ namespace XIVChatPlugin {
         }
 
         private InputSetters HadInput { get; set; } = InputSetters.None;
-        private IntPtr _friendListManager = IntPtr.Zero;
-        private IntPtr _chatManager = IntPtr.Zero;
-        private readonly IntPtr _emptyXivString = IntPtr.Zero;
+        private nint _friendListManager = nint.Zero;
+        private nint _chatManager = nint.Zero;
+        private readonly nint _emptyXivString;
 
         internal bool RequestingFriendList { get; private set; }
 
-        private readonly List<Player> _friends = new();
+        private readonly List<Player> _friends = [];
 
         internal delegate void ReceiveFriendListHandler(List<Player> friends);
 
@@ -160,7 +158,7 @@ namespace XIVChatPlugin {
             this._emptyXivString = (nint) Utf8String.CreateEmpty();
         }
 
-        private byte IsInputDetour(IntPtr a1) {
+        private byte IsInputDetour(nint a1) {
             if (!this.Plugin.Config.MessagesCountAsInput || this.HadInput == InputSetters.None) {
                 return this._isInputHook!.Original(a1);
             }
@@ -179,7 +177,7 @@ namespace XIVChatPlugin {
         }
 
         internal void ChangeChatChannel(InputChannel channel) {
-            if (this._chatManager == IntPtr.Zero || this._channelChangeCommand == null || this._emptyXivString == IntPtr.Zero) {
+            if (this._chatManager == nint.Zero || this._channelChangeCommand == null || this._emptyXivString == nint.Zero) {
                 return;
             }
 
@@ -190,7 +188,7 @@ namespace XIVChatPlugin {
         //
         // If this function would ever return 0, it returns null instead.
         internal uint? GetChannelColour(ChatCode channel) {
-            if (this._getColourInfo == null || this.ColourLookup == IntPtr.Zero) {
+            if (this._getColourInfo == null || this.ColourLookup == nint.Zero) {
                 return null;
             }
 
@@ -208,7 +206,7 @@ namespace XIVChatPlugin {
                     return channel.DefaultColour();
             }
 
-            var framework = (IntPtr) Framework.Instance();
+            var framework = (nint) Framework.Instance();
 
             var lookupResult = *(uint*) (this.ColourLookup + (int) parent * 4);
             var info = this._getColourInfo(framework + 16, lookupResult);
@@ -228,19 +226,19 @@ namespace XIVChatPlugin {
 
             this.HadInput = InputSetters.Normal | InputSetters.Afk;
 
-            var uiModule = Framework.Instance()->GetUiModule();
+            var uiModule = UIModule.Instance();
 
             using var payload = new ChatPayload(message);
             var mem1 = Marshal.AllocHGlobal(400);
             Marshal.StructureToPtr(payload, mem1, false);
 
-            this._easierProcessChatBox((IntPtr) uiModule, mem1, IntPtr.Zero, 0);
+            this._easierProcessChatBox((nint) uiModule, mem1, nint.Zero, 0);
 
             Marshal.FreeHGlobal(mem1);
         }
 
         internal bool RequestFriendList() {
-            if (this._friendListManager == IntPtr.Zero || this._friendListHook == null) {
+            if (this._friendListManager == nint.Zero || this._friendListHook == null) {
                 return false;
             }
 
@@ -249,54 +247,43 @@ namespace XIVChatPlugin {
             return true;
         }
 
-        private byte ChangeChatChannelDetour(IntPtr a1, uint channel) {
+        private byte ChangeChatChannelDetour(nint a1, uint channel) {
             this._chatManager = a1;
             // Last ShB patch
             // a1 + 0xfd0 is the chat channel byte (including for when clicking on shout)
             return this._chatChannelChangeHook!.Original(a1, channel);
         }
 
-        private IntPtr ChangeChatChannelNameDetour(IntPtr a1) {
+        private nint ChangeChatChannelNameDetour(nint a1) {
             // Last ShB patch
             // +0x40 = chat channel (byte or uint?)
             //         channel is 17 (maybe 18?) for tells
             // +0x48 = pointer to channel name string
             var ret = this._chatChannelChangeNameHook!.Original(a1);
-            if (a1 == IntPtr.Zero) {
+            if (a1 == nint.Zero) {
                 return ret;
             }
 
-            var channel = *(uint*) (a1 + 0x40);
+            var agent = AgentChatLog.Instance();
+            var channel = (uint) agent->CurrentChannel;
+            var label = SeString.Parse(agent->ChannelLabel.AsSpan());
+
             if (channel is 17 or 18) {
                 channel = 0;
             }
 
-            SeString? name = null;
-            var namePtrPtr = (byte**) (a1 + 0x48);
-            if (namePtrPtr != null) {
-                var namePtr = *namePtrPtr;
-                name = MemoryHelper.ReadSeStringNullTerminated((IntPtr) namePtr);
-                if (name.Payloads.Count == 0) {
-                    name = null;
-                }
-            }
-
-            if (name == null) {
-                return ret;
-            }
-
-            this.Plugin.Server.OnChatChannelChange(channel, name);
+            this.Plugin.Server.OnChatChannelChange(channel, label);
 
             return ret;
         }
 
-        private byte OnRequestFriendList(IntPtr manager) {
+        private byte OnRequestFriendList(nint manager) {
             this._friendListManager = manager;
             // NOTE: if this is being called, hook isn't null
             return this._friendListHook!.Original(manager);
         }
 
-        private int OnFormatFriendList(long a1, long a2, long a3, int a4, IntPtr data, long a6) {
+        private int OnFormatFriendList(long a1, long a2, long a3, int a4, nint data, long a6) {
             // have to call this first to populate cross-world info
             // NOTE: if this is being called, hook isn't null
             var ret = this._formatHook!.Original(a1, a2, a3, a4, data, a6);
@@ -347,7 +334,7 @@ namespace XIVChatPlugin {
             return ret;
         }
 
-        private IntPtr OnReceiveFriendList(IntPtr a1, IntPtr data) {
+        private nint OnReceiveFriendList(nint a1, nint data) {
             // NOTE: if this is being called, hook isn't null
             var ret = this._receiveChunkHook!.Original(a1, data);
 

@@ -72,9 +72,9 @@ namespace XIVChatPlugin {
             return bytes.ToArray();
         }
 
-        internal static IntPtr FollowPointerChain(IntPtr start, IEnumerable<int> offsets) {
-            if (start == IntPtr.Zero) {
-                return IntPtr.Zero;
+        internal static nint FollowPointerChain(nint start, IEnumerable<int> offsets) {
+            if (start == nint.Zero) {
+                return nint.Zero;
             }
 
             // Plugin.Log.Info($"start: {start.ToInt64():x}");
@@ -82,8 +82,8 @@ namespace XIVChatPlugin {
             foreach (var offset in offsets) {
                 start = Marshal.ReadIntPtr(start + offset);
                 // Plugin.Log.Info($"  + {offset}: {start.ToInt64():x}");
-                if (start == IntPtr.Zero) {
-                    return IntPtr.Zero;
+                if (start == nint.Zero) {
+                    return nint.Zero;
                 }
             }
 

@@ -735,9 +735,9 @@ namespace XIVChatCommon.Message {
             byte[] payload = this.PayloadEncode();
 
             if (payload.Length == 0) {
-                return new[] {
+                return [
                     this.Code,
-                };
+                ];
             }
 
             byte[] bytes = new byte[1 + payload.Length];

@@ -8,7 +8,7 @@ namespace XIVChatCommon.Message.Client {
         protected override byte Code => (byte) ClientOperation.Shutdown;
 
         protected override byte[] PayloadEncode() {
-            return new byte[0];
+            return [];
         }
     }
 }

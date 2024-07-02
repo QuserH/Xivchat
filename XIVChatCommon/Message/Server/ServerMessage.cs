@@ -106,9 +106,9 @@ namespace XIVChatCommon.Message.Server {
             return new SenderPlayer(name, 0);
         }
 
-        private static readonly char[] PartyChars = {
+        private static readonly char[] PartyChars = [
             '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097',
-        };
+        ];
 
         public class SenderPlayer : IComparable<SenderPlayer>, IComparable {
             public string Name { get; }

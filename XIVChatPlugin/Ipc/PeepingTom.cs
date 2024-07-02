@@ -13,7 +13,7 @@ using XIVChatCommon.Message.Server;
 namespace XIVChatPlugin.Ipc {
     internal class PeepingTom : IDisposable {
         private Plugin Plugin { get; }
-        private List<TargeterWithStatus> Targeters { get; } = new();
+        private List<TargeterWithStatus> Targeters { get; } = [];
 
         private class TargeterWithStatus {
             public Targeter Targeter { get; set; } = null!;
@@ -63,7 +63,7 @@ namespace XIVChatPlugin.Ipc {
         }
 
         private void UpdateTargeter(Targeter targeter, bool targeting) {
-            var existing = this.Targeters.FirstOrDefault(t => t.Targeter.ObjectId == targeter.ObjectId);
+            var existing = this.Targeters.FirstOrDefault(t => t.Targeter.GameObjectId == targeter.GameObjectId);
             if (existing == default) {
                 this.Targeters.Add(new TargeterWithStatus {
                     Targeter = targeter,
@@ -78,9 +78,9 @@ namespace XIVChatPlugin.Ipc {
         private ServerPlayerList GetMessage() {
             var players = this.Targeters
                 .Where(targeter => targeter.Targeting) // FIXME: send entire history so clients don't have to do logic
-                .Select(targeter => this.Plugin.ObjectTable.FirstOrDefault(obj => obj.ObjectId == targeter.Targeter.ObjectId))
-                .Where(actor => actor is PlayerCharacter)
-                .Cast<PlayerCharacter>()
+                .Select(targeter => this.Plugin.ObjectTable.FirstOrDefault(obj => obj.GameObjectId == targeter.Targeter.GameObjectId))
+                .Where(actor => actor is IPlayerCharacter)
+                .Cast<IPlayerCharacter>()
                 .Select(chara => new Player {
                     Name = chara.Name.TextValue,
                     FreeCompany = chara.CompanyTag.TextValue,
