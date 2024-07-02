@@ -20,9 +20,9 @@
       },
       "PeepingTom.Ipc": {
         "type": "Direct",
-        "requested": "[1.0.0, )",
-        "resolved": "1.0.0",
-        "contentHash": "u6lb0mLBbqGdKvafYGyh4yqEO5rZulCBTAaVvfV2h5+OYX20bw44eUeIbVJTc2TinUXezE8dON/0igwFzYHAZw=="
+        "requested": "[2.0.0, )",
+        "resolved": "2.0.0",
+        "contentHash": "XggO82kbZend3YWlmeB6lG5kHTr7n+W6FOrSB14T56MDJW//zlGPImpllru2HIGsvisuK+YEsa2aIesa4t1IrA=="
       },
       "Sodium.Core": {
         "type": "Direct",
