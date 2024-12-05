@@ -1,5 +1,4 @@
-﻿using Lumina.Excel.GeneratedSheets;
-using MessagePack;
+﻿using MessagePack;
 using Sodium;
 using System;
 using System.Collections.Concurrent;
@@ -16,6 +15,8 @@ using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
+using Dalamud.Utility;
+using Lumina.Excel.Sheets;
 using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
@@ -550,13 +551,13 @@ namespace XIVChatPlugin {
                 return cached;
             }
 
-            var logKind = this._plugin.DataManager.GetExcelSheet<LogKind>()!.GetRow((ushort) type);
+            var logKind = this._plugin.DataManager.GetExcelSheet<LogKind>().GetRowOrDefault((ushort) type);
 
             if (logKind == null) {
                 return null;
             }
 
-            var format = (SeString) logKind.Format;
+            var format = logKind.Value.Format.ToDalamudString();
 
             var firstStringParam = format.Payloads.FindIndex(payload => IsStringParam(payload, 1));
             var secondStringParam = format.Payloads.FindIndex(payload => IsStringParam(payload, 2));
@@ -651,7 +652,7 @@ namespace XIVChatPlugin {
                     case PayloadType.UIForeground:
                         var foregroundPayload = (UIForegroundPayload) payload;
                         if (foregroundPayload.IsEnabled) {
-                            foreground.Push(foregroundPayload.UIColor.UIForeground);
+                            foreground.Push(foregroundPayload.UIColor.Value.UIForeground);
                         } else if (foreground.Count > 0) {
                             foreground.Pop();
                         }
@@ -660,7 +661,7 @@ namespace XIVChatPlugin {
                     case PayloadType.UIGlow:
                         var glowPayload = (UIGlowPayload) payload;
                         if (glowPayload.IsEnabled) {
-                            glow.Push(glowPayload.UIColor.UIGlow);
+                            glow.Push(glowPayload.UIColor.Value.UIGlow);
                         } else if (glow.Count > 0) {
                             glow.Pop();
                         }
@@ -783,7 +784,7 @@ namespace XIVChatPlugin {
                 _ => 0,
             };
 
-            return this._plugin.DataManager.GetExcelSheet<LogFilter>()!.GetRow(rowId)?.Name ?? string.Empty;
+            return this._plugin.DataManager.GetExcelSheet<LogFilter>().GetRowOrDefault(rowId)?.Name.ExtractText() ?? string.Empty;
         }
 
         internal void OnChatChannelChange(uint channel, SeString name) {
@@ -817,10 +818,10 @@ namespace XIVChatPlugin {
                 return null;
             }
 
-            var homeWorld = player.HomeWorld.GameData.Name;
-            var currentWorld = player.CurrentWorld.GameData.Name;
-            var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>()!.GetRow(this._plugin.ClientState.TerritoryType);
-            var location = territory?.PlaceName?.Value?.Name ?? "???";
+            var homeWorld = player.HomeWorld.Value.Name.ExtractText();
+            var currentWorld = player.CurrentWorld.Value.Name.ExtractText();
+            var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(this._plugin.ClientState.TerritoryType);
+            var location = territory?.PlaceName.Value.Name.ExtractText() ?? "???";
             var name = player.Name.TextValue;
 
             return new PlayerData(homeWorld, currentWorld, location, name);
@@ -838,7 +839,7 @@ namespace XIVChatPlugin {
             this._sendPlayerData = true;
         }
 
-        internal void OnLogOut() {
+        internal void OnLogOut(int type, int code) {
             this.BroadcastAvailability(false);
             this.BroadcastPlayerData();
         }

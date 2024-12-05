@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.SubKinds;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using PeepingTom.Ipc;
 using PeepingTom.Ipc.From;
 using PeepingTom.Ipc.To;
@@ -85,14 +85,14 @@ namespace XIVChatPlugin.Ipc {
                     Name = chara.Name.TextValue,
                     FreeCompany = chara.CompanyTag.TextValue,
                     Status = 0,
-                    CurrentWorld = (ushort) chara.CurrentWorld.Id,
-                    CurrentWorldName = chara.CurrentWorld.GameData.Name.ToString(),
-                    HomeWorld = (ushort) chara.HomeWorld.Id,
-                    HomeWorldName = chara.HomeWorld.GameData.Name.ToString(),
+                    CurrentWorld = (ushort) chara.CurrentWorld.RowId,
+                    CurrentWorldName = chara.CurrentWorld.Value.Name.ExtractText(),
+                    HomeWorld = (ushort) chara.HomeWorld.RowId,
+                    HomeWorldName = chara.HomeWorld.Value.Name.ExtractText(),
                     Territory = this.Plugin.ClientState.TerritoryType,
-                    TerritoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>()!.GetRow(this.Plugin.ClientState.TerritoryType)?.Name?.ToString(),
-                    Job = (byte) chara.ClassJob.Id,
-                    JobName = chara.ClassJob.GameData.Name.ToString(),
+                    TerritoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(this.Plugin.ClientState.TerritoryType)?.Name.ExtractText(),
+                    Job = (byte) chara.ClassJob.RowId,
+                    JobName = chara.ClassJob.Value.Name.ExtractText(),
                     GrandCompany = 0,
                     GrandCompanyName = null,
                     Languages = 0,

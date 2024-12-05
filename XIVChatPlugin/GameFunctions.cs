@@ -1,5 +1,4 @@
 ﻿using Dalamud.Hooking;
-using Lumina.Excel.GeneratedSheets;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -13,23 +12,24 @@ using FFXIVClientStructs.FFXIV.Client.System.Memory;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Lumina.Excel.Sheets;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
-using GrandCompany = Lumina.Excel.GeneratedSheets.GrandCompany;
+using GrandCompany = Lumina.Excel.Sheets.GrandCompany;
 
 namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
-            internal const string ProcessChat = "48 89 5C 24 ?? 57 48 83 EC 20 48 8B FA 48 8B D9 45 84 C9";
-            internal const string Input = "E8 ?? ?? ?? ?? 4D 8B 47 18 84 C0";
+            internal const string ProcessChat = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
+            internal const string Input = "E8 ?? ?? ?? ?? 4D 8B 46 18 84 C0";
             internal const string InputAfk = "E8 ?? ?? ?? ?? 41 83 7F ?? ?? 4C 8D 2D";
             internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
-            internal const string Format = "48 89 5C 24 ?? 55 57 41 56 48 83 EC 30 48 8B 6C 24";
+            internal const string Format = "48 89 5C 24 ?? 56 57 41 56 48 83 EC 30 4C 8B 74 24";
             internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
 
             internal const string GetColour = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9";
 
-            internal const string Channel = "E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 85 D2 BB";
+            internal const string Channel = "E8 ?? ?? ?? ?? 33 C0 EB 1D";
             internal const string ChannelCommand = "E8 ?? ?? ?? ?? 0F B7 44 37";
             internal const string ChannelNameChange = "E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 48 8D 4D B0 48 8B F8 E8 ?? ?? ?? ?? 41 8B D6";
             internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? 8B 14 81 85 D2 7E 13 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8";
@@ -296,13 +296,13 @@ namespace XIVChatPlugin {
 
             string? jobName = null;
             if (entry.job > 0) {
-                jobName = this.Plugin.DataManager.GetExcelSheet<ClassJob>()!.GetRow(entry.job)?.Name?.ToString();
+                jobName = this.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(entry.job)?.Name.ExtractText();
             }
 
             // FIXME: remove this try/catch when lumina fixes bug with .Value
             string? territoryName;
             try {
-                territoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>()!.GetRow(entry.territoryId)?.PlaceName?.Value?.Name?.ToString();
+                territoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(entry.territoryId)?.PlaceName.Value.Name.ExtractText();
             } catch (NullReferenceException) {
                 territoryName = null;
             }
@@ -313,9 +313,9 @@ namespace XIVChatPlugin {
                 Status = entry.flags,
 
                 CurrentWorld = entry.currentWorldId,
-                CurrentWorldName = this.Plugin.DataManager.GetExcelSheet<World>()!.GetRow(entry.currentWorldId)?.Name?.ToString(),
+                CurrentWorldName = this.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(entry.currentWorldId)?.Name.ExtractText(),
                 HomeWorld = entry.homeWorldId,
-                HomeWorldName = this.Plugin.DataManager.GetExcelSheet<World>()!.GetRow(entry.homeWorldId)?.Name?.ToString(),
+                HomeWorldName = this.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(entry.homeWorldId)?.Name.ExtractText(),
 
                 Territory = entry.territoryId,
                 TerritoryName = territoryName,
@@ -324,7 +324,7 @@ namespace XIVChatPlugin {
                 JobName = jobName,
 
                 GrandCompany = entry.grandCompany,
-                GrandCompanyName = this.Plugin.DataManager.GetExcelSheet<GrandCompany>()!.GetRow(entry.grandCompany)?.Name?.ToString(),
+                GrandCompanyName = this.Plugin.DataManager.GetExcelSheet<GrandCompany>().GetRowOrDefault(entry.grandCompany)?.Name.ExtractText(),
 
                 Languages = entry.langsEnabled,
                 MainLanguage = entry.mainLanguage,
