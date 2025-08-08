@@ -1,4 +1,4 @@
-﻿using Dalamud.Hooking;
+using Dalamud.Hooking;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -21,18 +21,18 @@ namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
             internal const string ProcessChat = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
-            internal const string Input = "E8 ?? ?? ?? ?? 4D 8B 46 18 84 C0";
-            internal const string InputAfk = "E8 ?? ?? ?? ?? 41 83 7F ?? ?? 4C 8D 2D";
+            internal const string Input = "E8 ?? ?? ?? ?? ?? ?? ?? 84 C0 B9";
+            internal const string InputAfk = "E8 ?? ?? ?? ?? 84 C0 74 ?? 66 83 3D";
             internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
             internal const string Format = "48 89 5C 24 ?? 56 57 41 56 48 83 EC 30 4C 8B 74 24";
             internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
 
             internal const string GetColour = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9";
 
-            internal const string Channel = "E8 ?? ?? ?? ?? 33 C0 EB 1D";
+            internal const string Channel = "E8 ?? ?? ?? ?? 33 C0 EB ?? 85 D2";
             internal const string ChannelCommand = "E8 ?? ?? ?? ?? 0F B7 44 37";
             internal const string ChannelNameChange = "E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 48 8D 4D B0 48 8B F8 E8 ?? ?? ?? ?? 41 8B D6";
-            internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? 8B 14 81 85 D2 7E 13 48 8B 0D ?? ?? ?? ?? 48 83 C1 10 E8";
+            internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? ?? ?? ?? 85 D2 7E";
         }
 
         private Plugin Plugin { get; }
