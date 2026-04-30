@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using Dalamud.Game;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
 #if DEBUG

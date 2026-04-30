@@ -13,7 +13,7 @@ namespace XIVChatCommon.Message.Server {
         public DateTime Timestamp { get; set; }
 
         [Key(1)]
-        public ChatType Channel { get; set; }
+        public ushort Channel { get; set; }
 
         [Key(2)]
         public byte[] Sender { get; set; }
@@ -33,7 +33,7 @@ namespace XIVChatCommon.Message.Server {
         [IgnoreMember]
         protected override byte Code => (byte) ServerOperation.Message;
 
-        public ServerMessage(DateTime timestamp, ChatType channel, byte[] sender, byte[] content, List<Chunk> chunks) {
+        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks) {
             this.Timestamp = timestamp;
             this.Channel = channel;
             this.Sender = sender;

@@ -16,6 +16,7 @@ using Lumina.Excel.Sheets;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
 using GrandCompany = Lumina.Excel.Sheets.GrandCompany;
+using Dalamud.Game.Text;
 
 namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
@@ -187,7 +188,7 @@ namespace XIVChatPlugin {
         // This function looks up a channel's user-defined colour.
         //
         // If this function would ever return 0, it returns null instead.
-        internal uint? GetChannelColour(ChatCode channel) {
+        internal uint? GetChannelColour(XivChatType channel) {
             if (this._getColourInfo == null || this.ColourLookup == nint.Zero) {
                 return null;
             }
@@ -200,9 +201,9 @@ namespace XIVChatPlugin {
             var parent = channel.Parent();
 
             switch (parent) {
-                case ChatType.Debug:
-                case ChatType.Urgent:
-                case ChatType.Notice:
+                case XivChatType.Debug:
+                case XivChatType.Urgent:
+                case XivChatType.Notice:
                     return channel.DefaultColour();
             }
 

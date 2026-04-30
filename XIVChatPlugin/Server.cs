@@ -21,6 +21,7 @@ using XIVChatCommon;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Server;
+using Dalamud.Game.Chat;
 
 namespace XIVChatPlugin {
     internal class Server : IDisposable {
@@ -107,7 +108,7 @@ namespace XIVChatPlugin {
                         continue;
                     }
 
-                    var playerName = this._plugin.ClientState.LocalPlayer?.Name;
+                    var playerName = this._plugin.ObjectTable.LocalPlayer?.Name;
 
                     if (playerName != null) {
                         lastPlayerName = playerName;
@@ -202,41 +203,39 @@ namespace XIVChatPlugin {
             this._plugin.Config.Save();
         }
 
-        internal void OnChat(XivChatType type, int senderId, ref SeString sender, ref SeString message, ref bool isHandled) {
-            if (isHandled) {
+        internal void OnChat(IHandleableChatMessage message) {
+            if (message.IsHandled) {
                 return;
             }
 
-            var chatCode = new ChatCode((ushort) type);
-
-            if (!this._plugin.Config.SendBattle && chatCode.IsBattle()) {
+            if (!this._plugin.Config.SendBattle && message.LogKind.IsBattle()) {
                 return;
             }
 
             var chunks = new List<Chunk>();
 
-            var colour = this._plugin.Functions.GetChannelColour(chatCode) ?? chatCode.DefaultColour();
+            var colour = this._plugin.Functions.GetChannelColour(message.LogKind) ?? message.LogKind.DefaultColour();
 
-            if (sender.Payloads.Count > 0) {
-                var format = this.FormatFor(chatCode.Type);
+            if (message.Sender.Payloads.Count > 0) {
+                var format = this.FormatFor(message.LogKind);
                 if (format is { IsPresent: true }) {
                     chunks.Add(new TextChunk(format.Before) {
                         FallbackColour = colour,
                     });
-                    chunks.AddRange(ToChunks(sender, colour));
+                    chunks.AddRange(ToChunks(message.Sender, colour));
                     chunks.Add(new TextChunk(format.After) {
                         FallbackColour = colour,
                     });
                 }
             }
 
-            chunks.AddRange(ToChunks(message, colour));
+            chunks.AddRange(ToChunks(message.Message, colour));
 
             var msg = new ServerMessage(
                 DateTime.UtcNow,
-                (ChatType) type,
-                sender.Encode(),
-                message.Encode(),
+                (ushort) message.LogKind,
+                message.Sender.Encode(),
+                message.Message.Encode(),
                 chunks
             );
 
@@ -251,7 +250,7 @@ namespace XIVChatPlugin {
         }
 
         internal void OnFrameworkUpdate(IFramework framework) {
-            var player = this._plugin.ClientState.LocalPlayer;
+            var player = this._plugin.ObjectTable.LocalPlayer;
             if (player != null && this._sendPlayerData) {
                 this.BroadcastPlayerData();
                 this._sendPlayerData = false;
@@ -544,9 +543,9 @@ namespace XIVChatPlugin {
             }
         }
 
-        private Dictionary<ChatType, NameFormatting> Formats { get; } = new();
+        private Dictionary<XivChatType, NameFormatting> Formats { get; } = new();
 
-        private NameFormatting? FormatFor(ChatType type) {
+        private NameFormatting? FormatFor(XivChatType type) {
             if (this.Formats.TryGetValue(type, out var cached)) {
                 return cached;
             }
@@ -813,7 +812,7 @@ namespace XIVChatPlugin {
         }
 
         private PlayerData? GeneratePlayerData() {
-            var player = this._plugin.ClientState.LocalPlayer;
+            var player = this._plugin.ObjectTable.LocalPlayer;
             if (player == null) {
                 return null;
             }
@@ -844,7 +843,7 @@ namespace XIVChatPlugin {
             this.BroadcastPlayerData();
         }
 
-        internal void OnTerritoryChange(ushort @ushort) => this._sendPlayerData = true;
+        internal void OnTerritoryChange(uint @uint) => this._sendPlayerData = true;
 
         public void Dispose() {
             // stop accepting new clients
