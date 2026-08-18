@@ -946,70 +946,78 @@ namespace XIVChatPlugin {
 
                 void AddMounts() {
                     var items = new List<ServerCollectionItem>();
+                    var owned = 0;
                     var total = 0;
                     foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Mount>()) {
                         if (row.Singular.IsEmpty || row.Order == -1) continue;
                         total++;
-                        if (!unlock.IsMountUnlocked(row)) continue;
+                        var isOwned = unlock.IsMountUnlocked(row);
+                        if (isOwned) owned++;
                         items.Add(new ServerCollectionItem {
                             Id = row.RowId,
                             Name = row.Singular.ExtractText(),
                             IconId = row.Icon,
-                            Owned = true,
+                            Owned = isOwned,
                         });
                     }
-                    categories.Add(new ServerCollectionCategory { Id = 0, Total = total, Owned = items.Count, Items = items.ToArray() });
+                    categories.Add(new ServerCollectionCategory { Id = 0, Total = total, Owned = owned, Items = items.ToArray() });
                 }
 
                 void AddMinions() {
                     var items = new List<ServerCollectionItem>();
+                    var owned = 0;
                     var total = 0;
                     foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Companion>()) {
                         if (row.Singular.IsEmpty) continue;
                         total++;
-                        if (!unlock.IsCompanionUnlocked(row)) continue;
+                        var isOwned = unlock.IsCompanionUnlocked(row);
+                        if (isOwned) owned++;
                         items.Add(new ServerCollectionItem {
                             Id = row.RowId,
                             Name = row.Singular.ExtractText(),
                             IconId = row.Icon,
-                            Owned = true,
+                            Owned = isOwned,
                         });
                     }
-                    categories.Add(new ServerCollectionCategory { Id = 1, Total = total, Owned = items.Count, Items = items.ToArray() });
+                    categories.Add(new ServerCollectionCategory { Id = 1, Total = total, Owned = owned, Items = items.ToArray() });
                 }
 
                 void AddEmotes() {
                     var items = new List<ServerCollectionItem>();
+                    var owned = 0;
                     var total = 0;
                     foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Emote>()) {
                         if (row.Name.IsEmpty || row.Icon == 0 || row.UnlockLink == 0) continue;
                         total++;
-                        if (!unlock.IsEmoteUnlocked(row)) continue;
+                        var isOwned = unlock.IsEmoteUnlocked(row);
+                        if (isOwned) owned++;
                         items.Add(new ServerCollectionItem {
                             Id = row.RowId,
                             Name = row.Name.ExtractText(),
                             IconId = row.Icon,
-                            Owned = true,
+                            Owned = isOwned,
                         });
                     }
-                    categories.Add(new ServerCollectionCategory { Id = 2, Total = total, Owned = items.Count, Items = items.ToArray() });
+                    categories.Add(new ServerCollectionCategory { Id = 2, Total = total, Owned = owned, Items = items.ToArray() });
                 }
 
                 void AddOrchestrions() {
                     var items = new List<ServerCollectionItem>();
+                    var owned = 0;
                     var total = 0;
                     foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Orchestrion>()) {
                         if (row.Name.IsEmpty || row.Name.ExtractText() == "0") continue;
                         total++;
-                        if (!unlock.IsOrchestrionUnlocked(row)) continue;
+                        var isOwned = unlock.IsOrchestrionUnlocked(row);
+                        if (isOwned) owned++;
                         items.Add(new ServerCollectionItem {
                             Id = row.RowId,
                             Name = row.Name.ExtractText(),
                             IconId = 0,
-                            Owned = true,
+                            Owned = isOwned,
                         });
                     }
-                    categories.Add(new ServerCollectionCategory { Id = 3, Total = total, Owned = items.Count, Items = items.ToArray() });
+                    categories.Add(new ServerCollectionCategory { Id = 3, Total = total, Owned = owned, Items = items.ToArray() });
                 }
 
                 AddMounts();

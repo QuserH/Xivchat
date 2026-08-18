@@ -173,7 +173,7 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
         }
         if (filtered.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text(if (ownership == 2) "未收藏列表需要完整收藏名录，暂未同步" else "没有匹配的收藏", color = PhoneMuted)
+                Text(if (ownership == 2) "全部已收藏，没有未收藏条目" else "没有匹配的收藏", color = PhoneMuted)
             }
         } else {
             LazyVerticalGrid(
