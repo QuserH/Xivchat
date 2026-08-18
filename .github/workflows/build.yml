@@ -1,0 +1,42 @@
+name: Build XIVChat
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Dalamud development files
+        shell: pwsh
+        run: |
+          $dalamudPath = Join-Path $env:APPDATA 'XIVLauncher\addon\Hooks\dev'
+          New-Item -ItemType Directory -Force -Path $dalamudPath | Out-Null
+          Invoke-WebRequest 'https://goatcorp.github.io/dalamud-distrib/latest.zip' -OutFile "$env:RUNNER_TEMP\dalamud.zip"
+          Expand-Archive "$env:RUNNER_TEMP\dalamud.zip" -DestinationPath $dalamudPath -Force
+
+      - name: Build release package
+        run: dotnet build XIVChatPlugin/XIVChatPlugin.csproj --configuration Release
+
+      - name: Upload plugin package
+        uses: actions/upload-artifact@v4
+        with:
+          name: XIVChat-1.7.14-friend-list-fix
+          path: XIVChatPlugin/bin/Release/**/*.zip
+          if-no-files-found: error

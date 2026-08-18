@@ -2,7 +2,6 @@ using Dalamud.Hooking;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -12,11 +11,13 @@ using FFXIVClientStructs.FFXIV.Client.System.Memory;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using Lumina.Excel.Sheets;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Server;
-using GrandCompany = Lumina.Excel.Sheets.GrandCompany;
 using Dalamud.Game.Text;
+using ClientGrandCompany = FFXIVClientStructs.FFXIV.Client.UI.Agent.GrandCompany;
+using LuminaGrandCompany = Lumina.Excel.Sheets.GrandCompany;
 
 namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
@@ -24,9 +25,6 @@ namespace XIVChatPlugin {
             internal const string ProcessChat = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
             internal const string Input = "E8 ?? ?? ?? ?? ?? ?? ?? 84 C0 B9";
             internal const string InputAfk = "E8 ?? ?? ?? ?? 84 C0 74 ?? 66 83 3D";
-            internal const string FriendList = "40 53 48 81 EC 80 0F 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B D9 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 44 0F B6 43 ?? 33 C9";
-            internal const string Format = "48 89 5C 24 ?? 56 57 41 56 48 83 EC 30 4C 8B 74 24";
-            internal const string ReceiveChunk = "48 89 5C 24 ?? 56 48 83 EC 20 48 8B 0D ?? ?? ?? ?? 48 8B F2";
 
             internal const string GetColour = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 8B F2 48 8D B9";
 
@@ -46,11 +44,7 @@ namespace XIVChatPlugin {
 
         private delegate byte IsInputAfkDelegate();
 
-        private delegate byte RequestFriendListDelegate(nint manager);
-
-        private delegate int FormatFriendListNameDelegate(long a1, long a2, long a3, int a4, nint data, long a6);
-
-        private delegate nint OnReceiveFriendListChunkDelegate(nint a1, nint data);
+        private delegate void EndFriendListRequestDelegate(InfoProxyFriendList* proxy);
 
         private delegate nint GetColourInfoDelegate(nint handler, uint lookupResult);
 
@@ -69,15 +63,6 @@ namespace XIVChatPlugin {
 
         [Signature(Signatures.InputAfk, DetourName = nameof(IsInputAfkDetour))]
         private readonly Hook<IsInputAfkDelegate>? _isInputAfkHook;
-
-        [Signature(Signatures.FriendList, DetourName = nameof(OnRequestFriendList))]
-        private readonly Hook<RequestFriendListDelegate>? _friendListHook;
-
-        [Signature(Signatures.Format, DetourName = nameof(OnFormatFriendList))]
-        private readonly Hook<FormatFriendListNameDelegate>? _formatHook;
-
-        [Signature(Signatures.ReceiveChunk, DetourName = nameof(OnReceiveFriendList))]
-        private readonly Hook<OnReceiveFriendListChunkDelegate>? _receiveChunkHook;
 
         [Signature(Signatures.Channel, DetourName = nameof(ChangeChatChannelDetour))]
         private readonly Hook<ChatChannelChangeDelegate>? _chatChannelChangeHook;
@@ -131,13 +116,12 @@ namespace XIVChatPlugin {
         }
 
         private InputSetters HadInput { get; set; } = InputSetters.None;
-        private nint _friendListManager = nint.Zero;
+        private Hook<EndFriendListRequestDelegate>? _friendListEndHook;
+        private InfoProxyFriendList* _friendListProxy;
         private nint _chatManager = nint.Zero;
         private readonly nint _emptyXivString;
 
         internal bool RequestingFriendList { get; private set; }
-
-        private readonly List<Player> _friends = [];
 
         internal delegate void ReceiveFriendListHandler(List<Player> friends);
 
@@ -148,9 +132,6 @@ namespace XIVChatPlugin {
 
             this.Plugin.GameInteropProvider.InitializeFromAttributes(this);
 
-            this._friendListHook?.Enable();
-            this._formatHook?.Enable();
-            this._receiveChunkHook?.Enable();
             this._chatChannelChangeHook?.Enable();
             this._chatChannelChangeNameHook?.Enable();
             this._isInputHook?.Enable();
@@ -239,13 +220,33 @@ namespace XIVChatPlugin {
         }
 
         internal bool RequestFriendList() {
-            if (this._friendListManager == nint.Zero || this._friendListHook == null) {
+            var proxy = InfoProxyFriendList.Instance();
+            if (proxy == null) {
                 return false;
             }
 
+            this._friendListProxy = proxy;
+            if (this._friendListEndHook == null) {
+                var endRequest = (nint) proxy->VirtualTable->EndRequest;
+                this._friendListEndHook = this.Plugin.GameInteropProvider.HookFromAddress<EndFriendListRequestDelegate>(
+                    endRequest,
+                    this.OnEndFriendListRequest
+                );
+                this._friendListEndHook.Enable();
+            }
+
             this.RequestingFriendList = true;
-            this._friendListHook.Original(this._friendListManager);
-            return true;
+            if (proxy->RequestData()) {
+                return true;
+            }
+
+            if (proxy->EntryCount > 0) {
+                this.CompleteFriendListRequest(proxy);
+                return true;
+            }
+
+            this.RequestingFriendList = false;
+            return false;
         }
 
         private byte ChangeChatChannelDetour(nint a1, uint channel) {
@@ -278,95 +279,68 @@ namespace XIVChatPlugin {
             return ret;
         }
 
-        private byte OnRequestFriendList(nint manager) {
-            this._friendListManager = manager;
-            // NOTE: if this is being called, hook isn't null
-            return this._friendListHook!.Original(manager);
+        private void OnEndFriendListRequest(InfoProxyFriendList* proxy) {
+            this._friendListEndHook!.Original(proxy);
+
+            if (this.RequestingFriendList && proxy == this._friendListProxy) {
+                this.CompleteFriendListRequest(proxy);
+            }
         }
 
-        private int OnFormatFriendList(long a1, long a2, long a3, int a4, nint data, long a6) {
-            // have to call this first to populate cross-world info
-            // NOTE: if this is being called, hook isn't null
-            var ret = this._formatHook!.Original(a1, a2, a3, a4, data, a6);
+        private void CompleteFriendListRequest(InfoProxyFriendList* proxy) {
+            var friends = new List<Player>();
 
-            if (!this.RequestingFriendList) {
-                return ret;
+            foreach (ref readonly var entry in proxy->CharDataSpan) {
+                friends.Add(new Player {
+                    Name = entry.NameString,
+                    FreeCompany = entry.FCTagString,
+                    Status = (ulong) entry.State,
+                    CurrentWorld = entry.CurrentWorld,
+                    CurrentWorldName = this.WorldName(entry.CurrentWorld),
+                    HomeWorld = entry.HomeWorld,
+                    HomeWorldName = this.WorldName(entry.HomeWorld),
+                    Territory = entry.Location,
+                    TerritoryName = this.TerritoryName(entry.Location),
+                    Job = entry.Job,
+                    JobName = this.JobName(entry.Job),
+                    GrandCompany = (byte) entry.GrandCompany,
+                    GrandCompanyName = this.GrandCompanyName(entry.GrandCompany),
+                    Languages = (byte) entry.Languages,
+                    MainLanguage = (byte) entry.ClientLanguage,
+                });
             }
 
-            var entry = Marshal.PtrToStructure<FriendListEntryRaw>(data);
-
-            string? jobName = null;
-            if (entry.job > 0) {
-                jobName = this.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(entry.job)?.Name.ExtractText();
-            }
-
-            // FIXME: remove this try/catch when lumina fixes bug with .Value
-            string? territoryName;
-            try {
-                territoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(entry.territoryId)?.PlaceName.Value.Name.ExtractText();
-            } catch (NullReferenceException) {
-                territoryName = null;
-            }
-
-            var player = new Player {
-                Name = entry.Name(),
-                FreeCompany = entry.FreeCompany(),
-                Status = entry.flags,
-
-                CurrentWorld = entry.currentWorldId,
-                CurrentWorldName = this.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(entry.currentWorldId)?.Name.ExtractText(),
-                HomeWorld = entry.homeWorldId,
-                HomeWorldName = this.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(entry.homeWorldId)?.Name.ExtractText(),
-
-                Territory = entry.territoryId,
-                TerritoryName = territoryName,
-
-                Job = entry.job,
-                JobName = jobName,
-
-                GrandCompany = entry.grandCompany,
-                GrandCompanyName = this.Plugin.DataManager.GetExcelSheet<GrandCompany>().GetRowOrDefault(entry.grandCompany)?.Name.ExtractText(),
-
-                Languages = entry.langsEnabled,
-                MainLanguage = entry.mainLanguage,
-            };
-            this._friends.Add(player);
-
-            return ret;
-        }
-
-        private nint OnReceiveFriendList(nint a1, nint data) {
-            // NOTE: if this is being called, hook isn't null
-            var ret = this._receiveChunkHook!.Original(a1, data);
-
-            // + 0xc
-            // 1 = party
-            // 2 = friends
-            // 3 = linkshell
-            // doesn't run (though same memory gets updated) for cwl or blacklist
-
-            // + 0x8 is current number of results returned or 0 when end of list
-
-            if (!this.RequestingFriendList) {
-                goto Return;
-            }
-
-            if (*(byte*) (data + 0xc) != 2 || *(ushort*) (data + 0x8) != 0) {
-                goto Return;
-            }
-
-            this.ReceiveFriendList?.Invoke(this._friends);
-            this._friends.Clear();
             this.RequestingFriendList = false;
+            this.ReceiveFriendList?.Invoke(friends);
+        }
 
-            Return:
-            return ret;
+        private string? WorldName(ushort id) {
+            return this.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(id)?.Name.ExtractText();
+        }
+
+        private string? JobName(byte id) {
+            return id == 0
+                ? null
+                : this.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(id)?.Name.ExtractText();
+        }
+
+        private string? TerritoryName(ushort id) {
+            try {
+                var row = this.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(id);
+                return row is { PlaceName.IsValid: true }
+                    ? row.Value.PlaceName.Value.Name.ExtractText()
+                    : null;
+            } catch (NullReferenceException) {
+                return null;
+            }
+        }
+
+        private string? GrandCompanyName(ClientGrandCompany id) {
+            return this.Plugin.DataManager.GetExcelSheet<LuminaGrandCompany>().GetRowOrDefault((uint) id)?.Name.ExtractText();
         }
 
         public void Dispose() {
-            this._friendListHook?.Dispose();
-            this._formatHook?.Dispose();
-            this._receiveChunkHook?.Dispose();
+            this._friendListEndHook?.Dispose();
             this._chatChannelChangeHook?.Dispose();
             this._chatChannelChangeNameHook?.Dispose();
             this._isInputHook?.Dispose();
@@ -412,39 +386,4 @@ namespace XIVChatPlugin {
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct FriendListEntryRaw {
-        private readonly ulong unk1;
-        internal readonly ulong flags;
-        private readonly uint unk2;
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        private readonly byte[] unk3;
-
-        internal readonly ushort currentWorldId;
-        internal readonly ushort homeWorldId;
-        internal readonly ushort territoryId;
-        internal readonly byte grandCompany;
-        internal readonly byte mainLanguage;
-        internal readonly byte langsEnabled;
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        private readonly byte[] unk4;
-
-        internal readonly byte job;
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-        private readonly byte[] name;
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 5)]
-        private readonly byte[] fc;
-
-        private static string? HandleString(IEnumerable<byte> bytes) {
-            var nonNull = bytes.TakeWhile(b => b != 0).ToArray();
-            return nonNull.Length == 0 ? null : Encoding.UTF8.GetString(nonNull);
-        }
-
-        internal string? Name() => HandleString(this.name);
-        internal string? FreeCompany() => HandleString(this.fc);
-    }
 }
