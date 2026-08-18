@@ -39,7 +39,7 @@ jobs:
       - name: Upload plugin package
         uses: actions/upload-artifact@v4
         with:
-          name: XIVChat-1.7.14-friend-list-fix
+          name: XIVChat-1.7.15-tell-fix
           path: XIVChatPlugin/bin/Release/**/*.zip
           if-no-files-found: error
 
