@@ -199,7 +199,17 @@ internal object XivChatCodec {
         val jobName = if (fields > 5) unpacker.unpackString() else ""
         val level = if (fields > 6) unpacker.unpackInt() else 0
         val territoryId = if (fields > 7) unpacker.unpackLong() else 0L
-        return PlayerProfile(name, homeWorld, currentWorld, location, classJobId, jobName, level, territoryId)
+        val currentHp = if (fields > 8) unpacker.unpackInt() else 0
+        val maxHp = if (fields > 9) unpacker.unpackInt() else 0
+        val currentMp = if (fields > 10) unpacker.unpackInt() else 0
+        val maxMp = if (fields > 11) unpacker.unpackInt() else 0
+        val currentCp = if (fields > 12) unpacker.unpackInt() else 0
+        val maxCp = if (fields > 13) unpacker.unpackInt() else 0
+        val currentGp = if (fields > 14) unpacker.unpackInt() else 0
+        val maxGp = if (fields > 15) unpacker.unpackInt() else 0
+        val itemLevel = if (fields > 16) unpacker.unpackInt() else 0
+        return PlayerProfile(name, homeWorld, currentWorld, location, classJobId, jobName, level, territoryId,
+            currentHp, maxHp, currentMp, maxMp, currentCp, maxCp, currentGp, maxGp, itemLevel)
     }
 
     fun readWeather(unpacker: MessageUnpacker): GameWeather {

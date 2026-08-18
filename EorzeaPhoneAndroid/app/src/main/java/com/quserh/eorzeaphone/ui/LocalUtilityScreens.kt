@@ -195,13 +195,39 @@ fun MapsScreen(state: PhoneState) {
 @Composable
 fun HealthScreen(state: PhoneState) {
     val online = state.friends.count { it.online }
+    val p = state.profile
     FeatureFrame("健康", state) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF47732E)).padding(20.dp)) { Text("游戏会话", color = Color.White.copy(alpha = .75f)); Text(if (state.connected) "状态良好" else "当前未连接", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold) }
-            HealthRow("连接状态", if (state.connected) "已连接" else "离线")
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF47732E)).padding(20.dp)) {
+                Text("游戏会话", color = Color.White.copy(alpha = .75f))
+                Text(if (state.connected) "状态良好" else "当前未连接", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                if (p != null) {
+                    Text("${p.jobName.ifBlank { "冒险者" }} · Lv.${p.level}", color = Color.White.copy(alpha = .85f), fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                    if (p.itemLevel > 0) Text("平均品级 ${p.itemLevel}", color = Color.White.copy(alpha = .75f), fontSize = 13.sp)
+                }
+            }
+            if (p != null && p.maxHp > 0) {
+                HealthBar("HP", p.currentHp, p.maxHp, Color(0xFF3CB371))
+                if (p.maxMp > 0) HealthBar("MP", p.currentMp, p.maxMp, Color(0xFF4F8DE8))
+                if (p.maxCp > 0) HealthRow("制作力", "${p.currentCp} / ${p.maxCp}")
+                if (p.maxGp > 0) HealthRow("采集力", "${p.currentGp} / ${p.maxGp}")
+            } else {
+                HealthRow("连接状态", if (state.connected) "已连接" else "离线")
+            }
             HealthRow("在线好友", "$online 人")
             HealthRow("消息缓存", "${state.chats.size} 条")
             HealthRow("数据模块", listOf(state.inventory.isNotEmpty(), state.wallet != null, state.weather != null, state.jobs.isNotEmpty()).count { it }.let { "$it / 4 正常" })
+        }
+    }
+}
+
+@Composable
+private fun HealthBar(label: String, current: Int, max: Int, color: Color) {
+    val frac = if (max > 0) (current.toFloat() / max.toFloat()).coerceIn(0f, 1f) else 0f
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth()) { Text(label, color = PhoneMuted, modifier = Modifier.weight(1f)); Text("$current / $max", color = PhoneText, fontWeight = FontWeight.SemiBold) }
+        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color.White.copy(alpha = .1f))) {
+            Box(Modifier.fillMaxWidth(frac).height(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
         }
     }
 }

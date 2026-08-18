@@ -128,6 +128,15 @@ data class PlayerProfile(
     val jobName: String = "",
     val level: Int = 0,
     val territoryId: Long = 0,
+    val currentHp: Int = 0,
+    val maxHp: Int = 0,
+    val currentMp: Int = 0,
+    val maxMp: Int = 0,
+    val currentCp: Int = 0,
+    val maxCp: Int = 0,
+    val currentGp: Int = 0,
+    val maxGp: Int = 0,
+    val itemLevel: Int = 0,
 )
 
 data class GameWeatherWindow(val name: String, val minutesFromNow: Int, val eorzeaBell: Int)

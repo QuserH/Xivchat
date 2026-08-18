@@ -1713,7 +1713,36 @@ namespace XIVChatPlugin {
                 ? string.Empty
                 : XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(classJobId)?.Name.ExtractText() ?? string.Empty;
 
-            return new PlayerData(homeWorld, currentWorld, location, name, classJobId, jobName, player.Level, XIVChatPlugin.Plugin.ClientState.TerritoryType);
+            // Aggregate item level from equipped items.
+            var ilvl = 0;
+            var ilvlCount = 0;
+            try {
+                var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
+                foreach (var it in XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(GameInventoryType.EquippedItems)) {
+                    if (it.IsEmpty || it.ItemId == 0) {
+                        continue;
+                    }
+                    var row = itemSheet.GetRowOrDefault(it.ItemId);
+                    if (row == null) {
+                        continue;
+                    }
+                    ilvl += (int) row.Value.LevelItem.RowId;
+                    ilvlCount++;
+                }
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not compute item level: {ex.Message}");
+            }
+            if (ilvlCount > 0) {
+                ilvl /= ilvlCount;
+            }
+
+            return new PlayerData(
+                homeWorld, currentWorld, location, name, classJobId, jobName, player.Level,
+                XIVChatPlugin.Plugin.ClientState.TerritoryType,
+                (int) player.CurrentHp, (int) player.MaxHp, (int) player.CurrentMp, (int) player.MaxMp,
+                currentCp: (int) player.MaxCp, maxCp: (int) player.MaxCp,
+                currentGp: (int) player.MaxGp, maxGp: (int) player.MaxGp,
+                itemLevel: ilvl);
         }
 
         private void BroadcastPlayerData() {
