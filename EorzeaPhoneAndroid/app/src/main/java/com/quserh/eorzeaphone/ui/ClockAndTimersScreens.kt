@@ -60,6 +60,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
+import com.quserh.eorzeaphone.data.AlarmScheduler
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -96,6 +97,7 @@ private data class CityClock(val label: String, val zoneId: String)
 
 private class ClockStore(context: Context) {
     private val prefs = context.getSharedPreferences("eorzea_phone_clock", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
     val alarms = mutableStateListOf<LocalAlarm>().apply { addAll(loadAlarms()) }
     val cities = mutableStateListOf<CityClock>().apply { addAll(loadCities()) }
     val laps = mutableStateListOf<Long>().apply { addAll(loadLaps()) }
@@ -114,9 +116,15 @@ private class ClockStore(context: Context) {
         val index = alarms.indexOfFirst { it.id == alarm.id }
         if (index < 0) alarms.add(alarm) else alarms[index] = alarm
         saveAlarms()
+        if (alarm.enabled) {
+            AlarmScheduler.schedule(appContext, alarm.id, alarm.hour, alarm.minute, alarm.repeatMask, alarm.label)
+        } else {
+            AlarmScheduler.cancel(appContext, alarm.id)
+        }
     }
 
     fun deleteAlarm(id: Long) {
+        AlarmScheduler.cancel(appContext, id)
         alarms.removeAll { it.id == id }
         saveAlarms()
     }
