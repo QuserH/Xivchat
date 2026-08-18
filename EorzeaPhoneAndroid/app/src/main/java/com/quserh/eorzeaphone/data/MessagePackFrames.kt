@@ -144,7 +144,7 @@ internal object XivChatCodec {
         val count = unpacker.unpackArrayHeader()
         val result = ArrayList<GameInventoryItem>(count)
         repeat(count) {
-            unpacker.unpackArrayHeader()
+            val itemFields = unpacker.unpackArrayHeader()
             val itemId = unpacker.unpackLong()
             unpacker.unpackLong()
             val quantity = unpacker.unpackInt()
@@ -154,7 +154,8 @@ internal object XivChatCodec {
             unpacker.skipValue()
             unpacker.skipValue()
             val name = nullableString(unpacker) ?: "物品 $itemId"
-            result += GameInventoryItem(itemId, name, quantity, container, slot, hq)
+            val icon = if (itemFields > 9) unpacker.unpackInt() else 0
+            result += GameInventoryItem(itemId, name, quantity, container, slot, hq, icon)
         }
         val containers = ArrayList<GameInventoryContainer>()
         if (fields > 2) {
@@ -176,12 +177,12 @@ internal object XivChatCodec {
         repeat(count) {
             unpacker.unpackArrayHeader()
             val itemId = unpacker.unpackLong()
-            unpacker.skipValue() // IconId is reserved for a later icon transport.
+            val iconId = unpacker.unpackInt()
             val name = nullableString(unpacker) ?: "货币 $itemId"
             val amount = unpacker.unpackLong()
             val cap = unpacker.unpackLong()
             val section = nullableString(unpacker) ?: "其他"
-            entries += GameWalletEntry(itemId, name, amount, cap, section)
+            entries += GameWalletEntry(itemId, name, amount, cap, section, iconId)
         }
         return GameWallet(gil, entries)
     }

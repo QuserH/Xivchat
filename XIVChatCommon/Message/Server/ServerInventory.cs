@@ -13,6 +13,7 @@ namespace XIVChatCommon.Message.Server {
         [Key(6)] public uint SpiritbondOrCollectability { get; set; }
         [Key(7)] public uint Condition { get; set; }
         [Key(8)] public string? Name { get; set; }
+        [Key(9)] public uint IconId { get; set; }
     }
 
     [MessagePackObject]

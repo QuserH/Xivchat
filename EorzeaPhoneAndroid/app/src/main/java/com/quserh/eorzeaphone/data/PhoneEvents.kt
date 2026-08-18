@@ -63,6 +63,7 @@ data class GameInventoryItem(
     val container: Long,
     val slot: Long,
     val hq: Boolean,
+    val iconId: Int = 0,
 )
 
 data class GameInventoryContainer(
@@ -81,6 +82,7 @@ data class GameWalletEntry(
     val amount: Long,
     val cap: Long,
     val section: String,
+    val iconId: Int = 0,
 )
 
 data class GameWallet(

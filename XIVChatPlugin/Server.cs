@@ -487,8 +487,13 @@ namespace XIVChatPlugin {
                         }
 
                         string? name = null;
+                        uint iconId = 0;
                         try {
-                            name = itemSheet.GetRowOrDefault(item.BaseItemId)?.Name.ExtractText();
+                            var row = itemSheet.GetRowOrDefault(item.BaseItemId);
+                            if (row != null) {
+                                name = row.Value.Name.ExtractText();
+                                iconId = row.Value.Icon;
+                            }
                         } catch (Exception) {
                             // A missing row should not prevent the rest of the snapshot.
                         }
@@ -503,6 +508,7 @@ namespace XIVChatPlugin {
                             SpiritbondOrCollectability = item.SpiritbondOrCollectability,
                             Condition = item.Condition,
                             Name = name,
+                            IconId = iconId,
                         });
                     }
                 }

@@ -2,6 +2,7 @@ package com.quserh.eorzeaphone.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameInventoryItem
+import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -557,9 +560,25 @@ private fun defaultContainerSize(type: Long): Int = when (type) {
 private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Modifier) {
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp)).background(if (item?.hq == true) Color(0xFF67522B) else PhoneSurface), contentAlignment = Alignment.Center) {
         if (item != null) {
-            Text(item.name.take(3), color = PhoneText, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(4.dp))
+            ItemIcon(item.iconId, Modifier.fillMaxSize(), fallback = item.name.take(3))
             if (item.quantity > 1) Text(item.quantity.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomEnd).background(Color(0xB0000000)).padding(horizontal = 2.dp))
             if (item.hq) Text("HQ", color = Color(0xFFFFD36A), fontSize = 7.sp, modifier = Modifier.align(Alignment.TopEnd).padding(2.dp))
+        }
+    }
+}
+
+@Composable
+private fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: String = "", tint: Color = Color.White) {
+    var bitmap by remember(iconId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(iconId) {
+        if (iconId > 0) bitmap = ItemIconLoader.load(iconId)
+    }
+    val bmp = bitmap
+    if (bmp != null) {
+        Image(bitmap = bmp.asImageBitmap(), contentDescription = null, modifier = modifier)
+    } else {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            if (fallback.isNotBlank()) Text(fallback, color = tint, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(4.dp))
         }
     }
 }
@@ -769,6 +788,8 @@ fun WalletScreen(state: PhoneState) {
                     item { SectionLabel(section) }
                     items(entries, key = { "${it.itemId}-${it.section}" }) { entry ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                            ItemIcon(entry.iconId, Modifier.size(34.dp), fallback = entry.name.take(1))
+                            Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) { Text(entry.name, color = PhoneText, fontSize = 14.sp); if (entry.cap > 0) Text("上限 ${entry.cap}", color = PhoneMuted, fontSize = 11.sp) }
                             Text(entry.amount.toString(), color = PhoneText, fontWeight = FontWeight.Bold)
                         }
