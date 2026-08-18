@@ -153,6 +153,9 @@ namespace XIVChatCommon.Message {
         [Key(14)]
         public byte MainLanguage { get; set; }
 
+        [Key(15)]
+        public ulong ContentId { get; set; }
+
         public bool HasStatus(PlayerStatus status) => (this.Status & ((ulong) 1 << (int) status)) > 0;
     }
 

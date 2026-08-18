@@ -11,6 +11,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using Lumina.Excel.Sheets;
 using XIVChatCommon.Message;
+using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Server;
 using Dalamud.Game.Text;
 using ClientGrandCompany = FFXIVClientStructs.FFXIV.Client.UI.Agent.GrandCompany;
@@ -305,11 +306,45 @@ namespace XIVChatPlugin {
                     GrandCompanyName = this.GrandCompanyName(entry.GrandCompany),
                     Languages = (byte) entry.Languages,
                     MainLanguage = (byte) entry.ClientLanguage,
+                    ContentId = entry.ContentId,
                 });
             }
 
             this.RequestingFriendList = false;
             this.ReceiveFriendList?.Invoke(friends);
+        }
+
+        internal unsafe void ExecuteFriendAction(ClientFriendAction action) {
+            if (action.ContentId == 0) {
+                return;
+            }
+
+            switch (action.Action) {
+                case FriendActionKind.AdventurerPlate:
+                    var charaCard = AgentCharaCard.Instance();
+                    if (charaCard != null) charaCard->OpenCharaCard(action.ContentId);
+                    break;
+                case FriendActionKind.InviteToParty:
+                    var partyInvite = InfoProxyPartyInvite.Instance();
+                    if (partyInvite != null) partyInvite->InviteToPartyContentId(action.ContentId, action.WorldId);
+                    break;
+                case FriendActionKind.VisitEstate:
+                    var friendList = AgentFriendlist.Instance();
+                    if (friendList != null) friendList->OpenFriendEstateTeleportation(action.ContentId);
+                    break;
+                case FriendActionKind.SearchInfo:
+                    var proxy = InfoProxyFriendList.Instance();
+                    if (proxy == null) return;
+                    for (uint index = 0; index < proxy->EntryCount; index++) {
+                        var entry = proxy->GetEntry(index);
+                        if (entry != null && entry->ContentId == action.ContentId) {
+                            var detail = AgentDetail.Instance();
+                            if (detail != null) detail->OpenForCharacterData(entry, null, 0);
+                            return;
+                        }
+                    }
+                    break;
+            }
         }
 
         private string? WorldName(ushort id) {

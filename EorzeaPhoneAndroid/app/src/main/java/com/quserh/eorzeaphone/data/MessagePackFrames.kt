@@ -1,0 +1,308 @@
+package com.quserh.eorzeaphone.data
+
+import com.goterl.lazysodium.LazySodiumAndroid
+import com.goterl.lazysodium.utils.Key
+import org.msgpack.core.MessagePack
+import org.msgpack.core.MessageUnpacker
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.text.Charsets.UTF_8
+
+internal object XivChatCodec {
+    const val MAGIC_0 = 14
+    const val MAGIC_1 = 20
+    const val MAGIC_2 = 67
+    private const val MAX_FRAME = 128_000
+
+    fun deriveClientKeys(sodium: LazySodiumAndroid, publicKey: ByteArray, secretKey: ByteArray, serverPublic: ByteArray): Pair<ByteArray, ByteArray> {
+        val shared = sodium.cryptoScalarMult(Key.fromBytes(secretKey), Key.fromBytes(serverPublic)).asBytes
+        val input = shared + publicKey + serverPublic
+        val hash = ByteArray(64)
+        check(sodium.cryptoGenericHash(hash, hash.size, input, input.size.toLong())) { "无法计算握手密钥" }
+        return hash.copyOfRange(0, 32) to hash.copyOfRange(32, 64)
+    }
+
+    fun readSecret(input: DataInputStream, sodium: LazySodiumAndroid, key: ByteArray): ByteArray {
+        val header = ByteArray(28)
+        input.readFully(header)
+        val length = ByteBuffer.wrap(header, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int
+        require(length in 16..MAX_FRAME) { "无效的加密帧长度: $length" }
+        val nonce = header.copyOfRange(4, 28)
+        val cipher = ByteArray(length)
+        input.readFully(cipher)
+        val plain = ByteArray(length - 16)
+        check(sodium.cryptoSecretBoxOpenEasy(plain, cipher, cipher.size.toLong(), nonce, key)) { "解密游戏数据失败" }
+        return plain
+    }
+
+    fun writeSecret(output: DataOutputStream, sodium: LazySodiumAndroid, key: ByteArray, plain: ByteArray) {
+        require(plain.size <= MAX_FRAME - 16) { "消息过大" }
+        val nonce = sodium.nonce(24)
+        val cipher = ByteArray(plain.size + 16)
+        check(sodium.cryptoSecretBoxEasy(cipher, plain, plain.size.toLong(), nonce, key)) { "加密消息失败" }
+        val header = ByteBuffer.allocate(28).order(ByteOrder.LITTLE_ENDIAN).putInt(cipher.size).put(nonce).array()
+        output.write(header)
+        output.write(cipher)
+        output.flush()
+    }
+
+    fun encodeBacklog(amount: Int): ByteArray = pack { packArrayHeader(1); packShort(amount.toShort()) }
+    fun encodePlayerList(type: Int = 2): ByteArray = pack { packArrayHeader(1); packByte(type.toByte()) }
+    fun encodePing(): ByteArray = byteArrayOf(1)
+    fun encodeShutdown(): ByteArray = byteArrayOf(3)
+    fun encodeMessage(text: String): ByteArray = pack { packArrayHeader(1); packString(text) }
+    fun encodeChannel(channel: Int): ByteArray = pack { packArrayHeader(1); packInt(channel) }
+    fun encodeFriendAction(action: Int, contentId: Long, worldId: Int): ByteArray = pack {
+        packArrayHeader(3)
+        packInt(action)
+        packLong(contentId)
+        packInt(worldId)
+    }
+    fun encodePreferences(): ByteArray = pack {
+        packArrayHeader(1)
+        packMapHeader(7)
+        packInt(3)
+        packBoolean(true)
+        packInt(4)
+        packBoolean(true)
+        packInt(5)
+        packBoolean(true)
+        packInt(2)
+        packBoolean(true)
+        packInt(6)
+        packBoolean(true)
+        packInt(7)
+        packBoolean(true)
+        packInt(8)
+        packBoolean(true)
+    }
+
+    private fun pack(block: org.msgpack.core.MessagePacker.() -> Unit): ByteArray {
+        val packer = MessagePack.newDefaultBufferPacker()
+        packer.block()
+        return packer.toByteArray()
+    }
+
+    fun readMessage(unpacker: MessageUnpacker): GameChatMessage {
+        val fields = unpacker.unpackArrayHeader()
+        val time = unpacker.unpackLong()
+        val channel = unpacker.unpackShort().toInt()
+        val sender = decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader()))
+        val text = decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader()))
+        if (fields > 4) {
+            val chunks = unpacker.unpackArrayHeader()
+            repeat(chunks) { skipChunk(unpacker) }
+        }
+        return GameChatMessage(time, sender, text, channel)
+    }
+
+    private fun skipChunk(unpacker: MessageUnpacker) {
+        val shape = unpacker.unpackArrayHeader()
+        repeat(shape) { unpacker.skipValue() }
+    }
+
+    fun readBacklog(unpacker: MessageUnpacker): List<GameChatMessage> {
+        unpacker.unpackArrayHeader()
+        val count = unpacker.unpackArrayHeader()
+        val result = ArrayList<GameChatMessage>(count)
+        repeat(count) { result += readMessage(unpacker) }
+        unpacker.skipValue()
+        return result
+    }
+
+    fun readFriends(unpacker: MessageUnpacker): List<GameFriend> {
+        unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        val count = unpacker.unpackArrayHeader()
+        val result = ArrayList<GameFriend>(count)
+        repeat(count) {
+            val fields = unpacker.unpackArrayHeader()
+            val name = nullableString(unpacker)
+            val freeCompany = nullableString(unpacker)
+            val status = unpacker.unpackLong()
+            val currentWorldId = unpacker.unpackShort().toInt() and 0xffff
+            val currentWorld = nullableString(unpacker)
+            val homeWorldId = unpacker.unpackShort().toInt() and 0xffff
+            nullableString(unpacker)
+            unpacker.unpackShort()
+            val territory = nullableString(unpacker)
+            unpacker.unpackByte()
+            val job = nullableString(unpacker)
+            repeat(4) { unpacker.skipValue() }
+            val contentId = if (fields > 15) unpacker.unpackLong() else 0L
+            result += GameFriend(name ?: "未知玩家", currentWorld ?: "", freeCompany ?: "", territory ?: "", status and (1L shl 47) != 0L, job ?: "", contentId, currentWorldId, homeWorldId)
+        }
+        return result
+    }
+
+    fun readInventory(unpacker: MessageUnpacker): GameInventorySnapshot {
+        val fields = unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        val count = unpacker.unpackArrayHeader()
+        val result = ArrayList<GameInventoryItem>(count)
+        repeat(count) {
+            unpacker.unpackArrayHeader()
+            val itemId = unpacker.unpackLong()
+            unpacker.unpackLong()
+            val quantity = unpacker.unpackInt()
+            val container = unpacker.unpackLong()
+            val slot = unpacker.unpackLong()
+            val hq = unpacker.unpackBoolean()
+            unpacker.skipValue()
+            unpacker.skipValue()
+            val name = nullableString(unpacker) ?: "物品 $itemId"
+            result += GameInventoryItem(itemId, name, quantity, container, slot, hq)
+        }
+        val containers = ArrayList<GameInventoryContainer>()
+        if (fields > 2) {
+            val containerCount = unpacker.unpackArrayHeader()
+            repeat(containerCount) {
+                unpacker.unpackArrayHeader()
+                containers += GameInventoryContainer(unpacker.unpackLong(), unpacker.unpackInt())
+            }
+        }
+        return GameInventorySnapshot(result, containers)
+    }
+
+    fun readWallet(unpacker: MessageUnpacker): GameWallet {
+        unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        val gil = unpacker.unpackLong()
+        val count = unpacker.unpackArrayHeader()
+        val entries = ArrayList<GameWalletEntry>(count)
+        repeat(count) {
+            unpacker.unpackArrayHeader()
+            val itemId = unpacker.unpackLong()
+            unpacker.skipValue() // IconId is reserved for a later icon transport.
+            val name = nullableString(unpacker) ?: "货币 $itemId"
+            val amount = unpacker.unpackLong()
+            val cap = unpacker.unpackLong()
+            val section = nullableString(unpacker) ?: "其他"
+            entries += GameWalletEntry(itemId, name, amount, cap, section)
+        }
+        return GameWallet(gil, entries)
+    }
+
+    fun readProfile(unpacker: MessageUnpacker): PlayerProfile {
+        val fields = unpacker.unpackArrayHeader()
+        val homeWorld = unpacker.unpackString()
+        val currentWorld = unpacker.unpackString()
+        val location = unpacker.unpackString()
+        val name = unpacker.unpackString()
+        val classJobId = if (fields > 4) unpacker.unpackLong() else 0L
+        val jobName = if (fields > 5) unpacker.unpackString() else ""
+        val level = if (fields > 6) unpacker.unpackInt() else 0
+        val territoryId = if (fields > 7) unpacker.unpackLong() else 0L
+        return PlayerProfile(name, homeWorld, currentWorld, location, classJobId, jobName, level, territoryId)
+    }
+
+    fun readWeather(unpacker: MessageUnpacker): GameWeather {
+        unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        val zone = unpacker.unpackString()
+        val current = unpacker.unpackString()
+        val count = unpacker.unpackArrayHeader()
+        val windows = ArrayList<GameWeatherWindow>(count)
+        repeat(count) {
+            unpacker.unpackArrayHeader()
+            windows += GameWeatherWindow(unpacker.unpackString(), unpacker.unpackInt(), unpacker.unpackInt())
+        }
+        return GameWeather(zone, current, windows)
+    }
+
+    fun readJobs(unpacker: MessageUnpacker): List<GameJob> {
+        unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        val count = unpacker.unpackArrayHeader()
+        return List(count) {
+            unpacker.unpackArrayHeader()
+            GameJob(
+                unpacker.unpackLong(), unpacker.unpackString(), unpacker.unpackString(), unpacker.unpackString(),
+                unpacker.unpackInt(), unpacker.unpackBoolean(), unpacker.unpackInt(),
+            )
+        }
+    }
+
+    fun readHousing(unpacker: MessageUnpacker): GameHousingLocation {
+        unpacker.unpackArrayHeader()
+        val ward = if (unpacker.tryUnpackNil()) null else unpacker.unpackInt()
+        val plot = if (unpacker.tryUnpackNil()) null else unpacker.unpackInt()
+        val exterior = unpacker.unpackBoolean()
+        val wing = if (unpacker.tryUnpackNil()) null else unpacker.unpackInt()
+        return GameHousingLocation(ward, plot, exterior, wing)
+    }
+
+    fun readDailies(unpacker: MessageUnpacker): GameDailies {
+        unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        val dailyReset = unpacker.unpackLong()
+        val weeklyReset = unpacker.unpackLong()
+        val count = unpacker.unpackArrayHeader()
+        val entries = List(count) {
+            unpacker.unpackArrayHeader()
+            GameDailyEntry(
+                unpacker.unpackString(), unpacker.unpackString(), unpacker.unpackBoolean(), unpacker.unpackBoolean(),
+                unpacker.unpackBoolean(), unpacker.unpackBoolean(), unpacker.unpackInt(), unpacker.unpackInt(), unpacker.unpackString(),
+            )
+        }
+        return GameDailies(dailyReset, weeklyReset, entries)
+    }
+
+    fun readActivity(unpacker: MessageUnpacker): GameActivity {
+        unpacker.unpackArrayHeader()
+        unpacker.skipValue()
+        return GameActivity(
+            unpacker.unpackLong(), unpacker.unpackLong(), unpacker.unpackLong(), unpacker.unpackInt(),
+            unpacker.unpackLong(), unpacker.unpackInt(), unpacker.unpackLong(), unpacker.unpackLong(),
+            unpacker.unpackInt(), unpacker.unpackLong(), unpacker.unpackInt(), unpacker.unpackInt(),
+            unpacker.unpackInt(), unpacker.unpackInt(), unpacker.unpackInt(), unpacker.unpackInt(),
+            unpacker.unpackInt(), unpacker.unpackInt(),
+        )
+    }
+
+    fun readChannel(unpacker: MessageUnpacker): Pair<Int, String> {
+        unpacker.unpackArrayHeader()
+        return unpacker.unpackByte().toInt() to unpacker.unpackString()
+    }
+
+    private fun nullableString(unpacker: MessageUnpacker): String? = if (unpacker.tryUnpackNil()) null else unpacker.unpackString()
+
+    private fun decodeXiv(bytes: ByteArray): String {
+        val out = ByteArrayOutputStream(bytes.size)
+        var i = 0
+        while (i < bytes.size) {
+            val b = bytes[i].toInt() and 0xff
+            if (b == 2 && i + 1 < bytes.size) {
+                i += 2
+                val (length, next) = readXivInteger(bytes, i)
+                i = (next + length + 1).coerceAtMost(bytes.size)
+                continue
+            }
+            if (b >= 0x20 || b == 0x0a || b == 0x09) out.write(b)
+            i++
+        }
+        return out.toByteArray().toString(UTF_8).trim()
+    }
+
+    private fun readXivInteger(bytes: ByteArray, offset: Int): Pair<Int, Int> {
+        if (offset >= bytes.size) return 0 to bytes.size
+        var marker = bytes[offset].toInt() and 0xff
+        if (marker < 0xd0) return (marker - 1).coerceAtLeast(0) to (offset + 1)
+        marker = (marker + 1) and 0x0f
+        val valueBytes = ByteArray(4)
+        var cursor = offset + 1
+        for (index in 3 downTo 0) {
+            if (marker and (1 shl index) != 0 && cursor < bytes.size) {
+                valueBytes[index] = bytes[cursor++]
+            }
+        }
+        return ByteBuffer.wrap(valueBytes).order(ByteOrder.LITTLE_ENDIAN).int.coerceAtLeast(0) to cursor
+    }
+}
+
+internal class EncryptedFrameReader(private val input: DataInputStream, private val sodium: LazySodiumAndroid, private val key: ByteArray) {
+    fun next(): ByteArray = XivChatCodec.readSecret(input, sodium, key)
+}

@@ -1,9 +1,10 @@
-name: Build XIVChat
+name: Build EorzeaPhone
 
 on:
   push:
     branches:
       - main
+      - feature/aetherphone-shell
     tags:
       - 'v*'
   pull_request:
@@ -25,6 +26,19 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        shell: pwsh
+        run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
+
       - name: Install Dalamud development files
         shell: pwsh
         run: |
@@ -33,20 +47,46 @@ jobs:
           Invoke-WebRequest 'https://goatcorp.github.io/dalamud-distrib/latest.zip' -OutFile "$env:RUNNER_TEMP\dalamud.zip"
           Expand-Archive "$env:RUNNER_TEMP\dalamud.zip" -DestinationPath $dalamudPath -Force
 
-      - name: Build release package
+      - name: Build plugin
         run: dotnet build XIVChatPlugin/XIVChatPlugin.csproj --configuration Release
 
-      - name: Upload plugin package
+      - name: Package independent plugin
+        shell: pwsh
+        run: |
+          $output = Join-Path $pwd 'XIVChatPlugin/bin/Release'
+          $package = Join-Path $env:RUNNER_TEMP 'EorzeaPhone-plugin'
+          $zip = Join-Path $pwd 'EorzeaPhone-0.1.0-plugin.zip'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          Get-ChildItem $output -File | Where-Object Name -ne 'XIVChat.json' | Copy-Item -Destination $package
+          Copy-Item (Join-Path $output 'runtimes') -Destination $package -Recurse
+          Compress-Archive -Path (Join-Path $package '*') -DestinationPath $zip -CompressionLevel Optimal
+
+      - name: Build Android app
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.11.1
+          arguments: --no-daemon assembleDebug
+          build-root-directory: EorzeaPhoneAndroid
+
+      - name: Rename Android APK
+        shell: pwsh
+        run: Copy-Item EorzeaPhoneAndroid/app/build/outputs/apk/debug/app-debug.apk EorzeaPhone-0.1.0.apk
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: XIVChat-1.7.13-zh-fixes
-          path: XIVChatPlugin/bin/Release/**/*.zip
+          name: EorzeaPhone-0.1.0
+          path: |
+            EorzeaPhone-0.1.0.apk
+            EorzeaPhone-0.1.0-plugin.zip
           if-no-files-found: error
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: XIVChat ${{ github.ref_name }} 中文修复版
+          name: 艾欧泽亚终端 ${{ github.ref_name }}
           generate_release_notes: false
-          files: XIVChatPlugin/bin/Release/**/*.zip
+          files: |
+            EorzeaPhone-0.1.0.apk
+            EorzeaPhone-0.1.0-plugin.zip

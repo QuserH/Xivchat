@@ -1,0 +1,222 @@
+# Third-Party Notices
+
+This project bundles or depends on third-party software. Their licenses and
+required notices are reproduced below. This file is shipped inside every
+release archive alongside the components it covers.
+
+---
+
+## Inter font family
+
+The fonts under `src/Aetherphone/Fonts/` (Inter Regular, Medium, SemiBold,
+Bold) are redistributed unmodified.
+
+- Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
+- License: SIL Open Font License 1.1
+- Full license text: `src/Aetherphone/Fonts/Inter-OFL.txt`, shipped next to
+  the fonts in every release archive.
+
+## Tabler Icons
+
+The application icons under `src/Aetherphone/Icons/` are derived from
+[Tabler Icons](https://tabler.io/icons) (recolored and rasterized to PNG).
+
+- Homepage: https://tabler.io/icons
+- Source: https://github.com/tabler/tabler-icons
+- License: MIT (Copyright (c) 2020-2026 Paweł Kuna); full text reproduced in
+  the MIT section below.
+
+## Twemoji
+
+The color emoji images under `src/Aetherphone/Emoji/` (3,512 PNGs, one per
+emoji sequence) are the 72x72 assets of
+[Twemoji](https://github.com/jdecked/twemoji) 15.1.0, redistributed
+unmodified.
+
+- Copyright Twitter, Inc and other contributors
+- Source: https://github.com/jdecked/twemoji
+- License (graphics): Creative Commons Attribution 4.0 International
+  (CC-BY 4.0), https://creativecommons.org/licenses/by/4.0/
+
+The emoji metadata in `src/Aetherphone/Emoji/catalog.json` (labels, groups,
+search tags, shortcodes and skin-tone variants) is built from
+[emojibase-data](https://github.com/milesj/emojibase) by Miles Johnson,
+MIT License; full text reproduced in the MIT section below.
+
+## mpv
+
+libmpv provides video decoding and playback for the AetherStream app. No mpv
+binary is redistributed with this plugin:
+`src/Aetherphone/Core/Video/MediaDependencies.cs` downloads an LGPL build
+(`mpv-dev-lgpl-x86_64-*`, from the
+[zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild) releases)
+into the plugin's own Dalamud config directory on first use, and keeps it
+updated from there.
+
+- Homepage: https://mpv.io
+- Source: https://github.com/mpv-player/mpv
+- License: GNU Lesser General Public License v2.1 or later (LGPL build
+  configuration); full text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+## yt-dlp
+
+yt-dlp is used by mpv's own `ytdl_hook` to resolve video URLs from sites other
+than YouTube (YouTube itself is resolved separately via YoutubeExplode, already
+a dependency). As with mpv above, no yt-dlp binary is redistributed: it is
+downloaded from the project's own GitHub releases into the plugin's Dalamud
+config directory on first use.
+
+- Homepage: https://github.com/yt-dlp/yt-dlp
+- License: The Unlicense (public domain)
+
+## AlphaChannel (Voudi)
+
+AetherStream's video/screen engine under `src/Aetherphone/Core/Video/`
+(mpv-backed playback and the world-anchored ScreenPainter D3D11 quad
+renderer) is ported from
+[AlphaChannel](https://github.com/Voudi/AlphaChannel) by Voudi, used with the
+author's permission. Two smaller pieces ported from the same source live
+outside that directory: the screen placement controls and presets in
+`src/Aetherphone/Apps/AetherStream/AetherStreamApp.Casting.cs` (from
+AlphaChannel's `ControlWindow.DrawScreenPositionSettings`) and the saved
+screen preset shape in `src/Aetherphone/Configuration.cs` (from its
+`Configuration`, with yaw added). Both are modified from the originals.
+
+- Source: https://github.com/Voudi/AlphaChannel
+- License: GNU General Public License v3.0 or later; full text reproduced in
+  `src/Aetherphone/Core/Video/AlphaChannel-LICENSE`.
+
+## Concentus
+
+`Concentus.dll` (version 2.2.2, by Logan Stromberg) is a C# implementation of
+the Opus audio codec, redistributed in binary form.
+
+- Source: https://github.com/lostromb/concentus
+- License: BSD-style (Opus license)
+
+```
+Copyright (c) by various holding parties, including (but not limited to):
+Skype Limited, Xiph.Org Foundation, CSIRO, Microsoft Corporation,
+Jean-Marc Valin, Gregory Maxwell, Mark Borgerding, Timothy B. Terriberry,
+Logan Stromberg. All rights are reserved by their respective holders.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of Internet Society, IETF or IETF Trust, nor the
+   names of specific contributors, may be used to endorse or promote
+   products derived from this software without specific prior written
+   permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## SixLabors.ImageSharp
+
+`SixLabors.ImageSharp.dll` (version 3.1.x, by Six Labors and contributors) is
+redistributed in binary form.
+
+- Source: https://github.com/SixLabors/ImageSharp
+- License: Six Labors Split License, version 1.0
+  (https://github.com/SixLabors/ImageSharp/blob/main/LICENSE). Aetherphone is
+  an open-source project consuming the package unmodified, which the Split
+  License covers under the terms of the Apache License, Version 2.0
+  (https://www.apache.org/licenses/LICENSE-2.0).
+
+## Bouncy Castle
+
+`BouncyCastle.Cryptography.dll` (version 2.7.0, by The Legion of the
+Bouncy Castle Inc.) is redistributed in binary form.
+
+- Source: https://github.com/bcgit/bc-csharp
+- License:
+
+```
+Copyright (c) 2000-2025 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org).
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sub license, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions: The above copyright notice and this
+permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## MIT-licensed libraries
+
+The following components are redistributed under the MIT License, reproduced
+once at the end of this section:
+
+| Component | Version | Copyright / project |
+| --- | --- | --- |
+| Tabler Icons (rasterized) | n/a | 2020-2026 Paweł Kuna (https://github.com/tabler/tabler-icons) |
+| emojibase-data (catalog metadata) | 15.x | Miles Johnson (https://github.com/milesj/emojibase) |
+| NAudio.Core / NAudio.WinMM / NAudio.Wasapi | 2.3.0 | Mark Heath (https://github.com/naudio/NAudio) |
+| NetStone | 1.4.1 | 2024 goaaats, Koenari (https://github.com/xivapi/NetStone) |
+| Vortice.Direct3D11 / Vortice.DXGI / Vortice.D3DCompiler / Vortice.DirectX | 3.8.3 | Amer Koleci (https://github.com/amerkoleci/Vortice.Windows) |
+| Vortice.Mathematics | 2.1.0 | Amer Koleci (https://github.com/amerkoleci/Vortice.Mathematics) |
+| SharpGen.Runtime / SharpGen.Runtime.COM | 2.4.2-beta | SharpGenTools contributors (https://github.com/SharpGenTools/SharpGenTools) |
+| SharpDX / SharpDX.Direct3D11 / SharpDX.DXGI / SharpDX.D3DCompiler | 4.2.0 | Alexandre Mutel (https://github.com/sharpdx/SharpDX) |
+| SharpCompress | 0.48.1 | Adam Hathcock (https://github.com/adamhathcock/sharpcompress) |
+| YoutubeExplode | 6.6.1 | Oleksii Holub (https://github.com/Tyrrrz/YoutubeExplode) |
+| HtmlAgilityPack | 1.11.46 | ZZZ Projects and contributors (https://github.com/zzzprojects/html-agility-pack) |
+| System.Security.Cryptography.ProtectedData | 10.0.11 | Microsoft Corporation (https://github.com/dotnet/runtime) |
+| NEbml | 1.1.0.5 | Oleg Zee (https://github.com/OlegZee/NEbml) |
+| NLayer / NLayer.NAudioSupport | 2.0.1 | Mark Heath, Andrew Ward (https://github.com/naudio/NLayer) |
+
+```
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Karashiiro.HtmlAgilityPack.CssSelectors.NetCoreFork
+
+`Karashiiro.HtmlAgilityPack.CssSelectors.NetCoreFork.dll` (version 0.0.2, by
+karashiiro and Thibaut Renoncourt) is a fork of HtmlAgilityPack.CssSelectors
+pulled in by NetStone. The package declares no license metadata; the upstream
+HtmlAgilityPack.CssSelectors project is published under the MIT License
+(https://github.com/trenoncourt/HtmlAgilityPack.CssSelectors).
+
+## Calendar event data
+
+The Calendar app shows in-game event dates served through the Aetherphone
+backend, which caches a community-maintained public events database. The data
+is fetched server-side; no third-party credentials ship with the plugin.

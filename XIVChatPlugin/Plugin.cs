@@ -12,7 +12,7 @@ using System.IO;
 
 namespace XIVChatPlugin {
     internal class Plugin : IDalamudPlugin {
-        internal static string Name => "XIVChat";
+        internal static string Name => "艾欧泽亚终端";
 
         private bool _disposedValue;
 
@@ -39,6 +39,12 @@ namespace XIVChatPlugin {
 
         [PluginService]
         internal IObjectTable ObjectTable { get; private init; } = null!;
+
+        [PluginService]
+        internal IGameInventory GameInventory { get; private init; } = null!;
+
+        [PluginService]
+        internal IDutyState DutyState { get; private init; } = null!;
 
         [PluginService]
         internal IGameInteropProvider GameInteropProvider { get; private init; } = null!;
@@ -95,8 +101,8 @@ namespace XIVChatPlugin {
             this.ClientState.Login += this.Server.OnLogIn;
             this.ClientState.Logout += this.Server.OnLogOut;
             this.ClientState.TerritoryChanged += this.Server.OnTerritoryChange;
-            this.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
-                HelpMessage = "打开 XIVChat 插件设置",
+            this.CommandManager.AddHandler("/eorzeaphone", new CommandInfo(this.OnCommand) {
+                HelpMessage = "打开艾欧泽亚终端插件设置",
             });
 
             this.Ipcs.Add(new Ipc.PeepingTom(this));
@@ -119,7 +125,7 @@ namespace XIVChatPlugin {
             this.ClientState.Login -= this.Server.OnLogIn;
             this.ClientState.Logout -= this.Server.OnLogOut;
             this.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
-            this.CommandManager.RemoveHandler("/xivchat");
+            this.CommandManager.RemoveHandler("/eorzeaphone");
             this.Functions.Dispose();
 
             foreach (var ipc in this.Ipcs) {

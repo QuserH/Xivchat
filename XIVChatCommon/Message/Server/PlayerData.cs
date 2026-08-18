@@ -15,11 +15,28 @@ namespace XIVChatCommon.Message.Server {
         [Key(3)]
         public readonly string name;
 
-        public PlayerData(string homeWorld, string currentWorld, string location, string name) {
+        [Key(4)]
+        public readonly uint classJobId;
+
+        [Key(5)]
+        public readonly string jobName;
+
+        [Key(6)]
+        public readonly byte level;
+
+        [Key(7)]
+        public readonly uint territoryId;
+
+        public PlayerData(string homeWorld, string currentWorld, string location, string name,
+            uint classJobId = 0, string jobName = "", byte level = 0, uint territoryId = 0) {
             this.homeWorld = homeWorld;
             this.currentWorld = currentWorld;
             this.location = location;
             this.name = name;
+            this.classJobId = classJobId;
+            this.jobName = jobName;
+            this.level = level;
+            this.territoryId = territoryId;
         }
 
         [IgnoreMember]

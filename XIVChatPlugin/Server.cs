@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Dalamud.Game.Inventory;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
@@ -22,6 +23,9 @@ using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Server;
 using Dalamud.Game.Chat;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Environment;
 
 namespace XIVChatPlugin {
     internal class Server : IDisposable {
@@ -43,9 +47,16 @@ namespace XIVChatPlugin {
         private readonly Plugin _plugin;
 
         private readonly Stopwatch _sendWatch = new();
+        private readonly Stopwatch _inventoryWatch = new();
+        private readonly Stopwatch _walletWatch = new();
+        private readonly Stopwatch _weatherWatch = new();
+        private readonly Stopwatch _jobsWatch = new();
+        private readonly Stopwatch _dailiesWatch = new();
+        private readonly PhoneActivityTracker _activityTracker;
 
         private readonly CancellationTokenSource _tokenSource = new();
         private readonly ConcurrentQueue<string> _toGame = new();
+        private readonly ConcurrentQueue<ClientFriendAction> _friendActions = new();
 
         private readonly ConcurrentDictionary<Guid, BaseClient> _clients = new();
         internal IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
@@ -61,6 +72,12 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingPlayerData = new();
         private readonly ConcurrentQueue<Guid> _awaitingAvailability = new();
         private readonly ConcurrentQueue<Guid> _awaitingHousingLocation = new();
+        private readonly ConcurrentQueue<Guid> _awaitingInventory = new();
+        private readonly ConcurrentQueue<Guid> _awaitingWallet = new();
+        private readonly ConcurrentQueue<Guid> _awaitingWeather = new();
+        private readonly ConcurrentQueue<Guid> _awaitingJobs = new();
+        private readonly ConcurrentQueue<Guid> _awaitingDailies = new();
+        private readonly ConcurrentQueue<Guid> _awaitingActivity = new();
 
         private volatile bool _running;
         private bool Running => this._running;
@@ -69,6 +86,44 @@ namespace XIVChatPlugin {
         private SeString? _currentChannelName;
 
         private ServerHousingLocation _lastHousingLocation;
+        private long _lastInventoryFingerprint;
+        private bool _hasInventorySnapshot;
+        private long _lastWalletFingerprint;
+        private bool _hasWalletSnapshot;
+        private long _lastWeatherFingerprint;
+        private bool _hasWeatherSnapshot;
+        private long _lastJobsFingerprint;
+        private bool _hasJobsSnapshot;
+        private long _lastDailiesFingerprint;
+        private bool _hasDailiesSnapshot;
+        private long _lastActivityFingerprint;
+        private bool _hasActivitySnapshot;
+
+        private static readonly GameInventoryType[] PhoneInventoryTypes = [
+            GameInventoryType.Inventory1,
+            GameInventoryType.Inventory2,
+            GameInventoryType.Inventory3,
+            GameInventoryType.Inventory4,
+            GameInventoryType.EquippedItems,
+            GameInventoryType.Crystals,
+            GameInventoryType.ArmoryOffHand,
+            GameInventoryType.ArmoryHead,
+            GameInventoryType.ArmoryBody,
+            GameInventoryType.ArmoryHands,
+            GameInventoryType.ArmoryWaist,
+            GameInventoryType.ArmoryLegs,
+            GameInventoryType.ArmoryFeets,
+            GameInventoryType.ArmoryEar,
+            GameInventoryType.ArmoryNeck,
+            GameInventoryType.ArmoryWrist,
+            GameInventoryType.ArmoryRings,
+            GameInventoryType.ArmorySoulCrystal,
+            GameInventoryType.ArmoryMainHand,
+            GameInventoryType.SaddleBag1,
+            GameInventoryType.SaddleBag2,
+            GameInventoryType.PremiumSaddleBag1,
+            GameInventoryType.PremiumSaddleBag2,
+        ];
 
         private const int MaxMessageSize = 128_000;
 
@@ -81,6 +136,12 @@ namespace XIVChatPlugin {
             this._lastHousingLocation = this._plugin.Functions.HousingLocation;
 
             this._sendWatch.Start();
+            this._inventoryWatch.Start();
+            this._walletWatch.Start();
+            this._weatherWatch.Start();
+            this._jobsWatch.Start();
+            this._dailiesWatch.Start();
+            this._activityTracker = new PhoneActivityTracker(plugin);
 
             this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
         }
@@ -262,6 +323,21 @@ namespace XIVChatPlugin {
                 this._lastHousingLocation = housingLocation;
             }
 
+            this.UpdateInventory();
+            this.UpdateWallet();
+            this.UpdateWeather();
+            this.UpdateJobs();
+            this.UpdateDailies();
+            this.UpdateActivity();
+
+            while (this._friendActions.TryDequeue(out var friendAction)) {
+                try {
+                    this._plugin.Functions.ExecuteFriendAction(friendAction);
+                } catch (Exception ex) {
+                    Plugin.Log.Warning($"Could not execute friend action: {ex.Message}");
+                }
+            }
+
             while (this._awaitingPlayerData.TryDequeue(out var id)) {
                 if (!this.Clients.TryGetValue(id, out var client)) {
                     continue;
@@ -288,6 +364,56 @@ namespace XIVChatPlugin {
                 client.Queue.Writer.TryWrite(this._lastHousingLocation);
             }
 
+            while (this._awaitingInventory.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
+                    continue;
+                }
+
+                var inventory = this.BuildInventorySnapshot();
+                if (inventory != null) {
+                    client.Queue.Writer.TryWrite(inventory);
+                }
+            }
+
+            while (this._awaitingWallet.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
+                    continue;
+                }
+
+                var wallet = this.BuildWalletSnapshot();
+                if (wallet != null) {
+                    client.Queue.Writer.TryWrite(wallet);
+                }
+            }
+
+            while (this._awaitingWeather.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
+                    continue;
+                }
+
+                var weather = this.BuildWeatherSnapshot();
+                if (weather != null) {
+                    client.Queue.Writer.TryWrite(weather);
+                }
+            }
+
+            while (this._awaitingJobs.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var jobs = this.BuildJobsSnapshot();
+                if (jobs != null) client.Queue.Writer.TryWrite(jobs);
+            }
+
+            while (this._awaitingDailies.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var dailies = this.BuildDailiesSnapshot();
+                if (dailies != null) client.Queue.Writer.TryWrite(dailies);
+            }
+
+            while (this._awaitingActivity.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                client.Queue.Writer.TryWrite(this._activityTracker.Snapshot());
+            }
+
             int time;
             if (this._toGame.TryPeek(out var peek) && PublicPrefixes.Any(prefix => peek.StartsWith(prefix))) {
                 time = 1_000;
@@ -308,6 +434,500 @@ namespace XIVChatPlugin {
             this._sendWatch.Restart();
 
             this._plugin.Functions.ProcessChatBox(message);
+        }
+
+        /// <summary>
+        /// Capture inventory only on the Dalamud framework thread. Operation 11 is
+        /// capability-gated so unmodified XIVChat clients never receive the frame.
+        /// </summary>
+        private void UpdateInventory() {
+            if (this._inventoryWatch.Elapsed < TimeSpan.FromSeconds(1) || this._clients.IsEmpty) {
+                return;
+            }
+
+            this._inventoryWatch.Restart();
+            var snapshot = this.BuildInventorySnapshot();
+            if (snapshot == null) {
+                return;
+            }
+
+            if (this._hasInventorySnapshot && snapshot.Items.Length == 0 && this._lastInventoryFingerprint == 0) {
+                return;
+            }
+
+            var fingerprint = InventoryFingerprint(snapshot.Items);
+            if (this._hasInventorySnapshot && fingerprint == this._lastInventoryFingerprint) {
+                return;
+            }
+
+            this._hasInventorySnapshot = true;
+            this._lastInventoryFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneInventorySupport);
+        }
+
+        private ServerInventory? BuildInventorySnapshot() {
+            if (this._plugin.ObjectTable.LocalPlayer == null) {
+                return null;
+            }
+
+            try {
+                var items = new List<ServerInventoryItem>();
+                var containers = new List<ServerInventoryContainer>();
+                var itemSheet = this._plugin.DataManager.GetExcelSheet<Item>();
+
+                foreach (var type in PhoneInventoryTypes) {
+                    var containerItems = this._plugin.GameInventory.GetInventoryItems(type).ToArray();
+                    containers.Add(new ServerInventoryContainer {
+                        ContainerType = (uint) type,
+                        Size = containerItems.Length,
+                    });
+                    foreach (var item in containerItems) {
+                        if (item.IsEmpty || item.ItemId == 0 || item.Quantity <= 0) {
+                            continue;
+                        }
+
+                        string? name = null;
+                        try {
+                            name = itemSheet.GetRowOrDefault(item.BaseItemId)?.Name.ExtractText();
+                        } catch (Exception) {
+                            // A missing row should not prevent the rest of the snapshot.
+                        }
+
+                        items.Add(new ServerInventoryItem {
+                            ItemId = item.ItemId,
+                            BaseItemId = item.BaseItemId,
+                            Quantity = item.Quantity,
+                            ContainerType = (uint) item.ContainerType,
+                            InventorySlot = item.InventorySlot,
+                            IsHq = item.IsHq,
+                            SpiritbondOrCollectability = item.SpiritbondOrCollectability,
+                            Condition = item.Condition,
+                            Name = name,
+                        });
+                    }
+                }
+
+                return new ServerInventory(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), items.ToArray(), containers.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture inventory: {ex.Message}");
+                return null;
+            }
+        }
+
+        private void UpdateWallet() {
+            if (this._walletWatch.Elapsed < TimeSpan.FromSeconds(1) || this._clients.IsEmpty) {
+                return;
+            }
+
+            this._walletWatch.Restart();
+            var snapshot = this.BuildWalletSnapshot();
+            if (snapshot == null) {
+                return;
+            }
+
+            var fingerprint = WalletFingerprint(snapshot);
+            if (this._hasWalletSnapshot && fingerprint == this._lastWalletFingerprint) {
+                return;
+            }
+
+            this._hasWalletSnapshot = true;
+            this._lastWalletFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneWalletSupport);
+        }
+
+        private unsafe ServerWallet? BuildWalletSnapshot() {
+            if (this._plugin.ObjectTable.LocalPlayer == null) {
+                return null;
+            }
+
+            try {
+                var manager = InventoryManager.Instance();
+                if (manager == null) {
+                    return null;
+                }
+
+                var entries = new List<ServerWalletEntry>();
+                var itemSheet = this._plugin.DataManager.GetExcelSheet<Item>();
+
+                void Add(uint itemId, long cap, string section, bool tomestone = false) {
+                    var row = itemSheet.GetRowOrDefault(itemId);
+                    if (row == null) {
+                        return;
+                    }
+
+                    var amount = tomestone
+                        ? (long) manager->GetTomestoneCount(itemId)
+                        : (long) manager->GetInventoryItemCount(itemId, false, true, true, 0);
+                    entries.Add(new ServerWalletEntry {
+                        ItemId = itemId,
+                        IconId = row.Value.Icon,
+                        Name = row.Value.Name.ExtractText(),
+                        Amount = amount,
+                        Cap = cap,
+                        Section = section,
+                    });
+                }
+
+                Add(29, 0, "常用货币");
+                Add(21072, 0, "常用货币");
+                var playerState = PlayerState.Instance();
+                var sealId = playerState == null ? 0u : playerState->GrandCompany switch {
+                    1 => 20u,
+                    2 => 21u,
+                    3 => 22u,
+                    _ => 0u,
+                };
+                if (sealId != 0) Add(sealId, 0, "常用货币");
+
+                Add(27, 4000, "狩猎票据");
+                Add(10307, 4000, "狩猎票据");
+                Add(26533, 4000, "狩猎票据");
+
+                var tomestones = this._plugin.DataManager.GetExcelSheet<TomestonesItem>()
+                    .Select(row => row.Item.RowId)
+                    .Where(id => id != 0 && id != 28)
+                    .Distinct()
+                    .OrderByDescending(id => id)
+                    .Take(2)
+                    .ToList();
+                tomestones.Add(28);
+                foreach (var itemId in tomestones) Add(itemId, 2000, "亚拉戈神典石", true);
+
+                Add(25, 20000, "对战货币");
+                Add(36656, 20000, "对战货币");
+                Add(33913, 4000, "生产采集票据");
+                Add(33914, 4000, "生产采集票据");
+                Add(41784, 4000, "生产采集票据");
+                Add(41785, 4000, "生产采集票据");
+                Add(28063, 10000, "生产采集票据");
+                Add(26807, 1500, "其他货币");
+
+                return new ServerWallet(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), (long) manager->GetGil(), entries.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture wallet: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static long WalletFingerprint(ServerWallet wallet) {
+            unchecked {
+                long hash = wallet.Gil;
+                foreach (var entry in wallet.Entries) {
+                    hash = hash * 31 + entry.ItemId;
+                    hash = hash * 31 + entry.Amount;
+                }
+                return hash;
+            }
+        }
+
+        private void UpdateWeather() {
+            if (this._weatherWatch.Elapsed < TimeSpan.FromSeconds(2) || this._clients.IsEmpty) {
+                return;
+            }
+
+            this._weatherWatch.Restart();
+            var snapshot = this.BuildWeatherSnapshot();
+            if (snapshot == null) {
+                return;
+            }
+
+            var fingerprint = WeatherFingerprint(snapshot);
+            if (this._hasWeatherSnapshot && fingerprint == this._lastWeatherFingerprint) {
+                return;
+            }
+
+            this._hasWeatherSnapshot = true;
+            this._lastWeatherFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneWeatherSupport);
+        }
+
+        private unsafe ServerWeather? BuildWeatherSnapshot() {
+            var territoryId = this._plugin.ClientState.TerritoryType;
+            if (territoryId == 0) {
+                return null;
+            }
+
+            try {
+                var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId);
+                if (territory == null || territory.Value.WeatherRate.RowId == 0) {
+                    return null;
+                }
+
+                var zone = territory.Value.PlaceName.IsValid ? territory.Value.PlaceName.Value.Name.ExtractText() : "未知区域";
+                var rate = this._plugin.DataManager.GetExcelSheet<WeatherRate>().GetRowOrDefault(territory.Value.WeatherRate.RowId);
+                if (rate == null) {
+                    return null;
+                }
+
+                var chances = new List<(byte Id, int Cumulative)>();
+                var cumulative = 0;
+                var rates = rate.Value.Rate;
+                var weathers = rate.Value.Weather;
+                for (var index = 0; index < rates.Count && index < weathers.Count; index++) {
+                    var id = (byte) weathers[index].RowId;
+                    var chance = rates[index];
+                    if (id == 0 || chance <= 0) continue;
+                    cumulative += chance;
+                    chances.Add((id, cumulative));
+                }
+
+                if (chances.Count == 0) return null;
+
+                byte Resolve(uint target) {
+                    foreach (var chance in chances) {
+                        if (target < chance.Cumulative) return chance.Id;
+                    }
+                    return chances[^1].Id;
+                }
+
+                string Name(byte id) => this._plugin.DataManager.GetExcelSheet<Weather>().GetRowOrDefault(id)?.Name.ExtractText() ?? "未知天气";
+                var currentId = (byte) 0;
+                var environment = EnvManager.Instance();
+                if (environment != null) currentId = environment->ActiveWeather;
+                var current = currentId == 0 ? Name(Resolve(ForecastTarget(DateTimeOffset.UtcNow.ToUnixTimeSeconds()))) : Name(currentId);
+
+                const long windowSeconds = 1400;
+                const long hourSeconds = 175;
+                var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var start = now - now % windowSeconds;
+                var forecast = new List<ServerWeatherWindow>(5);
+                for (var index = 0; index < 5; index++) {
+                    var timestamp = start + index * windowSeconds;
+                    var id = index == 0 && currentId != 0 ? currentId : Resolve(ForecastTarget(timestamp));
+                    forecast.Add(new ServerWeatherWindow {
+                        Name = Name(id),
+                        MinutesFromNow = (int) ((timestamp - now) / 60),
+                        EorzeaBell = (int) (timestamp / hourSeconds % 24),
+                    });
+                }
+
+                return new ServerWeather(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), zone, current, forecast.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture weather: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static uint ForecastTarget(long unixSeconds) {
+            const long hourSeconds = 175;
+            const long daySeconds = 4200;
+            var eorzeaHour = unixSeconds / hourSeconds;
+            var increment = (uint) ((eorzeaHour + 8 - eorzeaHour % 8) % 24);
+            var totalDays = (uint) (unixSeconds / daySeconds);
+            var calcBase = totalDays * 100u + increment;
+            var step1 = (calcBase << 11) ^ calcBase;
+            var step2 = (step1 >> 8) ^ step1;
+            return step2 % 100u;
+        }
+
+        private static long WeatherFingerprint(ServerWeather weather) {
+            unchecked {
+                long hash = weather.Zone.GetHashCode() * 31L + weather.Current.GetHashCode();
+                foreach (var window in weather.Forecast) hash = hash * 31 + window.Name.GetHashCode();
+                return hash;
+            }
+        }
+
+        private void UpdateJobs() {
+            if (this._jobsWatch.Elapsed < TimeSpan.FromSeconds(2) || this._clients.IsEmpty) return;
+            this._jobsWatch.Restart();
+            var snapshot = this.BuildJobsSnapshot();
+            if (snapshot == null) return;
+            var fingerprint = JobsFingerprint(snapshot);
+            if (this._hasJobsSnapshot && fingerprint == this._lastJobsFingerprint) return;
+            this._hasJobsSnapshot = true;
+            this._lastJobsFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneJobsSupport);
+        }
+
+        private unsafe ServerJobs? BuildJobsSnapshot() {
+            if (this._plugin.ObjectTable.LocalPlayer == null) return null;
+            try {
+                var playerState = PlayerState.Instance();
+                if (playerState == null) return null;
+                var levels = playerState->ClassJobLevels;
+                var current = this._plugin.ObjectTable.LocalPlayer.ClassJob.RowId;
+                var sheet = this._plugin.DataManager.GetExcelSheet<ClassJob>();
+                var entries = new List<ServerJobEntry>();
+                foreach (var job in sheet) {
+                    if (job.RowId == 0 || job.ExpArrayIndex < 0 || job.ExpArrayIndex >= levels.Length) continue;
+                    var level = levels[job.ExpArrayIndex];
+                    if (level <= 0) continue;
+                    var category = job.ClassJobCategory.RowId switch {
+                        32 => "采集", 33 => "生产",
+                        _ => job.JobType switch {
+                            1 => "坦克", 2 or 6 => "治疗", 3 => "近战", 4 => "远程物理", 5 => "远程魔法", _ => "战斗",
+                        },
+                    };
+                    entries.Add(new ServerJobEntry {
+                        JobId = job.RowId, Name = job.Name.ExtractText(), Abbreviation = job.Abbreviation.ExtractText(),
+                        Category = category, Level = level, Active = job.RowId == current, ItemLevel = -1,
+                    });
+                }
+                return new ServerJobs(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), entries.OrderBy(x => x.Category).ThenBy(x => x.JobId).ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture jobs: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static long JobsFingerprint(ServerJobs jobs) {
+            unchecked {
+                long hash = 17;
+                foreach (var entry in jobs.Entries) hash = hash * 31 + entry.JobId * 397L + entry.Level + (entry.Active ? 1 : 0);
+                return hash;
+            }
+        }
+
+        private void UpdateDailies() {
+            if (this._dailiesWatch.Elapsed < TimeSpan.FromSeconds(2) || this._clients.IsEmpty) return;
+            this._dailiesWatch.Restart();
+            var snapshot = this.BuildDailiesSnapshot();
+            if (snapshot == null) return;
+            var fingerprint = DailiesFingerprint(snapshot);
+            if (this._hasDailiesSnapshot && fingerprint == this._lastDailiesFingerprint) return;
+            this._hasDailiesSnapshot = true;
+            this._lastDailiesFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneDailiesSupport);
+        }
+
+        private unsafe ServerDailies? BuildDailiesSnapshot() {
+            if (this._plugin.ObjectTable.LocalPlayer == null) return null;
+            try {
+                var entries = new List<ServerDailyEntry>();
+                void Add(string id, string label, bool weekly, bool automatic, bool available, bool complete, int remaining, int goal, string note = "") =>
+                    entries.Add(new ServerDailyEntry { Id = id, Label = label, Weekly = weekly, Automatic = automatic, Available = available, Complete = complete, Remaining = remaining, Goal = goal, Note = note });
+
+                var content = FFXIVClientStructs.FFXIV.Client.Game.UI.InstanceContent.Instance();
+                var rouletteIds = this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.ContentRoulette>()
+                    .Where(row => row.RowId != 0 && row.IsInDutyFinder && !row.IsGoldSaucer && row.CompletionArrayIndex >= 0 && row.Name.ExtractText().Length > 0)
+                    .Select(row => (byte)row.RowId).ToArray();
+                var rouletteDone = content == null ? 0 : rouletteIds.Count(id => content->IsRouletteComplete(id));
+                Add("daily.roulettes", "随机任务", false, true, content != null && rouletteIds.Length > 0, rouletteDone >= rouletteIds.Length && rouletteIds.Length > 0, rouletteIds.Length - rouletteDone, rouletteIds.Length);
+
+                var quests = QuestManager.Instance();
+                if (quests == null) {
+                    Add("daily.beastTribe", "友好部族任务", false, true, false, false, 0, 12);
+                    Add("daily.levequests", "理符任务", false, true, false, false, 0, 100);
+                } else {
+                    var beast = Math.Clamp((int)quests->GetBeastTribeAllowance(), 0, 12);
+                    Add("daily.beastTribe", "友好部族任务", false, true, true, beast == 0, beast, 12);
+                    var leves = Math.Clamp((int)quests->NumLeveAllowances, 0, 100);
+                    Add("daily.levequests", "理符额度", false, true, true, true, leves, 100, "当前持有额度");
+                }
+                Add("daily.miniCactpot", "仙人微彩", false, false, true, false, 3, 3);
+                Add("daily.gcSupply", "筹备与补给", false, false, true, false, 1, 1);
+
+                var doman = DomanEnclaveManager.Instance();
+                if (doman == null || doman->State.Allowance == 0) Add("weekly.domanEnclave", "多玛飞地捐赠", true, true, false, false, 0, 0);
+                else {
+                    var allowance = (int)doman->State.Allowance;
+                    var remaining = Math.Max(0, allowance - (int)doman->State.Donated);
+                    Add("weekly.domanEnclave", "多玛飞地捐赠", true, true, true, remaining == 0, remaining, allowance);
+                }
+
+                var player = PlayerState.Instance();
+                if (player == null) Add("weekly.wondrousTails", "天书奇谈", true, true, false, false, 0, 9);
+                else {
+                    var placed = Enumerable.Range(0, 16).Count(index => player->IsWeeklyBingoStickerPlaced(index));
+                    var remaining = player->IsWeeklyBingoExpired() ? 9 : Math.Max(0, 9 - placed);
+                    Add("weekly.wondrousTails", "天书奇谈", true, true, true, remaining == 0, remaining, 9);
+                }
+
+                var supply = SatisfactionSupplyManager.Instance();
+                var deliveries = supply == null ? -1 : supply->GetRemainingAllowances();
+                Add("weekly.customDeliveries", "老主顾交易", true, true, deliveries >= 0, deliveries == 0, Math.Max(0, deliveries), 12);
+                var now = DateTime.UtcNow;
+                Add("weekly.jumboCactpot", "仙人彩", true, false, true, false, 3, 3, $"下次开奖：{NextWeeklyUtc(now, DayOfWeek.Saturday, 8):MM-dd HH:mm} UTC");
+                Add("weekly.fashionReport", "时尚品鉴", true, false, true, false, 1, 1, "周五 08:00 UTC 开始评分");
+                Add("weekly.challengeLog", "挑战笔记", true, false, true, false, 1, 1);
+                Add("weekly.raidLockout", "大型任务周限制", true, false, true, false, 1, 1);
+                Add("weekly.huntBills", "精英狩猎通缉令", true, false, true, false, 1, 1);
+
+                return new ServerDailies(DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    new DateTimeOffset(NextDailyUtc(now, 15)).ToUnixTimeSeconds(),
+                    new DateTimeOffset(NextWeeklyUtc(now, DayOfWeek.Tuesday, 8)).ToUnixTimeSeconds(), entries.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture dailies: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static DateTime NextDailyUtc(DateTime now, int hour) {
+            var target = new DateTime(now.Year, now.Month, now.Day, hour, 0, 0, DateTimeKind.Utc);
+            return target > now ? target : target.AddDays(1);
+        }
+
+        private static DateTime NextWeeklyUtc(DateTime now, DayOfWeek day, int hour) {
+            var target = new DateTime(now.Year, now.Month, now.Day, hour, 0, 0, DateTimeKind.Utc);
+            while (target.DayOfWeek != day || target <= now) target = target.AddDays(1);
+            return target;
+        }
+
+        private static long DailiesFingerprint(ServerDailies snapshot) {
+            unchecked {
+                long hash = snapshot.NextDailyResetUnix / 60;
+                foreach (var entry in snapshot.Entries) hash = hash * 31 + entry.Id.GetHashCode() + entry.Remaining * 17L + (entry.Complete ? 1 : 0);
+                return hash;
+            }
+        }
+
+        private void UpdateActivity() {
+            var snapshot = this._activityTracker.Update();
+            if (snapshot == null || this._clients.IsEmpty) return;
+            var fingerprint = ActivityFingerprint(snapshot);
+            if (this._hasActivitySnapshot && fingerprint == this._lastActivityFingerprint) return;
+            this._hasActivitySnapshot = true;
+            this._lastActivityFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneActivitySupport);
+        }
+
+        private static long ActivityFingerprint(ServerActivity value) {
+            unchecked {
+                var hash = value.SessionPlaySeconds;
+                hash = hash * 31 + value.SessionExpGained;
+                hash = hash * 31 + value.SessionGilEarned;
+                hash = hash * 31 + value.SessionDutiesCompleted;
+                hash = hash * 31 + value.MountsOwned;
+                hash = hash * 31 + value.MinionsOwned;
+                hash = hash * 31 + value.VenturesReady;
+                return hash;
+            }
+        }
+
+        private static long InventoryFingerprint(IEnumerable<ServerInventoryItem> items) {
+            unchecked {
+                long hash = 17;
+                foreach (var item in items) {
+                    hash = hash * 31 + item.ItemId;
+                    hash = hash * 31 + item.BaseItemId;
+                    hash = hash * 31 + item.Quantity;
+                    hash = hash * 31 + item.ContainerType;
+                    hash = hash * 31 + item.InventorySlot;
+                    hash = hash * 31 + (item.IsHq ? 1 : 0);
+                    hash = hash * 31 + item.SpiritbondOrCollectability;
+                    hash = hash * 31 + item.Condition;
+                }
+
+                return hash;
+            }
+        }
+
+        private const int PhoneInventoryCapability = 0x4550;
+
+        private static bool HasPhoneInventoryCapability(byte[] payload) {
+            try {
+                var reader = new MessagePackReader(new ReadOnlyMemory<byte>(payload));
+                var fieldCount = reader.ReadArrayHeader();
+                if (fieldCount < 2) {
+                    return false;
+                }
+
+                reader.Skip();
+                return reader.ReadInt32() == PhoneInventoryCapability;
+            } catch (Exception) {
+                return false;
+            }
         }
 
         private static readonly IReadOnlyList<byte> Magic = new byte[] {
@@ -464,6 +1084,12 @@ namespace XIVChatPlugin {
                     // ReSharper disable once LocalVariableHidesMember
                     var backlog = ClientBacklog.Decode(payload);
 
+                    if (HasPhoneInventoryCapability(payload)) {
+                        client.Preferences ??= new ClientPreferences();
+                        client.Preferences.Preferences[ClientPreference.PhoneInventorySupport] = true;
+                        this._awaitingInventory.Enqueue(id);
+                    }
+
                     var backlogMessages = new List<ServerMessage>();
 
                     var node = this._backlog.Last;
@@ -515,11 +1141,38 @@ namespace XIVChatPlugin {
                         this._awaitingHousingLocation.Enqueue(id);
                     }
 
+                    if (client.GetPreference(ClientPreference.PhoneInventorySupport, false)) {
+                        this._awaitingInventory.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneWalletSupport, false)) {
+                        this._awaitingWallet.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneWeatherSupport, false)) {
+                        this._awaitingWeather.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneJobsSupport, false)) {
+                        this._awaitingJobs.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneDailiesSupport, false)) {
+                        this._awaitingDailies.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneActivitySupport, false)) {
+                        this._awaitingActivity.Enqueue(id);
+                    }
+
                     break;
                 case ClientOperation.Channel:
                     var channel = ClientChannel.Decode(payload);
                     this._plugin.Functions.ChangeChatChannel(channel.Channel);
 
+                    break;
+                case ClientOperation.FriendAction:
+                    this._friendActions.Enqueue(ClientFriendAction.Decode(payload));
                     break;
             }
         }
@@ -822,8 +1475,12 @@ namespace XIVChatPlugin {
             var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(this._plugin.ClientState.TerritoryType);
             var location = territory?.PlaceName.Value.Name.ExtractText() ?? "???";
             var name = player.Name.TextValue;
+            var classJobId = player.ClassJob.RowId;
+            var jobName = classJobId == 0
+                ? string.Empty
+                : this._plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(classJobId)?.Name.ExtractText() ?? string.Empty;
 
-            return new PlayerData(homeWorld, currentWorld, location, name);
+            return new PlayerData(homeWorld, currentWorld, location, name, classJobId, jobName, player.Level, this._plugin.ClientState.TerritoryType);
         }
 
         private void BroadcastPlayerData() {
@@ -846,6 +1503,7 @@ namespace XIVChatPlugin {
         internal void OnTerritoryChange(uint @uint) => this._sendPlayerData = true;
 
         public void Dispose() {
+            this._activityTracker.Dispose();
             // stop accepting new clients
             this._tokenSource.Cancel();
             foreach (var client in this._clients.Values) {

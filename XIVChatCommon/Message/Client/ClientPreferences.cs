@@ -29,6 +29,24 @@ namespace XIVChatCommon.Message.Client {
         
         [Preference(typeof(bool))]
         HousingLocationSupport = 2,
+
+        [Preference(typeof(bool))]
+        PhoneInventorySupport = 3,
+
+        [Preference(typeof(bool))]
+        PhoneWalletSupport = 4,
+
+        [Preference(typeof(bool))]
+        PhoneWeatherSupport = 5,
+
+        [Preference(typeof(bool))]
+        PhoneJobsSupport = 6,
+
+        [Preference(typeof(bool))]
+        PhoneDailiesSupport = 7,
+
+        [Preference(typeof(bool))]
+        PhoneActivitySupport = 8,
     }
 
     public static class ClientPreferencesExtension {

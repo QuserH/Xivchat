@@ -1,0 +1,370 @@
+package com.quserh.eorzeaphone.ui
+
+import android.content.Context
+import androidx.annotation.DrawableRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
+import com.quserh.eorzeaphone.data.GameChatMessage
+import com.quserh.eorzeaphone.data.ChatCategory
+import com.quserh.eorzeaphone.data.GameInventoryContainer
+import com.quserh.eorzeaphone.data.GameInventoryItem
+import com.quserh.eorzeaphone.data.GameWallet
+import com.quserh.eorzeaphone.data.GameWeather
+import com.quserh.eorzeaphone.data.GameJob
+import com.quserh.eorzeaphone.data.GameHousingLocation
+import com.quserh.eorzeaphone.data.GameDailies
+import com.quserh.eorzeaphone.data.GameActivity
+import com.quserh.eorzeaphone.data.PhoneEvent
+import com.quserh.eorzeaphone.data.XivChatConnection
+import com.quserh.eorzeaphone.data.PhoneNotifier
+import com.quserh.eorzeaphone.data.ResetReminderReceiver
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+
+enum class PhoneScreen {
+    Home,
+    Settings,
+    Contacts,
+    ContactDetail,
+    Chat,
+    App,
+}
+
+data class PhoneAppItem(
+    val id: String,
+    val label: String,
+    @DrawableRes val icon: Int,
+    val color: Color,
+    val destination: PhoneScreen = PhoneScreen.App,
+)
+
+data class PhoneFriend(
+    val name: String,
+    val world: String,
+    val location: String = "",
+    val online: Boolean,
+    val job: String = "",
+    val freeCompany: String = "",
+    val contentId: Long = 0,
+    val currentWorldId: Int = 0,
+    val homeWorldId: Int = 0,
+)
+
+data class ChatFilter(
+    val id: String,
+    val label: String,
+    val categories: Set<ChatCategory>,
+    val removable: Boolean = false,
+) {
+    fun matches(message: GameChatMessage): Boolean = message.category in categories
+}
+
+data class OutputChannel(val id: Int, val label: String)
+
+val outputChannels = listOf(
+    OutputChannel(1, "说话"), OutputChannel(2, "小队"), OutputChannel(3, "团队"),
+    OutputChannel(4, "呼喊"), OutputChannel(5, "喊话"), OutputChannel(6, "部队"),
+    OutputChannel(8, "新人频道"), OutputChannel(9, "跨服通讯贝 1"),
+    OutputChannel(10, "跨服通讯贝 2"), OutputChannel(11, "跨服通讯贝 3"),
+    OutputChannel(12, "跨服通讯贝 4"), OutputChannel(13, "跨服通讯贝 5"),
+    OutputChannel(14, "跨服通讯贝 6"), OutputChannel(15, "跨服通讯贝 7"),
+    OutputChannel(16, "跨服通讯贝 8"), OutputChannel(19, "通讯贝 1"),
+    OutputChannel(20, "通讯贝 2"), OutputChannel(21, "通讯贝 3"),
+    OutputChannel(22, "通讯贝 4"), OutputChannel(23, "通讯贝 5"),
+    OutputChannel(24, "通讯贝 6"), OutputChannel(25, "通讯贝 7"),
+    OutputChannel(26, "通讯贝 8"),
+)
+
+private val builtInChatFilters = listOf(
+    ChatFilter("all", "全部", ChatCategory.entries.toSet()),
+    ChatFilter("chat", "聊天", setOf(ChatCategory.Public, ChatCategory.Emote)),
+    ChatFilter("party", "队伍", setOf(ChatCategory.Party)),
+    ChatFilter("tell", "私聊", setOf(ChatCategory.Tell)),
+    ChatFilter("social", "部队/通讯贝", setOf(ChatCategory.FreeCompany, ChatCategory.Linkshell)),
+    ChatFilter("system", "系统", setOf(ChatCategory.System)),
+)
+
+class PhoneState(context: Context, scope: CoroutineScope) {
+    private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    var screen by mutableStateOf(PhoneScreen.Home)
+    var selectedApp by mutableStateOf<PhoneAppItem?>(null)
+    var selectedFriend by mutableStateOf<PhoneFriend?>(null)
+    var launchPivotX by mutableStateOf(0.5f)
+        private set
+    var launchPivotY by mutableStateOf(0.5f)
+        private set
+    var launchScale by mutableStateOf(0.14f)
+        private set
+    private var shellWidth = 1f
+    private var shellHeight = 1f
+    var connected by mutableStateOf(false)
+    var serverLabel by mutableStateOf("未连接游戏")
+    var host by mutableStateOf("127.0.0.1")
+    var port by mutableStateOf("14777")
+    var statusMessage by mutableStateOf("")
+    var sessionStartedAt by mutableStateOf<Long?>(null)
+    var sessionGilBaseline by mutableStateOf<Long?>(null)
+    var chatNotifications by mutableStateOf(prefs.getBoolean("chatNotifications", true))
+    var tellNotifications by mutableStateOf(prefs.getBoolean("tellNotifications", true))
+    var resetNotifications by mutableStateOf(prefs.getBoolean("resetNotifications", true))
+    val chats = mutableStateListOf<GameChatMessage>()
+    val inventory = mutableStateListOf<GameInventoryItem>()
+    val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
+    var wallet by mutableStateOf<GameWallet?>(null)
+    var weather by mutableStateOf<GameWeather?>(null)
+    val jobs = mutableStateListOf<GameJob>()
+    var housing by mutableStateOf<GameHousingLocation?>(null)
+    var dailies by mutableStateOf<GameDailies?>(null)
+    var activity by mutableStateOf<GameActivity?>(null)
+    var profile by mutableStateOf<com.quserh.eorzeaphone.data.PlayerProfile?>(null)
+    var noteText by mutableStateOf(prefs.getString("noteText", "").orEmpty())
+    var chatDraft by mutableStateOf("")
+    var currentChannel by mutableStateOf(1)
+    var currentChannelName by mutableStateOf("说话")
+    var selectedChatFilterId by mutableStateOf("all")
+    val chatFilters = mutableStateListOf<ChatFilter>().apply {
+        addAll(builtInChatFilters)
+        addAll(loadCustomFilters())
+    }
+    private val connection = XivChatConnection(context, scope) { event ->
+        scope.launch(Dispatchers.Main.immediate) { handle(event) }
+    }
+    private val notifier = PhoneNotifier(context.applicationContext)
+
+    init { ResetReminderReceiver.configure(appContext, resetNotifications) }
+    val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
+
+    fun updateShellSize(width: Int, height: Int) {
+        shellWidth = width.coerceAtLeast(1).toFloat()
+        shellHeight = height.coerceAtLeast(1).toFloat()
+    }
+
+    fun open(app: PhoneAppItem, origin: Rect? = null) {
+        if (origin != null) {
+            launchPivotX = (origin.center.x / shellWidth).coerceIn(0.05f, 0.95f)
+            launchPivotY = (origin.center.y / shellHeight).coerceIn(0.05f, 0.95f)
+            launchScale = maxOf(origin.width / shellWidth, origin.height / shellHeight).coerceIn(0.10f, 0.24f)
+        }
+        selectedApp = app
+        screen = app.destination
+    }
+
+    fun showMessagesTab(contacts: Boolean) {
+        selectedFriend = null
+        selectedApp = AppCatalog.dock.firstOrNull { it.destination == if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat }
+        screen = if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat
+        if (contacts) refreshFriends()
+    }
+
+    fun home() {
+        screen = PhoneScreen.Home
+        selectedApp = null
+    }
+
+    fun back() {
+        if (screen == PhoneScreen.ContactDetail) {
+            screen = PhoneScreen.Contacts
+            selectedFriend = null
+        } else {
+            home()
+        }
+    }
+
+    fun openFriend(friend: PhoneFriend) {
+        selectedFriend = friend
+        screen = PhoneScreen.ContactDetail
+    }
+
+    fun connect() {
+        val parsedPort = port.toIntOrNull()
+        if (parsedPort == null || parsedPort !in 1..65535) {
+            statusMessage = "端口无效"
+            return
+        }
+        statusMessage = "正在连接…"
+        connection.connect(host, parsedPort)
+    }
+
+    fun disconnect() = connection.disconnect()
+
+    fun sendChat(text: String) = connection.sendChat(text)
+
+    fun saveNote(text: String) {
+        noteText = text
+        prefs.edit().putString("noteText", text).apply()
+    }
+
+    fun isDailyChecked(id: String, weekly: Boolean): Boolean {
+        val reset = if (weekly) dailies?.nextWeeklyResetUnix else dailies?.nextDailyResetUnix
+        if (reset == null) return false
+        return prefs.getStringSet("dailyChecks", emptySet()).orEmpty().contains("$id:$reset")
+    }
+
+    fun toggleDaily(id: String, weekly: Boolean) {
+        val reset = (if (weekly) dailies?.nextWeeklyResetUnix else dailies?.nextDailyResetUnix) ?: return
+        val key = "$id:$reset"
+        val values = prefs.getStringSet("dailyChecks", emptySet()).orEmpty().toMutableSet()
+        if (!values.add(key)) values.remove(key)
+        prefs.edit().putStringSet("dailyChecks", values).apply()
+        dailies = dailies?.copy(entries = dailies?.entries.orEmpty().toList())
+    }
+
+    fun updateChatNotifications(value: Boolean) { chatNotifications = value; prefs.edit().putBoolean("chatNotifications", value).apply() }
+    fun updateTellNotifications(value: Boolean) { tellNotifications = value; prefs.edit().putBoolean("tellNotifications", value).apply() }
+    fun updateResetNotifications(value: Boolean) { resetNotifications = value; prefs.edit().putBoolean("resetNotifications", value).apply(); ResetReminderReceiver.configure(appContext, value) }
+
+    fun changeChannel(channel: OutputChannel) {
+        connection.changeChannel(channel.id)
+        currentChannel = channel.id
+        currentChannelName = channel.label
+    }
+
+    fun startTell(friend: PhoneFriend) {
+        val recipient = if (friend.world.isBlank()) friend.name else "${friend.name}@${friend.world}"
+        chatDraft = "/tell $recipient "
+        selectedChatFilterId = "tell"
+        selectedApp = AppCatalog.dock.first()
+        screen = PhoneScreen.Chat
+    }
+
+    fun friendAction(friend: PhoneFriend, action: Int) {
+        if (friend.contentId == 0L) {
+            statusMessage = "该好友缺少游戏角色标识，请刷新好友列表"
+            return
+        }
+        connection.friendAction(action, friend.contentId, friend.currentWorldId)
+        statusMessage = "操作已发送到游戏"
+    }
+
+    fun addChatFilter(label: String, categories: Set<ChatCategory>) {
+        val cleanLabel = label.trim().replace("|", "").replace(";", "").take(12)
+        if (cleanLabel.isBlank() || categories.isEmpty()) return
+        chatFilters += ChatFilter("custom-${System.currentTimeMillis()}", cleanLabel, categories, true)
+        saveCustomFilters()
+    }
+
+    fun removeChatFilter(filter: ChatFilter) {
+        if (!filter.removable) return
+        chatFilters.remove(filter)
+        if (selectedChatFilterId == filter.id) selectedChatFilterId = "all"
+        saveCustomFilters()
+    }
+
+    fun refreshFriends() = connection.requestFriends()
+
+    fun clearTrustedServer() = connection.clearTrustedServer()
+
+    private fun handle(event: PhoneEvent) {
+        when (event) {
+            PhoneEvent.Connected -> {
+                connected = true
+                sessionStartedAt = System.currentTimeMillis()
+                sessionGilBaseline = wallet?.gil
+                serverLabel = "已连接游戏"
+                statusMessage = "连接成功"
+            }
+            is PhoneEvent.Disconnected -> {
+                connected = false
+                serverLabel = "未连接游戏"
+                for (index in friends.indices) friends[index] = friends[index].copy(online = false, location = "", job = "")
+                if (statusMessage.isBlank() || statusMessage == "连接成功") statusMessage = event.reason
+            }
+            is PhoneEvent.Error -> statusMessage = event.message
+            is PhoneEvent.FriendList -> {
+                friends.clear()
+                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId) })
+                saveFriends()
+            }
+            is PhoneEvent.Chat -> {
+                if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
+                    chats.add(event.message)
+                    if (chatNotifications && !event.message.isFrom(profile?.name)) notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell)
+                }
+            }
+            is PhoneEvent.Inventory -> {
+                inventory.clear()
+                inventory.addAll(event.snapshot.items)
+                inventoryContainers.clear()
+                inventoryContainers.addAll(event.snapshot.containers)
+            }
+            is PhoneEvent.Wallet -> {
+                wallet = event.wallet
+                if (sessionGilBaseline == null) sessionGilBaseline = event.wallet.gil
+            }
+            is PhoneEvent.Weather -> weather = event.weather
+            is PhoneEvent.Jobs -> {
+                jobs.clear()
+                jobs.addAll(event.jobs)
+            }
+            is PhoneEvent.Housing -> housing = event.location
+            is PhoneEvent.Dailies -> dailies = event.dailies
+            is PhoneEvent.Activity -> activity = event.activity
+            is PhoneEvent.Profile -> profile = event.profile
+            is PhoneEvent.Channel -> {
+                currentChannel = event.channel
+                currentChannelName = event.name.ifBlank { outputChannels.firstOrNull { it.id == event.channel }?.label ?: "频道 ${event.channel}" }
+                serverLabel = "$currentChannelName · 已连接"
+            }
+        }
+    }
+
+    private fun loadCustomFilters(): List<ChatFilter> = prefs.getString("chatFilters", "")
+        .orEmpty()
+        .split(';')
+        .mapNotNull { encoded ->
+            val fields = encoded.split('|', limit = 3)
+            if (fields.size != 3) return@mapNotNull null
+            val categories = fields[2].split(',').mapNotNull { value -> ChatCategory.entries.firstOrNull { it.name == value } }.toSet()
+            if (fields[1].isBlank() || categories.isEmpty()) null else ChatFilter(fields[0], fields[1], categories, true)
+        }
+
+    private fun saveCustomFilters() {
+        val encoded = chatFilters.filter { it.removable }.joinToString(";") { filter ->
+            "${filter.id}|${filter.label}|${filter.categories.joinToString(",") { it.name }}"
+        }
+        prefs.edit().putString("chatFilters", encoded).apply()
+    }
+
+    private fun loadFriends(): List<PhoneFriend> = runCatching {
+        val array = JSONArray(prefs.getString("friendCache", "[]"))
+        buildList(array.length()) {
+            for (index in 0 until array.length()) {
+                val item = array.getJSONObject(index)
+                val name = item.optString("name").trim()
+                if (name.isBlank()) continue
+                add(PhoneFriend(
+                    name = name,
+                    world = item.optString("world"),
+                    online = false,
+                    freeCompany = item.optString("freeCompany"),
+                    contentId = item.optLong("contentId"),
+                    currentWorldId = item.optInt("currentWorldId"),
+                    homeWorldId = item.optInt("homeWorldId"),
+                ))
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveFriends() {
+        val array = JSONArray()
+        friends.forEach { friend ->
+            array.put(JSONObject().apply {
+                put("name", friend.name)
+                put("world", friend.world)
+                put("freeCompany", friend.freeCompany)
+                put("contentId", friend.contentId)
+                put("currentWorldId", friend.currentWorldId)
+                put("homeWorldId", friend.homeWorldId)
+            })
+        }
+        prefs.edit().putString("friendCache", array.toString()).apply()
+    }
+}
