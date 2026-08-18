@@ -108,13 +108,21 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
 
 @Composable
 fun SettingsScreen(state: PhoneState) {
-    val profileName = state.profile?.name?.takeIf { state.connected && it.isNotBlank() }
-    val profileSubtitle = if (profileName != null) {
-        listOf(state.profile?.homeWorld, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.distinct().joinToString(" · ")
-    } else if (state.connected) {
-        "正在读取角色资料"
-    } else {
-        "连接游戏后显示角色资料"
+    val profileName = state.profile?.name?.takeIf { it.isNotBlank() }
+    val profileState = when {
+        state.connected -> "在线"
+        profileName != null -> "离线"
+        else -> null
+    }
+    val profileSubtitle = when {
+        profileName != null -> {
+            val tag = if (profileState != null) " · $profileState" else ""
+            listOf(
+                listOf(state.profile?.homeWorld, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.distinct().joinToString(" · "),
+            ).filter { it.isNotBlank() }.joinToString(" · ") + tag
+        }
+        state.connected -> "正在读取角色资料"
+        else -> "连接游戏后显示角色资料"
     }
     ScreenFrame {
         ScreenHeader("设置", state, showBack = false)
@@ -235,9 +243,10 @@ private fun GeneralSettingsScreen(state: PhoneState) {
         }
         SectionLabel("连接")
         SettingsGroup {
-            ToggleRow("自动重连", true, R.drawable.app_shortcuts) { }
-            LinkRow("游戏电脑 IP", R.drawable.app_settings, state.host) { }
-            LinkRow("端口", R.drawable.app_shortcuts, state.port) { }
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = state.host, onValueChange = { state.host = it }, label = { Text("游戏电脑 IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) }, label = { Text("端口") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
         }
     }
 }
@@ -295,21 +304,25 @@ fun ContactsScreen(state: PhoneState) {
     val filtered = state.friends.filter { it.name.contains(query, ignoreCase = true) }
     ScreenFrame {
         ScreenHeader("联系人", state, trailing = { Text("⟳", color = PhoneAccent, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends() }) }, showBack = false)
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("搜索", color = PhoneMuted) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 48.dp),
-            shape = RoundedCornerShape(12.dp),
-        )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 44.dp, vertical = 14.dp).clip(CircleShape).background(Color(0xFF424148))) {
-            listOf("好友" to true, "所有人" to false).forEach { (label, value) ->
-                Text(label, color = if (friendsTab == value) Color.White else PhoneMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.weight(1f).clip(CircleShape).background(if (friendsTab == value) PhoneAccent else Color.Transparent).clickable { friendsTab = value }.padding(vertical = 9.dp))
-            }
-        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item("search") {
+                Column {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("搜索", color = PhoneMuted) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp).clip(CircleShape).background(Color(0xFF424148))) {
+                        listOf("好友" to true, "所有人" to false).forEach { (label, value) ->
+                            Text(label, color = if (friendsTab == value) Color.White else PhoneMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.weight(1f).clip(CircleShape).background(if (friendsTab == value) PhoneAccent else Color.Transparent).clickable { friendsTab = value }.padding(vertical = 9.dp))
+                        }
+                    }
+                }
+            }
             val online = filtered.filter { it.online }
             val offline = filtered.filter { !it.online }
             if (online.isNotEmpty()) {
@@ -821,9 +834,6 @@ private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) 
                 }
             }
         })
-        if (conv.category == ChatCategory.Tell) {
-            Text("私信给 ${conv.displayChannelHint()}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp))
-        }
         if (conv.messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
@@ -838,7 +848,7 @@ private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) 
         } else {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(conv.messages, key = { "${it.timestamp}-${it.sender}-${it.text}" }) { chat ->
-                    ChatBubble(chat.sender.ifBlank { conv.category.label }, chat.text, chat.isFrom(state.profile?.name))
+                    ChatBubble(chat.sender.ifBlank { conv.category.label }, chat.text, chat.isFrom(state.profile?.name), chat.timestamp)
                 }
             }
         }
@@ -883,13 +893,35 @@ private fun formatTalkTime(timestamp: Long): String {
 }
 
 @Composable
-private fun ChatBubble(author: String, body: String, self: Boolean) {
+private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: Long) {
+    val timeLabel = timestampLabel(timestamp)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(Modifier.fillMaxWidth(0.82f), horizontalAlignment = if (self) Alignment.End else Alignment.Start) {
             Text(if (self) "我" else author, color = PhoneMuted, fontSize = 11.sp)
-            Text(body, color = PhoneText, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface).padding(12.dp))
+            Box(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface)) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.padding(start = 10.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
+                ) {
+                    if (self) {
+                        // my messages: time at bottom-left
+                        Text(timeLabel, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, modifier = Modifier.padding(bottom = 1.dp, end = 8.dp))
+                        Text(body, color = PhoneText, fontSize = 14.sp)
+                    } else {
+                        // others: time at bottom-right
+                        Text(body, color = PhoneText, fontSize = 14.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(timeLabel, color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(bottom = 1.dp))
+                    }
+                }
+            }
         }
     }
+}
+
+private fun timestampLabel(timestamp: Long): String {
+    val time = java.time.Instant.ofEpochMilli(timestamp).atZone(java.time.ZoneId.systemDefault())
+    return time.format(DateTimeFormatter.ofPattern("HH:mm"))
 }
 
 @Composable

@@ -66,9 +66,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
+import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.launch
+
+private fun eorzeaNow(): String {
+    val seconds = System.currentTimeMillis() / 1_000.0 * 144.0 / 7.0
+    val day = ((seconds.toLong() % 86_400L) + 86_400L) % 86_400L
+    return String.format("%02d:%02d", day / 3_600L, day % 3_600L / 60L)
+}
 
 @Composable
 fun HomeScreen(state: PhoneState) {
@@ -346,16 +352,11 @@ private fun HomeTile(
 
 @Composable
 fun PhoneStatusBar() {
-    var time by remember { mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(30_000); time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")) } }
-    Box(Modifier.fillMaxWidth().height(44.dp)) {
-        Text(time, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.CenterStart).padding(start = 19.dp))
-        Box(Modifier.align(Alignment.Center).size(width = 98.dp, height = 28.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black))
-        Row(Modifier.align(Alignment.CenterEnd).padding(end = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("▂▄▆", color = Color.White, fontSize = 10.sp)
-            Text("100%", color = Color.White, fontSize = 11.sp)
-            Box(Modifier.size(width = 23.dp, height = 11.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = .92f)))
-        }
+    var eorzea by remember { mutableStateOf(eorzeaNow()) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5_000); eorzea = eorzeaNow() } }
+    Box(Modifier.fillMaxWidth().height(30.dp)) {
+        Text(eorzea, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
     }
 }
 

@@ -250,8 +250,14 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     var connected by mutableStateOf(false)
     var serverLabel by mutableStateOf("未连接游戏")
-    var host by mutableStateOf("127.0.0.1")
-    var port by mutableStateOf("14777")
+    private val _host = mutableStateOf(prefs.getString("host", "127.0.0.1").orEmpty())
+    var host: String
+        get() = _host.value
+        set(value) { _host.value = value; prefs.edit().putString("host", value).apply() }
+    private val _port = mutableStateOf(prefs.getString("port", "14777").orEmpty())
+    var port: String
+        get() = _port.value
+        set(value) { _port.value = value; prefs.edit().putString("port", value).apply() }
     var statusMessage by mutableStateOf("")
     var sessionStartedAt by mutableStateOf<Long?>(null)
     var sessionGilBaseline by mutableStateOf<Long?>(null)
@@ -301,7 +307,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var dailies by mutableStateOf<GameDailies?>(null)
     var activity by mutableStateOf<GameActivity?>(null)
     var collections by mutableStateOf<GameCollections?>(null)
-    var profile by mutableStateOf<com.quserh.eorzeaphone.data.PlayerProfile?>(null)
+    var profile by mutableStateOf(loadProfileCache())
     var noteText by mutableStateOf(prefs.getString("noteText", "").orEmpty())
     var customShortcuts by mutableStateOf(loadCustomShortcuts())
     var chatDraft by mutableStateOf("")
@@ -336,6 +342,38 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     init { ResetReminderReceiver.configure(appContext, resetNotifications) }
     val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
+
+    private fun loadProfileCache(): com.quserh.eorzeaphone.data.PlayerProfile? = runCatching {
+        val s = prefs.getString("profileCache", "")
+        if (s.isNullOrBlank()) return@runCatching null
+        val o = JSONObject(s)
+        com.quserh.eorzeaphone.data.PlayerProfile(
+            name = o.optString("name"),
+            homeWorld = o.optString("homeWorld"),
+            currentWorld = o.optString("currentWorld"),
+            location = o.optString("location"),
+            classJobId = o.optLong("classJobId"),
+            jobName = o.optString("jobName"),
+            level = o.optInt("level"),
+            territoryId = o.optLong("territoryId"),
+            itemLevel = o.optInt("itemLevel"),
+        )
+    }.getOrNull()
+
+    private fun saveProfileCache(p: com.quserh.eorzeaphone.data.PlayerProfile?) {
+        if (p == null) { prefs.edit().remove("profileCache").apply(); return }
+        prefs.edit().putString("profileCache", JSONObject().apply {
+            put("name", p.name)
+            put("homeWorld", p.homeWorld)
+            put("currentWorld", p.currentWorld)
+            put("location", p.location)
+            put("classJobId", p.classJobId)
+            put("jobName", p.jobName)
+            put("level", p.level)
+            put("territoryId", p.territoryId)
+            put("itemLevel", p.itemLevel)
+        }.toString()).apply()
+    }
 
     fun updateShellSize(width: Int, height: Int) {
         shellWidth = width.coerceAtLeast(1).toFloat()
@@ -617,7 +655,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             is PhoneEvent.Dailies -> dailies = event.dailies
             is PhoneEvent.Activity -> activity = event.activity
             is PhoneEvent.Collections -> collections = event.collections
-            is PhoneEvent.Profile -> profile = event.profile
+            is PhoneEvent.Profile -> {
+                profile = event.profile
+                saveProfileCache(event.profile)
+            }
             is PhoneEvent.Channel -> {
                 currentChannel = event.channel
                 currentChannelName = event.name.ifBlank { outputChannels.firstOrNull { it.id == event.channel }?.label ?: "频道 ${event.channel}" }
