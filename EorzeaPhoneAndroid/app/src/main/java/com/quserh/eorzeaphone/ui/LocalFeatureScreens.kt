@@ -109,6 +109,7 @@ private fun ActiveJobCard(job: GameJob) {
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text("当前职业", color = Color(0xFFBFD4EA), fontSize = 11.sp)
             Text(job.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            if (job.itemLevel > 0) Text("装等 ${job.itemLevel}", color = Color(0xFFBFD4EA), fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
         }
         Text("Lv.${job.level}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
@@ -121,7 +122,10 @@ private fun JobRow(job: GameJob, divider: Boolean) {
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).background(if (job.active) PhoneAccent else PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                 Text(job.abbreviation.take(3), color = if (job.active) Color.White else PhoneText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
-            Text(job.name, color = PhoneText, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(job.name, color = PhoneText, fontSize = 14.sp)
+                if (job.itemLevel > 0) Text("装等 ${job.itemLevel}", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 1.dp))
+            }
             Text("Lv.${job.level}", color = if (job.level >= 100) PhoneAccent else PhoneText, fontWeight = FontWeight.Bold)
         }
         if (divider) Box(Modifier.fillMaxWidth().height(1.dp).padding(start = 64.dp).background(Color(0x22333333)))
