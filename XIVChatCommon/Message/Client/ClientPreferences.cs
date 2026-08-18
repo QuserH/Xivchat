@@ -47,6 +47,9 @@ namespace XIVChatCommon.Message.Client {
 
         [Preference(typeof(bool))]
         PhoneActivitySupport = 8,
+
+        [Preference(typeof(bool))]
+        PhoneCollectionsSupport = 9,
     }
 
     public static class ClientPreferencesExtension {

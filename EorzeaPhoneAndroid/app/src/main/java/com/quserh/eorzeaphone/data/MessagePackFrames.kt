@@ -63,7 +63,7 @@ internal object XivChatCodec {
     }
     fun encodePreferences(): ByteArray = pack {
         packArrayHeader(1)
-        packMapHeader(7)
+        packMapHeader(8)
         packInt(3)
         packBoolean(true)
         packInt(4)
@@ -77,6 +77,8 @@ internal object XivChatCodec {
         packInt(7)
         packBoolean(true)
         packInt(8)
+        packBoolean(true)
+        packInt(9)
         packBoolean(true)
     }
 
@@ -262,6 +264,31 @@ internal object XivChatCodec {
             unpacker.unpackInt(), unpacker.unpackInt(), unpacker.unpackInt(), unpacker.unpackInt(),
             unpacker.unpackInt(), unpacker.unpackInt(),
         )
+    }
+
+    fun readCollections(unpacker: MessageUnpacker): GameCollections {
+        unpacker.unpackArrayHeader()
+        val updated = unpacker.unpackLong()
+        val categoryCount = unpacker.unpackArrayHeader()
+        val categories = ArrayList<GameCollectionCategory>(categoryCount)
+        repeat(categoryCount) {
+            val shape = unpacker.unpackArrayHeader()
+            val id = unpacker.unpackInt()
+            val total = unpacker.unpackInt()
+            val owned = unpacker.unpackInt()
+            val itemCount = unpacker.unpackArrayHeader()
+            val items = ArrayList<GameCollectionItem>(itemCount)
+            repeat(itemCount) {
+                val itemShape = unpacker.unpackArrayHeader()
+                val itemId = unpacker.unpackLong()
+                val name = nullableString(unpacker) ?: "收藏 $itemId"
+                val iconId = unpacker.unpackInt()
+                val isOwned = if (itemShape > 3) unpacker.unpackBoolean() else true
+                items += GameCollectionItem(itemId, name, iconId, isOwned)
+            }
+            categories += GameCollectionCategory(id, total, owned, items)
+        }
+        return GameCollections(categories)
     }
 
     fun readChannel(unpacker: MessageUnpacker): Pair<Int, String> {

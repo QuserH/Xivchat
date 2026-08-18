@@ -18,5 +18,7 @@
         Jobs = 14,
         Dailies = 15,
         Activity = 16,
+        /// <summary>Local collection unlocks (mounts, minions, emotes, orchestrions).</summary>
+        Collections = 17,
     }
 }

@@ -52,6 +52,7 @@ namespace XIVChatPlugin {
         private readonly Stopwatch _weatherWatch = new();
         private readonly Stopwatch _jobsWatch = new();
         private readonly Stopwatch _dailiesWatch = new();
+        private readonly Stopwatch _collectionsWatch = new();
         private readonly PhoneActivityTracker _activityTracker;
 
         private readonly CancellationTokenSource _tokenSource = new();
@@ -78,6 +79,7 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingJobs = new();
         private readonly ConcurrentQueue<Guid> _awaitingDailies = new();
         private readonly ConcurrentQueue<Guid> _awaitingActivity = new();
+        private readonly ConcurrentQueue<Guid> _awaitingCollections = new();
 
         private volatile bool _running;
         private bool Running => this._running;
@@ -98,6 +100,8 @@ namespace XIVChatPlugin {
         private bool _hasDailiesSnapshot;
         private long _lastActivityFingerprint;
         private bool _hasActivitySnapshot;
+        private long _lastCollectionsFingerprint;
+        private bool _hasCollectionsSnapshot;
 
         private static readonly GameInventoryType[] PhoneInventoryTypes = [
             GameInventoryType.Inventory1,
@@ -123,6 +127,34 @@ namespace XIVChatPlugin {
             GameInventoryType.SaddleBag2,
             GameInventoryType.PremiumSaddleBag1,
             GameInventoryType.PremiumSaddleBag2,
+            GameInventoryType.RetainerPage1,
+            GameInventoryType.RetainerPage2,
+            GameInventoryType.RetainerPage3,
+            GameInventoryType.RetainerPage4,
+            GameInventoryType.RetainerPage5,
+            GameInventoryType.RetainerPage6,
+            GameInventoryType.RetainerPage7,
+            GameInventoryType.RetainerEquippedItems,
+            GameInventoryType.RetainerCrystals,
+            GameInventoryType.FreeCompanyPage1,
+            GameInventoryType.FreeCompanyPage2,
+            GameInventoryType.FreeCompanyPage3,
+            GameInventoryType.FreeCompanyPage4,
+            GameInventoryType.FreeCompanyPage5,
+            GameInventoryType.FreeCompanyCrystals,
+            GameInventoryType.HousingExteriorStoreroom,
+            GameInventoryType.HousingInteriorStoreroom1,
+            GameInventoryType.HousingInteriorStoreroom2,
+            GameInventoryType.HousingInteriorStoreroom3,
+            GameInventoryType.HousingInteriorStoreroom4,
+            GameInventoryType.HousingInteriorStoreroom5,
+            GameInventoryType.HousingInteriorStoreroom6,
+            GameInventoryType.HousingInteriorStoreroom7,
+            GameInventoryType.HousingInteriorStoreroom8,
+            GameInventoryType.HousingInteriorStoreroom9,
+            GameInventoryType.HousingInteriorStoreroom10,
+            GameInventoryType.HousingInteriorStoreroom11,
+            GameInventoryType.HousingExteriorStoreroom2,
         ];
 
         private const int MaxMessageSize = 128_000;
@@ -328,6 +360,7 @@ namespace XIVChatPlugin {
             this.UpdateWeather();
             this.UpdateJobs();
             this.UpdateDailies();
+            this.UpdateCollections();
             this.UpdateActivity();
 
             while (this._friendActions.TryDequeue(out var friendAction)) {
@@ -412,6 +445,12 @@ namespace XIVChatPlugin {
             while (this._awaitingActivity.TryDequeue(out var id)) {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
                 client.Queue.Writer.TryWrite(this._activityTracker.Snapshot());
+            }
+
+            while (this._awaitingCollections.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var collections = this.BuildCollectionsSnapshot();
+                if (collections != null) client.Queue.Writer.TryWrite(collections);
             }
 
             int time;
@@ -878,6 +917,115 @@ namespace XIVChatPlugin {
             }
         }
 
+        private void UpdateCollections() {
+            if (this._collectionsWatch.Elapsed < TimeSpan.FromSeconds(5) || this._clients.IsEmpty) return;
+            this._collectionsWatch.Restart();
+            var snapshot = this.BuildCollectionsSnapshot();
+            if (snapshot == null) return;
+            var fingerprint = CollectionsFingerprint(snapshot);
+            if (this._hasCollectionsSnapshot && fingerprint == this._lastCollectionsFingerprint) return;
+            this._hasCollectionsSnapshot = true;
+            this._lastCollectionsFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneCollectionsSupport);
+        }
+
+        private unsafe ServerCollections? BuildCollectionsSnapshot() {
+            if (this._plugin.ObjectTable.LocalPlayer == null) return null;
+            try {
+                var unlock = this._plugin.UnlockState;
+                var categories = new List<ServerCollectionCategory>();
+
+                void AddMounts() {
+                    var items = new List<ServerCollectionItem>();
+                    var total = 0;
+                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Mount>()) {
+                        if (row.Singular.IsEmpty || row.Order == -1) continue;
+                        total++;
+                        if (!unlock.IsMountUnlocked(row)) continue;
+                        items.Add(new ServerCollectionItem {
+                            Id = row.RowId,
+                            Name = row.Singular.ExtractText(),
+                            IconId = row.Icon,
+                            Owned = true,
+                        });
+                    }
+                    categories.Add(new ServerCollectionCategory { Id = 0, Total = total, Owned = items.Count, Items = items.ToArray() });
+                }
+
+                void AddMinions() {
+                    var items = new List<ServerCollectionItem>();
+                    var total = 0;
+                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Companion>()) {
+                        if (row.Singular.IsEmpty) continue;
+                        total++;
+                        if (!unlock.IsCompanionUnlocked(row)) continue;
+                        items.Add(new ServerCollectionItem {
+                            Id = row.RowId,
+                            Name = row.Singular.ExtractText(),
+                            IconId = row.Icon,
+                            Owned = true,
+                        });
+                    }
+                    categories.Add(new ServerCollectionCategory { Id = 1, Total = total, Owned = items.Count, Items = items.ToArray() });
+                }
+
+                void AddEmotes() {
+                    var items = new List<ServerCollectionItem>();
+                    var total = 0;
+                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Emote>()) {
+                        if (row.Name.IsEmpty || row.Icon == 0 || row.UnlockLink == 0) continue;
+                        total++;
+                        if (!unlock.IsEmoteUnlocked(row)) continue;
+                        items.Add(new ServerCollectionItem {
+                            Id = row.RowId,
+                            Name = row.Name.ExtractText(),
+                            IconId = row.Icon,
+                            Owned = true,
+                        });
+                    }
+                    categories.Add(new ServerCollectionCategory { Id = 2, Total = total, Owned = items.Count, Items = items.ToArray() });
+                }
+
+                void AddOrchestrions() {
+                    var items = new List<ServerCollectionItem>();
+                    var total = 0;
+                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Orchestrion>()) {
+                        if (row.Name.IsEmpty || row.Name.ExtractText() == "0") continue;
+                        total++;
+                        if (!unlock.IsOrchestrionUnlocked(row)) continue;
+                        items.Add(new ServerCollectionItem {
+                            Id = row.RowId,
+                            Name = row.Name.ExtractText(),
+                            IconId = 0,
+                            Owned = true,
+                        });
+                    }
+                    categories.Add(new ServerCollectionCategory { Id = 3, Total = total, Owned = items.Count, Items = items.ToArray() });
+                }
+
+                AddMounts();
+                AddMinions();
+                AddEmotes();
+                AddOrchestrions();
+
+                return new ServerCollections(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), categories.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture collections: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static long CollectionsFingerprint(ServerCollections snapshot) {
+            unchecked {
+                long hash = 0;
+                foreach (var category in snapshot.Categories) {
+                    hash = hash * 31 + category.Id + category.Owned * 7L;
+                    foreach (var item in category.Items) hash = hash * 31 + item.Id;
+                }
+                return hash;
+            }
+        }
+
         private void UpdateActivity() {
             var snapshot = this._activityTracker.Update();
             if (snapshot == null || this._clients.IsEmpty) return;
@@ -1169,6 +1317,10 @@ namespace XIVChatPlugin {
 
                     if (client.GetPreference(ClientPreference.PhoneActivitySupport, false)) {
                         this._awaitingActivity.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneCollectionsSupport, false)) {
+                        this._awaitingCollections.Enqueue(id);
                     }
 
                     break;

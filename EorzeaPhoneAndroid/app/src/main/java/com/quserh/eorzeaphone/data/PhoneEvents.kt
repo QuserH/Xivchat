@@ -161,6 +161,24 @@ data class GameActivity(
     val venturesActive: Int,
 )
 
+data class GameCollectionItem(
+    val id: Long,
+    val name: String,
+    val iconId: Int = 0,
+    val owned: Boolean = true,
+)
+
+data class GameCollectionCategory(
+    val id: Int,
+    val total: Int,
+    val owned: Int,
+    val items: List<GameCollectionItem>,
+)
+
+data class GameCollections(
+    val categories: List<GameCollectionCategory>,
+)
+
 sealed interface PhoneEvent {
     data object Connected : PhoneEvent
     data class Disconnected(val reason: String) : PhoneEvent
@@ -176,4 +194,5 @@ sealed interface PhoneEvent {
     data class Housing(val location: GameHousingLocation) : PhoneEvent
     data class Dailies(val dailies: GameDailies) : PhoneEvent
     data class Activity(val activity: GameActivity) : PhoneEvent
+    data class Collections(val collections: GameCollections) : PhoneEvent
 }

@@ -433,7 +433,7 @@ fun InventoryScreen(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var selectedGroup by remember { mutableStateOf<String?>(null) }
     var showTutorial by remember { mutableStateOf(false) }
-    val groups = listOf("bags" to "背包", "armoury" to "兵装库", "crystals" to "水晶", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备")
+    val groups = listOf("bags" to "背包", "armoury" to "兵装库", "crystals" to "水晶", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
     val selectedTypes = inventoryTypesForGroup(selectedGroup ?: "bags")
     val filtered = state.inventory.filter { (selectedGroup == null || it.container in selectedTypes) && (query.isBlank() || it.name.contains(query, true)) }
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF3B1607), Color(0xFF140805))))) {
@@ -490,6 +490,9 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
         Triple("armoury", "兵装库", R.drawable.app_muster) to Color(0xFF4F8DE8),
         Triple("crystals", "水晶", R.drawable.app_shortcuts) to Color(0xFF9963E2),
         Triple("equipped", "已装备", R.drawable.app_jobs) to Color(0xFF48B87D),
+        Triple("retainers", "雇员", R.drawable.app_contacts) to Color(0xFFB47AE0),
+        Triple("company", "部队仓库", R.drawable.app_muster) to Color(0xFFE08A3C),
+        Triple("housing", "房屋仓库", R.drawable.app_housing) to Color(0xFF7FC47D),
     )
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -518,9 +521,9 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
         item { SectionLabel("存放于别处") }
         item {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) {
-                listOf("雇员" to "在侍从铃处打开一次雇员，将其内容保存到这里", "部队仓库" to "在游戏中打开部队仓库后同步").forEachIndexed { index, (title, subtitle) ->
+                listOf("雇员" to "在侍从铃处打开一次雇员，将其内容保存到这里", "部队仓库" to "在游戏中打开部队仓库后同步", "房屋仓库" to "在房屋保管箱中打开一次后同步").forEachIndexed { index, (title, subtitle) ->
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) { Text(title, color = PhoneText, fontSize = 15.sp); Text(subtitle, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
-                    if (index == 0) Divider(Modifier.padding(start = 16.dp), color = Color(0x22333333))
+                    if (index < 2) Divider(Modifier.padding(start = 16.dp), color = Color(0x22333333))
                 }
             }
         }
@@ -533,6 +536,9 @@ private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
     "crystals" -> listOf(2001)
     "saddle" -> listOf(4000, 4001, 4100, 4101)
     "equipped" -> listOf(1000)
+    "retainers" -> listOf(10000, 10001, 10002, 10003, 10004, 10005, 10006, 11000, 12001)
+    "company" -> listOf(20000, 20001, 20002, 20003, 20004, 22001)
+    "housing" -> listOf(27000, 27001, 27002, 27003, 27004, 27005, 27006, 27007, 27008, 27009, 27010, 27011, 27200)
     else -> emptyList()
 }
 
@@ -543,6 +549,12 @@ private fun inventoryContainerName(type: Long): String = when (type) {
     3203L -> "兵装库 · 手部"; 3204L -> "兵装库 · 腰部"; 3205L -> "兵装库 · 腿部"; 3206L -> "兵装库 · 脚部"
     3207L -> "兵装库 · 耳饰"; 3208L -> "兵装库 · 项链"; 3209L -> "兵装库 · 手镯"; 3300L -> "兵装库 · 戒指"; 3400L -> "兵装库 · 灵魂水晶"
     4000L -> "陆行鸟鞍囊第 1 页"; 4001L -> "陆行鸟鞍囊第 2 页"; 4100L -> "高级鞍囊第 1 页"; 4101L -> "高级鞍囊第 2 页"
+    10000L -> "雇员背包第 1 页"; 10001L -> "雇员背包第 2 页"; 10002L -> "雇员背包第 3 页"; 10003L -> "雇员背包第 4 页"
+    10004L -> "雇员背包第 5 页"; 10005L -> "雇员背包第 6 页"; 10006L -> "雇员背包第 7 页"; 11000L -> "雇员当前装备"; 12001L -> "雇员水晶"
+    20000L -> "部队仓库第 1 页"; 20001L -> "部队仓库第 2 页"; 20002L -> "部队仓库第 3 页"; 20003L -> "部队仓库第 4 页"; 20004L -> "部队仓库第 5 页"; 22001L -> "部队水晶"
+    27000L -> "屋外储物柜"; 27001L -> "屋内储物柜第 1 页"; 27002L -> "屋内储物柜第 2 页"; 27003L -> "屋内储物柜第 3 页"; 27004L -> "屋内储物柜第 4 页"
+    27005L -> "屋内储物柜第 5 页"; 27006L -> "屋内储物柜第 6 页"; 27007L -> "屋内储物柜第 7 页"; 27008L -> "屋内储物柜第 8 页"; 27009L -> "屋内储物柜第 9 页"
+    27010L -> "屋内储物柜第 10 页"; 27011L -> "屋内储物柜第 11 页"; 27200L -> "屋外储物柜第 2 页"
     else -> "容器 $type"
 }
 
@@ -553,6 +565,9 @@ private fun defaultContainerSize(type: Long): Int = when (type) {
     3300L, 3500L -> 50
     3400L -> 30
     4000L, 4001L, 4100L, 4101L -> 35
+    in 10000L..10006L, in 20000L..20004L, in 27001L..27011L -> 50
+    11000L, 12001L, 22001L -> 18
+    27000L, 27200L -> 50
     else -> 35
 }
 
@@ -568,7 +583,7 @@ private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Mod
 }
 
 @Composable
-private fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: String = "", tint: Color = Color.White) {
+internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: String = "", tint: Color = Color.White) {
     var bitmap by remember(iconId) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(iconId) {
         if (iconId > 0) bitmap = ItemIconLoader.load(iconId)

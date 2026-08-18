@@ -67,6 +67,7 @@ fun EorzeaPhoneApp() {
             "skywatcher" -> SkywatcherScreen(state)
             "character" -> ActivityScreen(state)
             "jobs" -> JobsScreen(state)
+            "collections" -> CollectionsScreen(state)
             "clock" -> ClockScreen(state)
             "calculator" -> CalculatorScreen(state)
             "notes" -> NotesScreen(state)

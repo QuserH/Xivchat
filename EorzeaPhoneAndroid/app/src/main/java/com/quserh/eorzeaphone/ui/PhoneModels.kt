@@ -23,6 +23,7 @@ import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.GameHousingLocation
 import com.quserh.eorzeaphone.data.GameDailies
 import com.quserh.eorzeaphone.data.GameActivity
+import com.quserh.eorzeaphone.data.GameCollections
 import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
@@ -267,6 +268,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var housing by mutableStateOf<GameHousingLocation?>(null)
     var dailies by mutableStateOf<GameDailies?>(null)
     var activity by mutableStateOf<GameActivity?>(null)
+    var collections by mutableStateOf<GameCollections?>(null)
     var profile by mutableStateOf<com.quserh.eorzeaphone.data.PlayerProfile?>(null)
     var noteText by mutableStateOf(prefs.getString("noteText", "").orEmpty())
     var chatDraft by mutableStateOf("")
@@ -471,6 +473,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             is PhoneEvent.Housing -> housing = event.location
             is PhoneEvent.Dailies -> dailies = event.dailies
             is PhoneEvent.Activity -> activity = event.activity
+            is PhoneEvent.Collections -> collections = event.collections
             is PhoneEvent.Profile -> profile = event.profile
             is PhoneEvent.Channel -> {
                 currentChannel = event.channel

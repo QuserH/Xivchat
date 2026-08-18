@@ -84,6 +84,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                                 14 -> onEvent(PhoneEvent.Jobs(XivChatCodec.readJobs(unpacker)))
                                 15 -> onEvent(PhoneEvent.Dailies(XivChatCodec.readDailies(unpacker)))
                                 16 -> onEvent(PhoneEvent.Activity(XivChatCodec.readActivity(unpacker)))
+                                17 -> onEvent(PhoneEvent.Collections(XivChatCodec.readCollections(unpacker)))
                             }
                         } catch (error: Throwable) {
                             onEvent(PhoneEvent.Error("无法解析游戏数据 ($code): ${error.message ?: "未知错误"}"))
