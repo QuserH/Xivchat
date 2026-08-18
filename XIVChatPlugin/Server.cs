@@ -593,24 +593,33 @@ namespace XIVChatPlugin {
 
                 var entries = new List<ServerWalletEntry>();
                 var itemSheet = this._plugin.DataManager.GetExcelSheet<Item>();
+                var added = new HashSet<uint>();
 
                 void Add(uint itemId, long cap, string section, bool tomestone = false) {
-                    var row = itemSheet.GetRowOrDefault(itemId);
-                    if (row == null) {
-                        return;
-                    }
+                    try {
+                        if (!added.Add(itemId)) {
+                            return;
+                        }
 
-                    var amount = tomestone
-                        ? (long) manager->GetTomestoneCount(itemId)
-                        : (long) manager->GetInventoryItemCount(itemId, false, true, true, 0);
-                    entries.Add(new ServerWalletEntry {
-                        ItemId = itemId,
-                        IconId = row.Value.Icon,
-                        Name = row.Value.Name.ExtractText(),
-                        Amount = amount,
-                        Cap = cap,
-                        Section = section,
-                    });
+                        var row = itemSheet.GetRowOrDefault(itemId);
+                        if (row == null) {
+                            return;
+                        }
+
+                        var amount = tomestone
+                            ? (long) manager->GetTomestoneCount(itemId)
+                            : (long) manager->GetInventoryItemCount(itemId, false, true, true, 0);
+                        entries.Add(new ServerWalletEntry {
+                            ItemId = itemId,
+                            IconId = row.Value.Icon,
+                            Name = row.Value.Name.ExtractText(),
+                            Amount = amount,
+                            Cap = cap,
+                            Section = section,
+                        });
+                    } catch (Exception ex) {
+                        Plugin.Log.Warning($"Wallet item {itemId} failed: {ex.Message}");
+                    }
                 }
 
                 Add(29, 0, "常用货币");
