@@ -72,8 +72,6 @@ import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.round
 
@@ -544,40 +542,10 @@ fun SkywatcherScreen(state: PhoneState) {
 }
 
 @Composable
-fun ClockScreen(state: PhoneState) {
-    var now by remember { mutableStateOf(LocalDateTime.now()) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); now = LocalDateTime.now() } }
-    ScreenFrame {
-        ScreenHeader("时钟", state)
-        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text(now.format(DateTimeFormatter.ofPattern("HH:mm:ss")), color = PhoneText, fontSize = 52.sp, fontWeight = FontWeight.Bold)
-            Text(now.format(DateTimeFormatter.ofPattern("yyyy 年 MM 月 dd 日 · EEEE")), color = PhoneMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-            Text("艾欧泽亚时间", color = PhoneAccent, fontSize = 16.sp, modifier = Modifier.padding(top = 44.dp))
-            Text(eorzeaTime(System.currentTimeMillis()), color = PhoneText, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-        }
-    }
-}
-
-@Composable
 fun NotesScreen(state: PhoneState) {
     ScreenFrame {
         ScreenHeader("备忘录", state)
         OutlinedTextField(state.noteText, state::saveNote, placeholder = { Text("记录一条备忘", color = PhoneMuted) }, modifier = Modifier.fillMaxSize().padding(18.dp), shape = RoundedCornerShape(12.dp))
-    }
-}
-
-@Composable
-fun TimersScreen(state: PhoneState) {
-    var seconds by remember { mutableStateOf(60) }
-    var running by remember { mutableStateOf(false) }
-    LaunchedEffect(running) { while (running && seconds > 0) { kotlinx.coroutines.delay(1000); seconds-- }; if (seconds == 0) running = false }
-    ScreenFrame {
-        ScreenHeader("计时器", state)
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("%02d:%02d".format(seconds / 60, seconds % 60), color = PhoneText, fontSize = 54.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 12.dp)) { TextButton(onClick = { if (!running) seconds = (seconds - 60).coerceAtLeast(0) }) { Text("−1 分", color = PhoneAccent) }; TextButton(onClick = { if (!running) seconds = (seconds + 60).coerceAtMost(3599) }) { Text("+1 分", color = PhoneAccent) } }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 24.dp)) { Button(onClick = { running = !running }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text(if (running) "暂停" else "开始") }; TextButton(onClick = { running = false; seconds = 60 }) { Text("重置", color = PhoneAccent) } }
-        }
     }
 }
 
@@ -587,12 +555,6 @@ private fun calculateSimple(input: String): String {
     val right = input.substring(operatorIndex + 1).toDoubleOrNull() ?: return "错误"
     val result = when (input[operatorIndex]) { '+' -> left + right; '−' -> left - right; '×' -> left * right; '÷' -> if (right == 0.0) return "错误" else left / right; else -> return "错误" }
     return if (result % 1.0 == 0.0) result.toLong().toString() else result.toString().take(14)
-}
-
-private fun eorzeaTime(realMillis: Long): String {
-    val eorzeaSeconds = realMillis / 1000L * 144L / 7L
-    val daySeconds = ((eorzeaSeconds % 86400L) + 86400L) % 86400L
-    return "%02d:%02d".format(daySeconds / 3600L, daySeconds % 3600L / 60L)
 }
 
 @Composable
