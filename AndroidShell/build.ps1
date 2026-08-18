@@ -16,6 +16,7 @@ try {
     & $Java -jar $ApktoolJar d $BaseApk -o $decoded -f
 
     Copy-Item (Join-Path $scriptRoot "home_shell.xml") (Join-Path $decoded "res\layout\home_shell.xml")
+    Copy-Item (Join-Path $scriptRoot "values\strings_aetherphone.xml") (Join-Path $decoded "res\values\strings_aetherphone.xml")
     Get-ChildItem (Join-Path $scriptRoot "drawable") -Filter *.xml | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $decoded "res\drawable\$($_.Name)")
     }
@@ -34,6 +35,7 @@ try {
     $manifest = Join-Path $decoded "AndroidManifest.xml"
     $manifestText = Get-Content -Raw $manifest
     $manifestText = $manifestText.Replace('package="io.annaclemens.xivchat"', 'package="io.annaclemens.xivchat.aetherphone"')
+    $manifestText = $manifestText.Replace('android:label="@string/app_name"', 'android:label="@string/app_name_aetherphone"')
     $manifestText = $manifestText.Replace('io.annaclemens.xivchat.SentryInitProvider', 'io.annaclemens.xivchat.aetherphone.SentryInitProvider')
     $manifestText = $manifestText.Replace('io.annaclemens.xivchat.lifecycle-process', 'io.annaclemens.xivchat.aetherphone.lifecycle-process')
     [IO.File]::WriteAllText($manifest, $manifestText)
