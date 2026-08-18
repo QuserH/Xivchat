@@ -62,12 +62,13 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 @Composable
-fun FeatureFrame(title: String, state: PhoneState, content: @Composable () -> Unit) {
+fun FeatureFrame(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().background(PhoneBackground).windowInsetsPadding(WindowInsets.navigationBars)) {
         PhoneStatusBar()
         Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = state::back, modifier = Modifier.size(50.dp)) { Text("‹", color = PhoneAccent, fontSize = 36.sp) }
-            Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            trailing?.invoke()
         }
         content()
     }

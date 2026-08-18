@@ -21,6 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -112,22 +115,43 @@ fun PhotosScreen(state: PhoneState) {
 
 @Composable
 fun ShortcutsScreen(state: PhoneState) {
-    val commands = listOf(
-        Triple("返回", "/return", "返回绑定的以太之光"), Triple("坐骑随机", "/mount \"随机坐骑\"", "召唤随机坐骑"),
-        Triple("跟随目标", "/follow", "跟随当前选中的目标"), Triple("准备确认", "/readycheck", "发起准备确认"),
-        Triple("倒计时 10 秒", "/countdown 10", "开始团队倒计时"), Triple("离开队伍", "/leave", "离开当前小队"),
-    )
-    FeatureFrame("快捷指令", state) {
+    var adding by remember { mutableStateOf(false) }
+    var nameInput by remember { mutableStateOf("") }
+    var commandInput by remember { mutableStateOf("") }
+    FeatureFrame("快捷指令", state, trailing = { Text("＋", color = PhoneAccent, fontSize = 24.sp, modifier = Modifier.clickable { nameInput = ""; commandInput = ""; adding = true }.padding(horizontal = 8.dp)) }) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(commands) { (title, command, subtitle) ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = state.connected) { state.sendChat(command); state.statusMessage = "已发送：$title" }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+            items(state.customShortcuts, key = { it.command }) { shortcut ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = state.connected) { state.sendChat(shortcut.command); state.statusMessage = "已发送：${shortcut.name}" }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(PhoneAccent), contentAlignment = Alignment.Center) { Text("⌁", color = Color.White, fontSize = 20.sp) }
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(title, color = PhoneText); Text(subtitle, color = PhoneMuted, fontSize = 11.sp) }
-                    Text(command, color = PhoneAccent, fontSize = 10.sp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(shortcut.name, color = PhoneText); Text(shortcut.command, color = PhoneMuted, fontSize = 11.sp) }
+                    if (state.customShortcuts.count { it.command == shortcut.command } > 1 || defaultShortcuts.none { it.command == shortcut.command }) {
+                        Text("✕", color = Color(0xFFE56B6F), fontSize = 16.sp, modifier = Modifier.clickable { state.removeShortcut(shortcut.command) }.padding(6.dp))
+                    } else {
+                        Text("›", color = PhoneMuted, fontSize = 24.sp)
+                    }
                 }
             }
             if (!state.connected) item { Text("连接游戏后可执行快捷指令", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(14.dp)) }
+            if (state.customShortcuts.size > defaultShortcuts.size) {
+                item { Text("重置为默认", color = PhoneAccent, modifier = Modifier.clip(RoundedCornerShape(7.dp)).clickable { state.resetShortcuts() }.padding(horizontal = 10.dp, vertical = 8.dp)) }
+            }
         }
+    }
+    if (adding) {
+        AlertDialog(
+            onDismissRequest = { adding = false },
+            title = { Text("新增快捷指令") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(nameInput, { nameInput = it }, label = { Text("名称") }, singleLine = true)
+                    OutlinedTextField(commandInput, { commandInput = it }, label = { Text("命令（如 /return）") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { state.addShortcut(nameInput, commandInput); adding = false }) { Text("添加", color = PhoneAccent) }
+            },
+            dismissButton = { TextButton(onClick = { adding = false }) { Text("取消") } },
+        )
     }
 }
 

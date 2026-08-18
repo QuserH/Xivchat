@@ -104,6 +104,17 @@ private val builtInChatFilters = listOf(
     ChatFilter("system", "系统", setOf(ChatCategory.System)),
 )
 
+data class CustomShortcut(val name: String, val command: String)
+
+val defaultShortcuts = listOf(
+    CustomShortcut("返回", "/return"),
+    CustomShortcut("坐骑随机", "/mount \"随机坐骑\""),
+    CustomShortcut("跟随目标", "/follow"),
+    CustomShortcut("准备确认", "/readycheck"),
+    CustomShortcut("倒计时 10 秒", "/countdown 10"),
+    CustomShortcut("离开队伍", "/leave"),
+)
+
 class PhoneState(context: Context, scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
     private val appContext = context.applicationContext
@@ -271,6 +282,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var collections by mutableStateOf<GameCollections?>(null)
     var profile by mutableStateOf<com.quserh.eorzeaphone.data.PlayerProfile?>(null)
     var noteText by mutableStateOf(prefs.getString("noteText", "").orEmpty())
+    var customShortcuts by mutableStateOf(loadCustomShortcuts())
     var chatDraft by mutableStateOf("")
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
@@ -366,6 +378,44 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     fun saveNote(text: String) {
         noteText = text
         prefs.edit().putString("noteText", text).apply()
+    }
+
+    fun addShortcut(name: String, command: String) {
+        val cleanName = name.trim().take(16)
+        val cleanCommand = command.trim().take(64)
+        if (cleanName.isBlank() || cleanCommand.isBlank()) return
+        customShortcuts = (customShortcuts + CustomShortcut(cleanName, cleanCommand)).distinctBy { it.command }
+        saveCustomShortcuts()
+    }
+
+    fun removeShortcut(command: String) {
+        customShortcuts = customShortcuts.filterNot { it.command == command }
+        saveCustomShortcuts()
+    }
+
+    fun resetShortcuts() {
+        customShortcuts = defaultShortcuts
+        saveCustomShortcuts()
+    }
+
+    private fun loadCustomShortcuts(): List<CustomShortcut> {
+        val restored = runCatching {
+            val arr = JSONArray(prefs.getString("customShortcuts", "[]"))
+            val result: MutableList<CustomShortcut> = mutableListOf()
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val name = obj.optString("name").trim().take(16)
+                val command = obj.optString("command").trim().take(64)
+                if (name.isNotBlank() && command.isNotBlank()) result.add(CustomShortcut(name, command))
+            }
+            result
+        }.getOrNull()
+        if (restored == null || restored.isEmpty()) return defaultShortcuts
+        return (defaultShortcuts + restored).distinctBy { it.command }
+    }
+
+    private fun saveCustomShortcuts() {
+        prefs.edit().putString("customShortcuts", JSONArray(customShortcuts.map { JSONObject().put("name", it.name).put("command", it.command) }).toString()).apply()
     }
 
     fun isDailyChecked(id: String, weekly: Boolean): Boolean {
