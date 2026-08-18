@@ -1,13 +1,18 @@
 package com.quserh.eorzeaphone.ui
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.quserh.eorzeaphone.data.GameChatMessage
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameInventoryContainer
@@ -35,6 +40,13 @@ enum class PhoneScreen {
     ContactDetail,
     Chat,
     App,
+}
+
+enum class SettingsPage {
+    General,
+    Appearance,
+    Sound,
+    Notifications,
 }
 
 data class PhoneAppItem(
@@ -94,6 +106,7 @@ private val builtInChatFilters = listOf(
 class PhoneState(context: Context, scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
     private val appContext = context.applicationContext
+    private val activityRef = context as? android.app.Activity
     var screen by mutableStateOf(PhoneScreen.Home)
     var selectedApp by mutableStateOf<PhoneAppItem?>(null)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
@@ -115,6 +128,39 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var chatNotifications by mutableStateOf(prefs.getBoolean("chatNotifications", true))
     var tellNotifications by mutableStateOf(prefs.getBoolean("tellNotifications", true))
     var resetNotifications by mutableStateOf(prefs.getBoolean("resetNotifications", true))
+    private val _doNotDisturb = boolPref("doNotDisturb", false)
+    var doNotDisturb: Boolean
+        get() = _doNotDisturb.value
+        set(value) { _doNotDisturb.value = value }
+    private val _lockPosition = boolPref("lockPosition", false)
+    var lockPosition: Boolean
+        get() = _lockPosition.value
+        set(value) { _lockPosition.value = value }
+    private val _screenSwipe = boolPref("screenSwipe", true)
+    var screenSwipe: Boolean
+        get() = _screenSwipe.value
+        set(value) { _screenSwipe.value = value }
+    private val _showEmotes = boolPref("showEmotes", true)
+    var showEmotes: Boolean
+        get() = _showEmotes.value
+        set(value) { _showEmotes.value = value }
+    private val _keepScreenOn = boolPref("keepScreenOn", false)
+    var keepScreenOn: Boolean
+        get() = _keepScreenOn.value
+        set(value) { _keepScreenOn.value = value }
+    private val _haptics = boolPref("haptics", true)
+    var haptics: Boolean
+        get() = _haptics.value
+        set(value) { _haptics.value = value }
+    private val _reducedMotion = boolPref("reducedMotion", false)
+    var reducedMotion: Boolean
+        get() = _reducedMotion.value
+        set(value) { _reducedMotion.value = value }
+    private val _compactDock = boolPref("compactDock", false)
+    var compactDock: Boolean
+        get() = _compactDock.value
+        set(value) { _compactDock.value = value }
+    var settingsPage by mutableStateOf<SettingsPage?>(null)
     val chats = mutableStateListOf<GameChatMessage>()
     val inventory = mutableStateListOf<GameInventoryItem>()
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
@@ -138,6 +184,18 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         scope.launch(Dispatchers.Main.immediate) { handle(event) }
     }
     private val notifier = PhoneNotifier(context.applicationContext)
+
+    private fun boolPref(key: String, default: Boolean): MutableState<Boolean> {
+        val backing = mutableStateOf(prefs.getBoolean(key, default))
+        return object : MutableState<Boolean> by backing {
+            override var value: Boolean
+                get() = backing.value
+                set(v) {
+                    backing.value = v
+                    prefs.edit().putBoolean(key, v).apply()
+                }
+        }
+    }
 
     init { ResetReminderReceiver.configure(appContext, resetNotifications) }
     val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
@@ -170,12 +228,21 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     fun back() {
-        if (screen == PhoneScreen.ContactDetail) {
-            screen = PhoneScreen.Contacts
-            selectedFriend = null
-        } else {
-            home()
+        when {
+            settingsPage != null -> settingsPage = null
+            screen == PhoneScreen.ContactDetail -> {
+                screen = PhoneScreen.Contacts
+                selectedFriend = null
+            }
+            else -> home()
         }
+    }
+
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val activity = activityRef ?: return
+        ActivityCompat.requestPermissions(activity, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
     }
 
     fun openFriend(friend: PhoneFriend) {

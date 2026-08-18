@@ -57,7 +57,7 @@ fun EorzeaPhoneApp() {
         ) { target ->
     when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
-        PhoneScreen.Settings -> SettingsScreen(state)
+        PhoneScreen.Settings -> SettingsSubScreen(state)
         PhoneScreen.Contacts -> ContactsScreen(state)
         PhoneScreen.ContactDetail -> ContactDetailScreen(state)
         PhoneScreen.Chat -> ChatScreen(state)

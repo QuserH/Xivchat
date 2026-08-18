@@ -151,19 +151,18 @@ fun SettingsScreen(state: PhoneState) {
             }
             item {
                 SettingsGroup {
-                    ToggleRow("免打扰", false, R.drawable.app_notifications)
-                    ToggleRow("锁定位置", false, R.drawable.app_settings)
-                    ToggleRow("待机时滑动手机", true, R.drawable.app_shortcuts)
-                    ToggleRow("集体动作时显示", true, R.drawable.app_camera)
+                    ToggleRow("免打扰", state.doNotDisturb, R.drawable.app_notifications) { state.doNotDisturb = it }
+                    ToggleRow("锁定位置", state.lockPosition, R.drawable.app_settings) { state.lockPosition = it }
+                    ToggleRow("待机时滑动手机", state.screenSwipe, R.drawable.app_shortcuts) { state.screenSwipe = it }
+                    ToggleRow("集体动作时显示", state.showEmotes, R.drawable.app_camera) { state.showEmotes = it }
                 }
             }
             item {
                 SettingsGroup {
-                    LinkRow("通用", R.drawable.app_settings)
-                    LinkRow("外观", R.drawable.app_photos)
-                    LinkRow("声音", R.drawable.app_music)
-                    LinkRow("通知", R.drawable.app_notifications)
-                    LinkRow("语音通话", R.drawable.app_message, "关闭")
+                    LinkRow("通用", R.drawable.app_settings) { state.settingsPage = SettingsPage.General }
+                    LinkRow("外观", R.drawable.app_photos) { state.settingsPage = SettingsPage.Appearance }
+                    LinkRow("声音", R.drawable.app_music) { state.settingsPage = SettingsPage.Sound }
+                    LinkRow("通知", R.drawable.app_notifications, "已开启") { state.settingsPage = SettingsPage.Notifications }
                 }
             }
             item {
@@ -179,22 +178,109 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, icon: Int) {
-    var value by remember { mutableStateOf(checked) }
+private fun ToggleRow(label: String, checked: Boolean, icon: Int, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 18.dp)) {
         ImageGlyph(icon, PhoneText)
         Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
-        Switch(checked = value, onCheckedChange = { value = it })
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 
 @Composable
-private fun LinkRow(label: String, icon: Int, value: String? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).clickable { }) {
+private fun LinkRow(label: String, icon: Int, value: String? = null, onClick: (() -> Unit)? = null) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().height(60.dp).clickable(enabled = onClick != null) { onClick?.invoke() },
+    ) {
         ImageGlyph(icon, PhoneText, Modifier.padding(start = 18.dp))
         Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
         if (value != null) Text(value, color = PhoneMuted, fontSize = 13.sp)
-        Text("›", color = PhoneMuted, fontSize = 28.sp, modifier = Modifier.padding(horizontal = 15.dp))
+        Text("›", color = if (onClick != null) PhoneMuted else PhoneSurfaceRaised, fontSize = 28.sp, modifier = Modifier.padding(horizontal = 15.dp))
+    }
+}
+
+@Composable
+fun SettingsSubScreen(state: PhoneState) {
+    when (state.settingsPage) {
+        SettingsPage.General -> GeneralSettingsScreen(state)
+        SettingsPage.Appearance -> AppearanceSettingsScreen(state)
+        SettingsPage.Sound -> SoundSettingsScreen(state)
+        SettingsPage.Notifications -> NotificationsSettingsScreen(state)
+        null -> SettingsScreen(state)
+    }
+}
+
+@Composable
+private fun SettingsSubLayout(title: String, state: PhoneState, content: @Composable ColumnScope.() -> Unit) {
+    ScreenFrame {
+        ScreenHeader(title, state)
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) { content() }
+    }
+}
+
+@Composable
+private fun GeneralSettingsScreen(state: PhoneState) {
+    SettingsSubLayout("通用", state) {
+        SettingsGroup {
+            ToggleRow("待机时滑动手机", state.screenSwipe, R.drawable.app_shortcuts) { state.screenSwipe = it }
+            ToggleRow("集体动作时显示", state.showEmotes, R.drawable.app_camera) { state.showEmotes = it }
+            ToggleRow("锁定位置", state.lockPosition, R.drawable.app_settings) { state.lockPosition = it }
+        }
+        SectionLabel("连接")
+        SettingsGroup {
+            ToggleRow("自动重连", true, R.drawable.app_shortcuts) { }
+            LinkRow("游戏电脑 IP", R.drawable.app_settings, state.host) { }
+            LinkRow("端口", R.drawable.app_shortcuts, state.port) { }
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSettingsScreen(state: PhoneState) {
+    SettingsSubLayout("外观", state) {
+        SettingsGroup {
+            ToggleRow("紧凑程序坞", state.compactDock, R.drawable.app_shortcuts) { state.compactDock = it }
+            ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.app_photos) { state.reducedMotion = it }
+            ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.app_settings) { state.keepScreenOn = it }
+        }
+        SectionLabel("主题")
+        SettingsGroup {
+            Button(
+                onClick = { },
+                colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(12.dp).height(52.dp),
+            ) { Text("艾欧泽亚深色主题（默认）") }
+        }
+    }
+}
+
+@Composable
+private fun SoundSettingsScreen(state: PhoneState) {
+    SettingsSubLayout("声音", state) {
+        SettingsGroup {
+            ToggleRow("触觉反馈", state.haptics, R.drawable.app_music) { state.haptics = it }
+            ToggleRow("消息提示音", state.chatNotifications, R.drawable.app_message) { state.chatNotifications = it }
+        }
+    }
+}
+
+@Composable
+private fun NotificationsSettingsScreen(state: PhoneState) {
+    SettingsSubLayout("通知", state) {
+        SettingsGroup {
+            ToggleRow("聊天消息通知", state.chatNotifications, R.drawable.app_notifications) { state.chatNotifications = it; if (it) state.requestNotificationPermission() }
+            ToggleRow("私聊消息通知", state.tellNotifications, R.drawable.app_message) { state.tellNotifications = it; if (it) state.requestNotificationPermission() }
+            ToggleRow("重置提醒", state.resetNotifications, R.drawable.app_notifications) { state.resetNotifications = it }
+        }
+        SectionLabel("免打扰")
+        SettingsGroup {
+            ToggleRow("全部静音", state.doNotDisturb, R.drawable.app_notifications) { state.doNotDisturb = it }
+        }
+        Text("游戏消息推送需要手机通知权限，开启任意消息通知时会请求授权。", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp))
     }
 }
 
