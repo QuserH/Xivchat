@@ -56,6 +56,10 @@ private val collectionKinds = listOf(
     CollectionKind(1, "宠物", Color(0xFF4CC77A)),
     CollectionKind(2, "情感动作", Color(0xFFF0C24D)),
     CollectionKind(3, "乐谱", Color(0xFF9E75F5)),
+    CollectionKind(4, "发型", Color(0xFF5AA9E6)),
+    CollectionKind(5, "面部饰品", Color(0xFFE65AA9)),
+    CollectionKind(6, "成就", Color(0xFFD6C56B)),
+    CollectionKind(7, "九宫幻卡", Color(0xFF6BD0D6)),
 )
 
 @Composable
@@ -89,7 +93,7 @@ private fun CollectionsRoot(state: PhoneState, categories: List<GameCollectionCa
                     CollectionCategoryCard(kind, categories.firstOrNull { it.id == kind.id }) { open(kind.id) }
                 }
                 item {
-                    Text("收藏进度由游戏插件实时同步，目前支持坐骑、宠物、情感动作与乐谱。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
+                    Text("收藏进度由游戏插件实时同步。坐骑、宠物、情感动作、乐谱、面部饰品与九宫幻卡会随插件更新，发型与成就将在后续版本接入完整名录。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
         }

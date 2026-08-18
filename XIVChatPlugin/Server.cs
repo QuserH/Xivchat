@@ -1,4 +1,4 @@
-﻿using MessagePack;
+using MessagePack;
 using Sodium;
 using System;
 using System.Collections.Concurrent;
@@ -201,7 +201,7 @@ namespace XIVChatPlugin {
                         continue;
                     }
 
-                    var playerName = this._plugin.ObjectTable.LocalPlayer?.Name;
+                    var playerName = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name;
 
                     if (playerName != null) {
                         lastPlayerName = playerName;
@@ -343,7 +343,7 @@ namespace XIVChatPlugin {
         }
 
         internal void OnFrameworkUpdate(IFramework framework) {
-            var player = this._plugin.ObjectTable.LocalPlayer;
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
             if (player != null && this._sendPlayerData) {
                 this.BroadcastPlayerData();
                 this._sendPlayerData = false;
@@ -505,17 +505,17 @@ namespace XIVChatPlugin {
         }
 
         private ServerInventory? BuildInventorySnapshot() {
-            if (this._plugin.ObjectTable.LocalPlayer == null) {
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
                 return null;
             }
 
             try {
                 var items = new List<ServerInventoryItem>();
                 var containers = new List<ServerInventoryContainer>();
-                var itemSheet = this._plugin.DataManager.GetExcelSheet<Item>();
+                var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
 
                 foreach (var type in PhoneInventoryTypes) {
-                    var containerItems = this._plugin.GameInventory.GetInventoryItems(type).ToArray();
+                    var containerItems = XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(type).ToArray();
                     containers.Add(new ServerInventoryContainer {
                         ContainerType = (uint) type,
                         Size = containerItems.Length,
@@ -581,7 +581,7 @@ namespace XIVChatPlugin {
         }
 
         private unsafe ServerWallet? BuildWalletSnapshot() {
-            if (this._plugin.ObjectTable.LocalPlayer == null) {
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
                 return null;
             }
 
@@ -592,7 +592,7 @@ namespace XIVChatPlugin {
                 }
 
                 var entries = new List<ServerWalletEntry>();
-                var itemSheet = this._plugin.DataManager.GetExcelSheet<Item>();
+                var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
                 var added = new HashSet<uint>();
 
                 void Add(uint itemId, long cap, string section, bool tomestone = false) {
@@ -637,7 +637,7 @@ namespace XIVChatPlugin {
                 Add(10307, 4000, "狩猎票据");
                 Add(26533, 4000, "狩猎票据");
 
-                var tomestones = this._plugin.DataManager.GetExcelSheet<TomestonesItem>()
+                var tomestones = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TomestonesItem>()
                     .Select(row => row.Item.RowId)
                     .Where(id => id != 0 && id != 28)
                     .Distinct()
@@ -696,19 +696,19 @@ namespace XIVChatPlugin {
         }
 
         private unsafe ServerWeather? BuildWeatherSnapshot() {
-            var territoryId = this._plugin.ClientState.TerritoryType;
+            var territoryId = XIVChatPlugin.Plugin.ClientState.TerritoryType;
             if (territoryId == 0) {
                 return null;
             }
 
             try {
-                var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId);
+                var territory = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId);
                 if (territory == null || territory.Value.WeatherRate.RowId == 0) {
                     return null;
                 }
 
                 var zone = territory.Value.PlaceName.IsValid ? territory.Value.PlaceName.Value.Name.ExtractText() : "未知区域";
-                var rate = this._plugin.DataManager.GetExcelSheet<WeatherRate>().GetRowOrDefault(territory.Value.WeatherRate.RowId);
+                var rate = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<WeatherRate>().GetRowOrDefault(territory.Value.WeatherRate.RowId);
                 if (rate == null) {
                     return null;
                 }
@@ -734,7 +734,7 @@ namespace XIVChatPlugin {
                     return chances[^1].Id;
                 }
 
-                string Name(byte id) => this._plugin.DataManager.GetExcelSheet<Weather>().GetRowOrDefault(id)?.Name.ExtractText() ?? "未知天气";
+                string Name(byte id) => XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Weather>().GetRowOrDefault(id)?.Name.ExtractText() ?? "未知天气";
                 var currentId = (byte) 0;
                 var environment = EnvManager.Instance();
                 if (environment != null) currentId = environment->ActiveWeather;
@@ -795,14 +795,30 @@ namespace XIVChatPlugin {
         }
 
         private unsafe ServerJobs? BuildJobsSnapshot() {
-            if (this._plugin.ObjectTable.LocalPlayer == null) return null;
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) return null;
             try {
                 var playerState = PlayerState.Instance();
                 if (playerState == null) return null;
                 var levels = playerState->ClassJobLevels;
-                var current = this._plugin.ObjectTable.LocalPlayer.ClassJob.RowId;
-                var sheet = this._plugin.DataManager.GetExcelSheet<ClassJob>();
+                var current = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer.ClassJob.RowId;
+                var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
+                var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
                 var entries = new List<ServerJobEntry>();
+
+                int ItemLevelForActiveJob() {
+                    try {
+                        foreach (var it in XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(GameInventoryType.EquippedItems)) {
+                            if (it.ContainerType == GameInventoryType.EquippedItems && it.InventorySlot == 0 && !it.IsEmpty && it.ItemId != 0) {
+                                var row = itemSheet.GetRowOrDefault(it.BaseItemId);
+                                return row is null ? -1 : (int) row.Value.LevelItem.RowId;
+                            }
+                        }
+                    } catch (Exception ex) {
+                        Plugin.Log.Warning($"Item level read failed: {ex.Message}");
+                    }
+                    return -1;
+                }
+
                 foreach (var job in sheet) {
                     if (job.RowId == 0 || job.ExpArrayIndex < 0 || job.ExpArrayIndex >= levels.Length) continue;
                     var level = levels[job.ExpArrayIndex];
@@ -815,7 +831,8 @@ namespace XIVChatPlugin {
                     };
                     entries.Add(new ServerJobEntry {
                         JobId = job.RowId, Name = job.Name.ExtractText(), Abbreviation = job.Abbreviation.ExtractText(),
-                        Category = category, Level = level, Active = job.RowId == current, ItemLevel = -1,
+                        Category = category, Level = level, Active = job.RowId == current,
+                        ItemLevel = job.RowId == current ? ItemLevelForActiveJob() : -1,
                     });
                 }
                 return new ServerJobs(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), entries.OrderBy(x => x.Category).ThenBy(x => x.JobId).ToArray());
@@ -846,14 +863,14 @@ namespace XIVChatPlugin {
         }
 
         private unsafe ServerDailies? BuildDailiesSnapshot() {
-            if (this._plugin.ObjectTable.LocalPlayer == null) return null;
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) return null;
             try {
                 var entries = new List<ServerDailyEntry>();
                 void Add(string id, string label, bool weekly, bool automatic, bool available, bool complete, int remaining, int goal, string note = "") =>
                     entries.Add(new ServerDailyEntry { Id = id, Label = label, Weekly = weekly, Automatic = automatic, Available = available, Complete = complete, Remaining = remaining, Goal = goal, Note = note });
 
                 var content = FFXIVClientStructs.FFXIV.Client.Game.UI.InstanceContent.Instance();
-                var rouletteIds = this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.ContentRoulette>()
+                var rouletteIds = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.ContentRoulette>()
                     .Where(row => row.RowId != 0 && row.IsInDutyFinder && !row.IsGoldSaucer && row.CompletionArrayIndex >= 0 && row.Name.ExtractText().Length > 0)
                     .Select(row => (byte)row.RowId).ToArray();
                 var rouletteDone = content == null ? 0 : rouletteIds.Count(id => content->IsRouletteComplete(id));
@@ -939,16 +956,16 @@ namespace XIVChatPlugin {
         }
 
         private unsafe ServerCollections? BuildCollectionsSnapshot() {
-            if (this._plugin.ObjectTable.LocalPlayer == null) return null;
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) return null;
             try {
-                var unlock = this._plugin.UnlockState;
+                var unlock = XIVChatPlugin.Plugin.UnlockState;
                 var categories = new List<ServerCollectionCategory>();
 
                 void AddMounts() {
                     var items = new List<ServerCollectionItem>();
                     var owned = 0;
                     var total = 0;
-                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Mount>()) {
+                    foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Mount>()) {
                         if (row.Singular.IsEmpty || row.Order == -1) continue;
                         total++;
                         var isOwned = unlock.IsMountUnlocked(row);
@@ -967,7 +984,7 @@ namespace XIVChatPlugin {
                     var items = new List<ServerCollectionItem>();
                     var owned = 0;
                     var total = 0;
-                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Companion>()) {
+                    foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Companion>()) {
                         if (row.Singular.IsEmpty) continue;
                         total++;
                         var isOwned = unlock.IsCompanionUnlocked(row);
@@ -986,7 +1003,7 @@ namespace XIVChatPlugin {
                     var items = new List<ServerCollectionItem>();
                     var owned = 0;
                     var total = 0;
-                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Emote>()) {
+                    foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Emote>()) {
                         if (row.Name.IsEmpty || row.Icon == 0 || row.UnlockLink == 0) continue;
                         total++;
                         var isOwned = unlock.IsEmoteUnlocked(row);
@@ -1005,7 +1022,7 @@ namespace XIVChatPlugin {
                     var items = new List<ServerCollectionItem>();
                     var owned = 0;
                     var total = 0;
-                    foreach (var row in this._plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Orchestrion>()) {
+                    foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Orchestrion>()) {
                         if (row.Name.IsEmpty || row.Name.ExtractText() == "0") continue;
                         total++;
                         var isOwned = unlock.IsOrchestrionUnlocked(row);
@@ -1020,7 +1037,45 @@ namespace XIVChatPlugin {
                     categories.Add(new ServerCollectionCategory { Id = 3, Total = total, Owned = owned, Items = items.ToArray() });
                 }
 
-                foreach (var action in new System.Action[] { AddMounts, AddMinions, AddEmotes, AddOrchestrions }) {
+                void AddFacewear() {
+                    var items = new List<ServerCollectionItem>();
+                    var owned = 0;
+                    var total = 0;
+                    foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Glasses>()) {
+                        if (row.Icon == 0 || !row.Style.IsValid || row.Style.Value.Name.IsEmpty) continue;
+                        total++;
+                        var isOwned = unlock.IsGlassesUnlocked(row);
+                        if (isOwned) owned++;
+                        items.Add(new ServerCollectionItem {
+                            Id = row.RowId,
+                            Name = row.Style.Value.Name.ExtractText(),
+                            IconId = (uint) row.Icon,
+                            Owned = isOwned,
+                        });
+                    }
+                    categories.Add(new ServerCollectionCategory { Id = 5, Total = total, Owned = owned, Items = items.ToArray() });
+                }
+
+                void AddTriadCards() {
+                    var items = new List<ServerCollectionItem>();
+                    var owned = 0;
+                    var total = 0;
+                    foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.TripleTriadCard>()) {
+                        if (row.Name.IsEmpty || row.Name.ExtractText() == "0") continue;
+                        total++;
+                        var isOwned = unlock.IsTripleTriadCardUnlocked(row);
+                        if (isOwned) owned++;
+                        items.Add(new ServerCollectionItem {
+                            Id = row.RowId,
+                            Name = row.Name.ExtractText(),
+                            IconId = 0,
+                            Owned = isOwned,
+                        });
+                    }
+                    categories.Add(new ServerCollectionCategory { Id = 7, Total = total, Owned = owned, Items = items.ToArray() });
+                }
+
+                foreach (var action in new System.Action[] { AddMounts, AddMinions, AddEmotes, AddOrchestrions, AddFacewear, AddTriadCards }) {
                     try {
                         action();
                     } catch (Exception ex) {
@@ -1301,7 +1356,7 @@ namespace XIVChatPlugin {
                         this._waitingForFriendList.Add(id);
 
                         if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
-                            this._plugin.ChatGui.PrintError($"[{Plugin.Name}] 请打开一次游戏内好友列表以启用好友列表功能。通常只需在首次安装或更新后执行一次。");
+                            XIVChatPlugin.Plugin.ChatGui.PrintError($"[{Plugin.Name}] 请打开一次游戏内好友列表以启用好友列表功能。通常只需在首次安装或更新后执行一次。");
                         }
                     }
 
@@ -1381,7 +1436,7 @@ namespace XIVChatPlugin {
                 return cached;
             }
 
-            var logKind = this._plugin.DataManager.GetExcelSheet<LogKind>().GetRowOrDefault((ushort) type);
+            var logKind = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<LogKind>().GetRowOrDefault((ushort) type);
 
             if (logKind == null) {
                 return null;
@@ -1614,7 +1669,7 @@ namespace XIVChatPlugin {
                 _ => 0,
             };
 
-            return this._plugin.DataManager.GetExcelSheet<LogFilter>().GetRowOrDefault(rowId)?.Name.ExtractText() ?? string.Empty;
+            return XIVChatPlugin.Plugin.DataManager.GetExcelSheet<LogFilter>().GetRowOrDefault(rowId)?.Name.ExtractText() ?? string.Empty;
         }
 
         internal void OnChatChannelChange(uint channel, SeString name) {
@@ -1643,22 +1698,22 @@ namespace XIVChatPlugin {
         }
 
         private PlayerData? GeneratePlayerData() {
-            var player = this._plugin.ObjectTable.LocalPlayer;
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
             if (player == null) {
                 return null;
             }
 
             var homeWorld = player.HomeWorld.Value.Name.ExtractText();
             var currentWorld = player.CurrentWorld.Value.Name.ExtractText();
-            var territory = this._plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(this._plugin.ClientState.TerritoryType);
+            var territory = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(XIVChatPlugin.Plugin.ClientState.TerritoryType);
             var location = territory?.PlaceName.Value.Name.ExtractText() ?? "???";
             var name = player.Name.TextValue;
             var classJobId = player.ClassJob.RowId;
             var jobName = classJobId == 0
                 ? string.Empty
-                : this._plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(classJobId)?.Name.ExtractText() ?? string.Empty;
+                : XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(classJobId)?.Name.ExtractText() ?? string.Empty;
 
-            return new PlayerData(homeWorld, currentWorld, location, name, classJobId, jobName, player.Level, this._plugin.ClientState.TerritoryType);
+            return new PlayerData(homeWorld, currentWorld, location, name, classJobId, jobName, player.Level, XIVChatPlugin.Plugin.ClientState.TerritoryType);
         }
 
         private void BroadcastPlayerData() {

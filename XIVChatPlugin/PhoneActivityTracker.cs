@@ -43,15 +43,15 @@ namespace XIVChatPlugin {
         internal PhoneActivityTracker(Plugin plugin) {
             _plugin = plugin;
             _snapshot.SessionStartedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            _plugin.DutyState.DutyCompleted += OnDutyCompleted;
-            _plugin.ClientState.Logout += OnLogout;
+            XIVChatPlugin.Plugin.DutyState.DutyCompleted += OnDutyCompleted;
+            XIVChatPlugin.Plugin.ClientState.Logout += OnLogout;
         }
 
         internal ServerActivity? Update() {
             if (_watch.Elapsed < TimeSpan.FromSeconds(2)) return null;
             _watch.Restart();
             var playerState = PlayerState.Instance();
-            var player = _plugin.ObjectTable.LocalPlayer;
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
             if (playerState == null || player == null || playerState->ContentId == 0) return null;
 
             if (_contentId != playerState->ContentId) SwitchCharacter(playerState->ContentId);
@@ -122,7 +122,7 @@ namespace XIVChatPlugin {
         }
 
         private void SampleExperience(PlayerState* state, uint jobId) {
-            var row = _plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(jobId);
+            var row = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(jobId);
             if (row == null || row.Value.ExpArrayIndex < 0 || row.Value.ExpArrayIndex >= state->ClassJobLevels.Length) {
                 _hasExpBaseline = false;
                 return;
@@ -186,10 +186,10 @@ namespace XIVChatPlugin {
         }
 
         private void SampleCollections(PlayerState* playerState) {
-            _mountIds ??= _plugin.DataManager.GetExcelSheet<Mount>()
+            _mountIds ??= XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Mount>()
                 .Where(row => row.RowId != 0 && row.Order >= 0 && row.Singular.ExtractText().Length > 0)
                 .Select(row => row.RowId).ToArray();
-            _minionIds ??= _plugin.DataManager.GetExcelSheet<Companion>()
+            _minionIds ??= XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Companion>()
                 .Where(row => row.RowId != 0 && row.Order != 0 && row.Singular.ExtractText().Length > 0)
                 .Select(row => row.RowId).ToArray();
             _snapshot.MountsTotal = _mountIds.Length;
@@ -214,7 +214,7 @@ namespace XIVChatPlugin {
         }
 
         private string PathFor(ulong contentId) {
-            var dir = Path.Combine(_plugin.Interface.ConfigDirectory.FullName, "Activity");
+            var dir = Path.Combine(XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName, "Activity");
             Directory.CreateDirectory(dir);
             return Path.Combine(dir, contentId.ToString("X16") + ".json");
         }
@@ -238,8 +238,8 @@ namespace XIVChatPlugin {
 
         public void Dispose() {
             Save();
-            _plugin.DutyState.DutyCompleted -= OnDutyCompleted;
-            _plugin.ClientState.Logout -= OnLogout;
+            XIVChatPlugin.Plugin.DutyState.DutyCompleted -= OnDutyCompleted;
+            XIVChatPlugin.Plugin.ClientState.Logout -= OnLogout;
         }
     }
 }

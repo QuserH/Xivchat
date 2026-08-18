@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.SubKinds;
@@ -23,14 +23,14 @@ namespace XIVChatPlugin.Ipc {
         internal PeepingTom(Plugin plugin) {
             this.Plugin = plugin;
 
-            IpcInfo.GetSubscriber(this.Plugin.Interface).Subscribe(this.ReceiveMessage);
-            IpcInfo.GetProvider(this.Plugin.Interface).SendMessage(new RequestTargetersMessage());
+            IpcInfo.GetSubscriber(XIVChatPlugin.Plugin.Interface).Subscribe(this.ReceiveMessage);
+            IpcInfo.GetProvider(XIVChatPlugin.Plugin.Interface).SendMessage(new RequestTargetersMessage());
             this.Plugin.Events.NewClient += this.OnNewClient;
         }
 
         public void Dispose() {
             this.Plugin.Events.NewClient -= this.OnNewClient;
-            IpcInfo.GetSubscriber(this.Plugin.Interface).Unsubscribe(this.ReceiveMessage);
+            IpcInfo.GetSubscriber(XIVChatPlugin.Plugin.Interface).Unsubscribe(this.ReceiveMessage);
         }
 
         private void ReceiveMessage(IFromMessage message) {
@@ -78,7 +78,7 @@ namespace XIVChatPlugin.Ipc {
         private ServerPlayerList GetMessage() {
             var players = this.Targeters
                 .Where(targeter => targeter.Targeting) // FIXME: send entire history so clients don't have to do logic
-                .Select(targeter => this.Plugin.ObjectTable.FirstOrDefault(obj => obj.GameObjectId == targeter.Targeter.GameObjectId))
+                .Select(targeter => XIVChatPlugin.Plugin.ObjectTable.FirstOrDefault(obj => obj.GameObjectId == targeter.Targeter.GameObjectId))
                 .Where(actor => actor is IPlayerCharacter)
                 .Cast<IPlayerCharacter>()
                 .Select(chara => new Player {
@@ -89,8 +89,8 @@ namespace XIVChatPlugin.Ipc {
                     CurrentWorldName = chara.CurrentWorld.Value.Name.ExtractText(),
                     HomeWorld = (ushort) chara.HomeWorld.RowId,
                     HomeWorldName = chara.HomeWorld.Value.Name.ExtractText(),
-                    Territory = this.Plugin.ClientState.TerritoryType,
-                    TerritoryName = this.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(this.Plugin.ClientState.TerritoryType)?.Name.ExtractText(),
+                    Territory = XIVChatPlugin.Plugin.ClientState.TerritoryType,
+                    TerritoryName = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(XIVChatPlugin.Plugin.ClientState.TerritoryType)?.Name.ExtractText(),
                     Job = (byte) chara.ClassJob.RowId,
                     JobName = chara.ClassJob.Value.Name.ExtractText(),
                     GrandCompany = 0,

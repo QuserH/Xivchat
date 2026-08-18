@@ -20,40 +20,40 @@ namespace XIVChatPlugin {
         internal static IPluginLog Log { get; private set; } = null!;
 
         [PluginService]
-        internal IDalamudPluginInterface Interface { get; private init; } = null!;
+        internal static IDalamudPluginInterface Interface { get; private set; } = null!;
 
         [PluginService]
-        internal IChatGui ChatGui { get; private init; } = null!;
+        internal static IChatGui ChatGui { get; private set; } = null!;
 
         [PluginService]
-        internal IClientState ClientState { get; private init; } = null!;
+        internal static IClientState ClientState { get; private set; } = null!;
 
         [PluginService]
-        private ICommandManager CommandManager { get; init; } = null!;
+        private static ICommandManager CommandManager { get; set; } = null!;
 
         [PluginService]
-        internal IDataManager DataManager { get; private init; } = null!;
+        internal static IDataManager DataManager { get; private set; } = null!;
 
         [PluginService]
-        private IFramework Framework { get; init; } = null!;
+        private static IFramework Framework { get; set; } = null!;
 
         [PluginService]
-        internal IObjectTable ObjectTable { get; private init; } = null!;
+        internal static IObjectTable ObjectTable { get; private set; } = null!;
 
         [PluginService]
-        internal IUnlockState UnlockState { get; private init; } = null!;
+        internal static IUnlockState UnlockState { get; private set; } = null!;
 
         [PluginService]
-        internal IGameInventory GameInventory { get; private init; } = null!;
+        internal static IGameInventory GameInventory { get; private set; } = null!;
 
         [PluginService]
-        internal IDutyState DutyState { get; private init; } = null!;
+        internal static IDutyState DutyState { get; private set; } = null!;
 
         [PluginService]
-        internal IGameInteropProvider GameInteropProvider { get; private init; } = null!;
+        internal static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
 
         [PluginService]
-        private ISigScanner SigScanner { get; init; } = null!;
+        private static ISigScanner SigScanner { get; set; } = null!;
 
         internal Configuration Config { get; }
         private PluginUi Ui { get; }
@@ -84,7 +84,7 @@ namespace XIVChatPlugin {
             Environment.SetEnvironmentVariable("PATH", $"{path};{newPath}");
             #endif
 
-            this.Config = this.Interface.GetPluginConfig() as Configuration ?? new Configuration();
+            this.Config = Interface.GetPluginConfig() as Configuration ?? new Configuration();
             this.Config.Initialise(this);
 
             this.Functions = new GameFunctions(this);
@@ -97,14 +97,14 @@ namespace XIVChatPlugin {
                 this.StartRelay();
             }
 
-            this.Interface.UiBuilder.Draw += this.Ui.Draw;
-            this.Interface.UiBuilder.OpenConfigUi += this.Ui.OpenSettings;
-            this.Framework.Update += this.Server!.OnFrameworkUpdate;
-            this.ChatGui.ChatMessage += this.Server.OnChat;
-            this.ClientState.Login += this.Server.OnLogIn;
-            this.ClientState.Logout += this.Server.OnLogOut;
-            this.ClientState.TerritoryChanged += this.Server.OnTerritoryChange;
-            this.CommandManager.AddHandler("/eorzeaphone", new CommandInfo(this.OnCommand) {
+            Interface.UiBuilder.Draw += this.Ui.Draw;
+            Interface.UiBuilder.OpenConfigUi += this.Ui.OpenSettings;
+            Framework.Update += this.Server!.OnFrameworkUpdate;
+            ChatGui.ChatMessage += this.Server.OnChat;
+            ClientState.Login += this.Server.OnLogIn;
+            ClientState.Logout += this.Server.OnLogOut;
+            ClientState.TerritoryChanged += this.Server.OnTerritoryChange;
+            CommandManager.AddHandler("/eorzeaphone", new CommandInfo(this.OnCommand) {
                 HelpMessage = "打开艾欧泽亚终端插件设置",
             });
 
@@ -121,14 +121,14 @@ namespace XIVChatPlugin {
             this.Relay?.Dispose();
             this.Server.Dispose();
 
-            this.Interface.UiBuilder.Draw -= this.Ui.Draw;
-            this.Interface.UiBuilder.OpenConfigUi -= this.Ui.OpenSettings;
-            this.Framework.Update -= this.Server.OnFrameworkUpdate;
-            this.ChatGui.ChatMessage -= this.Server.OnChat;
-            this.ClientState.Login -= this.Server.OnLogIn;
-            this.ClientState.Logout -= this.Server.OnLogOut;
-            this.ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
-            this.CommandManager.RemoveHandler("/eorzeaphone");
+            Interface.UiBuilder.Draw -= this.Ui.Draw;
+            Interface.UiBuilder.OpenConfigUi -= this.Ui.OpenSettings;
+            Framework.Update -= this.Server.OnFrameworkUpdate;
+            ChatGui.ChatMessage -= this.Server.OnChat;
+            ClientState.Login -= this.Server.OnLogIn;
+            ClientState.Logout -= this.Server.OnLogOut;
+            ClientState.TerritoryChanged -= this.Server.OnTerritoryChange;
+            CommandManager.RemoveHandler("/eorzeaphone");
             this.Functions.Dispose();
 
             foreach (var ipc in this.Ipcs) {
@@ -156,7 +156,7 @@ namespace XIVChatPlugin {
 
         internal nint ScanText(string sig) {
             try {
-                return this.SigScanner.ScanText(sig);
+                return SigScanner.ScanText(sig);
             } catch (KeyNotFoundException) {
                 return nint.Zero;
             }
@@ -164,7 +164,7 @@ namespace XIVChatPlugin {
 
         internal nint GetStaticAddressFromSig(string sig) {
             try {
-                return this.SigScanner.GetStaticAddressFromSig(sig);
+                return SigScanner.GetStaticAddressFromSig(sig);
             } catch (KeyNotFoundException) {
                 return nint.Zero;
             }

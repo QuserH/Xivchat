@@ -122,7 +122,7 @@ namespace XIVChatPlugin {
         internal GameFunctions(Plugin plugin) {
             this.Plugin = plugin;
 
-            this.Plugin.GameInteropProvider.InitializeFromAttributes(this);
+            XIVChatPlugin.Plugin.GameInteropProvider.InitializeFromAttributes(this);
 
             this._chatChannelChangeHook?.Enable();
             this._chatChannelChangeNameHook?.Enable();
@@ -219,7 +219,7 @@ namespace XIVChatPlugin {
             this._friendListProxy = proxy;
             if (this._friendListEndHook == null) {
                 var endRequest = (nint) proxy->VirtualTable->EndRequest;
-                this._friendListEndHook = this.Plugin.GameInteropProvider.HookFromAddress<EndFriendListRequestDelegate>(
+                this._friendListEndHook = XIVChatPlugin.Plugin.GameInteropProvider.HookFromAddress<EndFriendListRequestDelegate>(
                     endRequest,
                     this.OnEndFriendListRequest
                 );
@@ -348,18 +348,18 @@ namespace XIVChatPlugin {
         }
 
         private string? WorldName(ushort id) {
-            return this.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(id)?.Name.ExtractText();
+            return XIVChatPlugin.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(id)?.Name.ExtractText();
         }
 
         private string? JobName(byte id) {
             return id == 0
                 ? null
-                : this.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(id)?.Name.ExtractText();
+                : XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>().GetRowOrDefault(id)?.Name.ExtractText();
         }
 
         private string? TerritoryName(ushort id) {
             try {
-                var row = this.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(id);
+                var row = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(id);
                 return row is { PlaceName.IsValid: true }
                     ? row.Value.PlaceName.Value.Name.ExtractText()
                     : null;
@@ -369,7 +369,7 @@ namespace XIVChatPlugin {
         }
 
         private string? GrandCompanyName(ClientGrandCompany id) {
-            return this.Plugin.DataManager.GetExcelSheet<LuminaGrandCompany>().GetRowOrDefault((uint) id)?.Name.ExtractText();
+            return XIVChatPlugin.Plugin.DataManager.GetExcelSheet<LuminaGrandCompany>().GetRowOrDefault((uint) id)?.Name.ExtractText();
         }
 
         public void Dispose() {

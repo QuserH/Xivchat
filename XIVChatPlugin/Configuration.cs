@@ -1,4 +1,4 @@
-﻿using Dalamud.Configuration;
+using Dalamud.Configuration;
 using Sodium;
 using System;
 using System.Collections.Generic;
@@ -33,7 +33,7 @@ namespace XIVChatPlugin {
         }
 
         internal void Save() {
-            this._plugin?.Interface.SavePluginConfig(this);
+            XIVChatPlugin.Plugin.Interface.SavePluginConfig(this);
         }
     }
 }
