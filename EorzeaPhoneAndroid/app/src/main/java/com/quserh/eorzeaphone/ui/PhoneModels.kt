@@ -118,6 +118,103 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         private set
     private var shellWidth = 1f
     private var shellHeight = 1f
+
+    // ---- Home layout (editable, persisted) ----
+    private val allApps by lazy {
+        (AppCatalog.firstPage + AppCatalog.secondPage + AppCatalog.dock).associateBy { it.id }
+    }
+    var homeEditMode by mutableStateOf(false)
+    var homePageIds by mutableStateOf(loadHomeLayout())
+        private set
+    var homeLibraryIds by mutableStateOf(loadHomeLibrary())
+        private set
+
+    val homePageCount: Int get() = homePageIds.size
+
+    fun appsForPage(page: Int): List<PhoneAppItem> =
+        homePageIds.getOrElse(page) { emptyList() }.mapNotNull { allApps[it] }
+
+    fun homeLibraryApps(): List<PhoneAppItem> =
+        homeLibraryIds.mapNotNull { allApps[it] }
+
+    fun reorderHome(page: Int, fromId: String, toId: String) {
+        if (page !in homePageIds.indices || fromId == toId) return
+        val current = homePageIds[page].toMutableList()
+        val fromIndex = current.indexOf(fromId)
+        val toIndex = current.indexOf(toId)
+        if (fromIndex < 0 || toIndex < 0) return
+        current.removeAt(fromIndex)
+        current.add(toIndex, fromId)
+        homePageIds = homePageIds.toMutableList().also { it[page] = current }
+        saveHomeLayout()
+    }
+
+    fun removeFromHome(page: Int, id: String) {
+        if (page !in homePageIds.indices) return
+        val current = homePageIds[page].toMutableList()
+        if (!current.remove(id)) return
+        homePageIds = homePageIds.toMutableList().also { it[page] = current }
+        homeLibraryIds = (listOf(id) + homeLibraryIds.filterNot { it == id }).distinct()
+        saveHomeLayout()
+        saveHomeLibrary()
+    }
+
+    fun restoreToHome(page: Int, id: String) {
+        if (page !in homePageIds.indices || id !in homeLibraryIds) return
+        homeLibraryIds = homeLibraryIds.filterNot { it == id }
+        homePageIds = homePageIds.toMutableList().also { it[page] = it[page] + id }
+        saveHomeLayout()
+        saveHomeLibrary()
+    }
+
+    fun exitEditMode() {
+        homeEditMode = false
+    }
+
+    private fun loadHomeLayout(): List<List<String>> {
+        val defaultValue = listOf(AppCatalog.firstPage.map { it.id }, AppCatalog.secondPage.map { it.id })
+        val saved = runCatching {
+            val root = JSONObject(prefs.getString("homeLayout", ""))
+            val pages = root.optJSONArray("pages")
+            if (pages == null || pages.length() == 0) null else {
+                val result: MutableList<List<String>> = mutableListOf()
+                for (pageIndex in 0 until pages.length()) {
+                    val arr = pages.optJSONArray(pageIndex)
+                    if (arr == null) continue
+                    val ids: MutableList<String> = mutableListOf()
+                    for (i in 0 until arr.length()) {
+                        val id = arr.optString(i)
+                        if (allApps.containsKey(id)) ids.add(id)
+                    }
+                    result.add(ids)
+                }
+                result
+            }
+        }.getOrNull() ?: return defaultValue
+        if (saved.isEmpty()) return defaultValue
+        return saved
+    }
+
+    private fun saveHomeLayout() {
+        prefs.edit().putString("homeLayout", JSONObject().apply {
+            put("pages", JSONArray(homePageIds.map { page -> JSONArray(page) }))
+        }.toString()).apply()
+    }
+
+    private fun loadHomeLibrary(): List<String> = runCatching {
+        val arr = JSONArray(prefs.getString("homeLibrary", "[]"))
+        val result: MutableList<String> = mutableListOf()
+        for (i in 0 until arr.length()) {
+            val id = arr.optString(i)
+            if (allApps.containsKey(id)) result.add(id)
+        }
+        result
+    }.getOrDefault(emptyList())
+
+    private fun saveHomeLibrary() {
+        prefs.edit().putString("homeLibrary", JSONArray(homeLibraryIds).toString()).apply()
+    }
+
     var connected by mutableStateOf(false)
     var serverLabel by mutableStateOf("未连接游戏")
     var host by mutableStateOf("127.0.0.1")

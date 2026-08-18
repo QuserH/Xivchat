@@ -3,6 +3,11 @@ package com.quserh.eorzeaphone.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,52 +23,58 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
-import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(state: PhoneState) {
-    val pager = rememberPagerState(pageCount = { 2 })
+    val libraryCount = if (state.homeLibraryApps().isNotEmpty()) 1 else 0
+    val totalPages = state.homePageCount + libraryCount
+    val pager = rememberPagerState(pageCount = { totalPages })
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         Image(
@@ -81,25 +92,255 @@ fun HomeScreen(state: PhoneState) {
                 .padding(horizontal = 14.dp),
         ) {
             PhoneStatusBar()
+            HomeEditBar(state)
             HorizontalPager(
                 state = pager,
                 modifier = Modifier.weight(1f),
                 beyondViewportPageCount = 1,
             ) { page ->
-                if (page == 0) {
-                    SocialPage(state)
+                if (page < state.homePageCount) {
+                    SocialPage(state, page)
                 } else {
-                    AppsGrid(AppCatalog.secondPage, state)
+                    LibraryPage(state)
                 }
             }
 
-            PageIndicator(pager.currentPage)
+            PageIndicator(pager.currentPage, totalPages)
             Dock(state)
             Spacer(Modifier.height(8.dp))
         }
 
+        val lastPage = totalPages - 1
         if (pager.currentPage > 0) PageArrow(left = true, Modifier.align(Alignment.CenterStart)) { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
-        if (pager.currentPage < 1) PageArrow(left = false, Modifier.align(Alignment.CenterEnd)) { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }
+        if (pager.currentPage < lastPage) PageArrow(left = false, Modifier.align(Alignment.CenterEnd)) { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }
+    }
+}
+
+@Composable
+private fun HomeEditBar(state: PhoneState) {
+    if (state.homeEditMode) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("编辑主屏幕", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("长按拖拽排序 · 点 − 移除", color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
+            Text(
+                "完成",
+                color = Color(0xFF5BC0EB),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0x3366DDFF))
+                    .clickable { state.exitEditMode() }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SocialPage(state: PhoneState, page: Int) {
+    Column(Modifier.fillMaxSize()) {
+        WeatherWidget(state, Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+        AppsGrid(state.appsForPage(page), page, state)
+    }
+}
+
+@Composable
+private fun LibraryPage(state: PhoneState) {
+    val apps = state.homeLibraryApps()
+    if (apps.isEmpty()) return
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+        Text("应用库", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+        Text("点 + 放回主屏幕 · 长按拖拽排序", color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
+        AppsGrid(apps, state.homePageCount, state, library = true)
+    }
+}
+
+@Composable
+private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, library: Boolean = false) {
+    val bounds = remember { mutableStateMapOf<String, Rect>() }
+    var dragId by remember(page) { mutableStateOf<String?>(null) }
+    var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
+    var hoverTarget by remember(page) { mutableStateOf<String?>(null) }
+    var originRect by remember(page) { mutableStateOf<Rect?>(null) }
+
+    Column(
+        Modifier.fillMaxSize().padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        apps.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                row.forEach { app ->
+                    Box(Modifier.weight(1f)) {
+                        HomeTile(
+                            app = app,
+                            editing = state.homeEditMode && !library,
+                            library = library,
+                            dragging = dragId == app.id,
+                            dragOffset = if (dragId == app.id) dragOffset else Offset.Zero,
+                            dimmed = hoverTarget == app.id && dragId != app.id,
+                            onBounds = { bounds[app.id] = it },
+                            onTap = {
+                                if (state.homeEditMode && !library) {
+                                    state.removeFromHome(page, app.id)
+                                } else if (library) {
+                                    state.restoreToHome(page, app.id)
+                                } else {
+                                    state.open(app, bounds[app.id])
+                                }
+                            },
+                            onLongPress = {
+                                if (!library) state.homeEditMode = true
+                            },
+                            onDragStart = {
+                                if (state.homeEditMode || library) {
+                                    dragId = app.id
+                                    originRect = bounds[app.id]
+                                    dragOffset = Offset.Zero
+                                }
+                            },
+                            onDrag = { delta ->
+                                if (dragId == app.id) {
+                                    dragOffset += delta
+                                    val orig = originRect ?: bounds[app.id]
+                                    if (orig != null) {
+                                        val center = Offset(orig.center.x + dragOffset.x, orig.center.y + dragOffset.y)
+                                        hoverTarget = apps.firstOrNull { other ->
+                                            other.id != dragId && bounds[other.id]?.contains(center) == true
+                                        }?.id
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                val target = hoverTarget
+                                dragId = null
+                                hoverTarget = null
+                                originRect = null
+                                dragOffset = Offset.Zero
+                                if (target != null) {
+                                    if (library) state.reorderHome(state.homePageCount, app.id, target)
+                                    else state.reorderHome(page, app.id, target)
+                                }
+                            },
+                        )
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HomeTile(
+    app: PhoneAppItem,
+    editing: Boolean,
+    library: Boolean,
+    dragging: Boolean,
+    dragOffset: Offset,
+    dimmed: Boolean,
+    onBounds: (Rect) -> Unit,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = .62f, stiffness = 520f),
+        label = "app-press",
+    )
+    val shake = rememberInfiniteTransition(label = "shake")
+    val rotation by shake.animateFloat(
+        initialValue = -2.5f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(tween(120), RepeatMode.Reverse),
+        label = "shake-rotation",
+    )
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .onGloballyPositioned {
+                bounds = it.boundsInRoot()
+                onBounds(it.boundsInRoot())
+            }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                rotationZ = if ((editing || library) && !dragging) rotation else 0f
+                alpha = if (dimmed) 0.45f else 1f
+                translationX = if (dragging) dragOffset.x else 0f
+                translationY = if (dragging) dragOffset.y else 0f
+                shadowElevation = if (dragging) 12f else 0f
+            }
+            .pointerInput(app.id, editing || library) {
+                detectDragGestures(
+                    onDragStart = { onDragStart() },
+                    onDrag = { change, delta -> change.consume(); onDrag(delta) },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                )
+            }
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = { onTap() },
+                onLongClick = { onLongPress() },
+            )
+            .then(if (dragging) Modifier.zIndex(10f) else Modifier)
+            .padding(vertical = 3.dp),
+    ) {
+        Box {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(58.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(app.color),
+            ) {
+                Image(
+                    painter = painterResource(app.icon),
+                    contentDescription = app.label,
+                    colorFilter = ColorFilter.tint(Color.White),
+                    modifier = Modifier.size(34.dp),
+                )
+            }
+            if (editing || library) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(18.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (editing) Color(0xFFE53935) else Color(0xFF2E7D32))
+                        .clickable { onTap() },
+                ) {
+                    Text(if (editing) "−" else "+", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        Text(
+            text = app.label,
+            color = Color.White,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
     }
 }
 
@@ -122,67 +363,6 @@ fun PhoneStatusBar() {
 private fun PageArrow(left: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(modifier.width(24.dp).height(62.dp).clip(if (left) RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp) else RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)).background(Color(0x43000000)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Text(if (left) "‹" else "›", color = Color.White, fontSize = 30.sp)
-    }
-}
-
-@Composable
-private fun SocialPage(state: PhoneState) {
-    Column(Modifier.fillMaxSize()) {
-        WeatherWidget(state, Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
-        AppsGrid(AppCatalog.firstPage, state)
-    }
-}
-
-@Composable
-private fun AppsGrid(apps: List<PhoneAppItem>, state: PhoneState) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
-        userScrollEnabled = false,
-    ) {
-        items(apps, key = { it.id }) { app -> AppTile(app) { origin -> state.open(app, origin) } }
-    }
-}
-
-@Composable
-private fun AppTile(app: PhoneAppItem, onClick: (Rect) -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.88f else 1f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = .62f, stiffness = 520f), label = "app-press")
-    var bounds by remember { mutableStateOf(Rect.Zero) }
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .onGloballyPositioned { bounds = it.boundsInRoot() }
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = interaction, indication = null) { onClick(bounds) }
-            .padding(vertical = 3.dp),
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(58.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(app.color),
-        ) {
-            Image(
-                painter = painterResource(app.icon),
-                contentDescription = app.label,
-                colorFilter = ColorFilter.tint(Color.White),
-                modifier = Modifier.size(34.dp),
-            )
-        }
-        Text(
-            text = app.label,
-            color = Color.White,
-            fontSize = 11.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        )
     }
 }
 
@@ -219,12 +399,12 @@ private fun WeatherWidget(state: PhoneState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PageIndicator(page: Int) {
+private fun PageIndicator(page: Int, count: Int) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
     ) {
-        repeat(2) { index ->
+        repeat(count.coerceAtLeast(1)) { index ->
             val width by animateDpAsState(if (index == page) 18.dp else 7.dp, label = "page-dot")
             Box(
                 Modifier
