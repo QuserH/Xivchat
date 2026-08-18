@@ -15,10 +15,10 @@
                 <TextView android:text="XIVChat" android:textColor="#FFF4F1FF" android:textSize="13sp" android:layout_marginTop="8dp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                 <TextView android:text="游戏聊天" android:textColor="#99E8DFF2" android:textSize="10sp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
             </LinearLayout>
-            <LinearLayout android:gravity="center" android:orientation="vertical" android:background="@drawable/home_app_tile_muted" android:layout_width="0dp" android:layout_height="112dp" android:layout_columnWeight="1" android:layout_rowWeight="1">
+            <LinearLayout android:gravity="center" android:orientation="vertical" android:clickable="true" android:focusable="true" android:onClick="openInventory" android:background="@drawable/home_app_tile_muted" android:layout_width="0dp" android:layout_height="112dp" android:layout_columnWeight="1" android:layout_rowWeight="1">
                 <TextView android:text="☷" android:gravity="center" android:textColor="#FFB9B1DB" android:textSize="28sp" android:background="@drawable/home_app_icon_muted" android:layout_width="58dp" android:layout_height="58dp" />
-                <TextView android:text="好友" android:textColor="#FFE8DFF2" android:textSize="13sp" android:layout_marginTop="8dp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
-                <TextView android:text="内置于 XIVChat" android:textColor="#99E8DFF2" android:textSize="10sp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:text="背包" android:textColor="#FFE8DFF2" android:textSize="13sp" android:layout_marginTop="8dp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                <TextView android:id="@+id/inventory_summary" android:text="等待游戏数据" android:textColor="#99E8DFF2" android:textSize="10sp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
             </LinearLayout>
             <LinearLayout android:gravity="center" android:orientation="vertical" android:background="@drawable/home_app_tile_muted" android:layout_width="0dp" android:layout_height="112dp" android:layout_columnWeight="1" android:layout_rowWeight="1">
                 <TextView android:text="⌁" android:gravity="center" android:textColor="#FFB9B1DB" android:textSize="28sp" android:background="@drawable/home_app_icon_muted" android:layout_width="58dp" android:layout_height="58dp" />

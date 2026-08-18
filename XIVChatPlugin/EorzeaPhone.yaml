@@ -1,0 +1,10 @@
+author: Anna / QuserH
+name: 艾欧泽亚终端
+punchline: 从手机访问游戏聊天与角色数据。
+description: |-
+  将 XIVChat 的加密远程聊天能力扩展为手机端游戏数据终端。
+  当前实验版包含中文聊天、好友列表修复、私信稳定性修复，以及实时背包摘要。
+
+  本插件与 XIVChat 使用相同的默认端口，请勿同时启用。
+repo_url: https://github.com/QuserH/Xivchat
+accepts_feedback: false

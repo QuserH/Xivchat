@@ -185,7 +185,7 @@ namespace XIVChatPlugin {
                 }
 
                 ImGui.SameLine();
-                HelpMarker("配对模式下，XIVChat 服务器会响应局域网内客户端的广播查询，方便客户端发现并添加服务器。不添加新设备时应关闭此选项。");
+                HelpMarker("配对模式下，艾欧泽亚终端会响应局域网内客户端的广播查询，方便客户端发现并添加服务器。不添加新设备时应关闭此选项。");
 
                 ImGui.Spacing();
 
@@ -196,7 +196,7 @@ namespace XIVChatPlugin {
                 }
 
                 ImGui.SameLine();
-                HelpMarker("关闭后，XIVChat 服务器只允许持有已信任密钥的客户端连接。");
+                HelpMarker("关闭后，艾欧泽亚终端只允许持有已信任密钥的客户端连接。");
             }
 
             if (WithWhiteText(() => ImGui.CollapsingHeader("中继"))) {
@@ -414,13 +414,13 @@ namespace XIVChatPlugin {
 
             var width = Math.Max(ImGui.CalcTextSize(clientPublicHex).X, ImGui.CalcTextSize(serverPublicHex).X) + (ImGui.GetStyle().WindowPadding.X * 2);
 
-            if (!Begin($"收到 XIVChat 连接请求##{clientPublic}", ImGuiWindowFlags.AlwaysAutoResize)) {
+            if (!Begin($"收到艾欧泽亚终端连接请求##{clientPublic}", ImGuiWindowFlags.AlwaysAutoResize)) {
                 return false;
             }
 
             ImGui.PushTextWrapPos(width);
 
-            ImGui.TextUnformatted("一个从未连接过的客户端正在尝试连接 XIVChat。若这是你的设备，请检查下方两个密钥，并确认它们与客户端显示的内容一致。");
+            ImGui.TextUnformatted("一个从未连接过的客户端正在尝试连接艾欧泽亚终端。若这是你的设备，请检查下方两个密钥，并确认它们与客户端显示的内容一致。");
 
             ImGui.Separator();
 

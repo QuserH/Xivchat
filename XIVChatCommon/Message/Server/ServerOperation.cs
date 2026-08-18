@@ -10,5 +10,7 @@
         PlayerList = 8,
         LinkshellList = 9,
         HousingLocation = 10,
+        /// <summary>Snapshot of the game inventory for Aetherphone clients.</summary>
+        Inventory = 11,
     }
 }

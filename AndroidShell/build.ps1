@@ -15,6 +15,12 @@ New-Item -ItemType Directory -Path $work | Out-Null
 try {
     & $Java -jar $ApktoolJar d $BaseApk -o $decoded -f
 
+    $apktoolYml = Join-Path $decoded "apktool.yml"
+    $apktoolText = Get-Content -Raw $apktoolYml
+    $apktoolText = [regex]::Replace($apktoolText, '(?m)^(\s*versionCode:\s*).+$', '${1}100')
+    $apktoolText = [regex]::Replace($apktoolText, '(?m)^(\s*versionName:\s*).+$', '${1}0.1.0')
+    [IO.File]::WriteAllText($apktoolYml, $apktoolText)
+
     Copy-Item (Join-Path $scriptRoot "home_shell.xml") (Join-Path $decoded "res\layout\home_shell.xml")
     Copy-Item (Join-Path $scriptRoot "values\strings_aetherphone.xml") (Join-Path $decoded "res\values\strings_aetherphone.xml")
     Get-ChildItem (Join-Path $scriptRoot "drawable") -Filter *.xml | ForEach-Object {
@@ -44,8 +50,11 @@ try {
     $rIdText = Get-Content -Raw $rId
     $idValues = [regex]::Matches($rIdText, '0x7f0a[0-9a-fA-F]{4}') | ForEach-Object { [Convert]::ToInt32($_.Value.Substring(2), 16) }
     $homeId = [int](($idValues | Measure-Object -Maximum).Maximum + 1)
+    $inventoryId = $homeId + 1
     $homeHex = ('0x{0:x8}' -f $homeId)
-    $rIdText = $rIdText.Replace(".field public static final zero_corner_chip:I = 0x$('{0:x4}' -f ($homeId - 1))", ".field public static final zero_corner_chip:I = 0x$('{0:x4}' -f ($homeId - 1))`n`n.field public static final home_shell:I = $homeHex")
+    $inventoryHex = ('0x{0:x8}' -f $inventoryId)
+    $previousField = ".field public static final zero_corner_chip:I = 0x$('{0:x4}' -f ($homeId - 1))"
+    $rIdText = $rIdText.Replace($previousField, "$previousField`n`n.field public static final home_shell:I = $homeHex`n.field public static final inventory_summary:I = $inventoryHex")
     [IO.File]::WriteAllText($rId, $rIdText)
 
     $main = Join-Path $decoded "smali\io\annaclemens\xivchat\MainActivity.smali"
@@ -64,7 +73,37 @@ try {
     :cond_0
     return-void
 .end method
+
+.method public final openInventory(Landroid/view/View;)V
+    .locals 0
+    return-void
+.end method
+
+.method public final updateInventorySummary(II)V
+    .locals 4
+    sget v0, Lio/annaclemens/xivchat/R`$id;->inventory_summary:I
+    invoke-virtual {p0, v0}, Lio/annaclemens/xivchat/MainActivity;->findViewById(I)Landroid/view/View;
+    move-result-object v0
+    if-eqz v0, :done
+    check-cast v0, Landroid/widget/TextView;
+    new-instance v1, Ljava/lang/StringBuilder;
+    invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v2, "\u80cc\u5305 "
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v1, p1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    const-string v2, " \u4e2a\u7269\u54c1 / \u603b\u8ba1 "
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v1, p2}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+    :done
+    return-void
+.end method
 "@
+
+    $smaliOverlay = Join-Path $scriptRoot "smali"
+    Copy-Item -Path (Join-Path $smaliOverlay "*") -Destination (Join-Path $decoded "smali") -Recurse -Force
 
     & $Java -jar $ApktoolJar b $decoded -o $unsigned -f
     Move-Item -LiteralPath $unsigned -Destination $OutputApk -Force

@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Dalamud.Game.Inventory;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
@@ -43,6 +44,7 @@ namespace XIVChatPlugin {
         private readonly Plugin _plugin;
 
         private readonly Stopwatch _sendWatch = new();
+        private readonly Stopwatch _inventoryWatch = new();
 
         private readonly CancellationTokenSource _tokenSource = new();
         private readonly ConcurrentQueue<string> _toGame = new();
@@ -61,6 +63,7 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingPlayerData = new();
         private readonly ConcurrentQueue<Guid> _awaitingAvailability = new();
         private readonly ConcurrentQueue<Guid> _awaitingHousingLocation = new();
+        private readonly ConcurrentQueue<Guid> _awaitingInventory = new();
 
         private volatile bool _running;
         private bool Running => this._running;
@@ -69,6 +72,34 @@ namespace XIVChatPlugin {
         private SeString? _currentChannelName;
 
         private ServerHousingLocation _lastHousingLocation;
+        private long _lastInventoryFingerprint;
+        private bool _hasInventorySnapshot;
+
+        private static readonly GameInventoryType[] PhoneInventoryTypes = [
+            GameInventoryType.Inventory1,
+            GameInventoryType.Inventory2,
+            GameInventoryType.Inventory3,
+            GameInventoryType.Inventory4,
+            GameInventoryType.EquippedItems,
+            GameInventoryType.Crystals,
+            GameInventoryType.ArmoryOffHand,
+            GameInventoryType.ArmoryHead,
+            GameInventoryType.ArmoryBody,
+            GameInventoryType.ArmoryHands,
+            GameInventoryType.ArmoryWaist,
+            GameInventoryType.ArmoryLegs,
+            GameInventoryType.ArmoryFeets,
+            GameInventoryType.ArmoryEar,
+            GameInventoryType.ArmoryNeck,
+            GameInventoryType.ArmoryWrist,
+            GameInventoryType.ArmoryRings,
+            GameInventoryType.ArmorySoulCrystal,
+            GameInventoryType.ArmoryMainHand,
+            GameInventoryType.SaddleBag1,
+            GameInventoryType.SaddleBag2,
+            GameInventoryType.PremiumSaddleBag1,
+            GameInventoryType.PremiumSaddleBag2,
+        ];
 
         private const int MaxMessageSize = 128_000;
 
@@ -81,6 +112,7 @@ namespace XIVChatPlugin {
             this._lastHousingLocation = this._plugin.Functions.HousingLocation;
 
             this._sendWatch.Start();
+            this._inventoryWatch.Start();
 
             this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
         }
@@ -262,6 +294,8 @@ namespace XIVChatPlugin {
                 this._lastHousingLocation = housingLocation;
             }
 
+            this.UpdateInventory();
+
             while (this._awaitingPlayerData.TryDequeue(out var id)) {
                 if (!this.Clients.TryGetValue(id, out var client)) {
                     continue;
@@ -288,6 +322,17 @@ namespace XIVChatPlugin {
                 client.Queue.Writer.TryWrite(this._lastHousingLocation);
             }
 
+            while (this._awaitingInventory.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
+                    continue;
+                }
+
+                var inventory = this.BuildInventorySnapshot();
+                if (inventory != null) {
+                    client.Queue.Writer.TryWrite(inventory);
+                }
+            }
+
             int time;
             if (this._toGame.TryPeek(out var peek) && PublicPrefixes.Any(prefix => peek.StartsWith(prefix))) {
                 time = 1_000;
@@ -308,6 +353,113 @@ namespace XIVChatPlugin {
             this._sendWatch.Restart();
 
             this._plugin.Functions.ProcessChatBox(message);
+        }
+
+        /// <summary>
+        /// Capture inventory only on the Dalamud framework thread. Operation 11 is
+        /// capability-gated so unmodified XIVChat clients never receive the frame.
+        /// </summary>
+        private void UpdateInventory() {
+            if (this._inventoryWatch.Elapsed < TimeSpan.FromSeconds(1) || this._clients.IsEmpty) {
+                return;
+            }
+
+            this._inventoryWatch.Restart();
+            var snapshot = this.BuildInventorySnapshot();
+            if (snapshot == null) {
+                return;
+            }
+
+            if (this._hasInventorySnapshot && snapshot.Items.Length == 0 && this._lastInventoryFingerprint == 0) {
+                return;
+            }
+
+            var fingerprint = InventoryFingerprint(snapshot.Items);
+            if (this._hasInventorySnapshot && fingerprint == this._lastInventoryFingerprint) {
+                return;
+            }
+
+            this._hasInventorySnapshot = true;
+            this._lastInventoryFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneInventorySupport);
+        }
+
+        private ServerInventory? BuildInventorySnapshot() {
+            if (this._plugin.ObjectTable.LocalPlayer == null) {
+                return null;
+            }
+
+            try {
+                var items = new List<ServerInventoryItem>();
+                var itemSheet = this._plugin.DataManager.GetExcelSheet<Item>();
+
+                foreach (var type in PhoneInventoryTypes) {
+                    foreach (var item in this._plugin.GameInventory.GetInventoryItems(type)) {
+                        if (item.IsEmpty || item.ItemId == 0 || item.Quantity <= 0) {
+                            continue;
+                        }
+
+                        string? name = null;
+                        try {
+                            name = itemSheet.GetRowOrDefault(item.BaseItemId)?.Name.ExtractText();
+                        } catch (Exception) {
+                            // A missing row should not prevent the rest of the snapshot.
+                        }
+
+                        items.Add(new ServerInventoryItem {
+                            ItemId = item.ItemId,
+                            BaseItemId = item.BaseItemId,
+                            Quantity = item.Quantity,
+                            ContainerType = (uint) item.ContainerType,
+                            InventorySlot = item.InventorySlot,
+                            IsHq = item.IsHq,
+                            SpiritbondOrCollectability = item.SpiritbondOrCollectability,
+                            Condition = item.Condition,
+                            Name = name,
+                        });
+                    }
+                }
+
+                return new ServerInventory(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), items.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture inventory: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static long InventoryFingerprint(IEnumerable<ServerInventoryItem> items) {
+            unchecked {
+                long hash = 17;
+                foreach (var item in items) {
+                    hash = hash * 31 + item.ItemId;
+                    hash = hash * 31 + item.BaseItemId;
+                    hash = hash * 31 + item.Quantity;
+                    hash = hash * 31 + item.ContainerType;
+                    hash = hash * 31 + item.InventorySlot;
+                    hash = hash * 31 + (item.IsHq ? 1 : 0);
+                    hash = hash * 31 + item.SpiritbondOrCollectability;
+                    hash = hash * 31 + item.Condition;
+                }
+
+                return hash;
+            }
+        }
+
+        private const int PhoneInventoryCapability = 0x4550;
+
+        private static bool HasPhoneInventoryCapability(byte[] payload) {
+            try {
+                var reader = new MessagePackReader(new ReadOnlyMemory<byte>(payload));
+                var fieldCount = reader.ReadArrayHeader();
+                if (fieldCount < 2) {
+                    return false;
+                }
+
+                reader.Skip();
+                return reader.ReadInt32() == PhoneInventoryCapability;
+            } catch (Exception) {
+                return false;
+            }
         }
 
         private static readonly IReadOnlyList<byte> Magic = new byte[] {
@@ -464,6 +616,12 @@ namespace XIVChatPlugin {
                     // ReSharper disable once LocalVariableHidesMember
                     var backlog = ClientBacklog.Decode(payload);
 
+                    if (HasPhoneInventoryCapability(payload)) {
+                        client.Preferences ??= new ClientPreferences();
+                        client.Preferences.Preferences[ClientPreference.PhoneInventorySupport] = true;
+                        this._awaitingInventory.Enqueue(id);
+                    }
+
                     var backlogMessages = new List<ServerMessage>();
 
                     var node = this._backlog.Last;
@@ -513,6 +671,10 @@ namespace XIVChatPlugin {
                     // immediately queue housing location
                     if (client.GetPreference(ClientPreference.HousingLocationSupport, false)) {
                         this._awaitingHousingLocation.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneInventorySupport, false)) {
+                        this._awaitingInventory.Enqueue(id);
                     }
 
                     break;
