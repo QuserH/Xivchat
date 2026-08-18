@@ -133,6 +133,7 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
     var query by remember { mutableStateOf("") }
     var ownership by remember { mutableStateOf(0) } // 0 all, 1 owned, 2 missing
     var showGuide by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<GameCollectionItem?>(null) }
     val label = kind?.label ?: "收藏"
 
     val filtered = category.items.filter {
@@ -183,10 +184,14 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
                 modifier = Modifier.fillMaxSize(),
             ) {
                 gridItems(filtered, key = { it.id }) { item ->
-                    CollectionsItemCell(item, tint) { showGuide = true }
+                    CollectionsItemCell(item, tint) { selected = item }
                 }
             }
         }
+    }
+
+    selected?.let { item ->
+        CollectionItemDetail(item, tint, label, onDismiss = { selected = null })
     }
 
     AnimatedVisibility(visible = showGuide) {
@@ -197,6 +202,36 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
             confirmButton = { androidx.compose.material3.TextButton(onClick = { showGuide = false }) { Text("知道了") } },
         )
     }
+}
+
+@Composable
+private fun CollectionItemDetail(item: GameCollectionItem, tint: Color, label: String, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(item.name, color = PhoneText, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)).background(tint.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
+                    ItemIcon(item.iconId, Modifier.size(66.dp), fallback = item.name.take(2), tint = Color.White)
+                }
+                Text(
+                    if (item.owned) "已在游戏内解锁" else "尚未解锁",
+                    color = if (item.owned) tint else PhoneMuted,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 14.dp, bottom = 4.dp),
+                )
+                Text("$label 收藏之一", color = PhoneMuted, fontSize = 12.sp)
+                Text(
+                    if (item.owned) "获取来源：该藏品已记录在游戏解锁名录中。更多来源说明将在后续数据版本补充。"
+                    else "获取来源：目前未纳入完整名录，无法给出确切获取途径。",
+                    color = PhoneMuted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭", color = tint) } },
+    )
 }
 
 @Composable

@@ -83,7 +83,7 @@ data class OutputChannel(val id: Int, val label: String)
 
 val outputChannels = listOf(
     OutputChannel(1, "说话"), OutputChannel(2, "小队"), OutputChannel(3, "团队"),
-    OutputChannel(4, "呼喊"), OutputChannel(5, "喊话"), OutputChannel(6, "部队"),
+    OutputChannel(4, "喊话"), OutputChannel(5, "呼喊"), OutputChannel(6, "部队"),
     OutputChannel(8, "新人频道"), OutputChannel(9, "跨服通讯贝 1"),
     OutputChannel(10, "跨服通讯贝 2"), OutputChannel(11, "跨服通讯贝 3"),
     OutputChannel(12, "跨服通讯贝 4"), OutputChannel(13, "跨服通讯贝 5"),
