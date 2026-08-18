@@ -96,7 +96,7 @@ namespace XIVChatPlugin {
             this.ClientState.Logout += this.Server.OnLogOut;
             this.ClientState.TerritoryChanged += this.Server.OnTerritoryChange;
             this.CommandManager.AddHandler("/xivchat", new CommandInfo(this.OnCommand) {
-                HelpMessage = "Opens the config for the XIVChat plugin",
+                HelpMessage = "打开 XIVChat 插件设置",
             });
 
             this.Ipcs.Add(new Ipc.PeepingTom(this));

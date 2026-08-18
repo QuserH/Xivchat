@@ -501,7 +501,7 @@ namespace XIVChatPlugin {
                         this._waitingForFriendList.Add(id);
 
                         if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
-                            this._plugin.ChatGui.PrintError($"[{Plugin.Name}] Please open your friend list to enable friend list support. You should only need to do this on initial install or after updates.");
+                            this._plugin.ChatGui.PrintError($"[{Plugin.Name}] 请打开一次游戏内好友列表以启用好友列表功能。通常只需在首次安装或更新后执行一次。");
                         }
                     }
 

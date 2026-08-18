@@ -1,10 +1,10 @@
 ﻿author: Anna
-name: XIVChat Server
-punchline: Use chat away from the game.
+name: XIVChat 服务器
+punchline: 在其他设备上使用游戏聊天。
 description: |-
-  XIVChat is a suite of software allowing you to use FFXIV's chat from
-  different devices. This is the server component required to do so.
+  XIVChat 可以将 FFXIV 的聊天功能连接到其他设备。
+  这是运行在游戏内的服务器组件。
 
-  For information about clients to use with this server, see the website.
+  有关可连接此服务器的客户端，请参阅项目网站。
 repo_url: https://xiv.chat/
 accepts_feedback: false
