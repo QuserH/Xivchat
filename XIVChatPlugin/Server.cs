@@ -1020,10 +1020,13 @@ namespace XIVChatPlugin {
                     categories.Add(new ServerCollectionCategory { Id = 3, Total = total, Owned = owned, Items = items.ToArray() });
                 }
 
-                AddMounts();
-                AddMinions();
-                AddEmotes();
-                AddOrchestrions();
+                foreach (var action in new System.Action[] { AddMounts, AddMinions, AddEmotes, AddOrchestrions }) {
+                    try {
+                        action();
+                    } catch (Exception ex) {
+                        Plugin.Log.Warning($"Collection category failed: {ex.Message}");
+                    }
+                }
 
                 return new ServerCollections(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), categories.ToArray());
             } catch (Exception ex) {
