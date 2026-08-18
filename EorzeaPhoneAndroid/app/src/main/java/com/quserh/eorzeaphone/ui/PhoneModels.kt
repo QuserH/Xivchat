@@ -28,6 +28,8 @@ import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
 import com.quserh.eorzeaphone.data.ResetReminderReceiver
+import com.quserh.eorzeaphone.data.normalizedPlayerName
+import com.quserh.eorzeaphone.data.displayPlayerName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,6 +96,25 @@ val outputChannels = listOf(
     OutputChannel(24, "通讯贝 6"), OutputChannel(25, "通讯贝 7"),
     OutputChannel(26, "通讯贝 8"),
 )
+
+class ChatConversation(
+    val key: String,
+    val category: ChatCategory,
+    val title: String,
+    val tellRecipient: String = "",
+) {
+    val messages = mutableStateListOf<GameChatMessage>()
+    var unread by mutableStateOf(0)
+    var notify by mutableStateOf(true)
+    private var _lastMessage: GameChatMessage? = null
+    val lastMessage: GameChatMessage? get() = _lastMessage
+    val lastTimestamp: Long? get() = _lastMessage?.timestamp
+
+    fun add(message: GameChatMessage) {
+        messages.add(message)
+        _lastMessage = message
+    }
+}
 
 private val builtInChatFilters = listOf(
     ChatFilter("all", "全部", ChatCategory.entries.toSet()),
@@ -291,6 +312,11 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         addAll(builtInChatFilters)
         addAll(loadCustomFilters())
     }
+    val conversations = mutableStateListOf<ChatConversation>()
+    private val conversationByKey = mutableMapOf<String, ChatConversation>()
+    var openConversationKey by mutableStateOf<String?>(null)
+    private val mutedConversations: MutableSet<String> =
+        (prefs.getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val connection = XivChatConnection(context, scope) { event ->
         scope.launch(Dispatchers.Main.immediate) { handle(event) }
     }
@@ -340,6 +366,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun back() {
         when {
+            openConversationKey != null -> closeConversation()
             settingsPage != null -> settingsPage = null
             screen == PhoneScreen.ContactDetail -> {
                 screen = PhoneScreen.Contacts
@@ -374,6 +401,55 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     fun disconnect() = connection.disconnect()
 
     fun sendChat(text: String) = connection.sendChat(text)
+
+    fun sendToConversation(conv: ChatConversation, text: String) {
+        val trimmed = text.trim()
+        if (!connected || trimmed.isBlank()) return
+        val payload = if (conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank()) {
+            "/tell ${conv.tellRecipient} $trimmed"
+        } else {
+            trimmed
+        }
+        connection.sendChat(payload)
+        chatDraft = ""
+    }
+
+    fun openConversation(conv: ChatConversation) {
+        openConversationKey = conv.key
+        conv.unread = 0
+    }
+
+    fun closeConversation() {
+        openConversationKey?.let { key -> conversationByKey[key]?.unread = 0 }
+        openConversationKey = null
+    }
+
+    fun toggleConversationNotify(conv: ChatConversation) {
+        conv.notify = !conv.notify
+        if (conv.notify) mutedConversations.remove(conv.key) else mutedConversations.add(conv.key)
+        prefs.edit().putStringSet("mutedChatConvs", mutedConversations).apply()
+    }
+
+    private fun getOrCreateConversation(message: GameChatMessage): ChatConversation {
+        val key = message.conversationKey()
+        return conversationByKey.getOrPut(key) {
+            val conv = ChatConversation(key, message.category, message.conversationTitle(), message.tellRecipient())
+            conv.notify = key !in mutedConversations
+            conversations.add(0, conv)
+            conv
+        }
+    }
+
+    private fun ensureTellConversation(recipient: String, displayName: String? = null): ChatConversation {
+        val key = "tell:${recipient.normalizedPlayerName()}"
+        return conversationByKey.getOrPut(key) {
+            val title = displayName?.takeIf { it.isNotBlank() } ?: recipient.displayPlayerName()
+            val conv = ChatConversation(key, ChatCategory.Tell, title, recipient)
+            conv.notify = key !in mutedConversations
+            conversations.add(0, conv)
+            conv
+        }
+    }
 
     fun saveNote(text: String) {
         noteText = text
@@ -445,7 +521,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun startTell(friend: PhoneFriend) {
         val recipient = if (friend.world.isBlank()) friend.name else "${friend.name}@${friend.world}"
-        chatDraft = "/tell $recipient "
+        val conv = ensureTellConversation(recipient, friend.name)
+        openConversation(conv)
         selectedChatFilterId = "tell"
         selectedApp = AppCatalog.dock.first()
         screen = PhoneScreen.Chat
@@ -502,7 +579,23 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             is PhoneEvent.Chat -> {
                 if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
                     chats.add(event.message)
-                    if (chatNotifications && !event.message.isFrom(profile?.name)) notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell)
+                    val conv = getOrCreateConversation(event.message)
+                    conv.add(event.message)
+                    val index = conversations.indexOf(conv)
+                    if (index > 0) {
+                        conversations.removeAt(index)
+                        conversations.add(0, conv)
+                    }
+                    val isSelf = event.message.isFrom(profile?.name)
+                    val isOpen = openConversationKey == conv.key
+                    if (!isSelf && !isOpen) {
+                        conv.unread = (conv.unread + 1).coerceAtMost(99)
+                    } else {
+                        conv.unread = 0
+                    }
+                    if (!isSelf && chatNotifications && conv.notify) {
+                        notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell)
+                    }
                 }
             }
             is PhoneEvent.Inventory -> {

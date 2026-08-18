@@ -25,6 +25,26 @@ data class GameChatMessage(
         if (playerName.isNullOrBlank()) return false
         return sender.normalizedPlayerName() == playerName.normalizedPlayerName()
     }
+
+    /** Stable key used to group messages into one WeChat-style conversation. */
+    fun conversationKey(): String = when (category) {
+        ChatCategory.Tell -> "tell:${sender.normalizedPlayerName()}"
+        ChatCategory.Linkshell -> "linkshell:$channel"
+        else -> category.name
+    }
+
+    /** Human friendly title for this message's conversation. */
+    fun conversationTitle(): String = when {
+        category == ChatCategory.Tell -> sender.displayPlayerName()
+        else -> category.label
+    }
+
+    /**
+     * The recipient to use when replaying a tell conversation. For tells the
+     * sender field holds the other party (both incoming and outgoing), so we
+     * reuse it as the /tell target.
+     */
+    fun tellRecipient(): String = if (category == ChatCategory.Tell) sender.trim() else ""
 }
 
 enum class ChatCategory(val label: String) {
@@ -49,12 +69,21 @@ enum class ChatCategory(val label: String) {
     }
 }
 
-private fun String.normalizedPlayerName(): String = this
+internal fun String.normalizedPlayerName(): String = this
     .trim()
     .trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097')
     .substringBefore('@')
     .trim()
     .lowercase()
+
+internal fun String.displayPlayerName(): String {
+    val clean = this
+        .trim()
+        .trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097')
+        .substringBefore('@')
+        .trim()
+    return clean.ifBlank { "对方" }
+}
 
 data class GameInventoryItem(
     val itemId: Long,

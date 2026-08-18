@@ -67,6 +67,7 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameInventoryItem
 import com.quserh.eorzeaphone.data.ItemIconLoader
+import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -693,20 +694,20 @@ fun CalendarScreen(state: PhoneState) {
 
 @Composable
 fun ChatScreen(state: PhoneState) {
-    var channelMenu by remember { mutableStateOf(false) }
+    val openConv = state.conversations.firstOrNull { it.key == state.openConversationKey }
+    if (openConv != null) {
+        ConversationDetailScreen(state, openConv)
+    } else {
+        ConversationListScreen(state)
+    }
+}
+
+@Composable
+private fun ConversationListScreen(state: PhoneState) {
     var filterEditor by remember { mutableStateOf(false) }
     var filterName by remember { mutableStateOf("") }
     var filterCategories by remember { mutableStateOf(setOf<ChatCategory>()) }
-    val focusManager = LocalFocusManager.current
     val activeFilter = state.chatFilters.firstOrNull { it.id == state.selectedChatFilterId } ?: state.chatFilters.first()
-    val visibleChats = state.chats.filter(activeFilter::matches)
-    val sendMessage = {
-        if (state.connected && state.chatDraft.isNotBlank()) {
-            state.sendChat(state.chatDraft)
-            state.chatDraft = ""
-            focusManager.clearFocus()
-        }
-    }
     ScreenFrame {
         ScreenHeader("聊天", state, showBack = false)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -716,32 +717,18 @@ fun ChatScreen(state: PhoneState) {
             }
             Text("＋", color = PhoneAccent, fontSize = 20.sp, modifier = Modifier.clickable { filterEditor = true }.padding(horizontal = 4.dp))
         }
-        Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp)) {
-            TextButton(onClick = { channelMenu = true }, enabled = state.connected) {
-                Text("发送频道：${state.currentChannelName} ⌄", color = PhoneText, fontSize = 13.sp)
+        if (state.conversations.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(if (state.connected) "等待聊天消息…" else "请先连接游戏插件", color = PhoneMuted)
             }
-            DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
-                outputChannels.forEach { channel ->
-                    DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 6.dp)) {
+                val visibleConvs = state.conversations.filter { it.category in activeFilter.categories }
+                if (visibleConvs.isEmpty()) {
+                    item { Text("该标签暂无会话", color = PhoneMuted, modifier = Modifier.padding(20.dp)) }
                 }
+                items(visibleConvs, key = { it.key }) { conv -> ConversationRow(conv, state) }
             }
-        }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (state.chats.isEmpty()) item { ChatBubble("艾欧泽亚终端", if (state.connected) "已连接游戏，等待聊天消息…" else "等待连接游戏插件…", false) }
-            if (state.chats.isNotEmpty() && visibleChats.isEmpty()) item { Text("当前标签没有消息", color = PhoneMuted, modifier = Modifier.padding(12.dp)) }
-            items(visibleChats, key = { "${it.timestamp}-${it.sender}-${it.text}" }) { chat -> ChatBubble(chat.sender.ifBlank { "游戏" }, chat.text, chat.isFrom(state.profile?.name)) }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            OutlinedTextField(
-                value = state.chatDraft,
-                onValueChange = { state.chatDraft = it },
-                placeholder = { Text("输入消息", color = PhoneMuted) },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { sendMessage() }),
-            )
-            TextButton(onClick = sendMessage, enabled = state.connected && state.chatDraft.isNotBlank()) { Text("发送", color = PhoneAccent) }
         }
         MessagesBottomNav(contacts = false, state = state)
     }
@@ -769,6 +756,129 @@ fun ChatScreen(state: PhoneState) {
             confirmButton = { TextButton(onClick = { state.addChatFilter(filterName, filterCategories); filterName = ""; filterCategories = emptySet(); filterEditor = false }) { Text("添加") } },
             dismissButton = { TextButton(onClick = { filterEditor = false }) { Text("取消") } },
         )
+    }
+}
+
+@Composable
+private fun ConversationRow(conv: ChatConversation, state: PhoneState) {
+    val last = conv.lastMessage
+    val preview = when {
+        last == null -> "暂无消息"
+        last.isFrom(state.profile?.name) -> "我：${last.text}"
+        else -> "${last.sender.displayPlayerName()}：${last.text}"
+    }.replace('\n', ' ')
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { state.openConversation(conv) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Box(Modifier.size(50.dp).clip(CircleShape).background(convColor(conv.category)), contentAlignment = Alignment.Center) {
+                Text(conv.title.take(1), color = Color.White, fontSize = 19.sp)
+            }
+            Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(conv.title, color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    conv.lastTimestamp?.let { Text(formatTalkTime(it), color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp)) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 5.dp)) {
+                    Text(preview, color = PhoneMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (!conv.notify) Text("🔕", fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                    if (conv.unread > 0) {
+                        Box(Modifier.padding(start = 8.dp).size(width = 22.dp, height = 22.dp).clip(CircleShape).background(Color(0xFFE53935)), contentAlignment = Alignment.Center) {
+                            Text(if (conv.unread > 99) "99+" else conv.unread.toString(), color = Color.White, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            Text("›", color = PhoneMuted, fontSize = 25.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        Box(Modifier.fillMaxWidth().padding(start = 79.dp).height(1.dp).background(Color.White.copy(alpha = 0.06f)))
+    }
+}
+
+@Composable
+private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) {
+    var channelMenu by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val sendMessage = {
+        if (state.connected && state.chatDraft.isNotBlank()) {
+            state.sendToConversation(conv, state.chatDraft)
+            focusManager.clearFocus()
+        }
+    }
+    ScreenFrame {
+        ScreenHeader(conv.title, state, trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (conv.notify) "🔔" else "🔕", fontSize = 19.sp, modifier = Modifier.clickable { state.toggleConversationNotify(conv) }.padding(6.dp))
+                if (conv.category != ChatCategory.Tell) {
+                    Box {
+                        TextButton(onClick = { channelMenu = true }, enabled = state.connected, contentPadding = ButtonDefaults.TextButtonContentPadding) {
+                            Text("${state.currentChannelName} ⌄", color = PhoneText, fontSize = 13.sp)
+                        }
+                        DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
+                            outputChannels.forEach { channel ->
+                                DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        if (conv.category == ChatCategory.Tell) {
+            Text("私信给 ${conv.displayChannelHint()}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp))
+        }
+        if (conv.messages.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    when {
+                        !state.connected -> "请先连接游戏插件"
+                        conv.category == ChatCategory.Tell -> "开始和 ${conv.title} 聊天吧"
+                        else -> "该频道暂无消息"
+                    },
+                    color = PhoneMuted,
+                )
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(conv.messages, key = { "${it.timestamp}-${it.sender}-${it.text}" }) { chat ->
+                    ChatBubble(chat.sender.ifBlank { conv.category.label }, chat.text, chat.isFrom(state.profile?.name))
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            OutlinedTextField(
+                value = state.chatDraft,
+                onValueChange = { state.chatDraft = it },
+                placeholder = { Text(if (conv.category == ChatCategory.Tell) "发消息给 ${conv.title}" else "输入消息", color = PhoneMuted) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { sendMessage() }),
+            )
+            TextButton(onClick = sendMessage, enabled = state.connected && state.chatDraft.isNotBlank()) { Text("发送", color = PhoneAccent) }
+        }
+    }
+}
+
+private fun ChatConversation.displayChannelHint(): String = if (tellRecipient.isNotBlank()) {
+    tellRecipient.displayPlayerName()
+} else {
+    title
+}
+
+private fun convColor(category: ChatCategory): Color = when (category) {
+    ChatCategory.Public -> Color(0xFF4C9F70)
+    ChatCategory.Party -> Color(0xFF5B8DEF)
+    ChatCategory.Tell -> Color(0xFFE08A3C)
+    ChatCategory.Linkshell -> Color(0xFF9B6BC4)
+    ChatCategory.FreeCompany -> Color(0xFFC0783F)
+    ChatCategory.Emote -> Color(0xFFE26D8A)
+    ChatCategory.System -> Color(0xFF6E7B8C)
+}
+
+private fun formatTalkTime(timestamp: Long): String {
+    val time = java.time.Instant.ofEpochMilli(timestamp).atZone(java.time.ZoneId.systemDefault())
+    return if (time.toLocalDate() == LocalDate.now()) {
+        time.format(DateTimeFormatter.ofPattern("HH:mm"))
+    } else {
+        time.format(DateTimeFormatter.ofPattern("M/d"))
     }
 }
 
