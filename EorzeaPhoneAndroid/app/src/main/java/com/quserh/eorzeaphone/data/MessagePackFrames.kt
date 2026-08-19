@@ -99,11 +99,42 @@ internal object XivChatCodec {
         val channel = unpacker.unpackShort().toInt()
         val sender = decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader()))
         val text = decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader()))
-        if (fields > 4) {
-            val chunks = unpacker.unpackArrayHeader()
-            repeat(chunks) { skipChunk(unpacker) }
+        val chunks = if (fields > 4) readChunks(unpacker) else emptyList()
+        return GameChatMessage(time, sender, text, channel, chunks = chunks)
+    }
+
+    private fun readChunks(unpacker: MessageUnpacker): List<GameChatChunk> {
+        val count = unpacker.unpackArrayHeader()
+        return buildList(count) {
+            repeat(count) {
+                val unionFields = unpacker.unpackArrayHeader()
+                if (unionFields < 2) { repeat(unionFields) { unpacker.skipValue() }; return@repeat }
+                when (unpacker.unpackInt()) {
+                    1 -> {
+                        val fields = unpacker.unpackArrayHeader()
+                        var content = ""
+                        var italic = false
+                        repeat(fields) { index ->
+                            when (index) {
+                                3 -> italic = if (unpacker.tryUnpackNil()) false else unpacker.unpackBoolean()
+                                4 -> content = if (unpacker.tryUnpackNil()) "" else unpacker.unpackString()
+                                else -> unpacker.skipValue()
+                            }
+                        }
+                        if (content.isNotEmpty()) add(GameChatChunk(text = content, italic = italic))
+                    }
+                    2 -> {
+                        val fields = unpacker.unpackArrayHeader()
+                        var icon = 0
+                        repeat(fields) { index ->
+                            if (index == 0) icon = unpacker.unpackInt() else unpacker.skipValue()
+                        }
+                        add(GameChatChunk(icon = icon))
+                    }
+                    else -> repeat(unionFields - 1) { unpacker.skipValue() }
+                }
+            }
         }
-        return GameChatMessage(time, sender, text, channel)
     }
 
     private fun skipChunk(unpacker: MessageUnpacker) {
@@ -178,7 +209,15 @@ internal object XivChatCodec {
             val retainerCount = unpacker.unpackArrayHeader()
             repeat(retainerCount) {
                 unpacker.unpackArrayHeader()
-                retainers += GameRetainer(unpacker.unpackLong(), unpacker.unpackString(), unpacker.unpackBoolean(), unpacker.unpackInt(), unpacker.unpackInt())
+                val retainerFields = unpacker.unpackArrayHeader()
+                val id = unpacker.unpackLong()
+                val name = unpacker.unpackString()
+                val active = unpacker.unpackBoolean()
+                val itemCount = unpacker.unpackInt()
+                val quantity = unpacker.unpackInt()
+                val gil = if (retainerFields > 5) unpacker.unpackLong() else 0L
+                repeat((retainerFields - 6).coerceAtLeast(0)) { unpacker.skipValue() }
+                retainers += GameRetainer(id, name, active, itemCount, quantity, gil)
             }
         }
         return GameInventorySnapshot(result, containers, retainers)

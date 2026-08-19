@@ -12,12 +12,15 @@ data class GameFriend(
     val homeWorldId: Int = 0,
 )
 
+data class GameChatChunk(val text: String? = null, val icon: Int? = null, val italic: Boolean = false)
+
 data class GameChatMessage(
     val timestamp: Long,
     val sender: String,
     val text: String,
     val channel: Int,
     val self: Boolean = false,
+    val chunks: List<GameChatChunk> = emptyList(),
 ) {
     val category: ChatCategory get() = ChatCategory.fromChannel(channel)
 
@@ -108,6 +111,7 @@ data class GameRetainer(
     val active: Boolean,
     val itemCount: Int,
     val quantity: Int,
+    val gil: Long = 0,
 )
 
 data class GameInventorySnapshot(

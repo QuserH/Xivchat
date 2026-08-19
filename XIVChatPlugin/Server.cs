@@ -559,6 +559,8 @@ namespace XIVChatPlugin {
                 var retainerManager = RetainerManager.Instance();
                 var activeRetainer = retainerManager == null ? null : retainerManager->GetActiveRetainer();
                 var activeRetainerId = activeRetainer == null ? 0UL : activeRetainer->RetainerId;
+                var inventoryManager = InventoryManager.Instance();
+                var activeRetainerGil = inventoryManager == null || activeRetainer == null ? 0u : inventoryManager->GetRetainerGil();
 
                 foreach (var type in PhoneInventoryTypes) {
                     var containerItems = XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(type).ToArray();
@@ -615,6 +617,7 @@ namespace XIVChatPlugin {
                             Active = active,
                             ItemCount = active ? activeCount : 0,
                             Quantity = active ? activeQuantity : 0,
+                            Gil = active ? activeRetainerGil : 0,
                         });
                     }
                 }

@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import java.text.NumberFormat
 import java.util.Locale
 import com.quserh.eorzeaphone.data.GameChatMessage
+import com.quserh.eorzeaphone.data.GameChatChunk
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameInventoryContainer
@@ -529,6 +530,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     text = o.optString("text"),
                     channel = o.optInt("channel"),
                     self = o.optBoolean("self"),
+                    chunks = o.optJSONArray("chunks")?.let { chunks -> buildList(chunks.length()) {
+                        for (j in 0 until chunks.length()) {
+                            val c = chunks.getJSONObject(j)
+                            add(GameChatChunk(c.optString("text").takeIf { c.has("text") && !c.isNull("text") }, c.optInt("icon", -1).takeIf { it >= 0 }, c.optBoolean("italic")))
+                        }
+                    } } ?: emptyList(),
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -550,6 +557,11 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("text", m.text)
                 put("channel", m.channel)
                 put("self", m.self)
+                put("chunks", JSONArray().apply { m.chunks.forEach { c -> put(JSONObject().apply {
+                    if (c.text != null) put("text", c.text)
+                    if (c.icon != null) put("icon", c.icon)
+                    put("italic", c.italic)
+                }) } })
             })
         }
         prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()
@@ -583,7 +595,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             retainers.clear()
             for (i in 0 until savedRetainers.length()) {
                 val o = savedRetainers.getJSONObject(i)
-                retainers += GameRetainer(o.optLong("id"), o.optString("name"), false, o.optInt("itemCount"), o.optInt("quantity"))
+                retainers += GameRetainer(o.optLong("id"), o.optString("name"), false, o.optInt("itemCount"), o.optInt("quantity"), o.optLong("gil"))
             }
         }
     }
@@ -608,7 +620,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         }
         val savedRetainers = JSONArray()
         retainers.forEach { retainer -> savedRetainers.put(JSONObject().apply {
-            put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity)
+            put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity); put("gil", retainer.gil)
         }) }
         prefs.edit()
             .putString(scoped("inventoryItemCache"), items.toString())
@@ -1403,7 +1415,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 retainers.clear()
                 retainers.addAll(event.snapshot.retainers.map { incoming ->
                     val old = oldRetainers[incoming.id]
-                    if (!incoming.active && old != null) incoming.copy(itemCount = old.itemCount, quantity = old.quantity) else incoming
+                    if (!incoming.active && old != null) incoming.copy(itemCount = old.itemCount, quantity = old.quantity, gil = old.gil) else incoming
                 })
                 saveInventory()
             }

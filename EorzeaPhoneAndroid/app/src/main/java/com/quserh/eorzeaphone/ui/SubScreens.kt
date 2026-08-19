@@ -531,7 +531,7 @@ fun InventoryScreen(state: PhoneState) {
     var selectedGroup by remember { mutableStateOf<String?>(null) }
     var selectedRetainerId by remember { mutableStateOf<Long?>(null) }
     var showSearch by remember { mutableStateOf(false) }
-    val groups = listOf("bags" to "背包", "armoury" to "兵装库", "crystals" to "水晶", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
+    val groups = listOf("bags" to "背包", "armoury" to "兵装库", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
     val selectedTypes = inventoryTypesForGroup(selectedGroup ?: "bags")
     val filtered = state.inventory.filter {
         (selectedGroup == null || it.container in selectedTypes) &&
@@ -607,12 +607,11 @@ private fun CompactInventorySearch(value: String, change: (String) -> Unit, modi
 
 @Composable
 private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer: (Long) -> Unit) {
-    val localTypes = inventoryTypesForGroup("bags") + inventoryTypesForGroup("armoury") + inventoryTypesForGroup("crystals") + inventoryTypesForGroup("saddle") + inventoryTypesForGroup("equipped")
+    val localTypes = inventoryTypesForGroup("bags") + inventoryTypesForGroup("armoury") + inventoryTypesForGroup("saddle") + inventoryTypesForGroup("equipped")
     val total = state.inventory.filter { it.container in localTypes }.sumOf { it.quantity }
     val rows = listOf(
         Triple("bags", "兵装库与背包", R.drawable.app_inventory) to Color(0xFFC68731),
         Triple("armoury", "兵装库", R.drawable.app_muster) to Color(0xFF4F8DE8),
-        Triple("crystals", "水晶", R.drawable.app_shortcuts) to Color(0xFF9963E2),
         Triple("equipped", "已装备", R.drawable.app_jobs) to Color(0xFF48B87D),
     )
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -651,16 +650,15 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                 } else {
                     state.retainers.forEach { retainer ->
                         val cachedCount = state.inventory.count { it.retainerId == retainer.id }
-                        val cachedQuantity = state.inventory.filter { it.retainerId == retainer.id }.sumOf { it.quantity }
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(enabled = cachedCount > 0) { openRetainer(retainer.id) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
                             Box(Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF8D6AC8)), contentAlignment = Alignment.Center) { Text(retainer.name.take(1), color = Color.White, fontWeight = FontWeight.Bold) }
                             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                 Text(retainer.name.ifBlank { "未命名雇员" }, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                Text(if (retainer.active) "刚刚同步" else if (cachedCount > 0) "已保存在本机" else "在游戏中打开以同步", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                                Text(if (retainer.active) "在线同步" else "离线数据", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("${formatCount(cachedCount)} 格", color = if (retainer.active) PhoneAccent else PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                if (cachedQuantity > 0) Text("${formatCount(cachedQuantity)} 件", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                                if (retainer.gil > 0) Text("${formatCount(retainer.gil)} 金币", color = Color(0xFFFFB74D), fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
                             }
                         }
                         Divider(Modifier.padding(start = 73.dp), color = PhoneMuted.copy(alpha = .16f))
@@ -681,11 +679,11 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
 private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
     "bags" -> listOf(0, 1, 2, 3)
     "armoury" -> listOf(3500, 3200, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209, 3300, 3400)
-    "crystals" -> listOf(2001)
+    "crystals" -> emptyList()
     "saddle" -> listOf(4000, 4001, 4100, 4101)
     "equipped" -> listOf(1000)
-    "retainers" -> listOf(10000, 10001, 10002, 10003, 10004, 10005, 10006, 11000, 12001)
-    "company" -> listOf(20000, 20001, 20002, 20003, 20004, 22001)
+    "retainers" -> listOf(10000, 10001, 10002, 10003, 10004, 10005, 10006)
+    "company" -> listOf(20000, 20001, 20002, 20003, 20004)
     "housing" -> listOf(27000, 27001, 27002, 27003, 27004, 27005, 27006, 27007, 27008, 27009, 27010, 27011, 27200)
     else -> emptyList()
 }

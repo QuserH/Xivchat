@@ -317,10 +317,11 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))) {
                         Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "${spot.name}地图", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
                         if (spot.x > 0 && spot.y > 0) {
-                            // Fishing data stores map coordinates as hundredths (12.83 -> 1283).
-                            // The game map spans roughly 0..40 coordinate units.
-                            val x = (spot.x / 4_000f).coerceIn(0f, 1f)
-                            val y = (spot.y / 4_000f).coerceIn(0f, 1f)
+                            // Fishing data stores coordinates as hundredths. MapSizeFactor
+                            // is the in-game map scale (200 means a 20 x 20 map).
+                            val mapScale = (spot.mapSizeFactor.coerceAtLeast(100) / 10f)
+                            val x = ((spot.x / 100f - spot.mapOffsetX / 100f) / mapScale).coerceIn(0f, 1f)
+                            val y = ((spot.y / 100f - spot.mapOffsetY / 100f) / mapScale).coerceIn(0f, 1f)
                             Box(Modifier.offset(x = maxWidth * x - 12.dp, y = maxHeight * y - 12.dp).size(24.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
                                 Text("钓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
@@ -360,7 +361,7 @@ private fun ConditionRow(label: String, value: String) {
 @Composable
 private fun FishingTechniquePath(fish: FishingFish, catalog: FishingCatalog) {
     Text("推荐钓法", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 5.dp))
-    val nodes = (fish.path + FishingItemRef(fish.id, fish.name, fish.icon)).distinctBy { it.id }
+    val nodes = fishingTechniqueChain(fish, catalog)
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
@@ -371,14 +372,18 @@ private fun FishingTechniquePath(fish: FishingFish, catalog: FishingCatalog) {
             if (index < nodes.lastIndex) Text("→", color = PhoneMuted, fontSize = 23.sp)
         }
     }
-    val hook = fish.hook.takeIf { it.isNotBlank() && it != "unknown" }
-    if (hook != null) {
-        Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("钓场脱钩统计", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.weight(1f))
-            Text(hookLabel(hook), color = Color(0xFF202124), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color.White).padding(horizontal = 12.dp, vertical = 5.dp))
-        }
+}
+
+private fun fishingTechniqueChain(fish: FishingFish, catalog: FishingCatalog): List<FishingItemRef> {
+    val target = FishingItemRef(fish.id, fish.name, fish.icon)
+    if (fish.mooch.isNotEmpty()) {
+        val mooched = fish.mooch.first()
+        val source = catalog.fish.firstOrNull { it.id == mooched.id }
+        val base = source?.path?.firstOrNull() ?: source?.bait?.firstOrNull()
+        return listOfNotNull(base, mooched, target).distinctBy { it.id }
     }
+    val base = fish.path.ifEmpty { fish.bait.take(1) }
+    return (base + target).distinctBy { it.id }
 }
 
 @Composable

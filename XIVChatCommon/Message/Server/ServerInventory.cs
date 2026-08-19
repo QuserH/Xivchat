@@ -30,6 +30,7 @@ namespace XIVChatCommon.Message.Server {
         [Key(2)] public bool Active { get; set; }
         [Key(3)] public int ItemCount { get; set; }
         [Key(4)] public int Quantity { get; set; }
+        [Key(5)] public uint Gil { get; set; }
     }
 
     /// <summary>

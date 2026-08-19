@@ -71,10 +71,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +94,7 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameActivity
 import com.quserh.eorzeaphone.data.GameChatMessage
+import com.quserh.eorzeaphone.data.GameChatChunk
 import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
@@ -629,7 +640,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
     var search by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
     val send = {
-        if (state.connected && state.chatDraft.isNotBlank()) {
+        if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) {
             state.sendToConversation(conversation, state.chatDraft)
             focus.clearFocus()
         }
@@ -676,6 +687,10 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     Text("⌃", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 6.dp))
                     Text("⌄", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 5.dp))
                 }
+            }
+            if (!state.activeCharacterOnline) {
+                Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp))
             }
             val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
             if (visible.isEmpty()) {
@@ -743,8 +758,8 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 )
                 Box(
                     Modifier.padding(start = 7.dp).size(38.dp).clip(CircleShape)
-                        .background(if (state.connected && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
-                        .clickable(enabled = state.connected && state.chatDraft.isNotBlank()) { send() },
+                        .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
+                        .clickable(enabled = state.activeCharacterOnline && state.chatDraft.isNotBlank()) { send() },
                     contentAlignment = Alignment.Center,
                 ) { Text("↑", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
             }
@@ -775,19 +790,52 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val body = wrapLightText(message.text, wrapChars)
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
                 if (body.contains('\n')) {
-                    Text(body, color = if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp)
+                    ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp)
                     Text(lightClock(message.timestamp), color = timeColor, fontSize = 9.sp, lineHeight = 10.sp,
                         modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                 } else {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(body, color = if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f, fill = false))
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = 9.sp, lineHeight = 10.sp,
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Color, fontSize: androidx.compose.ui.unit.TextUnit,
+                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier) {
+    val chunks = message.chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    val inline = buildMap<String, InlineTextContent> {
+        chunks.forEachIndexed { index, chunk ->
+            if (chunk.icon != null) put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
+                ChatInlineIcon(chunk.icon)
+            })
+        }
+    }
+    val annotated = buildAnnotatedString {
+        chunks.forEachIndexed { index, chunk ->
+            if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else append(chunk.text.orEmpty())
+        }
+    }
+    val style = androidx.compose.ui.text.TextStyle(
+        color = color, fontSize = fontSize, lineHeight = lineHeight,
+        fontStyle = if (message.category == ChatCategory.Emote) FontStyle.Italic else FontStyle.Normal,
+        fontFamily = if (message.category == ChatCategory.System) FontFamily.Monospace else FontFamily.Default,
+        fontWeight = if (message.category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
+    )
+    Text(annotated, inlineContent = inline, style = style, modifier = modifier)
+}
+
+@Composable
+private fun ChatInlineIcon(index: Int) {
+    val bitmap = ImageBitmap.imageResource(R.drawable.fonticon_ps4)
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        val slot = (index.coerceAtLeast(1) - 1).coerceIn(0, 24)
+        drawImage(bitmap, srcOffset = androidx.compose.ui.unit.IntOffset((slot % 5) * 40, 342 + (slot / 5) * 40), srcSize = androidx.compose.ui.unit.IntSize(40, 40))
     }
 }
 
