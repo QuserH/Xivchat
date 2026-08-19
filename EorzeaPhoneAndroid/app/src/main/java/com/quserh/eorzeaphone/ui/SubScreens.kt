@@ -79,6 +79,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameChatMessage
@@ -509,20 +510,27 @@ private fun ContactAction(label: String, icon: Int, tint: Color, enabled: Boolea
 fun InventoryScreen(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var selectedGroup by remember { mutableStateOf<String?>(null) }
-    var showTutorial by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     val groups = listOf("bags" to "背包", "armoury" to "兵装库", "crystals" to "水晶", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
     val selectedTypes = inventoryTypesForGroup(selectedGroup ?: "bags")
     val filtered = state.inventory.filter { (selectedGroup == null || it.container in selectedTypes) && (query.isBlank() || it.name.contains(query, true)) }
     // system back inside a sub-stock collapses back to the inventory hub rather
     // than popping the whole inventory screen.
-    BackHandler(enabled = selectedGroup != null) { selectedGroup = null; query = "" }
+    BackHandler(enabled = showSearch || selectedGroup != null) {
+        if (showSearch) { showSearch = false; query = "" } else { selectedGroup = null; query = "" }
+    }
     Box(Modifier.fillMaxSize().background(PhoneBackground)) {
     ScreenFrame(background = Color.Transparent) {
         ScreenHeader(if (selectedGroup == null) "物品栏" else groups.firstOrNull { it.first == selectedGroup }?.second ?: "物品栏", state,
-            trailing = { Row(verticalAlignment = Alignment.CenterVertically) { Text("${state.inventory.size} 件", color = PhoneMuted, fontSize = 12.sp); Text("  ?", color = PhoneAccent, fontSize = 18.sp, modifier = Modifier.clickable { showTutorial = true }) } },
+            trailing = { Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${formatCount(state.inventory.size)} 件", color = PhoneMuted, fontSize = 12.sp)
+                Box(Modifier.padding(start = 9.dp).size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised).clickable {
+                    showSearch = !showSearch
+                    if (!showSearch) query = ""
+                }, contentAlignment = Alignment.Center) { Text("⌕", color = PhoneAccent, fontSize = 21.sp) }
+            } },
             onBack = if (selectedGroup == null) null else ({ selectedGroup = null; query = "" }),
             showBack = selectedGroup != null)
-        CompactInventorySearch(query, { query = it })
         if (state.inventory.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text(if (state.connected) "等待背包快照…" else "请先连接游戏插件", color = PhoneMuted)
@@ -532,46 +540,33 @@ fun InventoryScreen(state: PhoneState) {
             InventoryHub(state) { selectedGroup = it }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 15.dp, vertical = 12.dp)) {
-                if (query.isNotBlank()) {
-                    items(filtered.sortedWith(compareBy({ it.container }, { it.slot })), key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
-                } else {
-                    selectedTypes.forEach { type ->
-                        val containerItems = state.inventory.filter { it.container == type }.sortedBy { it.slot }
-                        if (containerItems.isNotEmpty()) {
-                            item(key = "header-$type") {
-                                val quantity = containerItems.sumOf { it.quantity }
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 12.dp)) {
-                                    Box(Modifier.size(31.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF73431D)), contentAlignment = Alignment.Center) {
-                                        Text(if (type == 2001L) "晶" else "包", color = Color.White, fontSize = 11.sp)
-                                    }
-                                    Text("${containerItems.size} · ${"%,d".format(quantity)}", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
-                                }
-                            }
-                            item(key = "panel-start-$type") { Spacer(Modifier.height(2.dp)) }
-                            items(containerItems, key = { "$type-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
-                            item(key = "panel-end-$type") { Spacer(Modifier.height(13.dp)) }
-                        }
-                    }
-                }
+                items(filtered.sortedWith(compareBy({ it.container }, { it.slot })), key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
+                item("inventory-end") { Spacer(Modifier.height(18.dp)) }
             }
         }
     }
+    if (showSearch) {
+        CompactInventorySearch(
+            query,
+            { query = it },
+            Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars)
+                .padding(top = 66.dp, start = 30.dp, end = 30.dp).zIndex(2f),
+        )
     }
-    if (showTutorial) {
-        AlertDialog(onDismissRequest = { showTutorial = false }, title = { Text("物品栏教程") }, text = {
-            Text("顶部显示当前 Gil 和携带物品总数。\n\n手上有：背包、兵装库、水晶和已装备；点击一项进入与游戏一致的固定格子。\n\n存放于别处：在游戏中打开一次雇员或部队仓库后，插件才能缓存它们。搜索会跨当前页面查找物品。", color = PhoneText)
-        }, confirmButton = { TextButton(onClick = { showTutorial = false }) { Text("知道了") } })
     }
 }
 
 @Composable
-private fun CompactInventorySearch(value: String, change: (String) -> Unit) {
+private fun CompactInventorySearch(value: String, change: (String) -> Unit, modifier: Modifier = Modifier) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) { focusRequester.requestFocus(); keyboard?.show() }
     BasicTextField(
         value = value,
         onValueChange = change,
         singleLine = true,
         textStyle = androidx.compose.ui.text.TextStyle(color = PhoneText, fontSize = 14.sp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp).height(44.dp)
+        modifier = modifier.fillMaxWidth().height(44.dp).focusRequester(focusRequester)
             .clip(RoundedCornerShape(11.dp)).background(PhoneSurfaceRaised),
         decorationBox = { field ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
@@ -598,9 +593,9 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface).padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("Gil", color = Color(0xFFFFB74D), fontSize = 12.sp); Text(state.wallet?.gil?.toString() ?: "--", color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("金币", color = PhoneMuted, fontSize = 10.sp) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("Gil", color = Color(0xFFFFB74D), fontSize = 12.sp); Text(state.wallet?.gil?.let(::formatCount) ?: "--", color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("金币", color = PhoneMuted, fontSize = 10.sp) }
                 Divider(Modifier.height(54.dp).width(1.dp), color = PhoneMuted.copy(alpha = .25f))
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("携带物品", color = PhoneText, fontSize = 12.sp); Text(if (state.inventory.isEmpty()) "--" else total.toString(), color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("总数量", color = PhoneMuted, fontSize = 10.sp) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("携带物品", color = PhoneText, fontSize = 12.sp); Text(if (state.inventory.isEmpty()) "--" else formatCount(total), color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("总数量", color = PhoneMuted, fontSize = 10.sp) }
             }
         }
         item { SectionLabel("手上有") }
@@ -612,7 +607,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { open(id) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Box(Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)).background(color), contentAlignment = Alignment.Center) { ImageGlyph(icon, Color.White, Modifier.size(26.dp)) }
                         Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
-                        Text(count.toString(), color = color, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 5.dp))
+                        Text(formatCount(count), color = color, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 5.dp))
                         Text("›", color = PhoneMuted, fontSize = 26.sp, modifier = Modifier.padding(start = 9.dp))
                     }
                     if (index < rows.lastIndex) Divider(Modifier.padding(start = 78.dp), color = Color(0x22333333))
@@ -622,13 +617,34 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
         item { SectionLabel("存放于别处") }
         item {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) {
+                if (state.retainers.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().clickable { open("retainers") }.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text("雇员", color = PhoneText, fontSize = 15.sp)
+                        Text("在侍从铃处打开一次雇员，将其内容保存到这里", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    Divider(Modifier.padding(start = 16.dp), color = PhoneMuted.copy(alpha = .16f))
+                } else {
+                    state.retainers.forEach { retainer ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(enabled = retainer.active || retainer.itemCount > 0) { open("retainers") }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF8D6AC8)), contentAlignment = Alignment.Center) { Text(retainer.name.take(1), color = Color.White, fontWeight = FontWeight.Bold) }
+                            Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                                Text(retainer.name.ifBlank { "未命名雇员" }, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Text(if (retainer.active) "刚刚同步" else "在游戏中打开以更新背包", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${formatCount(retainer.itemCount)} 格", color = if (retainer.active) PhoneAccent else PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                if (retainer.quantity > 0) Text("${formatCount(retainer.quantity)} 件", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                            }
+                        }
+                        Divider(Modifier.padding(start = 73.dp), color = PhoneMuted.copy(alpha = .16f))
+                    }
+                }
                 listOf(
-                    Triple("retainers", "雇员", "在侍从铃处打开一次雇员，将其内容保存到这里"),
                     Triple("company", "部队仓库", "在游戏中打开部队仓库后同步"),
                     Triple("housing", "房屋仓库", "在房屋保管箱中打开一次后同步"),
                 ).forEachIndexed { index, (id, title, subtitle) ->
                     Column(Modifier.fillMaxWidth().clickable { open(id) }.padding(horizontal = 16.dp, vertical = 14.dp)) { Text(title, color = PhoneText, fontSize = 15.sp); Text(subtitle, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
-                    if (index < 2) Divider(Modifier.padding(start = 16.dp), color = Color(0x22333333))
+                    if (index == 0) Divider(Modifier.padding(start = 16.dp), color = PhoneMuted.copy(alpha = .16f))
                 }
             }
         }
@@ -1080,7 +1096,7 @@ fun WalletScreen(state: PhoneState) {
                 item {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF5B4826)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Gil", color = Color(0xFFFFD36A), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text(wallet.gil.toString().reversed().chunked(3).joinToString(",").reversed(), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text(formatCount(wallet.gil), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 wallet.entries.groupBy { it.section }.forEach { (section, entries) ->
@@ -1090,7 +1106,7 @@ fun WalletScreen(state: PhoneState) {
                             ItemIcon(entry.iconId, Modifier.size(34.dp), fallback = entry.name.take(1))
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) { Text(entry.name, color = PhoneText, fontSize = 14.sp); if (entry.cap > 0) Text("上限 ${entry.cap}", color = PhoneMuted, fontSize = 11.sp) }
-                            Text(entry.amount.toString(), color = PhoneText, fontWeight = FontWeight.Bold)
+                        Text(formatCount(entry.amount), color = PhoneText, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

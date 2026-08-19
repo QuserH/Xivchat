@@ -189,6 +189,11 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
         AetherphoneTabEditor(state) { state.editChatTabs = false }
         return
     }
+    val openFilter = state.chatFilters.firstOrNull { it.id == state.openChatFilterId }
+    if (openFilter != null) {
+        AetherphoneFilterConversationScreen(state, openFilter)
+        return
+    }
     val conversation = state.conversations.firstOrNull { it.key == state.openConversationKey }
     if (conversation != null) {
         AetherphoneConversationScreen(state, conversation)
@@ -235,10 +240,16 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
-    var filterOpen by remember { mutableStateOf(false) }
-    val active = state.chatFilters.firstOrNull { it.id == state.selectedChatFilterId } ?: state.chatFilters.first()
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back) {
+            ImageGlyph(
+                R.drawable.app_notifications,
+                if (state.chatNotifications) AetherPurple else AetherLightMuted,
+                Modifier.size(22.dp).clickable {
+                    state.updateChatNotifications(!state.chatNotifications)
+                    if (state.chatNotifications) state.requestNotificationPermission()
+                }.padding(2.dp),
+            )
             Box {
                 Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
@@ -252,30 +263,21 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
             }
         }
         LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
-        val rows = state.conversations.filter {
-            active.matchesConversation(it) && (query.isBlank() || it.title.contains(query, true) || it.lastMessage?.text?.contains(query, true) == true)
-        }
+        val rows = state.conversations.filter { it.category == ChatCategory.Tell && (query.isBlank() || it.title.contains(query, true) || it.lastMessage?.text?.contains(query, true) == true) }
         LazyColumn(Modifier.fillMaxSize().padding(top = 18.dp)) {
-            item("active-tab") {
-                Box {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { filterOpen = true }.padding(horizontal = 43.dp, vertical = 5.dp),
-                    ) {
-                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFFDDE5D3)), contentAlignment = Alignment.Center) {
-                            Text(active.label.take(1), color = Color(0xFF82A951), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Text(active.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 13.dp))
-                        Text("⌄", color = AetherLightMuted, fontSize = 17.sp, modifier = Modifier.padding(start = 7.dp))
+            item("tabs-label") { Text("标签页", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 22.dp, top = 10.dp, bottom = 4.dp)) }
+            items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
+                val selected = filter.id == state.selectedChatFilterId
+                val last = state.chats.lastOrNull(filter::matches)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id }.padding(horizontal = 43.dp, vertical = 8.dp)) {
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
+                        Text(filter.label.take(1), color = if (selected) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
-                    DropdownMenu(expanded = filterOpen, onDismissRequest = { filterOpen = false }) {
-                        state.chatFilters.forEach { filter ->
-                            DropdownMenuItem(text = { Text(filter.label) }, onClick = {
-                                state.selectedChatFilterId = filter.id
-                                filterOpen = false
-                            })
-                        }
+                    Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                        Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        if (last != null) Text(last.text.replace('\n', ' '), color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                     }
+                    if (filter.id == "all" && state.chatNotifications) ImageGlyph(R.drawable.app_notifications, AetherLightMuted, Modifier.size(15.dp))
                 }
             }
             item("new-tab") {
@@ -288,7 +290,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 }
             }
             if (rows.isNotEmpty()) item("messages-label") {
-                Text("消息", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 22.dp, top = 10.dp, bottom = 4.dp))
+                Text("私聊", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 22.dp, top = 10.dp, bottom = 4.dp))
             }
             items(rows, key = { it.key }) { conversation -> LightConversationRow(conversation, state) }
             if (rows.isEmpty()) item("empty") {
@@ -305,6 +307,11 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     var tint by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var saved by remember { mutableStateOf(false) }
+    var sendChannel by remember { mutableStateOf<Int?>(null) }
+    var layout by remember { mutableStateOf(ChatLayout.Bubbles) }
+    var historyPolicy by remember { mutableStateOf(ChatHistoryPolicy.ThirtyDays) }
+    var alertPolicy by remember { mutableStateOf(ChatAlertPolicy.Mentions) }
+    var settingMenu by remember { mutableStateOf<String?>(null) }
     data class ChannelChoice(val key: String, val category: ChatCategory, val label: String, val channels: Set<Int> = emptySet())
     val groups = listOf(
         "社区" to listOf(
@@ -335,7 +342,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
             val choices = groups.flatMap { it.second }.filter { it.key in selected }
             val exactChannels = choices.flatMap { it.channels }.toSet()
             val broadCategories = choices.filter { it.channels.isEmpty() }.map { it.category }.toSet()
-            state.addChatFilter(name, broadCategories, exactChannels)
+            state.addChatFilter(name, broadCategories, exactChannels, tint, sendChannel, layout, historyPolicy, alertPolicy)
             saved = true
         }
         close()
@@ -379,11 +386,27 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                 }
                 item("settings") {
                     Text("标签页设置", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
-                    listOf("回复发送到" to "无法在此频道发送", "布局" to "气泡", "保存记录" to "30 天", "提醒" to "仅提及").forEach { (label, value) ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(58.dp)) {
+                    val settings = listOf(
+                        "回复发送到" to (sendChannel?.let { id -> outputChannels.firstOrNull { it.id == id }?.label } ?: "当前频道"),
+                        "布局" to if (layout == ChatLayout.Bubbles) "气泡" else "紧凑",
+                        "保存记录" to when (historyPolicy) { ChatHistoryPolicy.Off -> "关闭"; ChatHistoryPolicy.Session -> "本次会话"; ChatHistoryPolicy.ThirtyDays -> "30 天"; ChatHistoryPolicy.Forever -> "永久" },
+                        "提醒" to when (alertPolicy) { ChatAlertPolicy.All -> "全部"; ChatAlertPolicy.Mentions -> "仅提及"; ChatAlertPolicy.Off -> "关闭" },
+                    )
+                    settings.forEach { (label, value) ->
+                        Box {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(58.dp).clickable { settingMenu = label }) {
                             Text(label, color = AetherLightText, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text(value, color = AetherLightMuted, fontSize = 14.sp)
+                            Text(value, color = AetherPurple, fontSize = 14.sp)
                             Text("›", color = AetherLightMuted, fontSize = 28.sp, modifier = Modifier.padding(start = 7.dp))
+                            }
+                            DropdownMenu(expanded = settingMenu == label, onDismissRequest = { settingMenu = null }) {
+                                when (label) {
+                                    "回复发送到" -> outputChannels.forEach { channel -> DropdownMenuItem(text = { Text(channel.label) }, onClick = { sendChannel = channel.id; settingMenu = null }) }
+                                    "布局" -> listOf(ChatLayout.Bubbles to "气泡", ChatLayout.Compact to "紧凑").forEach { (choice, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { layout = choice; settingMenu = null }) }
+                                    "保存记录" -> listOf(ChatHistoryPolicy.Off to "关闭", ChatHistoryPolicy.Session to "本次会话", ChatHistoryPolicy.ThirtyDays to "30 天", ChatHistoryPolicy.Forever to "永久").forEach { (choice, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { historyPolicy = choice; settingMenu = null }) }
+                                    "提醒" -> listOf(ChatAlertPolicy.All to "全部", ChatAlertPolicy.Mentions to "仅提及", ChatAlertPolicy.Off to "关闭").forEach { (choice, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { alertPolicy = choice; settingMenu = null }) }
+                                }
+                            }
                         }
                     }
                     Text("记录仅保存在这台手机上。", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, bottom = 30.dp))
@@ -451,12 +474,12 @@ private fun AetherphoneContactsList(state: PhoneState) {
             val online = shown.filter { it.online }
             val offline = shown.filter { !it.online }
             if (online.isNotEmpty()) {
-                item("online-label") { Text("在线 · ${online.size}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
+                item("online-label") { Text("在线 · ${formatCount(online.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
                 item("online-card") { LightContactCard(online, state) }
                 item("online-gap") { Spacer(Modifier.height(18.dp)) }
             }
             if (offline.isNotEmpty()) {
-                item("offline-label") { Text("离线 · ${offline.size}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
+                item("offline-label") { Text("离线 · ${formatCount(offline.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
                 item("offline-card") { LightContactCard(offline, state) }
             }
             if (shown.isEmpty()) {
@@ -592,6 +615,10 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                             state.toggleConversationPin(conversation)
                             overflowOpen = false
                         })
+                        DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
+                            state.toggleConversationNotify(conversation)
+                            overflowOpen = false
+                        })
                         DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
                             state.clearConversation(conversation)
                             overflowOpen = false
@@ -683,6 +710,17 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
             }
         }
     }
+}
+
+@Composable
+private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatFilter) {
+    val conversation = remember(filter.id, state.chats.size) {
+        val category = filter.categories.firstOrNull() ?: ChatCategory.Public
+        ChatConversation("tab:${filter.id}", category, filter.label).also { chat ->
+            state.chats.filter(filter::matches).forEach(chat::add)
+        }
+    }
+    AetherphoneConversationScreen(state, conversation)
 }
 
 @Composable
@@ -802,6 +840,7 @@ private fun NoteEditor(state: PhoneState, note: LocalNote?, close: () -> Unit) {
     LightFrame {
         Column(Modifier.fillMaxSize()) {
             LightHeader("备忘录", onBack = { state.upsertNote(note?.id, body); close() }) {
+                Text("保存", color = AetherPurple, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { state.upsertNote(note?.id, body); close() }.padding(horizontal = 10.dp))
                 if (note != null) Text("删除", color = Color(0xFFD64A57), fontSize = 13.sp, modifier = Modifier.clickable { state.deleteNote(note.id); close() }.padding(10.dp))
             }
             OutlinedTextField(

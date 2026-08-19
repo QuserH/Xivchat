@@ -13,11 +13,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.text.NumberFormat
+import java.util.Locale
 import com.quserh.eorzeaphone.data.GameChatMessage
 import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameInventoryContainer
 import com.quserh.eorzeaphone.data.GameInventoryItem
+import com.quserh.eorzeaphone.data.GameRetainer
 import com.quserh.eorzeaphone.data.GameWallet
 import com.quserh.eorzeaphone.data.GameWalletEntry
 import com.quserh.eorzeaphone.data.GameWeather
@@ -91,9 +94,21 @@ data class ChatFilter(
     val categories: Set<ChatCategory>,
     val removable: Boolean = false,
     val channels: Set<Int> = emptySet(),
+    val tintIndex: Int = 0,
+    val sendChannel: Int? = null,
+    val layout: ChatLayout = ChatLayout.Bubbles,
+    val historyPolicy: ChatHistoryPolicy = ChatHistoryPolicy.ThirtyDays,
+    val alertPolicy: ChatAlertPolicy = ChatAlertPolicy.Mentions,
 ) {
     fun matches(message: GameChatMessage): Boolean = message.channel in channels || message.category in categories
 }
+
+enum class ChatLayout { Bubbles, Compact }
+enum class ChatHistoryPolicy { Off, Session, ThirtyDays, Forever }
+enum class ChatAlertPolicy { All, Mentions, Off }
+
+internal fun formatCount(value: Long): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value)
+internal fun formatCount(value: Int): String = formatCount(value.toLong())
 
 data class OutputChannel(val id: Int, val label: String)
 
@@ -137,12 +152,9 @@ class ChatConversation(
 }
 
 private val builtInChatFilters = listOf(
-    ChatFilter("all", "全部", ChatCategory.entries.toSet()),
-    ChatFilter("chat", "聊天", setOf(ChatCategory.Public, ChatCategory.Emote)),
-    ChatFilter("party", "队伍", setOf(ChatCategory.Party)),
-    ChatFilter("tell", "私聊", setOf(ChatCategory.Tell)),
-    ChatFilter("social", "部队/通讯贝", setOf(ChatCategory.FreeCompany, ChatCategory.Linkshell)),
-    ChatFilter("system", "系统", setOf(ChatCategory.System)),
+    ChatFilter("fc", "部队", setOf(ChatCategory.FreeCompany), channels = setOf(24), tintIndex = 1, sendChannel = 6),
+    ChatFilter("linkshell", "通讯贝", setOf(ChatCategory.Linkshell), channels = (16..23).toSet() + (37..44).toSet(), tintIndex = 2, sendChannel = 19),
+    ChatFilter("local", "本地", setOf(ChatCategory.Public, ChatCategory.Emote, ChatCategory.Party, ChatCategory.System), tintIndex = 0, sendChannel = 1),
 )
 
 data class CustomShortcut(val name: String, val command: String)
@@ -367,6 +379,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     val chats = mutableStateListOf<GameChatMessage>()
     val inventory = mutableStateListOf<GameInventoryItem>()
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
+    val retainers = mutableStateListOf<GameRetainer>()
     var wallet by mutableStateOf<GameWallet?>(null)
     var weather by mutableStateOf<GameWeather?>(null)
     val jobs = mutableStateListOf<GameJob>()
@@ -390,7 +403,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         set(value) { _chatWrapChars.value = value; prefs.edit().putInt("chatWrapChars", value).apply() }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
-    var selectedChatFilterId by mutableStateOf("all")
+    var selectedChatFilterId by mutableStateOf("local")
+    var openChatFilterId by mutableStateOf<String?>(null)
     val chatFilters = mutableStateListOf<ChatFilter>().apply {
         addAll(builtInChatFilters)
         addAll(loadCustomFilters())
@@ -527,6 +541,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 val o = ctrs.getJSONObject(i)
                 inventoryContainers += GameInventoryContainer(o.optLong("type"), o.optInt("size"))
             }
+            val savedRetainers = JSONArray(prefs.getString("retainerCache", "[]"))
+            retainers.clear()
+            for (i in 0 until savedRetainers.length()) {
+                val o = savedRetainers.getJSONObject(i)
+                retainers += GameRetainer(o.optLong("id"), o.optString("name"), false, o.optInt("itemCount"), o.optInt("quantity"))
+            }
         }
     }
 
@@ -547,9 +567,14 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         inventoryContainers.forEach { it ->
             ctrs.put(JSONObject().apply { put("type", it.type); put("size", it.size) })
         }
+        val savedRetainers = JSONArray()
+        retainers.forEach { retainer -> savedRetainers.put(JSONObject().apply {
+            put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity)
+        }) }
         prefs.edit()
             .putString("inventoryItemCache", items.toString())
             .putString("inventoryContainerCache", ctrs.toString())
+            .putString("retainerCache", savedRetainers.toString())
             .apply()
     }
 
@@ -777,6 +802,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun back() {
         when {
+            openChatFilterId != null -> openChatFilterId = null
             openConversationKey != null -> closeConversation()
             settingsPage != null -> settingsPage = null
             screen == PhoneScreen.ContactDetail -> {
@@ -1037,7 +1063,6 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         val recipient = if (friend.world.isBlank()) friend.name else "${friend.name}@${friend.world}"
         val conv = ensureTellConversation(recipient, friend.name)
         openConversation(conv)
-        selectedChatFilterId = "tell"
         selectedApp = AppCatalog.dock.first()
         screen = PhoneScreen.Chat
     }
@@ -1057,17 +1082,20 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         statusMessage = "正在切换到 ${job.name}"
     }
 
-    fun addChatFilter(label: String, categories: Set<ChatCategory>, channels: Set<Int> = emptySet()) {
+    fun addChatFilter(label: String, categories: Set<ChatCategory>, channels: Set<Int> = emptySet(), tintIndex: Int = 0,
+                      sendChannel: Int? = null, layout: ChatLayout = ChatLayout.Bubbles,
+                      historyPolicy: ChatHistoryPolicy = ChatHistoryPolicy.ThirtyDays,
+                      alertPolicy: ChatAlertPolicy = ChatAlertPolicy.Mentions) {
         val cleanLabel = label.trim().replace("|", "").replace(";", "").take(12)
         if (cleanLabel.isBlank() || (categories.isEmpty() && channels.isEmpty())) return
-        chatFilters += ChatFilter("custom-${System.currentTimeMillis()}", cleanLabel, categories, true, channels)
+        chatFilters += ChatFilter("custom-${System.currentTimeMillis()}", cleanLabel, categories, true, channels, tintIndex, sendChannel, layout, historyPolicy, alertPolicy)
         saveCustomFilters()
     }
 
     fun removeChatFilter(filter: ChatFilter) {
         if (!filter.removable) return
         chatFilters.remove(filter)
-        if (selectedChatFilterId == filter.id) selectedChatFilterId = "all"
+        if (selectedChatFilterId == filter.id) selectedChatFilterId = "local"
         saveCustomFilters()
     }
 
@@ -1117,7 +1145,15 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     } else {
                         conv.unread = 0
                     }
-                    if (!isSelf && chatNotifications && conv.notify) {
+                    val tabAlerts = chatFilters.firstOrNull { it.matches(event.message) }?.alertPolicy ?: ChatAlertPolicy.All
+                    val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
+                    val alertAllowed = when {
+                        event.message.category == ChatCategory.Tell -> tellNotifications
+                        tabAlerts == ChatAlertPolicy.All -> true
+                        tabAlerts == ChatAlertPolicy.Mentions -> mentioned
+                        else -> false
+                    }
+                    if (!isSelf && chatNotifications && conv.notify && alertAllowed) {
                         notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell)
                     }
                     saveChats()
@@ -1128,6 +1164,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 inventory.addAll(event.snapshot.items)
                 inventoryContainers.clear()
                 inventoryContainers.addAll(event.snapshot.containers)
+                retainers.clear()
+                retainers.addAll(event.snapshot.retainers)
                 saveInventory()
             }
             is PhoneEvent.Wallet -> {
@@ -1181,12 +1219,17 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             if (fields.size < 3) return@mapNotNull null
             val categories = fields[2].split(',').mapNotNull { value -> ChatCategory.entries.firstOrNull { it.name == value } }.toSet()
             val channels = fields.getOrNull(3).orEmpty().split(',').mapNotNull(String::toIntOrNull).toSet()
-            if (fields[1].isBlank() || (categories.isEmpty() && channels.isEmpty())) null else ChatFilter(fields[0], fields[1], categories, true, channels)
+            val tint = fields.getOrNull(4)?.toIntOrNull() ?: 0
+            val send = fields.getOrNull(5)?.toIntOrNull()
+            val layout = fields.getOrNull(6)?.let { runCatching { ChatLayout.valueOf(it) }.getOrNull() } ?: ChatLayout.Bubbles
+            val history = fields.getOrNull(7)?.let { runCatching { ChatHistoryPolicy.valueOf(it) }.getOrNull() } ?: ChatHistoryPolicy.ThirtyDays
+            val alerts = fields.getOrNull(8)?.let { runCatching { ChatAlertPolicy.valueOf(it) }.getOrNull() } ?: ChatAlertPolicy.Mentions
+            if (fields[1].isBlank() || (categories.isEmpty() && channels.isEmpty())) null else ChatFilter(fields[0], fields[1], categories, true, channels, tint, send, layout, history, alerts)
         }
 
     private fun saveCustomFilters() {
         val encoded = chatFilters.filter { it.removable }.joinToString(";") { filter ->
-            "${filter.id}|${filter.label}|${filter.categories.joinToString(",") { it.name }}|${filter.channels.joinToString(",")}"
+            "${filter.id}|${filter.label}|${filter.categories.joinToString(",") { it.name }}|${filter.channels.joinToString(",")}|${filter.tintIndex}|${filter.sendChannel ?: ""}|${filter.layout.name}|${filter.historyPolicy.name}|${filter.alertPolicy.name}"
         }
         prefs.edit().putString("chatFilters", encoded).apply()
     }

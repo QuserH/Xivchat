@@ -170,7 +170,15 @@ internal object XivChatCodec {
                 containers += GameInventoryContainer(unpacker.unpackLong(), unpacker.unpackInt())
             }
         }
-        return GameInventorySnapshot(result, containers)
+        val retainers = ArrayList<GameRetainer>()
+        if (fields > 3) {
+            val retainerCount = unpacker.unpackArrayHeader()
+            repeat(retainerCount) {
+                unpacker.unpackArrayHeader()
+                retainers += GameRetainer(unpacker.unpackLong(), unpacker.unpackString(), unpacker.unpackBoolean(), unpacker.unpackInt(), unpacker.unpackInt())
+            }
+        }
+        return GameInventorySnapshot(result, containers, retainers)
     }
 
     fun readWallet(unpacker: MessageUnpacker): GameWallet {

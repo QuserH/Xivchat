@@ -101,9 +101,18 @@ data class GameInventoryContainer(
     val size: Int,
 )
 
+data class GameRetainer(
+    val id: Long,
+    val name: String,
+    val active: Boolean,
+    val itemCount: Int,
+    val quantity: Int,
+)
+
 data class GameInventorySnapshot(
     val items: List<GameInventoryItem>,
     val containers: List<GameInventoryContainer>,
+    val retainers: List<GameRetainer> = emptyList(),
 )
 
 data class GameWalletEntry(

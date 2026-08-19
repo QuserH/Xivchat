@@ -529,7 +529,7 @@ namespace XIVChatPlugin {
             this.BroadcastMessage(snapshot, ClientPreference.PhoneInventorySupport);
         }
 
-        private ServerInventory? BuildInventorySnapshot() {
+        private unsafe ServerInventory? BuildInventorySnapshot() {
             if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
                 return null;
             }
@@ -577,7 +577,29 @@ namespace XIVChatPlugin {
                     }
                 }
 
-                return new ServerInventory(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), items.ToArray(), containers.ToArray());
+                var retainers = new List<ServerRetainer>();
+                var retainerManager = RetainerManager.Instance();
+                var activeRetainer = retainerManager == null ? null : retainerManager->GetActiveRetainer();
+                if (retainerManager != null) {
+                    var activeItems = items.Where(item => item.ContainerType is >= 10000 and <= 12001).ToArray();
+                    var activeCount = activeItems.Length;
+                    var activeQuantity = activeItems.Sum(item => item.Quantity);
+                    var retainerCount = retainerManager->GetRetainerCount();
+                    for (var index = 0u; index < retainerCount; index++) {
+                        var retainer = retainerManager->GetRetainerBySortedIndex(index);
+                        if (retainer == null || retainer->RetainerId == 0) continue;
+                        var active = retainer == activeRetainer;
+                        retainers.Add(new ServerRetainer {
+                            RetainerId = retainer->RetainerId,
+                            Name = retainer->NameString,
+                            Active = active,
+                            ItemCount = active ? activeCount : 0,
+                            Quantity = active ? activeQuantity : 0,
+                        });
+                    }
+                }
+
+                return new ServerInventory(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), items.ToArray(), containers.ToArray(), retainers.ToArray());
             } catch (Exception ex) {
                 Plugin.Log.Warning($"Could not capture inventory: {ex.Message}");
                 return null;

@@ -22,6 +22,15 @@ namespace XIVChatCommon.Message.Server {
         [Key(1)] public int Size { get; set; }
     }
 
+    [MessagePackObject]
+    public sealed class ServerRetainer {
+        [Key(0)] public ulong RetainerId { get; set; }
+        [Key(1)] public string Name { get; set; } = string.Empty;
+        [Key(2)] public bool Active { get; set; }
+        [Key(3)] public int ItemCount { get; set; }
+        [Key(4)] public int Quantity { get; set; }
+    }
+
     /// <summary>
     /// A complete inventory snapshot. Empty slots are omitted to keep the encrypted
     /// TCP message small enough for the existing 128 KiB frame limit.
@@ -31,6 +40,7 @@ namespace XIVChatCommon.Message.Server {
         [Key(0)] public long UpdatedUnix { get; set; }
         [Key(1)] public ServerInventoryItem[] Items { get; set; } = [];
         [Key(2)] public ServerInventoryContainer[] Containers { get; set; } = [];
+        [Key(3)] public ServerRetainer[] Retainers { get; set; } = [];
 
         [IgnoreMember]
         protected override byte Code => (byte) ServerOperation.Inventory;
@@ -38,10 +48,11 @@ namespace XIVChatCommon.Message.Server {
         public ServerInventory() {
         }
 
-        public ServerInventory(long updatedUnix, ServerInventoryItem[] items, ServerInventoryContainer[]? containers = null) {
+        public ServerInventory(long updatedUnix, ServerInventoryItem[] items, ServerInventoryContainer[]? containers = null, ServerRetainer[]? retainers = null) {
             this.UpdatedUnix = updatedUnix;
             this.Items = items;
             this.Containers = containers ?? [];
+            this.Retainers = retainers ?? [];
         }
 
         public static ServerInventory Decode(byte[] bytes) {

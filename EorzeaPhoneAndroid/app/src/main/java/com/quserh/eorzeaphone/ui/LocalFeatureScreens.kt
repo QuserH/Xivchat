@@ -155,7 +155,7 @@ fun ActivityScreen(state: PhoneState) {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatusLine("坐骑", "${activity.mountsOwned} / ${activity.mountsTotal}")
                     StatusLine("宠物", "${activity.minionsOwned} / ${activity.minionsTotal}")
-                    StatusLine("雇员", "${activity.retainerCount} 人")
+                    StatusLine("雇员", "${formatCount(activity.retainerCount)} 人")
                     StatusLine("探险状态", "${activity.venturesReady} 完成 · ${activity.venturesActive} 进行中")
                 }
             }

@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.SideEffect
 import androidx.compose.animation.AnimatedContent
@@ -18,6 +20,11 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.ExperimentalComposeUiApi
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
@@ -34,6 +41,7 @@ private fun PhoneRoute.level(): Int = when (screen) {
     else -> 1
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun EorzeaPhoneApp() {
     val context = LocalContext.current
@@ -42,6 +50,10 @@ fun EorzeaPhoneApp() {
     val darkTheme = state.useDarkTheme(isSystemInDarkTheme())
     EorzeaPhoneTheme(darkTheme = darkTheme) {
         val view = LocalView.current
+        var hapticDownX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        var hapticDownY by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        var hapticMoved by remember { androidx.compose.runtime.mutableStateOf(false) }
+        val touchSlop = remember(view) { ViewConfiguration.get(view.context).scaledTouchSlop.toFloat() }
         SideEffect {
             val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
             WindowCompat.getInsetsController(window, view).apply {
@@ -54,7 +66,15 @@ fun EorzeaPhoneApp() {
         BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 
         val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
-        Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
+        Box(Modifier.fillMaxSize().pointerInteropFilter { event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { hapticDownX = event.x; hapticDownY = event.y; hapticMoved = false }
+                MotionEvent.ACTION_MOVE -> if (kotlin.math.abs(event.x - hapticDownX) > touchSlop || kotlin.math.abs(event.y - hapticDownY) > touchSlop) hapticMoved = true
+                MotionEvent.ACTION_UP -> if (state.haptics && !hapticMoved) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                MotionEvent.ACTION_CANCEL -> hapticMoved = true
+            }
+            false
+        }.onSizeChanged { state.updateShellSize(it.width, it.height) }) {
             AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxSize(),

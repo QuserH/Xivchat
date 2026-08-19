@@ -90,9 +90,9 @@ fun HomeScreen(state: PhoneState) {
             painter = painterResource(R.drawable.wallpaper_dusk_dark),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (darkTheme) 1f else .18f },
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (darkTheme) 1f else .07f },
         )
-        Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else Color.White.copy(alpha = .72f)))
+        Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .90f)))
 
         Column(
             modifier = Modifier

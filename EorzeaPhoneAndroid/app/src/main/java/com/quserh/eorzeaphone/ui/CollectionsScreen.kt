@@ -123,7 +123,7 @@ private fun CollectionCategoryCard(kind: CollectionKind, category: GameCollectio
             }
         }
         Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 12.dp)) {
-            Text(if (category == null) "--" else "$owned / $total", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(if (category == null) "--" else "${formatCount(owned)} / ${formatCount(total)}", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Text("已收藏", color = PhoneMuted, fontSize = 10.sp)
         }
         Text("›", color = PhoneMuted, fontSize = 26.sp, modifier = Modifier.padding(start = 8.dp))
@@ -153,7 +153,7 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
 
     ScreenFrame {
         ScreenHeader(label, state, onBack = onBack,
-            trailing = { Text("${category.owned} / ${category.total}", color = PhoneMuted, fontSize = 12.sp) })
+            trailing = { Text("${formatCount(category.owned)} / ${formatCount(category.total)}", color = PhoneMuted, fontSize = 12.sp) })
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
