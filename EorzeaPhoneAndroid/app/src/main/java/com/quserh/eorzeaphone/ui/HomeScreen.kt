@@ -275,9 +275,8 @@ private fun HomeTile(
                 onBounds(it.boundsInRoot())
             }
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                rotationZ = if (editDrag && !dragging) rotation else 0f
+                scaleX = if (dragging) 1.12f else 1f
+                scaleY = if (dragging) 1.12f else 1f
                 alpha = if (dimmed) 0.45f else 1f
                 translationX = if (dragging) dragOffset.x else 0f
                 translationY = if (dragging) dragOffset.y else 0f
@@ -308,11 +307,16 @@ private fun HomeTile(
             .then(if (dragging) Modifier.zIndex(10f) else Modifier)
             .padding(vertical = 3.dp),
     ) {
-        Box {
+            Box {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(58.dp)
+                    .graphicsLayer {
+                        scaleX = if (dragging) 1f else scale
+                        scaleY = if (dragging) 1f else scale
+                        rotationZ = if (editDrag && !dragging) rotation else 0f
+                    }
                     .clip(RoundedCornerShape(10.dp))
                     .background(app.color),
             ) {

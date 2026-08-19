@@ -1,6 +1,8 @@
 package com.quserh.eorzeaphone.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -16,6 +18,10 @@ data class FishingSpot(
     val region: String,
     val territory: Int,
     val weatherRate: Int,
+    val mapFile: String,
+    val mapSizeFactor: Int,
+    val mapOffsetX: Int,
+    val mapOffsetY: Int,
     val x: Int,
     val y: Int,
 )
@@ -113,7 +119,7 @@ object FishingCatalogRepository {
         mooch = row.optJSONArray("mooch")?.itemRefs().orEmpty(),
         path = row.optJSONArray("path")?.itemRefs().orEmpty(),
         spots = row.optJSONArray("spots")?.objects()?.map {
-            FishingSpot(it.optInt("id"), it.optString("name"), it.optString("zone"), it.optString("region"), it.optInt("territory"), it.optInt("weatherRate"), it.optInt("x"), it.optInt("y"))
+            FishingSpot(it.optInt("id"), it.optString("name"), it.optString("zone"), it.optString("region"), it.optInt("territory"), it.optInt("weatherRate"), it.optString("mapFile"), it.optInt("mapSizeFactor", 100), it.optInt("mapOffsetX"), it.optInt("mapOffsetY"), it.optInt("x"), it.optInt("y"))
         }.orEmpty(),
         snagging = row.optBoolean("snagging"),
         folkloreId = row.optInt("folklore"),
@@ -203,6 +209,10 @@ object FishingAlarmStore {
     private const val PREFS = "fishing_alarms"
     private const val IDS = "fish_ids"
     const val DEFAULT_LEAD_MINUTES = 5
+    private const val LEAD_MINUTES = "lead_minutes"
+
+    fun leadMinutes(context: Context): Int = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getInt(LEAD_MINUTES, DEFAULT_LEAD_MINUTES).coerceIn(0, 10)
 
     fun enabledIds(context: Context): Set<Int> = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .getStringSet(IDS, emptySet()).orEmpty().mapNotNull(String::toIntOrNull).toSet()
@@ -221,9 +231,16 @@ object FishingAlarmStore {
         scheduleNext(context, fish, catalog)
     }
 
+    fun updateLeadMinutes(context: Context, catalog: FishingCatalog, minutes: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(LEAD_MINUTES, minutes.coerceIn(0, 10)).apply()
+        enabledIds(context).forEach { id -> catalog.fish.firstOrNull { it.id == id }?.let { scheduleNext(context, it, catalog) } }
+    }
+
     fun scheduleNext(context: Context, fish: FishingFish, catalog: FishingCatalog, afterMillis: Long = System.currentTimeMillis()) {
         val window = FishingWindowCalculator.nextWindow(fish, catalog, afterMillis) ?: return
-        val trigger = maxOf(System.currentTimeMillis() + 1_000L, window.startMillis - DEFAULT_LEAD_MINUTES * 60_000L)
+        val leadMinutes = leadMinutes(context)
+        val trigger = maxOf(System.currentTimeMillis() + 1_000L, window.startMillis - leadMinutes * 60_000L)
         val place = window.spot?.let { "${it.region} · ${it.name}" }.orEmpty()
         AlarmScheduler.scheduleAt(
             context,
@@ -242,4 +259,25 @@ object FishingAlarmStore {
     }
 
     private fun alarmId(fishId: Int): Long = (0x46000000 xor fishId).toLong()
+}
+
+object FishingMapImageLoader {
+    suspend fun load(context: Context, mapFile: String): Bitmap? = withContext(Dispatchers.IO) {
+        if (mapFile.isBlank()) return@withContext null
+        val safeName = mapFile.replace('/', '_')
+        val file = java.io.File(context.cacheDir, "maps/$safeName.jpg")
+        if (file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.let { return@withContext it }
+        val url = "https://xivapi.com/m/$mapFile.jpg"
+        val bitmap = runCatching {
+            val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 15_000
+                setRequestProperty("User-Agent", "EorzeaPhone/0.4")
+            }
+            try { if (connection.responseCode == 200) connection.inputStream.use(BitmapFactory::decodeStream) else null }
+            finally { connection.disconnect() }
+        }.getOrNull() ?: return@withContext null
+        runCatching { file.parentFile?.mkdirs(); java.io.FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) } }
+        bitmap
+    }
 }

@@ -11,10 +11,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.quserh.eorzeaphone.ui.EorzeaPhoneApp
+import com.quserh.eorzeaphone.data.KeepAliveService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        KeepAliveService.start(this)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.value.toInt()),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(8, 7, 13)),

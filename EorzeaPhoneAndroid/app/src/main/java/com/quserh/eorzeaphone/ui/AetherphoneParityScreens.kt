@@ -266,14 +266,14 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                         Text(filter.label.take(1), color = if (selected) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp) }
-                        }
+                        Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         if (last != null) Text(last.text.replace('\n', ' '), color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                     }
-                    ChatTabNotificationIcon(filter.alertPolicy != ChatAlertPolicy.Off, Modifier.padding(start = 8.dp)) {
-                        state.toggleChatFilterNotifications(filter)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(32.dp).padding(start = 4.dp)) {
+                        last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1) }
+                        ChatTabNotificationIcon(filter.alertPolicy != ChatAlertPolicy.Off) {
+                            state.toggleChatFilterNotifications(filter)
+                        }
                     }
                 }
             }

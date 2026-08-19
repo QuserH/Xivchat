@@ -5,8 +5,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +29,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +54,8 @@ import com.quserh.eorzeaphone.data.FishingCatalog
 import com.quserh.eorzeaphone.data.FishingCatalogRepository
 import com.quserh.eorzeaphone.data.FishingFish
 import com.quserh.eorzeaphone.data.FishingItemRef
+import com.quserh.eorzeaphone.data.FishingMapImageLoader
+import com.quserh.eorzeaphone.data.FishingSpot
 import com.quserh.eorzeaphone.data.FishingWindowCalculator
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
@@ -58,6 +67,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private enum class FishingFilter(val label: String) { All("全部"), Available("可捕获"), Big("鱼王"), Spear("刺鱼"), Caught("已捕获"), Missing("未捕获") }
 
@@ -70,15 +80,20 @@ fun FishingScreen(state: PhoneState) {
     var filter by remember { mutableStateOf(FishingFilter.All) }
     var alarmsOnly by remember { mutableStateOf(false) }
     var alarmVersion by remember { mutableStateOf(0) }
+    var mapSpot by remember { mutableStateOf<FishingSpot?>(null) }
 
     LaunchedEffect(Unit) {
         catalog = FishingCatalogRepository.load(context).also { FishingAlarmStore.refresh(context, it) }
     }
     BackHandler(enabled = selected != null) { selected = null }
+    BackHandler(enabled = mapSpot != null) { mapSpot = null }
 
+    val currentMapSpot = mapSpot
     AnimatedContent(targetState = selected, label = "fishing-detail") { fish ->
-        if (fish != null && catalog != null) {
-            FishingDetail(state, fish, catalog!!, alarmVersion) { enabled ->
+        if (currentMapSpot != null && catalog != null) {
+            FishingMapScreen(currentMapSpot, state) { mapSpot = null }
+        } else if (fish != null && catalog != null) {
+            FishingDetail(state, fish, catalog!!, alarmVersion, onSpot = { mapSpot = it }) { enabled ->
                 FishingAlarmStore.set(context, fish, catalog!!, enabled)
                 if (enabled) state.requestNotificationPermission()
                 alarmVersion++
@@ -175,9 +190,10 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, onCli
 }
 
 @Composable
-private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: FishingCatalog, alarmVersion: Int, onAlarm: (Boolean) -> Unit) {
+private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: FishingCatalog, alarmVersion: Int, onSpot: (FishingSpot) -> Unit, onAlarm: (Boolean) -> Unit) {
     val context = LocalContext.current
     val alarm = remember(fish.id, alarmVersion) { FishingAlarmStore.isEnabled(context, fish.id) }
+    var leadMinutes by remember(alarmVersion) { mutableStateOf(FishingAlarmStore.leadMinutes(context)) }
     val caught = state.isFishCaught(fish.logId, fish.method)
     val window = remember(fish, catalog, System.currentTimeMillis() / 60_000L) { FishingWindowCalculator.nextWindow(fish, catalog) }
     ScreenFrame {
@@ -199,8 +215,21 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                         Text(if (window.startMillis <= System.currentTimeMillis() + 1_000L) "现在可以捕获" else formatWindow(window.startMillis, window.endMillis), color = if (window.startMillis <= System.currentTimeMillis() + 1_000L) PhoneGreen else PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         window.spot?.let { Text("${it.region} · ${it.zone} · ${it.name}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
                     }
-                    Button(onClick = { onAlarm(!alarm) }, colors = ButtonDefaults.buttonColors(containerColor = if (alarm) PhoneSurfaceRaised else PhoneAccent, contentColor = if (alarm) PhoneText else Color.White), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                        Text(if (alarm) "取消闹钟" else "提前 ${FishingAlarmStore.DEFAULT_LEAD_MINUTES} 分钟提醒")
+                    Text("提前提醒：${leadMinutes} 分钟", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 13.dp))
+                    Slider(
+                        value = leadMinutes.toFloat(),
+                        onValueChange = { leadMinutes = it.roundToInt().coerceIn(0, 10) },
+                        onValueChangeFinished = { FishingAlarmStore.updateLeadMinutes(context, catalog, leadMinutes) },
+                        valueRange = 0f..10f,
+                        steps = 9,
+                        modifier = Modifier.fillMaxWidth().height(32.dp),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("出现时", color = PhoneMuted, fontSize = 10.sp)
+                        Text("提前 10 分钟", color = PhoneMuted, fontSize = 10.sp)
+                    }
+                    Button(onClick = { onAlarm(!alarm) }, colors = ButtonDefaults.buttonColors(containerColor = if (alarm) PhoneSurfaceRaised else PhoneAccent, contentColor = if (alarm) PhoneText else Color.White), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        Text(if (alarm) "取消闹钟" else "设置捕鱼提醒")
                     }
                 }
             }
@@ -220,7 +249,7 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
             }
             if (fish.bait.isNotEmpty() || fish.path.isNotEmpty() || fish.mooch.isNotEmpty()) item {
                 DetailSection("鱼饵与钓法") {
-                    if (fish.path.isNotEmpty()) ItemPath("推荐钓法", fish.path)
+                    if (fish.path.isNotEmpty()) FishingTechniquePath(fish, catalog)
                     else if (fish.bait.isNotEmpty()) ItemPath("可用鱼饵", fish.bait.take(12))
                     if (fish.mooch.isNotEmpty()) ItemPath("以小钓大", fish.mooch)
                 }
@@ -240,9 +269,10 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
             item {
                 DetailSection("钓场") {
                     fish.spots.forEach { spot ->
-                        Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                        Column(Modifier.fillMaxWidth().clickable { if (spot.mapFile.isNotBlank()) onSpot(spot) }.padding(vertical = 5.dp)) {
                             Text(spot.name, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Text(listOf(spot.region, spot.zone).filter(String::isNotBlank).distinct().joinToString(" · "), color = PhoneMuted, fontSize = 11.sp)
+                            if (spot.mapFile.isNotBlank()) Text("查看地图 · ${spot.x / 10.0}, ${spot.y / 10.0}", color = PhoneAccent, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
                         }
                     }
                     if (fish.spots.isEmpty()) Text("该鱼暂无钓场记录", color = PhoneMuted, fontSize = 12.sp)
@@ -255,6 +285,48 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                 }
             }
             item { Text("资料已内置于 APP，来源参考鱼糕与 GatherBuddyReborn。", color = PhoneMuted, fontSize = 10.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var bitmap by remember(spot.mapFile) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(spot.mapFile) { bitmap = FishingMapImageLoader.load(context.applicationContext, spot.mapFile) }
+    ScreenFrame {
+        ScreenHeader(spot.name, state, onBack = onBack, trailing = { Text("地图", color = PhoneMuted, fontSize = 12.sp) })
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Text(listOf(spot.region, spot.zone).filter(String::isNotBlank).distinct().joinToString(" · "), color = PhoneMuted, fontSize = 12.sp)
+                if (bitmap == null) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                        Text(if (spot.mapFile.isBlank()) "该钓场暂无地图资料" else "正在载入地图…", color = PhoneMuted)
+                    }
+                } else {
+                    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))) {
+                        Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "${spot.name}地图", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+                        if (spot.x > 0 && spot.y > 0) {
+                            // Fishing data stores map coordinates as hundredths (12.83 -> 1283).
+                            // The game map spans roughly 0..40 coordinate units.
+                            val x = (spot.x / 4_000f).coerceIn(0f, 1f)
+                            val y = (spot.y / 4_000f).coerceIn(0f, 1f)
+                            Box(Modifier.offset(x = maxWidth * x - 12.dp, y = maxHeight * y - 12.dp).size(24.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
+                                Text("钓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("钓场位置", color = PhoneText, fontWeight = FontWeight.SemiBold)
+                        Text("${spot.name} · X ${spot.x / 10.0}, Y ${spot.y / 10.0}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    Text("地图标记", color = PhoneAccent, fontSize = 11.sp)
+                }
+            }
         }
     }
 }
@@ -276,6 +348,36 @@ private fun ConditionRow(label: String, value: String) {
 }
 
 @Composable
+private fun FishingTechniquePath(fish: FishingFish, catalog: FishingCatalog) {
+    Text("推荐钓法", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 5.dp))
+    val nodes = (fish.path + FishingItemRef(fish.id, fish.name, fish.icon)).distinctBy { it.id }
+    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        items(nodes.size) { index ->
+            val node = nodes[index]
+            val technique = catalog.fish.firstOrNull { it.id == node.id }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TechniqueNode(node, technique)
+                if (index < nodes.lastIndex) Text("→", color = PhoneAccent, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 2.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TechniqueNode(item: FishingItemRef, fish: FishingFish?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(66.dp)) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
+            ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
+            fish?.let {
+                if (it.tug.isNotBlank()) MiniBadge(tugShort(it.tug), PhoneAccent, Modifier.align(Alignment.TopEnd))
+                if (it.hook.isNotBlank()) MiniBadge(hookShort(it.hook), PhoneGreen, Modifier.align(Alignment.BottomEnd))
+            }
+        }
+        Text(item.name, color = PhoneText, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 3.dp))
+    }
+}
+
+@Composable
 private fun ItemPath(label: String, items: List<FishingItemRef>) {
     Text(label, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 5.dp))
     items.forEachIndexed { index, item ->
@@ -288,13 +390,15 @@ private fun ItemPath(label: String, items: List<FishingItemRef>) {
 }
 
 @Composable
-private fun MiniBadge(text: String, color: Color = PhoneMuted) {
-    Text(text, color = color, fontSize = 9.sp, modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(color.copy(alpha = .10f)).padding(horizontal = 5.dp, vertical = 2.dp))
+private fun MiniBadge(text: String, color: Color = PhoneMuted, modifier: Modifier = Modifier) {
+    Text(text, color = color, fontSize = 8.sp, maxLines = 1, modifier = modifier.clip(RoundedCornerShape(4.dp)).background(color.copy(alpha = .88f)).padding(horizontal = 3.dp, vertical = 1.dp))
 }
 
 private fun FishingFish.weatherNames(catalog: FishingCatalog): String = weather.mapNotNull { catalog.weather[it]?.name }.joinToString(" / ")
 private fun tugLabel(value: String): String = when (value) { "light" -> "轻竿 !"; "medium" -> "中竿 !!"; "heavy" -> "重竿 !!!"; else -> "竿型未知" }
 private fun hookLabel(value: String): String = when (value) { "precision" -> "精准提钩"; "powerful" -> "强力提钩"; else -> value }
+private fun tugShort(value: String): String = when (value) { "light" -> "!"; "medium" -> "!!"; "heavy" -> "!!!"; else -> value }
+private fun hookShort(value: String): String = when (value) { "precision" -> "精准"; "powerful" -> "强力"; else -> value }
 private fun lureLabel(value: String, stacks: Int): String = when (value) { "modest" -> "谦逊之饵${if (stacks > 0) " ×$stacks" else ""}"; "ambitious" -> "雄心之饵${if (stacks > 0) " ×$stacks" else ""}"; else -> value }
 private fun formatPatch(value: Double): String = if (value == value.toInt().toDouble()) "${value.toInt()}.0" else String.format(Locale.US, "%.2f", value).trimEnd('0')
 private fun formatWindow(start: Long, end: Long): String {

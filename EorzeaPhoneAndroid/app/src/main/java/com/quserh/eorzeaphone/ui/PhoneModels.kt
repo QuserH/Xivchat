@@ -154,11 +154,6 @@ class ChatConversation(
     }
 }
 
-private val builtInChatFilters = listOf(
-    ChatFilter("fc", "部队", setOf(ChatCategory.FreeCompany), channels = setOf(24), tintIndex = 1, sendChannel = 6),
-    ChatFilter("local", "本地", setOf(ChatCategory.Public, ChatCategory.Emote, ChatCategory.Party, ChatCategory.System), tintIndex = 0, sendChannel = 1),
-)
-
 data class CustomShortcut(val name: String, val command: String)
 
 data class LocalNote(
@@ -435,11 +430,9 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         set(value) { _chatWrapChars.value = value; prefs.edit().putInt("chatWrapChars", value).apply() }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
-    var selectedChatFilterId by mutableStateOf("local")
+    var selectedChatFilterId by mutableStateOf("")
     var openChatFilterId by mutableStateOf<String?>(null)
     val chatFilters = mutableStateListOf<ChatFilter>().apply {
-        val muted = prefs.getStringSet("mutedChatTabs", emptySet()).orEmpty()
-        addAll(builtInChatFilters.map { if (it.id in muted) it.copy(alertPolicy = ChatAlertPolicy.Off) else it })
         addAll(loadCustomFilters())
     }
     val conversations = mutableStateListOf<ChatConversation>()
@@ -1278,7 +1271,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     fun removeChatFilter(filter: ChatFilter) {
         if (!filter.removable) return
         chatFilters.remove(filter)
-        if (selectedChatFilterId == filter.id) selectedChatFilterId = "local"
+        if (selectedChatFilterId == filter.id) selectedChatFilterId = ""
         saveCustomFilters()
     }
 
