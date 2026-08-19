@@ -3,10 +3,18 @@ package com.quserh.eorzeaphone.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -91,8 +100,14 @@ fun FishingScreen(state: PhoneState) {
     BackHandler(enabled = mapSpot != null) { mapSpot = null }
 
     val currentMapSpot = mapSpot
-    AnimatedContent(targetState = selected, label = "fishing-detail") { fish ->
-        if (currentMapSpot != null && catalog != null) {
+    val fishingRoute = selected?.id to mapSpot?.id
+    AnimatedContent(
+        targetState = fishingRoute,
+        transitionSpec = { (fadeIn(tween(220)) + scaleIn(tween(240), initialScale = .97f)).togetherWith(fadeOut(tween(150)) + scaleOut(tween(170), targetScale = 1.02f)) },
+        label = "fishing-detail",
+    ) { route ->
+        val fish = catalog?.fish?.firstOrNull { it.id == route.first }
+        if (route.second != null && currentMapSpot != null && catalog != null) {
             FishingMapScreen(currentMapSpot, state) { mapSpot = null }
         } else if (fish != null && catalog != null) {
             FishingDetail(state, fish, catalog!!, alarmVersion, onSpot = { mapSpot = it }) { enabled ->
@@ -296,6 +311,14 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
     val context = LocalContext.current
     var bitmap by remember(spot.mapFile) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var loadFinished by remember(spot.mapFile) { mutableStateOf(spot.mapFile.isBlank()) }
+    var mapScale by remember(spot.mapFile) { mutableStateOf(1f) }
+    var mapPanX by remember(spot.mapFile) { mutableStateOf(0f) }
+    var mapPanY by remember(spot.mapFile) { mutableStateOf(0f) }
+    val transformState = rememberTransformableState { zoom, pan, _ ->
+        mapScale = (mapScale * zoom).coerceIn(1f, 4f)
+        mapPanX += pan.x
+        mapPanY += pan.y
+    }
     LaunchedEffect(spot.mapFile) {
         bitmap = FishingMapImageLoader.load(context.applicationContext, spot.mapFile)
         loadFinished = true
@@ -314,7 +337,10 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                         }, color = PhoneMuted)
                     }
                 } else {
-                    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))) {
+                    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)).transformable(transformState)) {
+                        val mapWidth = maxWidth
+                        val mapHeight = maxHeight
+                        Box(Modifier.fillMaxSize().graphicsLayer(scaleX = mapScale, scaleY = mapScale, translationX = mapPanX, translationY = mapPanY)) {
                         Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "${spot.name}地图", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
                         if (spot.x > 0 && spot.y > 0) {
                             // Fishing data stores coordinates as hundredths. MapSizeFactor
@@ -322,9 +348,10 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                             val mapScale = (spot.mapSizeFactor.coerceAtLeast(100) / 10f)
                             val x = ((spot.x / 100f - spot.mapOffsetX / 100f) / mapScale).coerceIn(0f, 1f)
                             val y = ((spot.y / 100f - spot.mapOffsetY / 100f) / mapScale).coerceIn(0f, 1f)
-                            Box(Modifier.offset(x = maxWidth * x - 12.dp, y = maxHeight * y - 12.dp).size(24.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
+                            Box(Modifier.offset(x = mapWidth * x - 12.dp, y = mapHeight * y - 12.dp).size(24.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
                                 Text("钓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
                         }
                     }
                 }
@@ -372,15 +399,28 @@ private fun FishingTechniquePath(fish: FishingFish, catalog: FishingCatalog) {
             if (index < nodes.lastIndex) Text("→", color = PhoneMuted, fontSize = 23.sp)
         }
     }
+    fish.hook.takeIf { it.isNotBlank() && it != "unknown" }?.let { hook ->
+        Text(
+            hookLabel(hook), color = Color(0xFF202124), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(6.dp)).background(Color.White).padding(horizontal = 12.dp, vertical = 5.dp),
+        )
+    }
 }
 
 private fun fishingTechniqueChain(fish: FishingFish, catalog: FishingCatalog): List<FishingItemRef> {
     val target = FishingItemRef(fish.id, fish.name, fish.icon)
     if (fish.mooch.isNotEmpty()) {
-        val mooched = fish.mooch.first()
-        val source = catalog.fish.firstOrNull { it.id == mooched.id }
-        val base = source?.path?.firstOrNull() ?: source?.bait?.firstOrNull()
-        return listOfNotNull(base, mooched, target).distinctBy { it.id }
+        val chain = mutableListOf<FishingItemRef>()
+        val visited = mutableSetOf<Int>()
+        fun appendSource(ref: FishingItemRef) {
+            if (!visited.add(ref.id)) return
+            val source = catalog.fish.firstOrNull { it.id == ref.id }
+            if (source?.mooch?.isNotEmpty() == true) appendSource(source.mooch.first())
+            else source?.path?.firstOrNull()?.let(chain::add) ?: source?.bait?.firstOrNull()?.let(chain::add)
+            chain.add(ref)
+        }
+        appendSource(fish.mooch.first())
+        return (chain + target).distinctBy { it.id }
     }
     val base = fish.path.ifEmpty { fish.bait.take(1) }
     return (base + target).distinctBy { it.id }
@@ -388,12 +428,14 @@ private fun fishingTechniqueChain(fish: FishingFish, catalog: FishingCatalog): L
 
 @Composable
 private fun TechniqueNode(item: FishingItemRef, fish: FishingFish?) {
-    Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
-        ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
-        fish?.let {
-            if (it.tug.isNotBlank()) MiniBadge(tugShort(it.tug), Color(0xFFE8A83A), Modifier.align(Alignment.TopEnd))
-            if (it.hook.isNotBlank() && it.hook != "unknown") {
-                MiniBadge(if (it.hook == "precision") "准" else "强", PhoneGreen, Modifier.align(Alignment.BottomStart))
+    Row(verticalAlignment = Alignment.Bottom) {
+        Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
+            ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
+            fish?.let {
+                if (it.tug.isNotBlank()) MiniBadge(tugShort(it.tug), Color(0xFFE8A83A), Modifier.align(Alignment.TopEnd))
+                if (it.hook.isNotBlank() && it.hook != "unknown") {
+                    MiniBadge(if (it.hook == "precision") "准" else "强", PhoneGreen, Modifier.align(Alignment.BottomStart))
+                }
             }
         }
     }

@@ -533,7 +533,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     chunks = o.optJSONArray("chunks")?.let { chunks -> buildList(chunks.length()) {
                         for (j in 0 until chunks.length()) {
                             val c = chunks.getJSONObject(j)
-                            add(GameChatChunk(c.optString("text").takeIf { c.has("text") && !c.isNull("text") }, c.optInt("icon", -1).takeIf { it >= 0 }, c.optBoolean("italic")))
+                            add(GameChatChunk(c.optString("text").takeIf { c.has("text") && !c.isNull("text") }, c.optInt("icon", -1).takeIf { it >= 0 }, c.optBoolean("italic"), c.optLong("foreground", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }))
                         }
                     } } ?: emptyList(),
                 )
@@ -561,6 +561,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     if (c.text != null) put("text", c.text)
                     if (c.icon != null) put("icon", c.icon)
                     put("italic", c.italic)
+                    if (c.foreground != null) put("foreground", c.foreground)
                 }) } })
             })
         }

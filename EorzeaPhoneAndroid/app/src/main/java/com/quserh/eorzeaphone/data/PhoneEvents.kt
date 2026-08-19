@@ -12,7 +12,7 @@ data class GameFriend(
     val homeWorldId: Int = 0,
 )
 
-data class GameChatChunk(val text: String? = null, val icon: Int? = null, val italic: Boolean = false)
+data class GameChatChunk(val text: String? = null, val icon: Int? = null, val italic: Boolean = false, val foreground: Long? = null)
 
 data class GameChatMessage(
     val timestamp: Long,

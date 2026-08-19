@@ -114,14 +114,18 @@ internal object XivChatCodec {
                         val fields = unpacker.unpackArrayHeader()
                         var content = ""
                         var italic = false
+                        var fallback: Long? = null
+                        var foreground: Long? = null
                         repeat(fields) { index ->
                             when (index) {
+                                0 -> fallback = if (unpacker.tryUnpackNil()) null else unpacker.unpackLong()
                                 3 -> italic = if (unpacker.tryUnpackNil()) false else unpacker.unpackBoolean()
                                 4 -> content = if (unpacker.tryUnpackNil()) "" else unpacker.unpackString()
+                                1 -> foreground = if (unpacker.tryUnpackNil()) null else unpacker.unpackLong()
                                 else -> unpacker.skipValue()
                             }
                         }
-                        if (content.isNotEmpty()) add(GameChatChunk(text = content, italic = italic))
+                        if (content.isNotEmpty()) add(GameChatChunk(text = content, italic = italic, foreground = foreground ?: fallback))
                     }
                     2 -> {
                         val fields = unpacker.unpackArrayHeader()

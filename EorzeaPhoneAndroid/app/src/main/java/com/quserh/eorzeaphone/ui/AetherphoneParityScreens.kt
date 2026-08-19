@@ -11,6 +11,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -81,6 +85,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.Placeholder
@@ -192,41 +198,37 @@ private fun LightHeader(
 @Composable
 fun AetherphoneMessagesScreen(state: PhoneState) {
     var editingTab by remember { mutableStateOf(false) }
-    if (editingTab) {
-        AetherphoneTabEditor(state) { editingTab = false }
-        return
-    }
-    if (state.editChatTabs) {
-        AetherphoneTabEditor(state) { state.editChatTabs = false }
-        return
-    }
     val openFilter = state.chatFilters.firstOrNull { it.id == state.openChatFilterId }
-    if (openFilter != null) {
-        AetherphoneFilterConversationScreen(state, openFilter)
-        return
-    }
     val conversation = state.conversations.firstOrNull { it.key == state.openConversationKey }
-    if (conversation != null) {
-        AetherphoneConversationScreen(state, conversation)
-        return
-    }
     val pager = rememberPagerState(initialPage = if (state.messagesTab) 1 else 0, pageCount = { 2 })
     val scope = rememberCoroutineScope()
     LaunchedEffect(pager.currentPage) { state.messagesTab = pager.currentPage == 1 }
-    LightFrame {
-        Column(Modifier.fillMaxSize()) {
-            HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
-                if (page == 0) AetherphoneConversationList(state) { editingTab = true } else AetherphoneContactsList(state)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().height(64.dp).background(AetherLightBackground),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) {
-                    scope.launch { pager.animateScrollToPage(0) }
-                }
-                LightNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) {
-                    scope.launch { pager.animateScrollToPage(1) }
+    val route = when {
+        editingTab -> "new-tab"
+        state.editChatTabs -> "edit-tab"
+        openFilter != null -> "filter:${openFilter.id}"
+        conversation != null -> "chat:${conversation.key}"
+        else -> "list"
+    }
+    AnimatedContent(
+        targetState = route,
+        transitionSpec = { (fadeIn(tween(200)) + scaleIn(tween(220), initialScale = .98f)).togetherWith(fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 1.01f)) },
+        label = "chat-navigation",
+    ) { target ->
+        when {
+            target == "new-tab" -> AetherphoneTabEditor(state) { editingTab = false }
+            target == "edit-tab" -> AetherphoneTabEditor(state) { state.editChatTabs = false }
+            target.startsWith("filter:") && openFilter != null -> AetherphoneFilterConversationScreen(state, openFilter)
+            target.startsWith("chat:") && conversation != null -> AetherphoneConversationScreen(state, conversation)
+            else -> LightFrame {
+                Column(Modifier.fillMaxSize()) {
+                    HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
+                        if (page == 0) AetherphoneConversationList(state) { editingTab = true } else AetherphoneContactsList(state)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().height(64.dp).background(AetherLightBackground), verticalAlignment = Alignment.CenterVertically) {
+                        LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(0) } }
+                        LightNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(1) } }
+                    }
                 }
             }
         }
@@ -818,7 +820,10 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
     }
     val annotated = buildAnnotatedString {
         chunks.forEachIndexed { index, chunk ->
-            if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else append(chunk.text.orEmpty())
+            if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else {
+                val chunkColor = chunk.foreground?.let(::chatChunkColor) ?: color
+                withStyle(SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)) { append(chunk.text.orEmpty()) }
+            }
         }
     }
     val style = androidx.compose.ui.text.TextStyle(
@@ -830,13 +835,43 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
     Text(annotated, inlineContent = inline, style = style, modifier = modifier)
 }
 
+private fun chatChunkColor(value: Long): Color {
+    val red = ((value shr 24) and 0xFF).toInt()
+    val green = ((value shr 16) and 0xFF).toInt()
+    val blue = ((value shr 8) and 0xFF).toInt()
+    val alpha = (value and 0xFF).toInt()
+    return Color(red, green, blue, alpha)
+}
+
 @Composable
 private fun ChatInlineIcon(index: Int) {
     val bitmap = ImageBitmap.imageResource(R.drawable.fonticon_ps4)
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-        val slot = (index.coerceAtLeast(1) - 1).coerceIn(0, 24)
-        drawImage(bitmap, srcOffset = androidx.compose.ui.unit.IntOffset((slot % 5) * 40, 342 + (slot / 5) * 40), srcSize = androidx.compose.ui.unit.IntSize(40, 40))
+        val rect = fontIconRect(index)
+        drawImage(bitmap, srcOffset = androidx.compose.ui.unit.IntOffset(rect[0], rect[1]), srcSize = androidx.compose.ui.unit.IntSize(rect[2], rect[3]))
     }
+}
+
+private fun fontIconRect(index: Int): IntArray = when (index) {
+    in 1..5 -> intArrayOf((index - 1) * 40, 342, 40, 40)
+    in 6..10 -> intArrayOf((index - 6) * 40, 382, 40, 40)
+    in 11..15 -> intArrayOf((index - 11) * 40, 422, 40, 40)
+    16 -> intArrayOf(120, 542, 40, 40); 17 -> intArrayOf(160, 542, 40, 40)
+    18 -> intArrayOf(0, 462, 108, 40); 19 -> intArrayOf(108, 462, 108, 40)
+    20 -> intArrayOf(120, 502, 40, 40); 21 -> intArrayOf(0, 502, 56, 40); 22 -> intArrayOf(56, 502, 64, 40); 23 -> intArrayOf(160, 502, 40, 40)
+    24 -> intArrayOf(0, 542, 56, 40); 25 -> intArrayOf(56, 542, 64, 40)
+    51 -> intArrayOf(248, 342, 40, 40); 52 -> intArrayOf(288, 342, 40, 40); 53 -> intArrayOf(328, 342, 40, 40)
+    54 -> intArrayOf(200, 342, 24, 40); 55 -> intArrayOf(224, 342, 24, 40)
+    in 56..61 -> intArrayOf(200 + (index - 56) * 40, 382, 40, 40)
+    62 -> intArrayOf(320, 382, 40, 40); 63 -> intArrayOf(320, 422, 40, 40)
+    in 64..66 -> intArrayOf(368 + (index - 64) * 40, 342, 40, 40)
+    67 -> intArrayOf(360, 382, 40, 40); 68 -> intArrayOf(400, 382, 40, 40)
+    70 -> intArrayOf(360, 422, 40, 40); 71 -> intArrayOf(400, 422, 40, 40); 72 -> intArrayOf(440, 422, 40, 40); 73 -> intArrayOf(440, 382, 40, 40)
+    in 74..80 -> intArrayOf(216 + (index - 74) * 40, 462, 40, 40)
+    in 81..87 -> intArrayOf(200 + (index - 81) * 40, 502, 40, 40)
+    in 88..94 -> intArrayOf(200 + (index - 88) * 40, 542, 40, 40)
+    in 95..100 -> intArrayOf((index - 95) * 40, 582, 40, 40)
+    else -> intArrayOf(((index - 101).coerceIn(0, 11)) * 40, 622, 40, 40)
 }
 
 private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, selfName: String?): Boolean {
