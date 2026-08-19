@@ -34,7 +34,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
@@ -81,7 +80,6 @@ fun HomeScreen(state: PhoneState) {
     val libraryCount = if (state.homeLibraryApps().isNotEmpty()) 1 else 0
     val totalPages = state.homePageCount + libraryCount
     val pager = rememberPagerState(pageCount = { totalPages })
-    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(R.drawable.wallpaper_dusk_dark),
@@ -102,7 +100,6 @@ fun HomeScreen(state: PhoneState) {
             HorizontalPager(
                 state = pager,
                 modifier = Modifier.weight(1f),
-                beyondViewportPageCount = 1,
             ) { page ->
                 if (page < state.homePageCount) {
                     SocialPage(state, page)
@@ -115,10 +112,6 @@ fun HomeScreen(state: PhoneState) {
             Dock(state)
             Spacer(Modifier.height(8.dp))
         }
-
-        val lastPage = totalPages - 1
-        if (pager.currentPage > 0) PageArrow(left = true, Modifier.align(Alignment.CenterStart)) { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
-        if (pager.currentPage < lastPage) PageArrow(left = false, Modifier.align(Alignment.CenterEnd)) { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }
     }
 }
 
@@ -357,13 +350,6 @@ fun PhoneStatusBar() {
     Box(Modifier.fillMaxWidth().height(30.dp)) {
         Text(eorzea, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
-    }
-}
-
-@Composable
-private fun PageArrow(left: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.width(24.dp).height(62.dp).clip(if (left) RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp) else RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)).background(Color(0x43000000)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Text(if (left) "‹" else "›", color = Color.White, fontSize = 30.sp)
     }
 }
 
