@@ -10,5 +10,6 @@ namespace XIVChatCommon.Message.Client {
         Preferences = 8,
         Channel = 9,
         FriendAction = 10,
+        JobsAction = 11,
     }
 }

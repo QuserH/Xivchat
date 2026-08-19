@@ -26,6 +26,7 @@ using Dalamud.Game.Chat;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Environment;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 
 namespace XIVChatPlugin {
     internal class Server : IDisposable {
@@ -58,6 +59,7 @@ namespace XIVChatPlugin {
         private readonly CancellationTokenSource _tokenSource = new();
         private readonly ConcurrentQueue<string> _toGame = new();
         private readonly ConcurrentQueue<ClientFriendAction> _friendActions = new();
+        private readonly ConcurrentQueue<int> _jobsActions = new();
 
         private readonly ConcurrentDictionary<Guid, BaseClient> _clients = new();
         internal IReadOnlyDictionary<Guid, BaseClient> Clients => this._clients;
@@ -80,6 +82,7 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingDailies = new();
         private readonly ConcurrentQueue<Guid> _awaitingActivity = new();
         private readonly ConcurrentQueue<Guid> _awaitingCollections = new();
+        private readonly ConcurrentQueue<Guid> _awaitingMaps = new();
 
         private volatile bool _running;
         private bool Running => this._running;
@@ -102,6 +105,9 @@ namespace XIVChatPlugin {
         private bool _hasActivitySnapshot;
         private long _lastCollectionsFingerprint;
         private bool _hasCollectionsSnapshot;
+        private long _lastMapsFingerprint;
+        private bool _hasMapsSnapshot;
+        private ServerMapExpansion[]? _mapCatalog;
 
         private static readonly GameInventoryType[] PhoneInventoryTypes = [
             GameInventoryType.Inventory1,
@@ -173,6 +179,7 @@ namespace XIVChatPlugin {
             this._weatherWatch.Start();
             this._jobsWatch.Start();
             this._dailiesWatch.Start();
+            this._collectionsWatch.Start();
             this._activityTracker = new PhoneActivityTracker(plugin);
 
             this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
@@ -342,7 +349,7 @@ namespace XIVChatPlugin {
             }
         }
 
-        internal void OnFrameworkUpdate(IFramework framework) {
+        internal unsafe void OnFrameworkUpdate(IFramework framework) {
             var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
             if (player != null && this._sendPlayerData) {
                 this.BroadcastPlayerData();
@@ -361,6 +368,7 @@ namespace XIVChatPlugin {
             this.UpdateJobs();
             this.UpdateDailies();
             this.UpdateCollections();
+            this.UpdateMaps();
             this.UpdateActivity();
 
             while (this._friendActions.TryDequeue(out var friendAction)) {
@@ -368,6 +376,17 @@ namespace XIVChatPlugin {
                     this._plugin.Functions.ExecuteFriendAction(friendAction);
                 } catch (Exception ex) {
                     Plugin.Log.Warning($"Could not execute friend action: {ex.Message}");
+                }
+            }
+
+            while (this._jobsActions.TryDequeue(out var gearsetId)) {
+                try {
+                    var module = RaptureGearsetModule.Instance();
+                    if (module != null && module->IsValidGearset(gearsetId)) {
+                        module->EquipGearset(gearsetId);
+                    }
+                } catch (Exception ex) {
+                    Plugin.Log.Warning($"Could not equip gearset {gearsetId}: {ex.Message}");
                 }
             }
 
@@ -451,6 +470,12 @@ namespace XIVChatPlugin {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
                 var collections = this.BuildCollectionsSnapshot();
                 if (collections != null) client.Queue.Writer.TryWrite(collections);
+            }
+
+            while (this._awaitingMaps.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var maps = this.BuildMapsSnapshot();
+                if (maps != null) client.Queue.Writer.TryWrite(maps);
             }
 
             int time;
@@ -819,20 +844,44 @@ namespace XIVChatPlugin {
                     return -1;
                 }
 
+                var gearsetJobs = new HashSet<uint>();
+                var gearsets = RaptureGearsetModule.Instance();
+                if (gearsets != null) {
+                    foreach (var gearset in gearsets->Entries) {
+                        if ((gearset.Flags & RaptureGearsetModule.GearsetFlag.Exists) == 0) continue;
+                        var jobId = (uint) gearset.ClassJob;
+                        var job = sheet.GetRowOrDefault(jobId);
+                        if (job == null || job.Value.ExpArrayIndex < 0 || job.Value.ExpArrayIndex >= levels.Length) continue;
+                        var category = JobCategory(job.Value);
+                        var displayName = gearset.NameString;
+                        if (string.IsNullOrWhiteSpace(displayName)) displayName = job.Value.Name.ExtractText();
+                        entries.Add(new ServerJobEntry {
+                            JobId = jobId,
+                            Name = displayName,
+                            Abbreviation = job.Value.Abbreviation.ExtractText(),
+                            Category = category,
+                            Level = levels[job.Value.ExpArrayIndex],
+                            Active = gearsets->CurrentGearsetIndex == gearset.Id,
+                            ItemLevel = gearset.ItemLevel,
+                            IconId = 62100u + jobId,
+                            GearsetId = gearset.Id,
+                        });
+                        gearsetJobs.Add(jobId);
+                    }
+                }
+
                 foreach (var job in sheet) {
                     if (job.RowId == 0 || job.ExpArrayIndex < 0 || job.ExpArrayIndex >= levels.Length) continue;
                     var level = levels[job.ExpArrayIndex];
                     if (level <= 0) continue;
-                    var category = job.ClassJobCategory.RowId switch {
-                        32 => "采集", 33 => "生产",
-                        _ => job.JobType switch {
-                            1 => "坦克", 2 or 6 => "治疗", 3 => "近战", 4 => "远程物理", 5 => "远程魔法", _ => "战斗",
-                        },
-                    };
+                    if (gearsetJobs.Contains(job.RowId)) continue;
+                    var category = JobCategory(job);
                     entries.Add(new ServerJobEntry {
                         JobId = job.RowId, Name = job.Name.ExtractText(), Abbreviation = job.Abbreviation.ExtractText(),
                         Category = category, Level = level, Active = job.RowId == current,
                         ItemLevel = job.RowId == current ? ItemLevelForActiveJob() : -1,
+                        IconId = 62100u + job.RowId,
+                        GearsetId = -1,
                     });
                 }
                 return new ServerJobs(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), entries.OrderBy(x => x.Category).ThenBy(x => x.JobId).ToArray());
@@ -841,6 +890,19 @@ namespace XIVChatPlugin {
                 return null;
             }
         }
+
+        private static string JobCategory(ClassJob job) => job.ClassJobCategory.RowId switch {
+            32 => "采集",
+            33 => "生产",
+            _ => job.JobType switch {
+                1 => "坦克",
+                2 or 6 => "治疗",
+                3 => "近战",
+                4 => "远程物理",
+                5 => "远程魔法",
+                _ => "战斗",
+            },
+        };
 
         private static long JobsFingerprint(ServerJobs jobs) {
             unchecked {
@@ -1099,6 +1161,93 @@ namespace XIVChatPlugin {
                 }
                 return hash;
             }
+        }
+
+        private void UpdateMaps() {
+            if (this._clients.IsEmpty) return;
+            var snapshot = this.BuildMapsSnapshot();
+            if (snapshot == null) return;
+            var fingerprint = HashCode.Combine(snapshot.CurrentZone, snapshot.CurrentRegion);
+            if (this._hasMapsSnapshot && fingerprint == this._lastMapsFingerprint) return;
+            this._hasMapsSnapshot = true;
+            this._lastMapsFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneMapsSupport);
+        }
+
+        private ServerMaps? BuildMapsSnapshot() {
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) return null;
+            try {
+                var zone = string.Empty;
+                var region = string.Empty;
+                var territoryId = XIVChatPlugin.Plugin.ClientState.TerritoryType;
+                var territories = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TerritoryType>();
+                if (territoryId != 0 && territories.TryGetRow(territoryId, out var territory)) {
+                    zone = this.MapPlaceName(territory.PlaceName.RowId);
+                    region = this.MapPlaceName(territory.PlaceNameRegion.RowId);
+                }
+
+                this._mapCatalog ??= this.BuildMapCatalog();
+                return new ServerMaps { CurrentZone = zone, CurrentRegion = region, Expansions = this._mapCatalog };
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not build map data: {ex.Message}");
+                return null;
+            }
+        }
+
+        private ServerMapExpansion[] BuildMapCatalog() {
+            var byTerritory = new Dictionary<uint, List<ServerMapDestination>>();
+            var seenNames = new Dictionary<uint, HashSet<string>>();
+            foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Aetheryte>()) {
+                if (!row.IsAetheryte || row.Invisible || row.Territory.RowId == 0) continue;
+                var name = this.MapPlaceName(row.PlaceName.RowId);
+                if (name.Length == 0) continue;
+                var territoryId = row.Territory.RowId;
+                if (!seenNames.TryGetValue(territoryId, out var names)) {
+                    names = new HashSet<string>(StringComparer.Ordinal);
+                    seenNames[territoryId] = names;
+                }
+                if (!names.Add(name)) continue;
+                if (!byTerritory.TryGetValue(territoryId, out var entries)) {
+                    entries = [];
+                    byTerritory[territoryId] = entries;
+                }
+                entries.Add(new ServerMapDestination { RowId = row.RowId, Name = name, Order = row.Order });
+            }
+
+            var regionBuckets = new Dictionary<(byte Order, string Name), List<ServerMapDestination>>();
+            foreach (var territory in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<TerritoryType>()) {
+                if (!byTerritory.TryGetValue(territory.RowId, out var destinations) || destinations.Count == 0) continue;
+                var regionName = this.MapPlaceName(territory.PlaceNameRegion.RowId);
+                if (regionName.Length == 0) regionName = "艾欧泽亚";
+                var key = ((byte)territory.ExVersion.RowId, regionName);
+                if (!regionBuckets.TryGetValue(key, out var bucket)) {
+                    bucket = [];
+                    regionBuckets[key] = bucket;
+                }
+                bucket.AddRange(destinations);
+            }
+
+            var regions = regionBuckets.Select(pair => new ServerMapRegion {
+                Name = pair.Key.Name,
+                Order = pair.Key.Order,
+                Destinations = pair.Value.OrderBy(value => value.Order).ThenBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
+            }).OrderBy(value => value.Order).ThenBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+
+            var exVersions = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ExVersion>();
+            return regions.GroupBy(value => value.Order).Select(group => {
+                var name = exVersions.TryGetRow(group.Key, out var version) ? version.Name.ExtractText() : string.Empty;
+                return new ServerMapExpansion {
+                    Name = name.Length == 0 ? "艾欧泽亚" : name,
+                    Order = group.Key,
+                    Regions = group.ToArray(),
+                };
+            }).OrderBy(value => value.Order).ToArray();
+        }
+
+        private string MapPlaceName(uint rowId) {
+            return rowId != 0 && XIVChatPlugin.Plugin.DataManager.GetExcelSheet<PlaceName>().TryGetRow(rowId, out var row)
+                ? row.Name.ExtractText()
+                : string.Empty;
         }
 
         private void UpdateActivity() {
@@ -1398,6 +1547,10 @@ namespace XIVChatPlugin {
                         this._awaitingCollections.Enqueue(id);
                     }
 
+                    if (client.GetPreference(ClientPreference.PhoneMapsSupport, false)) {
+                        this._awaitingMaps.Enqueue(id);
+                    }
+
                     break;
                 case ClientOperation.Channel:
                     var channel = ClientChannel.Decode(payload);
@@ -1406,6 +1559,9 @@ namespace XIVChatPlugin {
                     break;
                 case ClientOperation.FriendAction:
                     this._friendActions.Enqueue(ClientFriendAction.Decode(payload));
+                    break;
+                case ClientOperation.JobsAction:
+                    this._jobsActions.Enqueue(ClientJobsAction.Decode(payload).GearsetId);
                     break;
             }
         }

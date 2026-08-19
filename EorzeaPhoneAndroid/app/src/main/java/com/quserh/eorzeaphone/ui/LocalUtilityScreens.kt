@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
@@ -182,13 +184,111 @@ fun FishingScreen(state: PhoneState) {
 @Composable
 fun MapsScreen(state: PhoneState) {
     val profile = state.profile
-    FeatureFrame("地图", state) {
-        if (profile == null) EmptyFeature("连接游戏后显示当前位置") else Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(Color(0xFF344F48)), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("⌖", color = Color.White, fontSize = 44.sp); Text(profile.location, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold); Text("Territory ${profile.territoryId}", color = Color.White.copy(alpha = .65f), modifier = Modifier.padding(top = 5.dp)) }
+    val maps = state.maps
+    var query by remember { mutableStateOf("") }
+    var expandedExpansion by remember { mutableStateOf<String?>(null) }
+    var expandedRegion by remember { mutableStateOf<String?>(null) }
+    val purple = Color(0xFF6651BE)
+    val ink = Color(0xFF25252B)
+    val muted = Color(0xFF6E6E77)
+    val normalizedQuery = query.trim()
+    val expansions = maps?.expansions.orEmpty().mapNotNull { expansion ->
+        if (normalizedQuery.isBlank()) expansion else {
+            val regions = expansion.regions.mapNotNull { region ->
+                val destinations = region.destinations.filter { it.name.contains(normalizedQuery, true) }
+                when {
+                    expansion.name.contains(normalizedQuery, true) || region.name.contains(normalizedQuery, true) -> region
+                    destinations.isNotEmpty() -> region.copy(destinations = destinations)
+                    else -> null
+                }
             }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp)) { Text("当前世界", color = PhoneMuted, modifier = Modifier.weight(1f)); Text(profile.currentWorld, color = PhoneText) }
+            if (expansion.name.contains(normalizedQuery, true)) expansion else expansion.copy(regions = regions).takeIf { it.regions.isNotEmpty() }
         }
+    }
+    val favorites = maps?.expansions.orEmpty().flatMap { it.regions }.flatMap { it.destinations }.filter { state.isMapFavorite(it.rowId) }
+    ScreenFrame(background = Color(0xFFF5F5FA)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 21.dp)) {
+            Text("‹", color = purple, fontSize = 40.sp, modifier = Modifier.clickable { state.back() }.padding(end = 12.dp))
+            Text("地图", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+            Box(Modifier.size(40.dp))
+        }
+        BasicTextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(color = ink, fontSize = 14.sp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 43.dp).height(44.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFFE7E7EC)),
+            decorationBox = { field ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
+                    Text("⌕", color = muted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Text("搜索地点", color = muted, fontSize = 14.sp)
+                        field()
+                    }
+                }
+            },
+        )
+        LazyColumn(Modifier.fillMaxSize().padding(top = 22.dp)) {
+            item("current-label") { Text("当前位置", color = muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 42.dp, vertical = 8.dp)) }
+            item("current") {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).clip(RoundedCornerShape(10.dp)).background(Color.White).padding(horizontal = 24.dp, vertical = 17.dp)) {
+                    Text("●", color = purple, fontSize = 24.sp)
+                    Column(Modifier.padding(start = 16.dp)) {
+                        Text(maps?.currentZone?.ifBlank { profile?.location.orEmpty() }?.ifBlank { "尚未取得位置" } ?: "尚未连接游戏", color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text(maps?.currentRegion?.ifBlank { profile?.currentWorld.orEmpty() }.orEmpty(), color = muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+            if (normalizedQuery.isBlank() && favorites.isNotEmpty()) {
+                item("favorites-label") { Text("收藏", color = muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 42.dp, vertical = 12.dp)) }
+                items(favorites, key = { "favorite-${it.rowId}" }) { destination ->
+                    MapDestinationRow(destination.name, true, purple, ink, muted) { state.toggleMapFavorite(destination.rowId) }
+                }
+            }
+            if (maps == null) {
+                item("empty") { Text(if (state.connected) "正在从游戏读取地图资料…" else "连接游戏后读取地图资料", color = muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) }
+            }
+            expansions.forEach { expansion ->
+                item("expansion-${expansion.order}-${expansion.name}") {
+                    val expanded = normalizedQuery.isNotBlank() || expandedExpansion == expansion.name
+                    Column(Modifier.fillMaxWidth().clickable {
+                        expandedExpansion = if (expandedExpansion == expansion.name) null else expansion.name
+                        expandedRegion = null
+                    }.padding(horizontal = 42.dp, vertical = 17.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (expanded) "⌄" else "›", color = ink, fontSize = 28.sp, modifier = Modifier.width(28.dp))
+                            Text(expansion.name, color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                val showExpansion = normalizedQuery.isNotBlank() || expandedExpansion == expansion.name
+                if (showExpansion) expansion.regions.forEach { region ->
+                    val regionKey = "${expansion.order}:${region.name}"
+                    item("region-$regionKey") {
+                        val expanded = normalizedQuery.isNotBlank() || expandedRegion == regionKey
+                        Row(Modifier.fillMaxWidth().clickable { expandedRegion = if (expandedRegion == regionKey) null else regionKey }.padding(start = 66.dp, end = 42.dp, top = 11.dp, bottom = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (expanded) "⌄" else "›", color = muted, fontSize = 24.sp, modifier = Modifier.width(26.dp))
+                            Text(region.name, color = ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Text("${region.destinations.size}", color = muted, fontSize = 11.sp)
+                        }
+                    }
+                    if (normalizedQuery.isNotBlank() || expandedRegion == regionKey) {
+                        items(region.destinations, key = { "destination-${it.rowId}" }) { destination ->
+                            MapDestinationRow(destination.name, state.isMapFavorite(destination.rowId), purple, ink, muted) { state.toggleMapFavorite(destination.rowId) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapDestinationRow(name: String, favorite: Boolean, accent: Color, ink: Color, muted: Color, onFavorite: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 42.dp, vertical = 2.dp).clip(RoundedCornerShape(8.dp)).background(Color.White).padding(start = 48.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("●", color = accent, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp))
+        Text(name, color = ink, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(if (favorite) "★" else "☆", color = if (favorite) accent else muted, fontSize = 20.sp, modifier = Modifier.clickable { onFavorite() }.padding(4.dp))
     }
 }
 

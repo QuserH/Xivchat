@@ -1,8 +1,6 @@
 using Dalamud.Hooking;
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Utility.Signatures;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
@@ -11,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
+using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using Lumina.Excel.Sheets;
 using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
@@ -22,7 +21,6 @@ using LuminaGrandCompany = Lumina.Excel.Sheets.GrandCompany;
 namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
-            internal const string ProcessChat = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
             internal const string Input = "E8 ?? ?? ?? ?? ?? ?? ?? 84 C0 B9";
             internal const string InputAfk = "E8 ?? ?? ?? ?? 84 C0 74 ?? 66 83 3D";
 
@@ -37,8 +35,6 @@ namespace XIVChatPlugin {
         private Plugin Plugin { get; }
 
         #region Delegates
-
-        private delegate void EasierProcessChatBoxDelegate(nint uiModule, nint message, nint unused, byte a4);
 
         private delegate byte IsInputDelegate(nint a1);
 
@@ -73,9 +69,6 @@ namespace XIVChatPlugin {
         #endregion
 
         #region Functions
-
-        [Signature(Signatures.ProcessChat)]
-        private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
 
         [Signature(Signatures.GetColour)]
         private readonly GetColourInfoDelegate? _getColourInfo;
@@ -201,32 +194,26 @@ namespace XIVChatPlugin {
             return 0xFF | (rgb << 8);
         }
 
-        internal void ProcessChatBox(string message) {
+        internal bool ProcessChatBox(string message) {
             this.HadInput = InputSetters.Normal | InputSetters.Afk;
 
             var uiModule = UIModule.Instance();
-            if (uiModule == null) {
-                return;
+            var shellModule = RaptureShellModule.Instance();
+            if (uiModule == null || shellModule == null) {
+                Plugin.Log.Warning("Could not send chat message: game UI modules are unavailable.");
+                return false;
             }
 
-            // Direct signature: sends without opening the native chat input,
-            // so it does not hide other Dalamud plugin windows.
-            if (this._easierProcessChatBox != null) {
-                using var structure = new ChatPayload(message);
-                var num = Marshal.AllocHGlobal(400);
-                Marshal.StructureToPtr(structure, num, false);
-                try {
-                    this._easierProcessChatBox((nint) uiModule, num, nint.Zero, 0);
-                } finally {
-                    Marshal.FreeHGlobal(num);
-                }
-                return;
-            }
-
-            // Fallback: official chat-box entry path.
+            // Use the generated client-struct binding for the current game build.
+            // The old hand-written ProcessChatBox delegate used an obsolete ABI and
+            // corrupted UI state after a remote message was sent.
             var payload = Utf8String.FromString(message);
             try {
-                uiModule->ProcessChatBoxEntry(payload, nint.Zero, false);
+                shellModule->ExecuteCommandInner(payload, uiModule);
+                return true;
+            } catch (Exception ex) {
+                Plugin.Log.Error(ex, "Could not send chat message through RaptureShellModule.");
+                return false;
             } finally {
                 payload->Dtor();
                 IMemorySpace.Free(payload);
@@ -408,34 +395,5 @@ namespace XIVChatPlugin {
                 IMemorySpace.Free(str);
             }
         }
-    }
-}
-
-[StructLayout(LayoutKind.Explicit)]
-internal readonly struct ChatPayload : IDisposable {
-    [FieldOffset(0)]
-    private readonly nint textPtr;
-
-    [FieldOffset(8)]
-    private readonly ulong unk1;
-
-    [FieldOffset(16)]
-    private readonly ulong textLen;
-
-    [FieldOffset(24)]
-    private readonly ulong unk2;
-
-    internal ChatPayload(string text) {
-        byte[] bytes = Encoding.UTF8.GetBytes(text);
-        this.textPtr = Marshal.AllocHGlobal(bytes.Length + 30);
-        Marshal.Copy(bytes, 0, this.textPtr, bytes.Length);
-        Marshal.WriteByte(this.textPtr + bytes.Length, 0);
-        this.textLen = (ulong) (bytes.Length + 1);
-        this.unk1 = 64UL;
-        this.unk2 = 0UL;
-    }
-
-    public void Dispose() {
-        Marshal.FreeHGlobal(this.textPtr);
     }
 }

@@ -27,6 +27,10 @@ import com.quserh.eorzeaphone.data.GameHousingLocation
 import com.quserh.eorzeaphone.data.GameDailies
 import com.quserh.eorzeaphone.data.GameActivity
 import com.quserh.eorzeaphone.data.GameCollections
+import com.quserh.eorzeaphone.data.GameMapDestination
+import com.quserh.eorzeaphone.data.GameMapExpansion
+import com.quserh.eorzeaphone.data.GameMapRegion
+import com.quserh.eorzeaphone.data.GameMaps
 import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
@@ -80,8 +84,9 @@ data class ChatFilter(
     val label: String,
     val categories: Set<ChatCategory>,
     val removable: Boolean = false,
+    val channels: Set<Int> = emptySet(),
 ) {
-    fun matches(message: GameChatMessage): Boolean = message.category in categories
+    fun matches(message: GameChatMessage): Boolean = message.channel in channels || message.category in categories
 }
 
 data class OutputChannel(val id: Int, val label: String)
@@ -129,6 +134,19 @@ private val builtInChatFilters = listOf(
 )
 
 data class CustomShortcut(val name: String, val command: String)
+
+data class LocalNote(
+    val id: Long,
+    val body: String,
+    val updatedAt: Long,
+)
+
+data class LocalReminder(
+    val id: Long,
+    val title: String,
+    val dueAt: Long?,
+    val done: Boolean,
+)
 
 val defaultShortcuts = listOf(
     CustomShortcut("返回", "/return"),
@@ -327,8 +345,14 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var dailies by mutableStateOf<GameDailies?>(null)
     var activity by mutableStateOf<GameActivity?>(null)
     var collections by mutableStateOf<GameCollections?>(null)
+    var maps by mutableStateOf<GameMaps?>(null)
+    private val favoriteMapIds = mutableStateListOf<Long>().apply {
+        addAll(prefs.getStringSet("favoriteMapIds", emptySet()).orEmpty().mapNotNull(String::toLongOrNull))
+    }
     var profile by mutableStateOf(loadProfileCache())
     var noteText by mutableStateOf(prefs.getString("noteText", "").orEmpty())
+    val notes = mutableStateListOf<LocalNote>().apply { addAll(loadLocalNotes()) }
+    val reminders = mutableStateListOf<LocalReminder>().apply { addAll(loadLocalReminders()) }
     var customShortcuts by mutableStateOf(loadCustomShortcuts())
     var chatDraft by mutableStateOf("")
     private val _chatWrapChars = mutableStateOf(prefs.getInt("chatWrapChars", 20))
@@ -370,6 +394,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         loadSavedChats()
         loadSavedInventory()
         loadSavedExtras()
+        if (notes.isEmpty() && noteText.isNotBlank()) {
+            notes += LocalNote(System.currentTimeMillis(), noteText, System.currentTimeMillis())
+            saveLocalNotes()
+        }
         if (prefs.getBoolean("autoConnect", true)) {
             connect()
         }
@@ -516,7 +544,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 jobs.clear()
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
-                    jobs += GameJob(o.optLong("jobId"), o.optString("name", ""), o.optString("abbreviation", ""), o.optString("category", ""), o.optInt("level"), o.optBoolean("active"), o.optInt("itemLevel"))
+                    jobs += GameJob(o.optLong("jobId"), o.optString("name", ""), o.optString("abbreviation", ""), o.optString("category", ""), o.optInt("level"), o.optBoolean("active"), o.optInt("itemLevel"), o.optInt("iconId"), o.optInt("gearsetId", -1))
                 }
             }
 
@@ -566,7 +594,66 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     if (o.isNull("apartmentWing")) null else o.optInt("apartmentWing"),
                 )
             }
+
+            val m = prefs.getString("mapsCache", "")
+            if (!m.isNullOrBlank()) {
+                val root = JSONObject(m)
+                val expansionArray = root.optJSONArray("expansions") ?: JSONArray()
+                val expansions = buildList(expansionArray.length()) {
+                    for (i in 0 until expansionArray.length()) {
+                        val expansionObject = expansionArray.getJSONObject(i)
+                        val regionArray = expansionObject.optJSONArray("regions") ?: JSONArray()
+                        val regions = buildList(regionArray.length()) {
+                            for (j in 0 until regionArray.length()) {
+                                val regionObject = regionArray.getJSONObject(j)
+                                val destinationArray = regionObject.optJSONArray("destinations") ?: JSONArray()
+                                val destinations = buildList(destinationArray.length()) {
+                                    for (k in 0 until destinationArray.length()) {
+                                        val destination = destinationArray.getJSONObject(k)
+                                        add(GameMapDestination(destination.optLong("rowId"), destination.optString("name"), destination.optInt("order")))
+                                    }
+                                }
+                                add(GameMapRegion(regionObject.optString("name"), regionObject.optInt("order"), destinations))
+                            }
+                        }
+                        add(GameMapExpansion(expansionObject.optString("name"), expansionObject.optInt("order"), regions))
+                    }
+                }
+                maps = GameMaps(root.optString("currentZone"), root.optString("currentRegion"), expansions)
+            }
         }
+    }
+
+    private fun saveMaps() {
+        val value = maps ?: return
+        val expansionArray = JSONArray()
+        value.expansions.forEach { expansion ->
+            val regionArray = JSONArray()
+            expansion.regions.forEach { region ->
+                val destinationArray = JSONArray()
+                region.destinations.forEach { destination ->
+                    destinationArray.put(JSONObject().apply {
+                        put("rowId", destination.rowId); put("name", destination.name); put("order", destination.order)
+                    })
+                }
+                regionArray.put(JSONObject().apply {
+                    put("name", region.name); put("order", region.order); put("destinations", destinationArray)
+                })
+            }
+            expansionArray.put(JSONObject().apply {
+                put("name", expansion.name); put("order", expansion.order); put("regions", regionArray)
+            })
+        }
+        prefs.edit().putString("mapsCache", JSONObject().apply {
+            put("currentZone", value.currentZone); put("currentRegion", value.currentRegion); put("expansions", expansionArray)
+        }.toString()).apply()
+    }
+
+    fun isMapFavorite(rowId: Long): Boolean = rowId in favoriteMapIds
+
+    fun toggleMapFavorite(rowId: Long) {
+        if (!favoriteMapIds.remove(rowId)) favoriteMapIds.add(rowId)
+        prefs.edit().putStringSet("favoriteMapIds", favoriteMapIds.map(Long::toString).toSet()).apply()
     }
 
     private fun saveWallet() {
@@ -584,7 +671,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         val arr = JSONArray()
         jobs.forEach { j ->
             arr.put(JSONObject().apply {
-                put("jobId", j.jobId); put("name", j.name); put("abbreviation", j.abbreviation); put("category", j.category); put("level", j.level); put("active", j.active); put("itemLevel", j.itemLevel)
+                put("jobId", j.jobId); put("name", j.name); put("abbreviation", j.abbreviation); put("category", j.category); put("level", j.level); put("active", j.active); put("itemLevel", j.itemLevel); put("iconId", j.iconId); put("gearsetId", j.gearsetId)
             })
         }
         prefs.edit().putString("jobsCache", arr.toString()).apply()
@@ -764,6 +851,80 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         prefs.edit().putString("noteText", text).apply()
     }
 
+    private fun loadLocalNotes(): List<LocalNote> = runCatching {
+        val values = JSONArray(prefs.getString("localNotes", "[]"))
+        buildList(values.length()) {
+            for (index in 0 until values.length()) {
+                val value = values.optJSONObject(index) ?: continue
+                val body = value.optString("body")
+                if (body.isNotBlank()) add(LocalNote(value.optLong("id"), body, value.optLong("updatedAt")))
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun loadLocalReminders(): List<LocalReminder> = runCatching {
+        val values = JSONArray(prefs.getString("localReminders", "[]"))
+        buildList(values.length()) {
+            for (index in 0 until values.length()) {
+                val value = values.optJSONObject(index) ?: continue
+                val title = value.optString("title")
+                if (title.isNotBlank()) {
+                    add(LocalReminder(
+                        value.optLong("id"),
+                        title,
+                        if (value.isNull("dueAt")) null else value.optLong("dueAt"),
+                        value.optBoolean("done"),
+                    ))
+                }
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveLocalNotes() {
+        prefs.edit().putString("localNotes", JSONArray(notes.map { note ->
+            JSONObject().put("id", note.id).put("body", note.body).put("updatedAt", note.updatedAt)
+        }).toString()).apply()
+    }
+
+    private fun saveLocalReminders() {
+        prefs.edit().putString("localReminders", JSONArray(reminders.map { reminder ->
+            JSONObject().put("id", reminder.id).put("title", reminder.title)
+                .put("dueAt", reminder.dueAt ?: JSONObject.NULL).put("done", reminder.done)
+        }).toString()).apply()
+    }
+
+    fun upsertNote(id: Long?, body: String) {
+        val clean = body.trim()
+        if (id != null) notes.removeAll { it.id == id }
+        if (clean.isNotBlank()) notes.add(0, LocalNote(id ?: System.currentTimeMillis(), clean, System.currentTimeMillis()))
+        saveLocalNotes()
+    }
+
+    fun deleteNote(id: Long) {
+        notes.removeAll { it.id == id }
+        saveLocalNotes()
+    }
+
+    fun upsertReminder(id: Long?, title: String, dueAt: Long?) {
+        val clean = title.trim()
+        val old = id?.let { key -> reminders.firstOrNull { it.id == key } }
+        if (id != null) reminders.removeAll { it.id == id }
+        if (clean.isNotBlank()) reminders.add(0, LocalReminder(id ?: System.currentTimeMillis(), clean, dueAt, old?.done ?: false))
+        saveLocalReminders()
+    }
+
+    fun toggleReminder(id: Long) {
+        val index = reminders.indexOfFirst { it.id == id }
+        if (index < 0) return
+        reminders[index] = reminders[index].copy(done = !reminders[index].done)
+        saveLocalReminders()
+    }
+
+    fun deleteReminder(id: Long) {
+        reminders.removeAll { it.id == id }
+        saveLocalReminders()
+    }
+
     fun addShortcut(name: String, command: String) {
         val cleanName = name.trim().take(16)
         val cleanCommand = command.trim().take(64)
@@ -845,10 +1006,16 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         statusMessage = "操作已发送到游戏"
     }
 
-    fun addChatFilter(label: String, categories: Set<ChatCategory>) {
+    fun equipGearset(job: GameJob) {
+        if (!connected || job.gearsetId < 0 || job.active) return
+        connection.equipGearset(job.gearsetId)
+        statusMessage = "正在切换到 ${job.name}"
+    }
+
+    fun addChatFilter(label: String, categories: Set<ChatCategory>, channels: Set<Int> = emptySet()) {
         val cleanLabel = label.trim().replace("|", "").replace(";", "").take(12)
-        if (cleanLabel.isBlank() || categories.isEmpty()) return
-        chatFilters += ChatFilter("custom-${System.currentTimeMillis()}", cleanLabel, categories, true)
+        if (cleanLabel.isBlank() || (categories.isEmpty() && channels.isEmpty())) return
+        chatFilters += ChatFilter("custom-${System.currentTimeMillis()}", cleanLabel, categories, true, channels)
         saveCustomFilters()
     }
 
@@ -945,6 +1112,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 saveActivity()
             }
             is PhoneEvent.Collections -> collections = event.collections
+            is PhoneEvent.Maps -> {
+                maps = event.maps
+                saveMaps()
+            }
             is PhoneEvent.Profile -> {
                 profile = event.profile
                 saveProfileCache(event.profile)
@@ -961,15 +1132,16 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         .orEmpty()
         .split(';')
         .mapNotNull { encoded ->
-            val fields = encoded.split('|', limit = 3)
-            if (fields.size != 3) return@mapNotNull null
+            val fields = encoded.split('|')
+            if (fields.size < 3) return@mapNotNull null
             val categories = fields[2].split(',').mapNotNull { value -> ChatCategory.entries.firstOrNull { it.name == value } }.toSet()
-            if (fields[1].isBlank() || categories.isEmpty()) null else ChatFilter(fields[0], fields[1], categories, true)
+            val channels = fields.getOrNull(3).orEmpty().split(',').mapNotNull(String::toIntOrNull).toSet()
+            if (fields[1].isBlank() || (categories.isEmpty() && channels.isEmpty())) null else ChatFilter(fields[0], fields[1], categories, true, channels)
         }
 
     private fun saveCustomFilters() {
         val encoded = chatFilters.filter { it.removable }.joinToString(";") { filter ->
-            "${filter.id}|${filter.label}|${filter.categories.joinToString(",") { it.name }}"
+            "${filter.id}|${filter.label}|${filter.categories.joinToString(",") { it.name }}|${filter.channels.joinToString(",")}"
         }
         prefs.edit().putString("chatFilters", encoded).apply()
     }

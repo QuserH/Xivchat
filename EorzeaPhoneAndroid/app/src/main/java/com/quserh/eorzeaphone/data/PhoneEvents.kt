@@ -152,6 +152,8 @@ data class GameJob(
     val level: Int,
     val active: Boolean,
     val itemLevel: Int,
+    val iconId: Int = 0,
+    val gearsetId: Int = -1,
 )
 
 data class GameHousingLocation(
@@ -218,6 +220,30 @@ data class GameCollections(
     val categories: List<GameCollectionCategory>,
 )
 
+data class GameMapDestination(
+    val rowId: Long,
+    val name: String,
+    val order: Int,
+)
+
+data class GameMapRegion(
+    val name: String,
+    val order: Int,
+    val destinations: List<GameMapDestination>,
+)
+
+data class GameMapExpansion(
+    val name: String,
+    val order: Int,
+    val regions: List<GameMapRegion>,
+)
+
+data class GameMaps(
+    val currentZone: String,
+    val currentRegion: String,
+    val expansions: List<GameMapExpansion>,
+)
+
 sealed interface PhoneEvent {
     data object Connected : PhoneEvent
     data class Disconnected(val reason: String) : PhoneEvent
@@ -234,4 +260,5 @@ sealed interface PhoneEvent {
     data class Dailies(val dailies: GameDailies) : PhoneEvent
     data class Activity(val activity: GameActivity) : PhoneEvent
     data class Collections(val collections: GameCollections) : PhoneEvent
+    data class Maps(val maps: GameMaps) : PhoneEvent
 }

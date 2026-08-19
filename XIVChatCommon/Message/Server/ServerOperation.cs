@@ -20,5 +20,7 @@
         Activity = 16,
         /// <summary>Local collection unlocks (mounts, minions, emotes, orchestrions).</summary>
         Collections = 17,
+        /// <summary>Current location and the game map/aetheryte hierarchy.</summary>
+        Maps = 18,
     }
 }

@@ -50,6 +50,9 @@ namespace XIVChatCommon.Message.Client {
 
         [Preference(typeof(bool))]
         PhoneCollectionsSupport = 9,
+
+        [Preference(typeof(bool))]
+        PhoneMapsSupport = 10,
     }
 
     public static class ClientPreferencesExtension {

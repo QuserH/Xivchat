@@ -10,6 +10,8 @@ namespace XIVChatCommon.Message.Server {
         [Key(4)] public int Level { get; set; }
         [Key(5)] public bool Active { get; set; }
         [Key(6)] public int ItemLevel { get; set; }
+        [Key(7)] public uint IconId { get; set; }
+        [Key(8)] public int GearsetId { get; set; } = -1;
     }
 
     [MessagePackObject]

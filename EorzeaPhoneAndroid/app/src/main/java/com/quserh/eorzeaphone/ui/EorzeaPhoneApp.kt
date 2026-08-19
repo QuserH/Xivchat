@@ -5,6 +5,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -16,10 +17,12 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.core.view.WindowCompat
 
 private data class PhoneRoute(val screen: PhoneScreen, val appId: String, val friendId: Long)
 
@@ -34,6 +37,16 @@ fun EorzeaPhoneApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state = remember(context, scope) { PhoneState(context, scope) }
+    val view = LocalView.current
+    val lightSystemBars = state.screen in setOf(PhoneScreen.Chat, PhoneScreen.Contacts, PhoneScreen.ContactDetail) ||
+        (state.screen == PhoneScreen.App && state.selectedApp?.id == "notes")
+    SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
+        }
+    }
     DisposableEffect(state) { onDispose { state.disconnect() } }
     BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }
 
@@ -66,19 +79,19 @@ fun EorzeaPhoneApp() {
     when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
         PhoneScreen.Settings -> SettingsSubScreen(state)
-        PhoneScreen.Contacts -> MessagesScreen(state)
-        PhoneScreen.ContactDetail -> ContactDetailScreen(state)
-        PhoneScreen.Chat -> MessagesScreen(state)
+        PhoneScreen.Contacts -> AetherphoneMessagesScreen(state)
+        PhoneScreen.ContactDetail -> AetherphoneContactDetailScreen(state)
+        PhoneScreen.Chat -> AetherphoneMessagesScreen(state)
         PhoneScreen.App -> when (state.selectedApp?.id) {
             "inventory" -> InventoryScreen(state)
             "wallet" -> WalletScreen(state)
             "skywatcher" -> SkywatcherScreen(state)
-            "character" -> ActivityScreen(state)
-            "jobs" -> JobsScreen(state)
+            "character" -> AetherphoneActivityScreen(state)
+            "jobs" -> AetherphoneJobsScreen(state)
             "collections" -> CollectionsScreen(state)
             "clock" -> ClockScreen(state)
             "calculator" -> CalculatorScreen(state)
-            "notes" -> NotesScreen(state)
+            "notes" -> AetherphoneNotesScreen(state)
             "timers" -> TimersScreen(state)
             "calendar" -> CalendarScreen(state)
             "dailies" -> DailiesScreen(state)

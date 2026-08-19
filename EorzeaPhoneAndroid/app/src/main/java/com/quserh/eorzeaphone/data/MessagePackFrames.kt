@@ -63,7 +63,7 @@ internal object XivChatCodec {
     }
     fun encodePreferences(): ByteArray = pack {
         packArrayHeader(1)
-        packMapHeader(8)
+        packMapHeader(9)
         packInt(3)
         packBoolean(true)
         packInt(4)
@@ -79,6 +79,8 @@ internal object XivChatCodec {
         packInt(8)
         packBoolean(true)
         packInt(9)
+        packBoolean(true)
+        packInt(10)
         packBoolean(true)
     }
 
@@ -231,12 +233,21 @@ internal object XivChatCodec {
         unpacker.skipValue()
         val count = unpacker.unpackArrayHeader()
         return List(count) {
-            unpacker.unpackArrayHeader()
-            GameJob(
+            val fields = unpacker.unpackArrayHeader()
+            val job = GameJob(
                 unpacker.unpackLong(), unpacker.unpackString(), unpacker.unpackString(), unpacker.unpackString(),
                 unpacker.unpackInt(), unpacker.unpackBoolean(), unpacker.unpackInt(),
+                if (fields > 7) unpacker.unpackInt() else 0,
+                if (fields > 8) unpacker.unpackInt() else -1,
             )
+            repeat((fields - 9).coerceAtLeast(0)) { unpacker.skipValue() }
+            job
         }
+    }
+
+    fun encodeJobsAction(gearsetId: Int): ByteArray = pack {
+        packArrayHeader(1)
+        packInt(gearsetId)
     }
 
     fun readHousing(unpacker: MessageUnpacker): GameHousingLocation {
@@ -299,6 +310,36 @@ internal object XivChatCodec {
             categories += GameCollectionCategory(id, total, owned, items)
         }
         return GameCollections(categories)
+    }
+
+    fun readMaps(unpacker: MessageUnpacker): GameMaps {
+        unpacker.unpackArrayHeader()
+        val currentZone = unpacker.unpackString()
+        val currentRegion = unpacker.unpackString()
+        val expansionCount = unpacker.unpackArrayHeader()
+        val expansions = List(expansionCount) {
+            unpacker.unpackArrayHeader()
+            val expansionName = unpacker.unpackString()
+            val expansionOrder = unpacker.unpackByte().toInt() and 0xff
+            val regionCount = unpacker.unpackArrayHeader()
+            val regions = List(regionCount) {
+                unpacker.unpackArrayHeader()
+                val regionName = unpacker.unpackString()
+                val regionOrder = unpacker.unpackByte().toInt() and 0xff
+                val destinationCount = unpacker.unpackArrayHeader()
+                val destinations = List(destinationCount) {
+                    unpacker.unpackArrayHeader()
+                    GameMapDestination(
+                        rowId = unpacker.unpackLong(),
+                        name = unpacker.unpackString(),
+                        order = unpacker.unpackByte().toInt() and 0xff,
+                    )
+                }
+                GameMapRegion(regionName, regionOrder, destinations)
+            }
+            GameMapExpansion(expansionName, expansionOrder, regions)
+        }
+        return GameMaps(currentZone, currentRegion, expansions)
     }
 
     fun readChannel(unpacker: MessageUnpacker): Pair<Int, String> {

@@ -37,6 +37,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -518,7 +519,7 @@ fun InventoryScreen(state: PhoneState) {
             trailing = { Row(verticalAlignment = Alignment.CenterVertically) { Text("${state.inventory.size} 件", color = PhoneMuted, fontSize = 12.sp); Text("  ?", color = PhoneAccent, fontSize = 18.sp, modifier = Modifier.clickable { showTutorial = true }) } },
             onBack = if (selectedGroup == null) null else ({ selectedGroup = null; query = "" }),
             showBack = selectedGroup != null)
-        OutlinedTextField(query, { query = it }, placeholder = { Text("搜索物品", color = PhoneMuted) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp), shape = RoundedCornerShape(12.dp))
+        CompactInventorySearch(query, { query = it })
         if (state.inventory.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text(if (state.connected) "等待背包快照…" else "请先连接游戏插件", color = PhoneMuted)
@@ -527,22 +528,25 @@ fun InventoryScreen(state: PhoneState) {
         } else if (selectedGroup == null && query.isBlank()) {
             InventoryHub(state) { selectedGroup = it }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 15.dp, vertical = 12.dp)) {
                 if (query.isNotBlank()) {
-                    items(filtered, key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
+                    items(filtered.sortedWith(compareBy({ it.container }, { it.slot })), key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
                 } else {
                     selectedTypes.forEach { type ->
-                        val itemMap = state.inventory.filter { it.container == type }.associateBy { it.slot.toInt() }
-                        val reportedSize = state.inventoryContainers.firstOrNull { it.type == type }?.size ?: 0
-                        val size = reportedSize.coerceAtLeast(defaultContainerSize(type)).coerceAtLeast((itemMap.keys.maxOrNull() ?: -1) + 1)
-                        if (size > 0) {
-                            item(key = "header-$type") { SectionLabel(inventoryContainerName(type)) }
-                            items((0 until size).chunked(5), key = { row -> "$type-${row.first()}" }) { slots ->
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    slots.forEach { slot -> InventorySlotCell(itemMap[slot], Modifier.weight(1f)) }
-                                    repeat(5 - slots.size) { Spacer(Modifier.weight(1f).aspectRatio(1f)) }
+                        val containerItems = state.inventory.filter { it.container == type }.sortedBy { it.slot }
+                        if (containerItems.isNotEmpty()) {
+                            item(key = "header-$type") {
+                                val quantity = containerItems.sumOf { it.quantity }
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 12.dp)) {
+                                    Box(Modifier.size(31.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF73431D)), contentAlignment = Alignment.Center) {
+                                        Text(if (type == 2001L) "晶" else "包", color = Color.White, fontSize = 11.sp)
+                                    }
+                                    Text("${containerItems.size} · ${"%,d".format(quantity)}", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
                                 }
                             }
+                            item(key = "panel-start-$type") { Spacer(Modifier.height(2.dp)) }
+                            items(containerItems, key = { "$type-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
+                            item(key = "panel-end-$type") { Spacer(Modifier.height(13.dp)) }
                         }
                     }
                 }
@@ -558,6 +562,27 @@ fun InventoryScreen(state: PhoneState) {
 }
 
 @Composable
+private fun CompactInventorySearch(value: String, change: (String) -> Unit) {
+    BasicTextField(
+        value = value,
+        onValueChange = change,
+        singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(color = PhoneText, fontSize = 14.sp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp).height(44.dp)
+            .clip(RoundedCornerShape(11.dp)).background(Color(0xFF4A2A18)),
+        decorationBox = { field ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
+                Text("⌕", color = PhoneMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) Text("搜索物品", color = PhoneMuted, fontSize = 14.sp)
+                    field()
+                }
+            }
+        },
+    )
+}
+
+@Composable
 private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
     val localTypes = inventoryTypesForGroup("bags") + inventoryTypesForGroup("armoury") + inventoryTypesForGroup("crystals") + inventoryTypesForGroup("saddle") + inventoryTypesForGroup("equipped")
     val total = state.inventory.filter { it.container in localTypes }.sumOf { it.quantity }
@@ -566,9 +591,6 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
         Triple("armoury", "兵装库", R.drawable.app_muster) to Color(0xFF4F8DE8),
         Triple("crystals", "水晶", R.drawable.app_shortcuts) to Color(0xFF9963E2),
         Triple("equipped", "已装备", R.drawable.app_jobs) to Color(0xFF48B87D),
-        Triple("retainers", "雇员", R.drawable.app_contacts) to Color(0xFFB47AE0),
-        Triple("company", "部队仓库", R.drawable.app_muster) to Color(0xFFE08A3C),
-        Triple("housing", "房屋仓库", R.drawable.app_housing) to Color(0xFF7FC47D),
     )
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -597,8 +619,12 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
         item { SectionLabel("存放于别处") }
         item {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) {
-                listOf("雇员" to "在侍从铃处打开一次雇员，将其内容保存到这里", "部队仓库" to "在游戏中打开部队仓库后同步", "房屋仓库" to "在房屋保管箱中打开一次后同步").forEachIndexed { index, (title, subtitle) ->
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) { Text(title, color = PhoneText, fontSize = 15.sp); Text(subtitle, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
+                listOf(
+                    Triple("retainers", "雇员", "在侍从铃处打开一次雇员，将其内容保存到这里"),
+                    Triple("company", "部队仓库", "在游戏中打开部队仓库后同步"),
+                    Triple("housing", "房屋仓库", "在房屋保管箱中打开一次后同步"),
+                ).forEachIndexed { index, (id, title, subtitle) ->
+                    Column(Modifier.fillMaxWidth().clickable { open(id) }.padding(horizontal = 16.dp, vertical = 14.dp)) { Text(title, color = PhoneText, fontSize = 15.sp); Text(subtitle, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
                     if (index < 2) Divider(Modifier.padding(start = 16.dp), color = Color(0x22333333))
                 }
             }
@@ -677,14 +703,13 @@ internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: Stri
 
 @Composable
 private fun InventorySearchRow(item: GameInventoryItem) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp)).background(PhoneSurface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        InventorySlotCell(item, Modifier.size(44.dp))
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(item.name, color = PhoneText, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${inventoryContainerName(item.container)} · 第 ${item.slot + 1} 格", color = PhoneMuted, fontSize = 11.sp)
-        }
-        Text("×${item.quantity}", color = PhoneText, fontWeight = FontWeight.Bold)
+    Row(Modifier.fillMaxWidth().background(Color(0xFF24130C)).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        InventorySlotCell(item, Modifier.size(49.dp))
+        Text(item.name, color = PhoneText, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 16.dp))
+        if (item.hq) Text("HQ", color = Color(0xFFFFC071), fontSize = 9.sp, modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(Color(0xFF9A4D13)).padding(horizontal = 5.dp, vertical = 3.dp))
+        Text("×${"%,d".format(item.quantity)}", color = Color(0xFFC7681C), fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
     }
+    Divider(Modifier.padding(horizontal = 20.dp), color = Color(0x1AFFFFFF))
 }
 
 @Composable
@@ -1101,6 +1126,6 @@ private fun appDescription(id: String?, state: PhoneState): String = when (id) {
 }
 
 @Composable
-private fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
+fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
     androidx.compose.foundation.Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(tint), modifier = modifier.size(28.dp))
 }
