@@ -143,7 +143,9 @@ private fun HomeEditBar(state: PhoneState) {
 @Composable
 private fun SocialPage(state: PhoneState, page: Int) {
     Column(Modifier.fillMaxSize()) {
-        WeatherWidget(state, Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+        if (page == 0) {
+            WeatherWidget(state, Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+        }
         AppsGrid(state.appsForPage(page), page, state)
     }
 }
@@ -255,11 +257,12 @@ private fun HomeTile(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (pressed) 0.88f else 1f,
-        animationSpec = spring(dampingRatio = .62f, stiffness = 520f),
-        label = "app-press",
-    )
+            val scale by animateFloatAsState(
+                if (pressed) 0.88f else 1f,
+                animationSpec = spring(dampingRatio = .62f, stiffness = 520f),
+                label = "app-press",
+            )
+    val editDrag = editing || library
     val shake = rememberInfiniteTransition(label = "shake")
     val rotation by shake.animateFloat(
         initialValue = -2.5f,
@@ -279,20 +282,26 @@ private fun HomeTile(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                rotationZ = if ((editing || library) && !dragging) rotation else 0f
+                rotationZ = if (editDrag && !dragging) rotation else 0f
                 alpha = if (dimmed) 0.45f else 1f
                 translationX = if (dragging) dragOffset.x else 0f
                 translationY = if (dragging) dragOffset.y else 0f
                 shadowElevation = if (dragging) 12f else 0f
             }
-            .pointerInput(app.id, editing || library) {
-                detectDragGestures(
-                    onDragStart = { onDragStart() },
-                    onDrag = { change, delta -> change.consume(); onDrag(delta) },
-                    onDragEnd = { onDragEnd() },
-                    onDragCancel = { onDragEnd() },
-                )
-            }
+            .then(
+                if (editDrag) {
+                    Modifier.pointerInput(app.id, true) {
+                        detectDragGestures(
+                            onDragStart = { onDragStart() },
+                            onDrag = { change, delta -> change.consume(); onDrag(delta) },
+                            onDragEnd = { onDragEnd() },
+                            onDragCancel = { onDragEnd() },
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
