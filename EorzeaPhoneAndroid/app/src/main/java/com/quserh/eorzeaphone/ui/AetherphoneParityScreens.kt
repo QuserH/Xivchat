@@ -4,8 +4,13 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -46,6 +51,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -87,12 +93,12 @@ import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import kotlinx.coroutines.launch
 
-private val AetherLightBackground = Color(0xFFF5F5FA)
-private val AetherLightSurface = Color(0xFFFFFFFF)
-private val AetherLightField = Color(0xFFFFFFFF)
-private val AetherLightText = Color(0xFF24232A)
-private val AetherLightMuted = Color(0xFF696A76)
-private val AetherLightSeparator = Color(0xFFD7D7DE)
+private val AetherLightBackground: Color @Composable get() = MaterialTheme.colorScheme.background
+private val AetherLightSurface: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val AetherLightText: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val AetherLightMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val AetherLightSeparator: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
+private val AetherLightControl: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 private val AetherPurple = Color(0xFF8669F2)
 private val AetherPink = Color(0xFFF46DAA)
 private val AetherNavyTop = Color(0xFF12335E)
@@ -117,7 +123,7 @@ private fun LightSearchField(
         singleLine = true,
         textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
         modifier = modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp))
-            .background(Color(0xFFE8E8ED)),
+            .background(AetherLightControl),
         decorationBox = { field ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -222,31 +228,61 @@ private fun LightNavItem(label: String, icon: Int, selected: Boolean, modifier: 
 @Composable
 private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) {
     var query by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var overflowOpen by remember { mutableStateOf(false) }
+    var filterOpen by remember { mutableStateOf(false) }
     val active = state.chatFilters.firstOrNull { it.id == state.selectedChatFilterId } ?: state.chatFilters.first()
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back) {
-            Text("●", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 12.dp))
+            Box {
+                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
+                DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                    DropdownMenuItem(text = { Text(if (searching) "关闭搜索" else "搜索消息") }, onClick = {
+                        searching = !searching
+                        if (!searching) query = ""
+                        overflowOpen = false
+                    })
+                    DropdownMenuItem(text = { Text("新建标签页") }, onClick = { overflowOpen = false; editTab() })
+                }
+            }
         }
-        LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
+        AnimatedVisibility(
+            visible = searching,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+            LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
+        }
         val rows = state.conversations.filter {
             active.matchesConversation(it) && (query.isBlank() || it.title.contains(query, true) || it.lastMessage?.text?.contains(query, true) == true)
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 18.dp)) {
             item("active-tab") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable { }.padding(horizontal = 43.dp, vertical = 7.dp),
-                ) {
-                    Box(Modifier.size(54.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFFDDE5D3)), contentAlignment = Alignment.Center) {
-                        Text("通", color = Color(0xFF82A951), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Box {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { filterOpen = true }.padding(horizontal = 43.dp, vertical = 5.dp),
+                    ) {
+                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFFDDE5D3)), contentAlignment = Alignment.Center) {
+                            Text(active.label.take(1), color = Color(0xFF82A951), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(active.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 13.dp))
+                        Text("⌄", color = AetherLightMuted, fontSize = 17.sp, modifier = Modifier.padding(start = 7.dp))
                     }
-                    Text(active.label, color = AetherLightText, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp))
+                    DropdownMenu(expanded = filterOpen, onDismissRequest = { filterOpen = false }) {
+                        state.chatFilters.forEach { filter ->
+                            DropdownMenuItem(text = { Text(filter.label) }, onClick = {
+                                state.selectedChatFilterId = filter.id
+                                filterOpen = false
+                            })
+                        }
+                    }
                 }
             }
             item("new-tab") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = editTab).padding(horizontal = 58.dp, vertical = 15.dp),
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = editTab).padding(horizontal = 51.dp, vertical = 10.dp),
                 ) {
                     Text("＋", color = AetherPurple, fontSize = 22.sp)
                     Text("新建标签页", color = AetherPurple, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 18.dp))
@@ -315,7 +351,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                 item("name") {
                     BasicTextField(name, { name = it.take(24) }, singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 15.sp),
-                        modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(9.dp)).background(Color.White).padding(horizontal = 16.dp, vertical = 15.dp))
+                        modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightSurface).padding(horizontal = 16.dp, vertical = 15.dp))
                 }
                 item("color-label") { Text("颜色", color = AetherLightText, fontSize = 12.sp, modifier = Modifier.padding(top = 17.dp, bottom = 12.dp)) }
                 item("colors") {
@@ -440,11 +476,11 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().clickable { state.openFriend(friend) }.padding(horizontal = 20.dp, vertical = 11.dp),
             ) {
-                Box(Modifier.size(44.dp).clip(CircleShape).background(Color(0xFFE8E8ED)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(44.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
                     Text(friend.name.take(1), color = if (friend.online) AetherPurple else Color(0xFFA7A7AE), fontSize = 16.sp)
                 }
                 Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                    Text(friend.name, color = if (friend.online) AetherLightText else Color(0xFF92929A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Text(friend.world.ifBlank { "未知服务器" }, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
             }
@@ -455,7 +491,7 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState) {
 
 @Composable
 private fun LightSegment(first: String, second: String, firstSelected: Boolean, onSelect: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(40.dp).clip(CircleShape).background(Color(0xFFE5E5EC))) {
+    Row(modifier.fillMaxWidth().height(40.dp).clip(CircleShape).background(AetherLightControl)) {
         listOf(first to true, second to false).forEach { (label, value) ->
             val selected = firstSelected == value
             Text(
@@ -482,7 +518,7 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
             }
             if (friend == null) return@Column
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp)) {
-                Box(Modifier.size(94.dp).clip(CircleShape).background(Color(0xFFE4E4E9)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(94.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
                     Text(friend.name.take(1), color = AetherPurple, fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Text(friend.name, color = AetherLightText, fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
@@ -526,6 +562,7 @@ private fun LightInfoRow(label: String, value: String, last: Boolean = false) {
 @Composable
 private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatConversation) {
     var channelMenu by remember { mutableStateOf(false) }
+    var overflowOpen by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
@@ -538,11 +575,31 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
     LightFrame {
         Column(Modifier.fillMaxSize()) {
             LightHeader(conversation.title, state::back) {
-                Text("⌕", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { searching = !searching }.padding(horizontal = 8.dp))
-                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { state.toggleConversationNotify(conversation) }.padding(horizontal = 8.dp))
+                Box {
+                    Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
+                    DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                        DropdownMenuItem(text = { Text(if (searching) "关闭搜索" else "搜索消息") }, onClick = {
+                            searching = !searching
+                            if (!searching) search = ""
+                            overflowOpen = false
+                        })
+                        DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
+                            state.toggleConversationNotify(conversation)
+                            overflowOpen = false
+                        })
+                        DropdownMenuItem(text = { Text("清空聊天记录", color = Color(0xFFD64555)) }, onClick = {
+                            state.clearConversation(conversation)
+                            overflowOpen = false
+                        })
+                    }
+                }
             }
-            if (searching) {
-                OutlinedTextField(search, { search = it }, placeholder = { Text("搜索消息") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp))
+            AnimatedVisibility(
+                visible = searching,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                LightSearchField(search, { search = it }, "搜索消息", Modifier.padding(horizontal = 20.dp, vertical = 3.dp))
             }
             val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
             if (visible.isEmpty()) {
@@ -563,36 +620,49 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Box {
-                    Text(
-                        if (conversation.category == ChatCategory.Tell) "私语⌄" else "${state.currentChannelName}⌄",
-                        color = AetherPink,
-                        fontSize = 12.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(Color(0xFFFFE4F0))
-                            .clickable(enabled = conversation.category != ChatCategory.Tell) { channelMenu = true }
-                            .padding(horizontal = 12.dp, vertical = 13.dp),
-                    )
+                    Box(
+                        modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
+                            .clickable(enabled = conversation.category != ChatCategory.Tell) { channelMenu = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (conversation.category == ChatCategory.Tell) "私语" else state.currentChannelName,
+                            color = AetherPink,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 5.dp),
+                        )
+                    }
                     DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
                         outputChannels.forEach { channel ->
                             DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
                         }
                     }
                 }
-                OutlinedTextField(
+                BasicTextField(
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },
-                    placeholder = { Text("消息内容", color = AetherLightMuted) },
                     singleLine = true,
-                    shape = RoundedCornerShape(13.dp),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 9.dp),
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightSurface),
+                    decorationBox = { field ->
+                        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                                if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
+                                field()
+                            }
+                        }
+                    },
                 )
                 Box(
-                    Modifier.padding(start = 8.dp).size(44.dp).clip(CircleShape)
-                        .background(if (state.connected && state.chatDraft.isNotBlank()) AetherPurple else Color(0xFFE1E1E8))
+                    Modifier.padding(start = 7.dp).size(38.dp).clip(CircleShape)
+                        .background(if (state.connected && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
                         .clickable(enabled = state.connected && state.chatDraft.isNotBlank()) { send() },
                     contentAlignment = Alignment.Center,
                 ) { Text("↑", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
@@ -616,7 +686,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     color = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted,
                     fontSize = 9.sp,
                     lineHeight = 10.sp,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
                 )
             }
         }

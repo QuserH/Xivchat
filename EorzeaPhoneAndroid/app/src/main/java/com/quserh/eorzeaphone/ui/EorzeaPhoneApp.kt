@@ -18,11 +18,13 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
+import com.quserh.eorzeaphone.ui.theme.EorzeaPhoneTheme
 
 private data class PhoneRoute(val screen: PhoneScreen, val appId: String, val friendId: Long)
 
@@ -37,22 +39,22 @@ fun EorzeaPhoneApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state = remember(context, scope) { PhoneState(context, scope) }
-    val view = LocalView.current
-    val lightSystemBars = state.screen in setOf(PhoneScreen.Chat, PhoneScreen.Contacts, PhoneScreen.ContactDetail) ||
-        (state.screen == PhoneScreen.App && state.selectedApp?.id == "notes")
-    SideEffect {
-        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
-        WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = lightSystemBars
-            isAppearanceLightNavigationBars = lightSystemBars
+    val darkTheme = state.useDarkTheme(isSystemInDarkTheme())
+    EorzeaPhoneTheme(darkTheme = darkTheme) {
+        val view = LocalView.current
+        SideEffect {
+            val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
         }
-    }
-    DisposableEffect(state) { onDispose { state.disconnect() } }
-    BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }
+        DisposableEffect(state) { onDispose { state.disconnect() } }
+        BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }
 
-    val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
-    Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
-        AnimatedContent(
+        val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
+        Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
+            AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
@@ -75,8 +77,8 @@ fun EorzeaPhoneApp() {
                 }
             },
             label = "phone-navigation",
-        ) { target ->
-    when (target.screen) {
+            ) { target ->
+                when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
         PhoneScreen.Settings -> SettingsSubScreen(state)
         PhoneScreen.Contacts -> AetherphoneMessagesScreen(state)
@@ -105,7 +107,8 @@ fun EorzeaPhoneApp() {
             "health" -> HealthScreen(state)
             else -> GenericAppScreen(state)
         }
-    }
+                }
+            }
         }
     }
 }

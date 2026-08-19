@@ -2,29 +2,42 @@ package com.quserh.eorzeaphone.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-val PhoneBackground = Color(0xFF09080E)
-val PhoneSurface = Color(0xFF1C1B20)
-val PhoneSurfaceRaised = Color(0xFF242329)
 val PhoneAccent = Color(0xFF8669F2)
-val PhoneText = Color(0xFFF4F1FA)
-val PhoneMuted = Color(0xFFA9A5B3)
 val PhoneGreen = Color(0xFF27C66A)
 
-private val PhoneColors = darkColorScheme(
+val PhoneBackground: Color @Composable get() = MaterialTheme.colorScheme.background
+val PhoneSurface: Color @Composable get() = MaterialTheme.colorScheme.surface
+val PhoneSurfaceRaised: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+val PhoneText: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+val PhoneMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+
+private val DarkPhoneColors = darkColorScheme(
     primary = PhoneAccent,
     onPrimary = Color.White,
-    background = PhoneBackground,
-    onBackground = PhoneText,
-    surface = PhoneSurface,
-    onSurface = PhoneText,
-    surfaceVariant = PhoneSurfaceRaised,
-    onSurfaceVariant = PhoneMuted,
+    background = Color(0xFF09080E),
+    onBackground = Color(0xFFF4F1FA),
+    surface = Color(0xFF1C1B20),
+    onSurface = Color(0xFFF4F1FA),
+    surfaceVariant = Color(0xFF242329),
+    onSurfaceVariant = Color(0xFFA9A5B3),
+)
+
+private val LightPhoneColors = lightColorScheme(
+    primary = PhoneAccent,
+    onPrimary = Color.White,
+    background = Color(0xFFF5F5FA),
+    onBackground = Color(0xFF24232A),
+    surface = Color.White,
+    onSurface = Color(0xFF24232A),
+    surfaceVariant = Color(0xFFE8E8ED),
+    onSurfaceVariant = Color(0xFF696A76),
 )
 
 @Composable
-fun EorzeaPhoneTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = PhoneColors, content = content)
+fun EorzeaPhoneTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = if (darkTheme) DarkPhoneColors else LightPhoneColors, content = content)
 }

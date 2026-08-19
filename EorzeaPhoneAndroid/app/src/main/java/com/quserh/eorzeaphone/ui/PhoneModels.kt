@@ -59,6 +59,12 @@ enum class SettingsPage {
     Notifications,
 }
 
+enum class PhoneThemeMode(val label: String) {
+    System("跟随系统"),
+    Light("浅色"),
+    Dark("深色"),
+}
+
 data class PhoneAppItem(
     val id: String,
     val label: String,
@@ -121,6 +127,12 @@ class ChatConversation(
     fun add(message: GameChatMessage) {
         messages.add(message)
         _lastMessage = message
+    }
+
+    fun clear() {
+        messages.clear()
+        _lastMessage = null
+        unread = 0
     }
 }
 
@@ -334,6 +346,22 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var compactDock: Boolean
         get() = _compactDock.value
         set(value) { _compactDock.value = value }
+    private var _themeMode by mutableStateOf(
+        runCatching { PhoneThemeMode.valueOf(prefs.getString("themeMode", PhoneThemeMode.System.name).orEmpty()) }
+            .getOrDefault(PhoneThemeMode.System),
+    )
+    var themeMode: PhoneThemeMode
+        get() = _themeMode
+        set(value) {
+            _themeMode = value
+            prefs.edit().putString("themeMode", value.name).apply()
+        }
+
+    fun useDarkTheme(systemDark: Boolean): Boolean = when (themeMode) {
+        PhoneThemeMode.System -> systemDark
+        PhoneThemeMode.Light -> false
+        PhoneThemeMode.Dark -> true
+    }
     var settingsPage by mutableStateOf<SettingsPage?>(null)
     val chats = mutableStateListOf<GameChatMessage>()
     val inventory = mutableStateListOf<GameInventoryItem>()
@@ -823,6 +851,13 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         conv.notify = !conv.notify
         if (conv.notify) mutedConversations.remove(conv.key) else mutedConversations.add(conv.key)
         prefs.edit().putStringSet("mutedChatConvs", mutedConversations).apply()
+    }
+
+    fun clearConversation(conv: ChatConversation) {
+        val removed = conv.messages.toSet()
+        chats.removeAll(removed)
+        conv.clear()
+        saveChats()
     }
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation {

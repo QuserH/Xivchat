@@ -300,12 +300,15 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
         }
         SectionLabel("主题")
         SettingsGroup {
-            Button(
-                onClick = { },
-                colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(12.dp).height(52.dp),
-            ) { Text("艾欧泽亚深色主题（默认）") }
+            PhoneThemeMode.entries.forEach { mode ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { state.themeMode = mode }.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(mode.label, color = PhoneText, modifier = Modifier.weight(1f))
+                    Text(if (state.themeMode == mode) "●" else "○", color = if (state.themeMode == mode) PhoneAccent else PhoneMuted, fontSize = 20.sp)
+                }
+            }
         }
     }
 }
@@ -678,8 +681,6 @@ private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Mod
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp)).background(if (item?.hq == true) Color(0xFF67522B) else PhoneSurface), contentAlignment = Alignment.Center) {
         if (item != null) {
             ItemIcon(item.iconId, Modifier.fillMaxSize(), fallback = item.name.take(3))
-            if (item.quantity > 1) Text(item.quantity.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomEnd).background(Color(0xB0000000)).padding(horizontal = 2.dp))
-            if (item.hq) Text("HQ", color = Color(0xFFFFD36A), fontSize = 7.sp, modifier = Modifier.align(Alignment.TopEnd).padding(2.dp))
         }
     }
 }

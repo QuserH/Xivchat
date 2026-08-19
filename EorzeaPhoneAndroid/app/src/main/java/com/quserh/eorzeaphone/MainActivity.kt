@@ -11,8 +11,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.quserh.eorzeaphone.ui.EorzeaPhoneApp
-import com.quserh.eorzeaphone.ui.theme.EorzeaPhoneTheme
-import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -24,12 +22,8 @@ class MainActivity : ComponentActivity() {
         // Fill the whole window (including the transparent status-bar strip) with the
         // phone background so the content color extends up onto the system status bar
         // instead of a black bar.
-        window.setBackgroundDrawable(ColorDrawable(com.quserh.eorzeaphone.ui.theme.PhoneBackground.value.toInt()))
+        window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        setContent {
-            EorzeaPhoneTheme {
-                EorzeaPhoneApp()
-            }
-        }
+        setContent { EorzeaPhoneApp() }
     }
 }

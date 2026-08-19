@@ -134,7 +134,7 @@ namespace XIVChatPlugin {
         }
 
         private byte IsInputDetour(nint a1) {
-            if (!this.Plugin.Config.MessagesCountAsInput || this.HadInput == InputSetters.None) {
+            if (!this.Plugin.Config.MessagesCountAsInput || (this.HadInput & InputSetters.Normal) == 0) {
                 return this._isInputHook!.Original(a1);
             }
 
@@ -143,7 +143,7 @@ namespace XIVChatPlugin {
         }
 
         private byte IsInputAfkDetour() {
-            if (!this.Plugin.Config.MessagesCountAsInput || this.HadInput == InputSetters.None) {
+            if (!this.Plugin.Config.MessagesCountAsInput || (this.HadInput & InputSetters.Afk) == 0) {
                 return this._isInputAfkHook!.Original();
             }
 
