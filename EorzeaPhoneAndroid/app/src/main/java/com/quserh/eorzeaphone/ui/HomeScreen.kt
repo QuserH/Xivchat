@@ -94,10 +94,10 @@ fun HomeScreen(state: PhoneState) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = 14.dp),
         ) {
-            PhoneStatusBar()
             HomeEditBar(state)
             HorizontalPager(
                 state = pager,
@@ -369,8 +369,8 @@ private fun PageArrow(left: Boolean, modifier: Modifier, onClick: () -> Unit) {
 
 @Composable
 private fun WeatherWidget(state: PhoneState, modifier: Modifier = Modifier) {
-    var time by remember { mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(30_000); time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm")) } }
+    var time by remember { mutableStateOf(eorzeaNow()) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5_000); time = eorzeaNow() } }
     val weather = state.weather
     Column(
         modifier = modifier

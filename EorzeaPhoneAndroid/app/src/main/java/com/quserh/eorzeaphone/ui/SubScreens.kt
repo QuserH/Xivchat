@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,9 +86,9 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
         modifier = Modifier
             .fillMaxSize()
             .background(background)
+            .windowInsetsPadding(WindowInsets.statusBars)
             .windowInsetsPadding(WindowInsets.navigationBars),
     ) {
-        PhoneStatusBar()
         content()
     }
 }
@@ -599,8 +600,9 @@ private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Mod
 @Composable
 internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: String = "", tint: Color = Color.White) {
     var bitmap by remember(iconId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val app = LocalContext.current.applicationContext
     LaunchedEffect(iconId) {
-        if (iconId > 0) bitmap = ItemIconLoader.load(iconId)
+        if (iconId > 0) bitmap = ItemIconLoader.load(app, iconId)
     }
     val bmp = bitmap
     if (bmp != null) {
@@ -899,19 +901,16 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
         Column(Modifier.fillMaxWidth(0.82f), horizontalAlignment = if (self) Alignment.End else Alignment.Start) {
             Text(if (self) "我" else author, color = PhoneMuted, fontSize = 11.sp)
             Box(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface)) {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    modifier = Modifier.padding(start = 10.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
-                ) {
-                    if (self) {
-                        // my messages: time at bottom-left
-                        Text(timeLabel, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, modifier = Modifier.padding(bottom = 1.dp, end = 8.dp))
-                        Text(body, color = PhoneText, fontSize = 14.sp)
-                    } else {
-                        // others: time at bottom-right
-                        Text(body, color = PhoneText, fontSize = 14.sp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(timeLabel, color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(bottom = 1.dp))
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text(body, color = if (self) Color.White else PhoneText, fontSize = 14.sp)
+                    // small time in the bottom corner, on its own row so the bubble grows to fit
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 3.dp),
+                        horizontalArrangement = if (self) Arrangement.Start else Arrangement.End,
+                    ) {
+                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp)
                     }
                 }
             }

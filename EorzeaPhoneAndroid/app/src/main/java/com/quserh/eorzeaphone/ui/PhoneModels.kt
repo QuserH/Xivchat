@@ -340,7 +340,14 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         }
     }
 
-    init { ResetReminderReceiver.configure(appContext, resetNotifications) }
+    init {
+        ResetReminderReceiver.configure(appContext, resetNotifications)
+        loadSavedChats()
+        loadSavedInventory()
+        if (prefs.getBoolean("autoConnect", true)) {
+            connect()
+        }
+    }
     val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
 
     private fun loadProfileCache(): com.quserh.eorzeaphone.data.PlayerProfile? = runCatching {
@@ -373,6 +380,90 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             put("territoryId", p.territoryId)
             put("itemLevel", p.itemLevel)
         }.toString()).apply()
+    }
+
+    private fun loadSavedChats() {
+        runCatching {
+            val arr = JSONArray(prefs.getString("chatCache", "[]"))
+            val msgs = mutableListOf<GameChatMessage>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                msgs += GameChatMessage(
+                    timestamp = o.optLong("timestamp"),
+                    sender = o.optString("sender"),
+                    text = o.optString("text"),
+                    channel = o.optInt("channel"),
+                )
+            }
+            msgs.sortBy { it.timestamp }
+            for (m in msgs) {
+                if (chats.none { it.timestamp == m.timestamp && it.sender == m.sender && it.text == m.text }) {
+                    chats.add(m)
+                    getOrCreateConversation(m).add(m)
+                }
+            }
+        }
+    }
+
+    private fun saveChats() {
+        val arr = JSONArray()
+        chats.forEach { m ->
+            arr.put(JSONObject().apply {
+                put("timestamp", m.timestamp)
+                put("sender", m.sender)
+                put("text", m.text)
+                put("channel", m.channel)
+            })
+        }
+        prefs.edit().putString("chatCache", arr.toString()).apply()
+    }
+
+    private fun loadSavedInventory() {
+        runCatching {
+            val items = JSONArray(prefs.getString("inventoryItemCache", "[]"))
+            inventory.clear()
+            for (i in 0 until items.length()) {
+                val o = items.getJSONObject(i)
+                inventory += GameInventoryItem(
+                    itemId = o.optLong("itemId"),
+                    name = o.optString("name"),
+                    quantity = o.optInt("quantity"),
+                    container = o.optLong("container"),
+                    slot = o.optLong("slot"),
+                    hq = o.optBoolean("hq"),
+                    iconId = o.optInt("iconId"),
+                )
+            }
+            val ctrs = JSONArray(prefs.getString("inventoryContainerCache", "[]"))
+            inventoryContainers.clear()
+            for (i in 0 until ctrs.length()) {
+                val o = ctrs.getJSONObject(i)
+                inventoryContainers += GameInventoryContainer(o.optLong("type"), o.optInt("size"))
+            }
+        }
+    }
+
+    private fun saveInventory() {
+        val items = JSONArray()
+        inventory.forEach { it ->
+            items.put(JSONObject().apply {
+                put("itemId", it.itemId)
+                put("name", it.name)
+                put("quantity", it.quantity)
+                put("container", it.container)
+                put("slot", it.slot)
+                put("hq", it.hq)
+                put("iconId", it.iconId)
+            })
+        }
+        val ctrs = JSONArray()
+        inventoryContainers.forEach { it ->
+            ctrs.put(JSONObject().apply { put("type", it.type); put("size", it.size) })
+        }
+        prefs.edit()
+            .putString("inventoryItemCache", items.toString())
+            .putString("inventoryContainerCache", ctrs.toString())
+            .apply()
     }
 
     fun updateShellSize(width: Int, height: Int) {
@@ -634,6 +725,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     if (!isSelf && chatNotifications && conv.notify) {
                         notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell)
                     }
+                    saveChats()
                 }
             }
             is PhoneEvent.Inventory -> {
@@ -641,6 +733,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 inventory.addAll(event.snapshot.items)
                 inventoryContainers.clear()
                 inventoryContainers.addAll(event.snapshot.containers)
+                saveInventory()
             }
             is PhoneEvent.Wallet -> {
                 wallet = event.wallet
