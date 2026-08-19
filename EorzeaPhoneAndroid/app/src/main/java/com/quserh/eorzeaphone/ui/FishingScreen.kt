@@ -391,9 +391,6 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                                             shadow = androidx.compose.ui.graphics.Shadow(Color(0x66000000), Offset.Zero, 2f),
                                         ),
                                     )
-                                    if (state.connected) {
-                                        Text("点击传送", color = Color(0xFF9FE0FF), fontSize = 7.sp, maxLines = 1)
-                                    }
                                 }
                             }
                         }

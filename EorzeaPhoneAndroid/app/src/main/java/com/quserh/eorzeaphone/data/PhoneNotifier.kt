@@ -41,7 +41,7 @@ class PhoneNotifier(private val context: Context) {
         }
     }
 
-    fun chat(message: GameChatMessage, highPriority: Boolean) {
+    fun chat(message: GameChatMessage, highPriority: Boolean, title: String? = null) {
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val channel = if (highPriority) TELL_CHANNEL else CHAT_CHANNEL
@@ -50,7 +50,7 @@ class PhoneNotifier(private val context: Context) {
         } else {
             @Suppress("DEPRECATION") android.app.Notification.Builder(context)
         }.setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(message.sender.ifBlank { message.category.label })
+            .setContentTitle(title ?: message.sender.ifBlank { message.category.label })
             .setContentText(message.text)
             .setStyle(android.app.Notification.BigTextStyle().bigText(message.text))
             .setContentIntent(pending)

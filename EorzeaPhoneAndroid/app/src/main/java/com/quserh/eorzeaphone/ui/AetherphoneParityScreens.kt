@@ -19,8 +19,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,6 +108,7 @@ import com.quserh.eorzeaphone.data.GameChatChunk
 import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
+import com.quserh.eorzeaphone.data.normalizedPlayerName
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -273,7 +276,13 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
         AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
         }
-        val rows = state.conversations.filter { it.category == ChatCategory.Tell && (query.isBlank() || it.title.contains(query, true) || it.lastMessage?.text?.contains(query, true) == true) }
+        val myName = state.profile?.name.orEmpty().normalizedPlayerName()
+        val rows = state.conversations.filter { c ->
+            c.category == ChatCategory.Tell &&
+                !state.isConversationHidden(c) &&
+                (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
+                (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
+        }
         LazyColumn(Modifier.fillMaxSize().padding(top = 18.dp)) {
             item("messages") {
                 val latest = rows.maxByOrNull { it.lastTimestamp ?: 0L }
@@ -338,7 +347,6 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     val existing = state.chatFilters.firstOrNull { it.id == state.editingChatFilterId }
     var name by remember(existing?.id) { mutableStateOf(existing?.label ?: "新建标签页") }
     var tint by remember(existing?.id) { mutableStateOf(existing?.tintIndex ?: 0) }
-    var selected by remember { mutableStateOf(setOf<String>()) }
     var saved by remember { mutableStateOf(false) }
     var sendChannel by remember(existing?.id) { mutableStateOf(existing?.sendChannel) }
     var layout by remember(existing?.id) { mutableStateOf(existing?.layout ?: ChatLayout.Bubbles) }
@@ -396,11 +404,16 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
             ChannelChoice("gathering", ChatCategory.System, "采集", setOf(67)),
         ),
     )
-    LaunchedEffect(existing?.id) {
-        if (existing != null) selected = groups.flatMap { it.second }.filter { choice ->
-            choice.channels.any { it in existing.channels } || (choice.channels.isEmpty() && choice.category in existing.categories)
-        }.mapTo(mutableSetOf()) { it.key }
+    val initialSelection: Set<String> = remember(existing?.id) {
+        if (existing == null) {
+            emptySet()
+        } else {
+            groups.flatMap { it.second }.filter { choice ->
+                choice.channels.any { it in existing.channels } || (choice.channels.isEmpty() && choice.category in existing.categories)
+            }.mapTo(mutableSetOf()) { it.key }.toSet()
+        }
     }
+    var selected by remember(existing?.id) { mutableStateOf(initialSelection) }
     fun finish() {
         if (!saved && existing != null) {
             val choices = groups.flatMap { it.second }.filter { it.key in selected }
@@ -495,37 +508,58 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LightConversationRow(conversation: ChatConversation, state: PhoneState) {
+    var menuOpen by remember { mutableStateOf(false) }
     val last = conversation.lastMessage
     val preview = when {
         last == null -> "暂无消息"
         last.self || last.isFrom(state.profile?.name) -> "${state.profile?.name ?: "我"}：${last.text}"
         else -> "${last.sender.displayPlayerName()}：${last.text}"
     }.replace('\n', ' ')
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable { state.openConversation(conversation) }.padding(horizontal = 43.dp, vertical = 8.dp),
-    ) {
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(lightConversationColor(conversation.category)), contentAlignment = Alignment.Center) {
-            Text(conversation.title.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        }
-        Column(Modifier.weight(1f).padding(start = 13.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(conversation.title, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
-                conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().combinedClickable(
+                onClick = { state.openConversation(conversation) },
+                onLongClick = { menuOpen = true },
+            ).padding(horizontal = 43.dp, vertical = 8.dp),
+        ) {
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(lightConversationColor(conversation.category)), contentAlignment = Alignment.Center) {
+                Text(conversation.title.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text(preview, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (!conversation.notify) ImageGlyph(R.drawable.app_notifications, AetherLightMuted.copy(alpha = .62f), Modifier.size(14.dp).padding(start = 2.dp))
-                if (conversation.unread > 0) {
-                    Box(
-                        Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(Color(0xFFE5485D)),
-                        contentAlignment = Alignment.Center,
-                    ) { Text(if (conversation.unread > 99) "99+" else conversation.unread.toString(), color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 5.dp)) }
+            Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(conversation.title, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
+                    conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Text(preview, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (!conversation.notify) ImageGlyph(R.drawable.app_notifications, AetherLightMuted.copy(alpha = .62f), Modifier.size(14.dp).padding(start = 2.dp))
+                    if (conversation.unread > 0) {
+                        Box(
+                            Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(Color(0xFFE5485D)),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(if (conversation.unread > 99) "99+" else conversation.unread.toString(), color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 5.dp)) }
+                    }
                 }
             }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
+                state.toggleConversationPin(conversation)
+                menuOpen = false
+            })
+            DropdownMenuItem(text = { Text(if (state.isConversationHidden(conversation)) "恢复显示" else "从列表隐藏") }, onClick = {
+                if (state.isConversationHidden(conversation)) state.unhideConversation(conversation) else state.hideConversation(conversation)
+                menuOpen = false
+            })
+            DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
+                state.clearConversation(conversation)
+                menuOpen = false
+            })
         }
     }
     Box(Modifier.fillMaxWidth().padding(start = 90.dp, end = 38.dp).height(1.dp).background(AetherLightSeparator))

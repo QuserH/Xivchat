@@ -449,6 +449,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         (prefs.getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pinnedConversations: MutableSet<String> =
         (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+    private val hiddenConversations: MutableSet<String> =
+        (prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pendingSelfTexts = mutableMapOf<String, String>()
     private val connection = XivChatConnection(
         context = context,
@@ -550,7 +552,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             for (m in msgs) {
                 if (chats.none { it.timestamp == m.timestamp && it.sender == m.sender && it.text == m.text }) {
                     chats.add(m)
-                    getOrCreateConversation(m).add(m)
+                    getOrCreateConversation(m)?.add(m)
                 }
             }
         }
@@ -1046,7 +1048,9 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             trimmed
         }
         connection.sendChat(payload)
-        val selfMsg = GameChatMessage(System.currentTimeMillis(), profile?.name ?: "我", trimmed, outChannelFor(conv.category), self = true, sendState = if (conv.category == ChatCategory.Tell) 1 else 0)
+        val isTell = conv.category == ChatCategory.Tell
+        val selfSender = if (isTell) conv.tellRecipient.ifBlank { profile?.name.orEmpty() } else profile?.name.orEmpty().ifBlank { "我" }
+        val selfMsg = GameChatMessage(System.currentTimeMillis(), selfSender, trimmed, outChannelFor(conv.category), self = true, sendState = if (isTell) 1 else 0)
         chats.add(selfMsg)
         conv.add(selfMsg)
         pendingSelfTexts["${conv.key}\u0000$trimmed"] = ""
@@ -1121,6 +1125,20 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun isConversationPinned(conv: ChatConversation): Boolean = conv.key in pinnedConversations
 
+    fun isConversationHidden(conv: ChatConversation): Boolean = conv.key in hiddenConversations
+
+    fun hideConversation(conv: ChatConversation) {
+        if (hiddenConversations.add(conv.key)) {
+            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+        }
+    }
+
+    fun unhideConversation(conv: ChatConversation) {
+        if (hiddenConversations.remove(conv.key)) {
+            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+        }
+    }
+
     fun toggleChatFilterNotifications(filter: ChatFilter) {
         val index = chatFilters.indexOfFirst { it.id == filter.id }
         if (index < 0) return
@@ -1132,14 +1150,15 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         if (updated.alertPolicy != ChatAlertPolicy.Off) requestNotificationPermission()
     }
 
-    private fun getOrCreateConversation(message: GameChatMessage): ChatConversation {
+    private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
         val key = message.conversationKey()
-        return conversationByKey.getOrPut(key) {
-            val conv = ChatConversation(key, message.category, message.conversationTitle(), message.tellRecipient())
-            conv.notify = key !in mutedConversations
-            conversations.add(0, conv)
-            conv
-        }
+        conversationByKey[key]?.let { return it }
+        // Our own sent messages must never spawn a new conversation by themselves.
+        if (message.self || message.isFrom(profile?.name)) return null
+        val conv = ChatConversation(key, message.category, message.conversationTitle(), message.tellRecipient())
+        conv.notify = key !in mutedConversations
+        conversations.add(0, conv)
+        return conv
     }
 
     private fun ensureTellConversation(recipient: String, displayName: String? = null): ChatConversation {
@@ -1427,32 +1446,41 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 } else if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
                     chats.add(event.message)
                     val conv = getOrCreateConversation(event.message)
-                    conv.add(event.message)
-                    val index = conversations.indexOf(conv)
-                    val target = if (conv.key in pinnedConversations) 0 else conversations.count { it.key in pinnedConversations }
-                    if (index != target && index >= 0) {
-                        conversations.removeAt(index)
-                        conversations.add(target.coerceAtMost(conversations.size), conv)
-                    }
-                    val isSelf = event.message.isFrom(profile?.name)
-                    val isOpen = openConversationKey == conv.key
-                    if (!isSelf && !isOpen) {
-                        conv.unread = (conv.unread + 1).coerceAtMost(99)
+                    if (conv == null) {
+                        saveChats()
                     } else {
-                        conv.unread = 0
+                        conv.add(event.message)
+                        val index = conversations.indexOf(conv)
+                        val target = if (conv.key in pinnedConversations) 0 else conversations.count { it.key in pinnedConversations }
+                        if (index != target && index >= 0) {
+                            conversations.removeAt(index)
+                            conversations.add(target.coerceAtMost(conversations.size), conv)
+                        }
+                        val isSelf = event.message.isFrom(profile?.name)
+                        val isOpen = openConversationKey == conv.key
+                        if (!isSelf && !isOpen) {
+                            conv.unread = (conv.unread + 1).coerceAtMost(99)
+                        } else {
+                            conv.unread = 0
+                        }
+                        val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
+                        val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
+                        val alertAllowed = when {
+                            event.message.category == ChatCategory.Tell -> tellNotifications
+                            matchedTab?.alertPolicy == ChatAlertPolicy.All -> true
+                            matchedTab?.alertPolicy == ChatAlertPolicy.Mentions -> mentioned
+                            else -> false
+                        }
+                        if (!isSelf && chatNotifications && conv.notify && alertAllowed) {
+                            val title = if (event.message.category == ChatCategory.Tell) {
+                                event.message.sender.ifBlank { conv.title }
+                            } else {
+                                matchedTab?.label ?: event.message.category.label
+                            }
+                            notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell, title)
+                        }
+                        saveChats()
                     }
-                    val tabAlerts = chatFilters.firstOrNull { it.matches(event.message) }?.alertPolicy ?: ChatAlertPolicy.All
-                    val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
-                    val alertAllowed = when {
-                        event.message.category == ChatCategory.Tell -> tellNotifications
-                        tabAlerts == ChatAlertPolicy.All -> true
-                        tabAlerts == ChatAlertPolicy.Mentions -> mentioned
-                        else -> false
-                    }
-                    if (!isSelf && chatNotifications && conv.notify && alertAllowed) {
-                        notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell)
-                    }
-                    saveChats()
                 }
             }
             is PhoneEvent.Inventory -> {
