@@ -654,7 +654,6 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                             Box(Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF8D6AC8)), contentAlignment = Alignment.Center) { Text(retainer.name.take(1), color = Color.White, fontWeight = FontWeight.Bold) }
                             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                 Text(retainer.name.ifBlank { "未命名雇员" }, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                Text(if (retainer.active) "在线同步" else "离线数据", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
                                 if (retainer.ventureId > 0) {
                                     val remaining = ((retainer.ventureCompleteUnix * 1000L - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
                                     Text(if (remaining == 0L) "探险已完成，可收取" else "探险中 · ${countdownLabel(remaining)}", color = if (remaining == 0L) Color(0xFF4CD487) else PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
@@ -662,7 +661,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("${formatCount(cachedCount)} 格", color = if (retainer.active) PhoneAccent else PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                if (retainer.gil > 0) Text("${formatCount(retainer.gil)} 金币", color = Color(0xFFFFB74D), fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                                Text("${formatCount(retainer.gil)} 金币", color = Color(0xFFFFB74D), fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
                             }
                         }
                         Divider(Modifier.padding(start = 73.dp), color = PhoneMuted.copy(alpha = .16f))
