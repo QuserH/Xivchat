@@ -272,9 +272,13 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     fun installApp(id: String) {
-        if (id == "appstore" || id !in homeLibraryIds || homePageIds.isEmpty()) return
+        if (id == "appstore" || id !in allApps || homePageIds.isEmpty()) return
+        if (homePageIds.any { id in it }) return
         val targetPage = homePageIds.indices.minByOrNull { homePageIds[it].size } ?: 0
-        restoreToHome(targetPage, id)
+        homeLibraryIds = homeLibraryIds.filterNot { it == id }
+        homePageIds = homePageIds.toMutableList().also { it[targetPage] = it[targetPage] + id }
+        saveHomeLayout()
+        saveHomeLibrary()
     }
 
     fun uninstallApp(id: String) {

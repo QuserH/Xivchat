@@ -31,23 +31,6 @@ android {
         jvmTarget = "17"
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file("../eorzeaphone-release.keystore")
-            storePassword = "eorzeaphone2026"
-            keyAlias = "eorzeaphone"
-            keyPassword = "eorzeaphone2026"
-        }
-    }
-
-    buildTypes {
-        debug { signingConfig = signingConfigs.getByName("release") }
-        release {
-            signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
-        }
-    }
-
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
