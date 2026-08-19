@@ -79,7 +79,8 @@ private fun eorzeaNow(): String {
 fun HomeScreen(state: PhoneState) {
     val libraryCount = if (state.homeLibraryApps().isNotEmpty()) 1 else 0
     val totalPages = state.homePageCount + libraryCount
-    val pager = rememberPagerState(pageCount = { totalPages })
+    val pager = rememberPagerState(initialPage = state.homePage, pageCount = { totalPages })
+    LaunchedEffect(pager.currentPage) { state.homePage = pager.currentPage }
     Box(Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(R.drawable.wallpaper_dusk_dark),

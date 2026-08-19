@@ -146,6 +146,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var screen by mutableStateOf(PhoneScreen.Home)
     var selectedApp by mutableStateOf<PhoneAppItem?>(null)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
+    var homePage by mutableStateOf(0)
     var launchPivotX by mutableStateOf(0.5f)
         private set
     var launchPivotY by mutableStateOf(0.5f)
@@ -326,6 +327,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var openConversationKey by mutableStateOf<String?>(null)
     private val mutedConversations: MutableSet<String> =
         (prefs.getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+    private val pendingSelfTexts = mutableMapOf<String, String>()
     private val connection = XivChatConnection(context, scope) { event ->
         scope.launch(Dispatchers.Main.immediate) { handle(event) }
     }
@@ -397,6 +399,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     sender = o.optString("sender"),
                     text = o.optString("text"),
                     channel = o.optInt("channel"),
+                    self = o.optBoolean("self"),
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -417,6 +420,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("sender", m.sender)
                 put("text", m.text)
                 put("channel", m.channel)
+                put("self", m.self)
             })
         }
         prefs.edit().putString("chatCache", arr.toString()).apply()
@@ -679,7 +683,22 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             trimmed
         }
         connection.sendChat(payload)
+        val selfMsg = GameChatMessage(System.currentTimeMillis(), profile?.name ?: "我", trimmed, outChannelFor(conv.category), self = true)
+        chats.add(selfMsg)
+        conv.add(selfMsg)
+        pendingSelfTexts["${conv.key}\u0000$trimmed"] = ""
+        saveChats()
         chatDraft = ""
+    }
+
+    private fun outChannelFor(category: ChatCategory): Int = when (category) {
+        ChatCategory.Tell -> 12
+        ChatCategory.Party -> 2
+        ChatCategory.FreeCompany -> 6
+        ChatCategory.Linkshell -> 19
+        ChatCategory.Public -> 1
+        ChatCategory.Emote -> 28
+        ChatCategory.System -> 30
     }
 
     fun openConversation(conv: ChatConversation) {
@@ -845,7 +864,11 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 saveFriends()
             }
             is PhoneEvent.Chat -> {
-                if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
+                val convKey = event.message.conversationKey()
+                val selfEcho = pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
+                if (selfEcho != null) {
+                    // already added locally when sent; skip the game echo
+                } else if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
                     chats.add(event.message)
                     val conv = getOrCreateConversation(event.message)
                     conv.add(event.message)

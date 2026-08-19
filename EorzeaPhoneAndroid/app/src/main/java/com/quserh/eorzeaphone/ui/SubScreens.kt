@@ -850,7 +850,8 @@ private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) 
         } else {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(conv.messages, key = { "${it.timestamp}-${it.sender}-${it.text}" }) { chat ->
-                    ChatBubble(chat.sender.ifBlank { conv.category.label }, chat.text, chat.isFrom(state.profile?.name), chat.timestamp)
+                    val isSelf = chat.self || chat.isFrom(state.profile?.name)
+                    ChatBubble(chat.sender.ifBlank { conv.category.label }, chat.text, isSelf, chat.timestamp)
                 }
             }
         }
@@ -908,7 +909,7 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
                         Modifier
                             .fillMaxWidth()
                             .padding(top = 3.dp),
-                        horizontalArrangement = if (self) Arrangement.Start else Arrangement.End,
+                        horizontalArrangement = if (self) Arrangement.End else Arrangement.Start,
                     ) {
                         Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp)
                     }

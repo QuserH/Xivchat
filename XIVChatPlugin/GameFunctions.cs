@@ -22,6 +22,7 @@ using LuminaGrandCompany = Lumina.Excel.Sheets.GrandCompany;
 namespace XIVChatPlugin {
     internal unsafe class GameFunctions : IDisposable {
         private static class Signatures {
+            internal const string ProcessChat = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
             internal const string Input = "E8 ?? ?? ?? ?? ?? ?? ?? 84 C0 B9";
             internal const string InputAfk = "E8 ?? ?? ?? ?? 84 C0 74 ?? 66 83 3D";
 
@@ -36,6 +37,8 @@ namespace XIVChatPlugin {
         private Plugin Plugin { get; }
 
         #region Delegates
+
+        private delegate void EasierProcessChatBoxDelegate(nint uiModule, nint message, nint unused, byte a4);
 
         private delegate byte IsInputDelegate(nint a1);
 
@@ -70,6 +73,9 @@ namespace XIVChatPlugin {
         #endregion
 
         #region Functions
+
+        [Signature(Signatures.ProcessChat)]
+        private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
 
         [Signature(Signatures.GetColour)]
         private readonly GetColourInfoDelegate? _getColourInfo;
@@ -203,6 +209,21 @@ namespace XIVChatPlugin {
                 return;
             }
 
+            // Direct signature: sends without opening the native chat input,
+            // so it does not hide other Dalamud plugin windows.
+            if (this._easierProcessChatBox != null) {
+                using var structure = new ChatPayload(message);
+                var num = Marshal.AllocHGlobal(400);
+                Marshal.StructureToPtr(structure, num, false);
+                try {
+                    this._easierProcessChatBox((nint) uiModule, num, nint.Zero, 0);
+                } finally {
+                    Marshal.FreeHGlobal(num);
+                }
+                return;
+            }
+
+            // Fallback: official chat-box entry path.
             var payload = Utf8String.FromString(message);
             try {
                 uiModule->ProcessChatBoxEntry(payload, nint.Zero, false);
@@ -387,5 +408,34 @@ namespace XIVChatPlugin {
                 IMemorySpace.Free(str);
             }
         }
+    }
+}
+
+[StructLayout(LayoutKind.Explicit)]
+internal readonly struct ChatPayload : IDisposable {
+    [FieldOffset(0)]
+    private readonly nint textPtr;
+
+    [FieldOffset(8)]
+    private readonly ulong unk1;
+
+    [FieldOffset(16)]
+    private readonly ulong textLen;
+
+    [FieldOffset(24)]
+    private readonly ulong unk2;
+
+    internal ChatPayload(string text) {
+        byte[] bytes = Encoding.UTF8.GetBytes(text);
+        this.textPtr = Marshal.AllocHGlobal(bytes.Length + 30);
+        Marshal.Copy(bytes, 0, this.textPtr, bytes.Length);
+        Marshal.WriteByte(this.textPtr + bytes.Length, 0);
+        this.textLen = (ulong) (bytes.Length + 1);
+        this.unk1 = 64UL;
+        this.unk2 = 0UL;
+    }
+
+    public void Dispose() {
+        Marshal.FreeHGlobal(this.textPtr);
     }
 }
