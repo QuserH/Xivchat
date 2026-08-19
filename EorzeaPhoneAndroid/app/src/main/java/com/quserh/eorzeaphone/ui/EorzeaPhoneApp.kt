@@ -123,6 +123,7 @@ fun EorzeaPhoneApp() {
             "timers" -> TimersScreen(state)
             "calendar" -> CalendarScreen(state)
             "dailies" -> DailiesScreen(state)
+            "submarine" -> SubmarineScreen(state)
             "housing" -> HousingScreen(state)
             "notifications" -> NotificationsScreen(state)
             "camera" -> CameraScreen(state)

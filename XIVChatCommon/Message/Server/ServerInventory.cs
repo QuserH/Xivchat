@@ -31,6 +31,8 @@ namespace XIVChatCommon.Message.Server {
         [Key(3)] public int ItemCount { get; set; }
         [Key(4)] public int Quantity { get; set; }
         [Key(5)] public uint Gil { get; set; }
+        [Key(6)] public uint VentureId { get; set; }
+        [Key(7)] public long VentureCompleteUnix { get; set; }
     }
 
     /// <summary>

@@ -220,8 +220,10 @@ internal object XivChatCodec {
                 val itemCount = unpacker.unpackInt()
                 val quantity = unpacker.unpackInt()
                 val gil = if (retainerFields > 5) unpacker.unpackLong() else 0L
-                repeat((retainerFields - 6).coerceAtLeast(0)) { unpacker.skipValue() }
-                retainers += GameRetainer(id, name, active, itemCount, quantity, gil)
+                val ventureId = if (retainerFields > 6) unpacker.unpackLong() else 0L
+                val ventureCompleteUnix = if (retainerFields > 7) unpacker.unpackLong() else 0L
+                repeat((retainerFields - 8).coerceAtLeast(0)) { unpacker.skipValue() }
+                retainers += GameRetainer(id, name, active, itemCount, quantity, gil, ventureId, ventureCompleteUnix)
             }
         }
         return GameInventorySnapshot(result, containers, retainers)

@@ -43,6 +43,7 @@ object AppCatalog {
         PhoneAppItem("timers", "计时器", R.drawable.app_timers, lime),
         PhoneAppItem("shortcuts", "快捷指令", R.drawable.app_shortcuts, blue),
         PhoneAppItem("wallet", "钱包", R.drawable.app_wallet, green),
+        PhoneAppItem("submarine", "潜水艇", R.drawable.app_timers, cyan),
         PhoneAppItem("dailies", "日常", R.drawable.app_dailies, teal),
         PhoneAppItem("calendar", "日历", R.drawable.app_calendar, coral),
         PhoneAppItem("character", "活跃度", R.drawable.app_character, cyan),

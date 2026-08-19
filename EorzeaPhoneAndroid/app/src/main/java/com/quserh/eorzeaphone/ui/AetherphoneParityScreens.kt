@@ -76,6 +76,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -346,26 +348,52 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     data class ChannelChoice(val key: String, val category: ChatCategory, val label: String, val channels: Set<Int> = emptySet())
     val groups = listOf(
         "社区" to listOf(
-            ChannelChoice("fc", ChatCategory.FreeCompany, "部队", setOf(24)),
-            ChannelChoice("novice", ChatCategory.Public, "新人频道", setOf(27)),
+            ChannelChoice("fc", ChatCategory.FreeCompany, "部队", setOf(24, 85)),
+            ChannelChoice("fcann", ChatCategory.FreeCompany, "部队公告 / 登录", setOf(69, 70)),
+            ChannelChoice("novice", ChatCategory.Public, "新人频道", setOf(27, 94)),
+            ChannelChoice("novicesys", ChatCategory.System, "新人频道系统消息", setOf(75)),
         ),
         "团体" to listOf(
-            ChannelChoice("party", ChatCategory.Party, "小队", setOf(14)),
+            ChannelChoice("party", ChatCategory.Party, "小队", setOf(14, 84)),
             ChannelChoice("alliance", ChatCategory.Party, "团队", setOf(15)),
-            ChannelChoice("pvp", ChatCategory.Party, "PvP小队", setOf(32)),
+            ChannelChoice("crossparty", ChatCategory.Party, "跨服小队", setOf(32)),
+            ChannelChoice("pvp", ChatCategory.Party, "PvP小队", setOf(36)),
+            ChannelChoice("pvpann", ChatCategory.Party, "PvP公告 / 登录", setOf(77, 78)),
         ),
-        "通讯贝" to (1..8).map { ChannelChoice("ls$it", ChatCategory.Linkshell, "通讯贝 $it", setOf(15 + it)) },
-        "跨服通讯贝" to (1..8).map { ChannelChoice("cwls$it", ChatCategory.Linkshell, "跨服通讯贝 $it", setOf(36 + it)) },
+        "通讯贝" to (1..8).map { ChannelChoice("ls$it", ChatCategory.Linkshell, "通讯贝 $it", setOf(15 + it, 85 + it)) },
+        "跨服通讯贝" to (1..8).map { ChannelChoice("cwls$it", ChatCategory.Linkshell, "跨服通讯贝 $it", setOf(if (it == 1) 37 else 99 + it)) },
         "本地" to listOf(
-            ChannelChoice("tell", ChatCategory.Tell, "悄悄话", setOf(12, 13)),
-            ChannelChoice("say", ChatCategory.Public, "说话", setOf(10)),
-            ChannelChoice("shout", ChatCategory.Public, "喊话", setOf(11)),
-            ChannelChoice("yell", ChatCategory.Public, "呼喊", setOf(30)),
-            ChannelChoice("emote", ChatCategory.Emote, "情感动作", setOf(28, 29)),
+            ChannelChoice("tell", ChatCategory.Tell, "悄悄话", setOf(12, 13, 80)),
+            ChannelChoice("say", ChatCategory.Public, "说话", setOf(10, 81)),
+            ChannelChoice("shout", ChatCategory.Public, "喊话", setOf(11, 82)),
+            ChannelChoice("yell", ChatCategory.Public, "呼喊", setOf(30, 83)),
+            ChannelChoice("emote_std", ChatCategory.Emote, "标准情感动作", setOf(29)),
+            ChannelChoice("emote_cus", ChatCategory.Emote, "自定义情感动作", setOf(28)),
+        ),
+        "战斗" to listOf(
+            ChannelChoice("battle_all", ChatCategory.System, "战斗 / 受击 / 治疗", setOf(41, 42, 43, 44, 45)),
+            ChannelChoice("battle_buff", ChatCategory.System, "增益效果", setOf(46, 47)),
+            ChannelChoice("battle_debuff", ChatCategory.System, "减益效果", setOf(48, 49)),
+            ChannelChoice("glamour", ChatCategory.System, "外观同步提醒", setOf(54)),
         ),
         "系统" to listOf(
-            ChannelChoice("echo", ChatCategory.System, "默语"),
-            ChannelChoice("system", ChatCategory.System, "系统消息"),
+            ChannelChoice("echo", ChatCategory.System, "默语", setOf(56)),
+            ChannelChoice("system", ChatCategory.System, "系统消息", setOf(57, 58, 60)),
+            ChannelChoice("alarm", ChatCategory.System, "警报", setOf(55)),
+            ChannelChoice("gathering_sys", ChatCategory.System, "采集系统消息", setOf(59)),
+            ChannelChoice("recruit", ChatCategory.System, "定时招募公告", setOf(72)),
+            ChannelChoice("retainersale", ChatCategory.System, "雇员售出", setOf(71)),
+            ChannelChoice("sign", ChatCategory.System, "标识", setOf(73)),
+            ChannelChoice("random", ChatCategory.System, "随机数", setOf(74)),
+            ChannelChoice("orchestrion", ChatCategory.System, "管弦乐", setOf(76)),
+            ChannelChoice("messagebook", ChatCategory.System, "留言本", setOf(79)),
+        ),
+        "剧情 / 进度" to listOf(
+            ChannelChoice("npc", ChatCategory.System, "NPC 对话", setOf(61, 68)),
+            ChannelChoice("loot", ChatCategory.System, "战利品 / 掉落", setOf(62, 65)),
+            ChannelChoice("progress", ChatCategory.System, "进度", setOf(64)),
+            ChannelChoice("crafting", ChatCategory.System, "制作", setOf(66)),
+            ChannelChoice("gathering", ChatCategory.System, "采集", setOf(67)),
         ),
     )
     LaunchedEffect(existing?.id) {
@@ -845,14 +873,24 @@ private fun chatChunkColor(value: Long): Color {
 
 @Composable
 private fun ChatInlineIcon(index: Int) {
+    if (index >= 1000) {
+        val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+        var bitmap by remember(index) { mutableStateOf<ImageBitmap?>(null) }
+        LaunchedEffect(index) { bitmap = ItemIconLoader.load(appContext, index)?.asImageBitmap() }
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(bmp, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        }
+        return
+    }
+    val rect = fontIconRect(index) ?: return
     val bitmap = ImageBitmap.imageResource(R.drawable.fonticon_ps4)
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-        val rect = fontIconRect(index)
         drawImage(bitmap, srcOffset = androidx.compose.ui.unit.IntOffset(rect[0], rect[1]), srcSize = androidx.compose.ui.unit.IntSize(rect[2], rect[3]))
     }
 }
 
-private fun fontIconRect(index: Int): IntArray = when (index) {
+private fun fontIconRect(index: Int): IntArray? = when (index) {
     in 1..5 -> intArrayOf((index - 1) * 40, 342, 40, 40)
     in 6..10 -> intArrayOf((index - 6) * 40, 382, 40, 40)
     in 11..15 -> intArrayOf((index - 11) * 40, 422, 40, 40)
@@ -871,7 +909,7 @@ private fun fontIconRect(index: Int): IntArray = when (index) {
     in 81..87 -> intArrayOf(200 + (index - 81) * 40, 502, 40, 40)
     in 88..94 -> intArrayOf(200 + (index - 88) * 40, 542, 40, 40)
     in 95..100 -> intArrayOf((index - 95) * 40, 582, 40, 40)
-    else -> intArrayOf(((index - 101).coerceIn(0, 11)) * 40, 622, 40, 40)
+    else -> null
 }
 
 private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, selfName: String?): Boolean {
@@ -1256,14 +1294,28 @@ private fun DarkDataFrame(top: Color, bottom: Color, content: @Composable () -> 
     ) { content() }
 }
 
-private fun lightConversationColor(category: ChatCategory): Color = when (category) {
-    ChatCategory.Public -> Color(0xFF52A877)
-    ChatCategory.Party -> Color(0xFF6688E8)
-    ChatCategory.Tell -> Color(0xFFE88B45)
-    ChatCategory.Linkshell -> Color(0xFF9870CF)
-    ChatCategory.FreeCompany -> Color(0xFFC6834D)
-    ChatCategory.Emote -> Color(0xFFE6719A)
-    ChatCategory.System -> Color(0xFF7A8493)
+@Composable
+private fun lightConversationColor(category: ChatCategory): Color {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < .5f
+    val lightHue = when (category) {
+        ChatCategory.Public -> Color(0xFF7ED9A7)
+        ChatCategory.Party -> Color(0xFF8FB0FF)
+        ChatCategory.Tell -> Color(0xFFFFB06E)
+        ChatCategory.Linkshell -> Color(0xFFBE9BE8)
+        ChatCategory.FreeCompany -> Color(0xFFE8A879)
+        ChatCategory.Emote -> Color(0xFFFF9CC4)
+        ChatCategory.System -> Color(0xFFAAB6C4)
+    }
+    val darkHue = when (category) {
+        ChatCategory.Public -> Color(0xFF2E7D50)
+        ChatCategory.Party -> Color(0xFF3E63C4)
+        ChatCategory.Tell -> Color(0xFFC06A24)
+        ChatCategory.Linkshell -> Color(0xFF6E4E9E)
+        ChatCategory.FreeCompany -> Color(0xFF965C2C)
+        ChatCategory.Emote -> Color(0xFFB4486E)
+        ChatCategory.System -> Color(0xFF4E5A68)
+    }
+    return if (darkTheme) lightHue else darkHue
 }
 
 private fun lightTalkTime(timestamp: Long): String {

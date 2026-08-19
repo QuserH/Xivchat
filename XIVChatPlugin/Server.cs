@@ -618,6 +618,8 @@ namespace XIVChatPlugin {
                             ItemCount = active ? activeCount : 0,
                             Quantity = active ? activeQuantity : 0,
                             Gil = active ? activeRetainerGil : 0,
+                            VentureId = retainer->VentureId,
+                            VentureCompleteUnix = retainer->VentureComplete,
                         });
                     }
                 }
@@ -1814,8 +1816,16 @@ namespace XIVChatPlugin {
                     case PayloadType.Icon:
                         var index = ((IconPayload) payload).Icon;
                         chunks.Add(new IconChunk {
-                            index = (byte) index,
+                            index = (int) index,
                         });
+                        break;
+                    case PayloadType.Item:
+                        var itemPayload = (ItemPayload) payload;
+                        var itemRow = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>().GetRowOrDefault(itemPayload.RawItemId);
+                        chunks.Add(new IconChunk {
+                            index = itemRow?.Icon ?? 0,
+                        });
+                        Append(itemPayload.DisplayName ?? string.Empty);
                         break;
                     case PayloadType.Unknown:
                         var rawPayload = (RawPayload) payload;

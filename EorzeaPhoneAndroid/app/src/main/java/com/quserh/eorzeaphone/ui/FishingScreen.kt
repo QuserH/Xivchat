@@ -378,7 +378,18 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                         spot.aetherytes.forEach { crystal ->
                             val x = (crystal.x / 2048f).coerceIn(0f, 1f)
                             val y = (crystal.y / 2048f).coerceIn(0f, 1f)
-                            ItemIcon(60453, Modifier.offset(x = mapWidth * x - 14.dp, y = mapHeight * y - 14.dp).size(28.dp), "晶")
+                            Column(
+                                Modifier.offset(x = mapWidth * x - 28.dp, y = mapHeight * y - 14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                ItemIcon(60453, Modifier.size(28.dp), "晶")
+                                if (crystal.name.isNotBlank()) {
+                                    Box(
+                                        Modifier.padding(top = 1.dp).clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xCC000000)).padding(horizontal = 3.dp, vertical = 1.dp),
+                                    ) { Text(crystal.name, color = Color.White, fontSize = 8.sp, maxLines = 1) }
+                                }
+                            }
                         }
                         }
                     }

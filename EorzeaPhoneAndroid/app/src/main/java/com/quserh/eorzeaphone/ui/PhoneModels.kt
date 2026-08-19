@@ -596,7 +596,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             retainers.clear()
             for (i in 0 until savedRetainers.length()) {
                 val o = savedRetainers.getJSONObject(i)
-                retainers += GameRetainer(o.optLong("id"), o.optString("name"), false, o.optInt("itemCount"), o.optInt("quantity"), o.optLong("gil"))
+                retainers += GameRetainer(o.optLong("id"), o.optString("name"), false, o.optInt("itemCount"), o.optInt("quantity"), o.optLong("gil"), o.optLong("ventureId"), o.optLong("ventureCompleteUnix"))
             }
         }
     }
@@ -621,7 +621,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         }
         val savedRetainers = JSONArray()
         retainers.forEach { retainer -> savedRetainers.put(JSONObject().apply {
-            put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity); put("gil", retainer.gil)
+            put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity); put("gil", retainer.gil); put("ventureId", retainer.ventureId); put("ventureCompleteUnix", retainer.ventureCompleteUnix)
         }) }
         prefs.edit()
             .putString(scoped("inventoryItemCache"), items.toString())

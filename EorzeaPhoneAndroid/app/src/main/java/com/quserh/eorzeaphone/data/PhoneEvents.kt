@@ -112,6 +112,8 @@ data class GameRetainer(
     val itemCount: Int,
     val quantity: Int,
     val gil: Long = 0,
+    val ventureId: Long = 0,
+    val ventureCompleteUnix: Long = 0,
 )
 
 data class GameInventorySnapshot(

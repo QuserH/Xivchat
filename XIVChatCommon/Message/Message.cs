@@ -42,7 +42,7 @@ namespace XIVChatCommon.Message {
     [MessagePackObject]
     public class IconChunk : Chunk {
         [Key(0)]
-        public byte index;
+        public int index;
     }
 
     public enum InputChannel : uint {

@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.GameDailyEntry
+import com.quserh.eorzeaphone.data.GameRetainer
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -198,6 +199,59 @@ fun DailiesScreen(state: PhoneState) {
             items(data.entries.filter { !it.weekly }, key = { it.id }) { DailyDataRow(state, it) }
             item { Text("每周", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
             items(data.entries.filter { it.weekly }, key = { it.id }) { DailyDataRow(state, it) }
+            if (state.retainers.any { it.ventureId > 0 }) {
+                item { Text("雇员探险", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
+                items(state.retainers.filter { it.ventureId > 0 }, key = { it.id }) { VentureRow(it, now) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VentureRow(retainer: GameRetainer, now: Long) {
+    val remaining = ((retainer.ventureCompleteUnix - now)).coerceAtLeast(0L)
+    val done = remaining == 0L
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (done) Color(0xFF1F3A2C) else PhoneSurface).padding(14.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(retainer.name, color = PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(if (done) "已完成" else "探险中", color = if (done) Color(0xFF4CD487) else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(if (done) "可以前往侍从铃收取派遣成果" else "返回剩余 ${countdownLabel(remaining)}", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+    }
+}
+
+@Composable
+fun SubmarineScreen(state: PhoneState) {
+    var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_000); now = Instant.now().epochSecond } }
+    val ventures = state.retainers.filter { it.ventureId > 0 }
+    val idle = state.retainers.filter { it.ventureId == 0L }
+    FeatureFrame("潜水艇 · 雇员远征", state) {
+        if (state.retainers.isEmpty()) {
+            EmptyFeature(if (state.connected) "在侍从铃处打开一次雇员后同步远征信息" else "连接游戏插件后读取雇员远征状态")
+            return@FeatureFrame
+        }
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF205B6E)).padding(18.dp)) {
+                    Text("远征归来", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                    Text("${ventures.count { (it.ventureCompleteUnix - now) <= 0 }} 名可收取", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                    Text("${ventures.size} 名远征中", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+            if (ventures.isNotEmpty()) {
+                item { Text("远征进行中", color = PhoneMuted, fontSize = 12.sp) }
+                items(ventures, key = { it.id }) { VentureRow(it, now) }
+            }
+            if (idle.isNotEmpty()) {
+                item { Text("待命", color = PhoneMuted, fontSize = 12.sp) }
+                items(idle, key = { it.id }) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(14.dp)) {
+                        Text(it.name, color = PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text("空闲", color = PhoneMuted, fontSize = 12.sp)
+                    }
+                }
+            }
         }
     }
 }
@@ -276,6 +330,18 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
 @Composable
 private fun StatusLine(label: String, value: String) {
     Row(Modifier.fillMaxWidth()) { Text(label, color = PhoneMuted, modifier = Modifier.weight(1f)); Text(value, color = PhoneText, fontWeight = FontWeight.SemiBold) }
+}
+
+private fun countdownLabel(seconds: Long): String {
+    val s = seconds.coerceAtLeast(0L)
+    val d = s / 86400
+    val h = s % 86400 / 3600
+    val m = s % 3600 / 60
+    return when {
+        d > 0 -> "${d}天${h}小时"
+        h > 0 -> "${h}小时${m}分"
+        else -> "${m}分钟"
+    }
 }
 
 @Composable

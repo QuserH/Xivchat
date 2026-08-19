@@ -655,6 +655,10 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                 Text(retainer.name.ifBlank { "未命名雇员" }, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                                 Text(if (retainer.active) "在线同步" else "离线数据", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                                if (retainer.ventureId > 0) {
+                                    val remaining = ((retainer.ventureCompleteUnix * 1000L - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+                                    Text(if (remaining == 0L) "探险已完成，可收取" else "探险中 · ${countdownLabel(remaining)}", color = if (remaining == 0L) Color(0xFF4CD487) else PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+                                }
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("${formatCount(cachedCount)} 格", color = if (retainer.active) PhoneAccent else PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1178,6 +1182,18 @@ private fun appDescription(id: String?, state: PhoneState): String = when (id) {
     "dailies" -> "日常：显示每日和每周重置项目。"
     "housing" -> "房屋：显示当前角色的房屋位置。"
     else -> if (state.connected) "应用已打开，等待游戏数据。" else "请先在设置中连接游戏插件。"
+}
+
+private fun countdownLabel(seconds: Long): String {
+    val s = seconds.coerceAtLeast(0L)
+    val d = s / 86400
+    val h = s % 86400 / 3600
+    val m = s % 3600 / 60
+    return when {
+        d > 0 -> "${d}天${h}小时"
+        h > 0 -> "${h}小时${m}分"
+        else -> "${m}分钟"
+    }
 }
 
 @Composable
