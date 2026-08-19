@@ -21,6 +21,7 @@ data class GameChatMessage(
     val channel: Int,
     val self: Boolean = false,
     val chunks: List<GameChatChunk> = emptyList(),
+    val sendState: Int = 0,
 ) {
     val category: ChatCategory get() = ChatCategory.fromChannel(channel)
 

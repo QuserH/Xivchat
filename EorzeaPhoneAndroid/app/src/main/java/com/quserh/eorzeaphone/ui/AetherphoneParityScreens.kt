@@ -740,7 +740,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
                         val self = message.self || message.isFrom(state.profile?.name)
                         val author = if (self) state.profile?.name.orEmpty().ifBlank { "我" } else message.sender.ifBlank { conversation.title }
-                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars)
+                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title)
                     }
                 }
             }
@@ -809,7 +809,7 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "") {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) Text(author, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp))
@@ -830,6 +830,15 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
                 }
+            }
+            if (message.sendState == 2) {
+                Text(
+                    "向${recipientTitle.ifBlank { "对方" }}发送悄悄话失败",
+                    color = AetherLightMuted,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 2.dp),
+                )
             }
         }
     }

@@ -20,6 +20,9 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -63,7 +66,17 @@ fun EorzeaPhoneApp() {
                 isAppearanceLightNavigationBars = !darkTheme
             }
         }
-        DisposableEffect(state) { onDispose { state.disconnect() } }
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(state, lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) state.ensureConnectedOnResume()
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                state.disconnect()
+            }
+        }
         BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }
         BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 

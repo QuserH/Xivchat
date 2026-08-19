@@ -212,7 +212,6 @@ internal object XivChatCodec {
         if (fields > 3) {
             val retainerCount = unpacker.unpackArrayHeader()
             repeat(retainerCount) {
-                unpacker.unpackArrayHeader()
                 val retainerFields = unpacker.unpackArrayHeader()
                 val id = unpacker.unpackLong()
                 val name = unpacker.unpackString()

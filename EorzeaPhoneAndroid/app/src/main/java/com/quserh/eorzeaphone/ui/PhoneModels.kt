@@ -446,9 +446,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     private val pinnedConversations: MutableSet<String> =
         (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pendingSelfTexts = mutableMapOf<String, String>()
-    private val connection = XivChatConnection(context, scope) { event ->
-        scope.launch(Dispatchers.Main.immediate) { handle(event) }
-    }
+    private val connection = XivChatConnection(
+        context = context,
+        scope = scope,
+        onEvent = { event -> scope.launch(Dispatchers.Main.immediate) { handle(event) } },
+        onSendFailure = { scope.launch(Dispatchers.Main.immediate) { markPendingSendsFailed() } },
+    )
     private val notifier = PhoneNotifier(context.applicationContext)
     private var connectedCharacterConfirmed = false
     private var connectedCharacterKey by mutableStateOf("")
@@ -530,6 +533,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     text = o.optString("text"),
                     channel = o.optInt("channel"),
                     self = o.optBoolean("self"),
+                    sendState = o.optInt("sendState"),
                     chunks = o.optJSONArray("chunks")?.let { chunks -> buildList(chunks.length()) {
                         for (j in 0 until chunks.length()) {
                             val c = chunks.getJSONObject(j)
@@ -557,6 +561,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("text", m.text)
                 put("channel", m.channel)
                 put("self", m.self)
+                put("sendState", m.sendState)
                 put("chunks", JSONArray().apply { m.chunks.forEach { c -> put(JSONObject().apply {
                     if (c.text != null) put("text", c.text)
                     if (c.icon != null) put("icon", c.icon)
@@ -1016,6 +1021,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun disconnect() = connection.disconnect()
 
+    fun ensureConnectedOnResume() {
+        if (!connection.isConnected() && prefs.getBoolean("autoConnect", true)) {
+            connect()
+        }
+    }
+
     fun sendChat(text: String) = connection.sendChat(text)
 
     fun sendToConversation(conv: ChatConversation, text: String) {
@@ -1027,12 +1038,37 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             trimmed
         }
         connection.sendChat(payload)
-        val selfMsg = GameChatMessage(System.currentTimeMillis(), profile?.name ?: "我", trimmed, outChannelFor(conv.category), self = true)
+        val selfMsg = GameChatMessage(System.currentTimeMillis(), profile?.name ?: "我", trimmed, outChannelFor(conv.category), self = true, sendState = if (conv.category == ChatCategory.Tell) 1 else 0)
         chats.add(selfMsg)
         conv.add(selfMsg)
         pendingSelfTexts["${conv.key}\u0000$trimmed"] = ""
         saveChats()
         chatDraft = ""
+    }
+
+    fun markPendingSendsFailed() {
+        if (pendingSelfTexts.isEmpty()) return
+        fun mark(list: MutableList<GameChatMessage>) {
+            for (index in list.indices) {
+                if (list[index].sendState == 1) list[index] = list[index].copy(sendState = 2)
+            }
+        }
+        mark(chats)
+        conversations.forEach { conv -> mark(conv.messages) }
+        pendingSelfTexts.clear()
+        saveChats()
+    }
+
+    fun markPendingSendsDelivered() {
+        if (pendingSelfTexts.isEmpty()) return
+        fun confirm(list: MutableList<GameChatMessage>) {
+            for (index in list.indices) {
+                if (list[index].sendState == 1) list[index] = list[index].copy(sendState = 0)
+            }
+        }
+        confirm(chats)
+        conversations.forEach { conv -> confirm(conv.messages) }
+        pendingSelfTexts.clear()
     }
 
     private fun outChannelFor(category: ChatCategory): Int = when (category) {
@@ -1370,9 +1406,16 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             }
             is PhoneEvent.Chat -> {
                 val convKey = event.message.conversationKey()
+                if (event.message.channel == 12) {
+                    // TellOutgoing echoes the message we just sent; it is already shown
+                    // optimistically, so confirm delivery and drop the duplicate.
+                    pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
+                    if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
+                    return
+                }
                 val selfEcho = pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
                 if (selfEcho != null) {
-                    // already added locally when sent; skip the game echo
+                    markPendingSendsDelivered()
                 } else if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
                     chats.add(event.message)
                     val conv = getOrCreateConversation(event.message)

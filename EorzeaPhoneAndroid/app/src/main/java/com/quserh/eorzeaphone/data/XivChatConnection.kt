@@ -18,7 +18,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
-class XivChatConnection(context: Context, private val scope: CoroutineScope, private val onEvent: (PhoneEvent) -> Unit) {
+class XivChatConnection(context: Context, private val scope: CoroutineScope, private val onEvent: (PhoneEvent) -> Unit, private val onSendFailure: () -> Unit = {}) {
     private val prefs = context.getSharedPreferences("eorzea_phone_connection", Context.MODE_PRIVATE)
     private val sodium = LazySodiumAndroid(SodiumAndroid())
     private var socket: Socket? = null
@@ -110,6 +110,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                 sessionTx = null
                 socket?.close()
                 socket = null
+                onSendFailure()
                 onEvent(PhoneEvent.Disconnected("连接已断开"))
             }
         }
@@ -145,6 +146,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                 send(output, key, operation, payload)
             } catch (error: Throwable) {
                 onEvent(PhoneEvent.Error(error.message ?: "发送失败"))
+                onSendFailure()
             }
         }
     }
