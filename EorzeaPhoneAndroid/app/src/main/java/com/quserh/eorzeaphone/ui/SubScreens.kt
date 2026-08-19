@@ -2,6 +2,8 @@ package com.quserh.eorzeaphone.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -23,11 +25,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,10 +50,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
@@ -82,17 +90,26 @@ import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.round
+import kotlinx.coroutines.launch
 
 @Composable
 fun ScreenFrame(background: Color = PhoneBackground, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(background)
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars),
-    ) {
-        content()
+    Box(Modifier.fillMaxSize().background(background)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .windowInsetsPadding(WindowInsets.navigationBars),
+        ) {
+            content()
+        }
+        // soft fade-in right under the status bar so the top of the content
+        // blends into the system bar instead of cutting off abruptly.
+        Box(
+            Modifier.fillMaxWidth().height(36.dp).background(
+                Brush.verticalGradient(listOf(background.copy(alpha = 0.9f), Color.Transparent))
+            )
+        )
     }
 }
 
@@ -314,29 +331,35 @@ private fun NotificationsSettingsScreen(state: PhoneState) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ContactsScreen(state: PhoneState) {
+fun ContactsTab(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var friendsTab by remember { mutableStateOf(true) }
     val filtered = state.friends.filter { it.name.contains(query, ignoreCase = true) }
-    ScreenFrame {
-        ScreenHeader("联系人", state, trailing = { Text("⟳", color = PhoneAccent, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends() }) }, showBack = false)
+    Column(Modifier.fillMaxSize()) {
+        // header row: title on the left, compact inline search on the right
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+        ) {
+            Text("联系人", color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("搜索联系人", color = PhoneMuted, fontSize = 12.sp) },
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.widthIn(min = 130.dp, max = 190.dp),
+            )
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item("search") {
-                Column {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text("搜索", color = PhoneMuted) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp).clip(CircleShape).background(Color(0xFF424148))) {
-                        listOf("好友" to true, "所有人" to false).forEach { (label, value) ->
-                            Text(label, color = if (friendsTab == value) Color.White else PhoneMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.weight(1f).clip(CircleShape).background(if (friendsTab == value) PhoneAccent else Color.Transparent).clickable { friendsTab = value }.padding(vertical = 9.dp))
-                        }
+            item("segmented") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp).clip(CircleShape).background(Color(0xFF424148)), verticalAlignment = Alignment.CenterVertically) {
+                    listOf("好友" to true, "所有人" to false).forEach { (label, value) ->
+                        Text(label, color = if (friendsTab == value) Color.White else PhoneMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.weight(1f).clip(CircleShape).background(if (friendsTab == value) PhoneAccent else Color.Transparent).combinedClickable(onClick = { friendsTab = value }, onLongClick = { state.refreshFriends() }).padding(vertical = 6.dp))
                     }
                 }
             }
@@ -350,7 +373,6 @@ fun ContactsScreen(state: PhoneState) {
             }
             if (filtered.isEmpty()) item { Text(if (state.connected) "正在读取好友列表" else "尚未读取好友列表", color = PhoneMuted, modifier = Modifier.padding(20.dp)) }
         }
-        MessagesBottomNav(contacts = true, state = state)
     }
 }
 
@@ -388,13 +410,14 @@ private fun ContactRow(friend: PhoneFriend, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessagesBottomNav(contacts: Boolean, state: PhoneState) {
+private fun MessagesBottomNav(pager: androidx.compose.foundation.pager.PagerState) {
+    val scope = rememberCoroutineScope()
     Row(
         Modifier.fillMaxWidth().height(62.dp).background(PhoneBackground).padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MessagesNavItem("聊天", R.drawable.app_messages, !contacts, Modifier.weight(1f)) { state.showMessagesTab(false) }
-        MessagesNavItem("联系人", R.drawable.app_contacts, contacts, Modifier.weight(1f)) { state.showMessagesTab(true) }
+        MessagesNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(0) } }
+        MessagesNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(1) } }
     }
 }
 
@@ -724,22 +747,30 @@ fun CalendarScreen(state: PhoneState) {
 }
 
 @Composable
-fun ChatScreen(state: PhoneState) {
+fun MessagesScreen(state: PhoneState) {
     val openConv = state.conversations.firstOrNull { it.key == state.openConversationKey }
     if (openConv != null) {
         ConversationDetailScreen(state, openConv)
-    } else {
-        ConversationListScreen(state)
+        return
+    }
+    val pager = rememberPagerState(initialPage = if (state.messagesTab) 1 else 0, pageCount = { 2 })
+    LaunchedEffect(pager.currentPage) { state.messagesTab = pager.currentPage == 1 }
+    ScreenFrame {
+        HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { it }, userScrollEnabled = true) { page ->
+            if (page == 0) ConversationListTab(state)
+            else ContactsTab(state)
+        }
+        MessagesBottomNav(pager)
     }
 }
 
 @Composable
-private fun ConversationListScreen(state: PhoneState) {
+private fun ConversationListTab(state: PhoneState) {
     var filterEditor by remember { mutableStateOf(false) }
     var filterName by remember { mutableStateOf("") }
     var filterCategories by remember { mutableStateOf(setOf<ChatCategory>()) }
     val activeFilter = state.chatFilters.firstOrNull { it.id == state.selectedChatFilterId } ?: state.chatFilters.first()
-    ScreenFrame {
+    Column(Modifier.fillMaxSize()) {
         ScreenHeader("聊天", state, showBack = false)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             state.chatFilters.forEach { filter ->
@@ -761,7 +792,6 @@ private fun ConversationListScreen(state: PhoneState) {
                 items(visibleConvs, key = { it.key }) { conv -> ConversationRow(conv, state) }
             }
         }
-        MessagesBottomNav(contacts = false, state = state)
     }
     if (filterEditor) {
         AlertDialog(
@@ -945,9 +975,9 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
             // full bubble width so the timestamp sits at the bottom-right corner.
             Box(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface)) {
                 Column(Modifier.width(IntrinsicSize.Max).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
-                    Text(wrapByChars(body, wrapChars), color = if (self) Color.White else PhoneText, fontSize = 14.sp)
-                    Box(Modifier.fillMaxWidth().padding(top = 2.dp), contentAlignment = Alignment.CenterEnd) {
-                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp)
+                    Text(wrapByChars(body, wrapChars), color = if (self) Color.White else PhoneText, fontSize = 14.sp, lineHeight = 17.sp)
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.offset(y = (-2).dp))
                     }
                 }
             }

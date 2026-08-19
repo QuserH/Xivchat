@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(20, 18, 28)),
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(9, 8, 14)),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(8, 7, 13)),
         )
         WindowCompat.setDecorFitsSystemWindows(window, false)

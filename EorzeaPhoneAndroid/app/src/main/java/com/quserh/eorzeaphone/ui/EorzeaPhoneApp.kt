@@ -8,9 +8,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -42,8 +45,17 @@ fun EorzeaPhoneApp() {
             transitionSpec = {
                 val forward = targetState.level() >= initialState.level()
                 if (forward) {
-                    (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300, easing = FastOutSlowInEasing)) + fadeIn(tween(220)))
-                        .togetherWith(slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300, easing = FastOutSlowInEasing)) + fadeOut(tween(180)))
+                    // zoom-in from where the tile was tapped, plus a slide
+                    val pivot = androidx.compose.ui.graphics.TransformOrigin(state.launchPivotX, state.launchPivotY)
+                    (
+                        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(320, easing = FastOutSlowInEasing))
+                            + fadeIn(tween(240))
+                            + scaleIn(initialScale = 0.86f, animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f), transformOrigin = pivot)
+                        ).togetherWith(
+                        slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(280, easing = FastOutSlowInEasing))
+                            + fadeOut(tween(180))
+                            + scaleOut(targetScale = 0.94f, animationSpec = tween(260), transformOrigin = pivot),
+                    )
                 } else {
                     (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(300, easing = FastOutSlowInEasing)) + fadeIn(tween(220, 60)))
                         .togetherWith(slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(300, easing = FastOutSlowInEasing)) + fadeOut(tween(180)))
@@ -54,9 +66,9 @@ fun EorzeaPhoneApp() {
     when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
         PhoneScreen.Settings -> SettingsSubScreen(state)
-        PhoneScreen.Contacts -> ContactsScreen(state)
+        PhoneScreen.Contacts -> MessagesScreen(state)
         PhoneScreen.ContactDetail -> ContactDetailScreen(state)
-        PhoneScreen.Chat -> ChatScreen(state)
+        PhoneScreen.Chat -> MessagesScreen(state)
         PhoneScreen.App -> when (state.selectedApp?.id) {
             "inventory" -> InventoryScreen(state)
             "wallet" -> WalletScreen(state)

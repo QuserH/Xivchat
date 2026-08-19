@@ -144,6 +144,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     private val appContext = context.applicationContext
     private val activityRef = context as? android.app.Activity
     var screen by mutableStateOf(PhoneScreen.Home)
+    var messagesTab by mutableStateOf(false) // false = 聊天, true = 联系人;用于聊天/联系人分页
     var selectedApp by mutableStateOf<PhoneAppItem?>(null)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
     var homePage by mutableStateOf(0)
@@ -630,6 +631,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun showMessagesTab(contacts: Boolean) {
         selectedFriend = null
+        messagesTab = contacts
         selectedApp = AppCatalog.dock.firstOrNull { it.destination == if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat }
         screen = if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat
         if (contacts) refreshFriends()

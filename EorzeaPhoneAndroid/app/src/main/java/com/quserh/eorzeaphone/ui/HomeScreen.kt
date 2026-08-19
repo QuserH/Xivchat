@@ -291,6 +291,9 @@ private fun HomeTile(
             }
             .then(
                 if (editDrag) {
+                    // In edit mode the tile is moved by drag; the remove/restore badge
+                    // handles add/remove, so no clickable is attached here (avoids a
+                    // long-press/drag gesture conflict that broke drag-reorder).
                     Modifier.pointerInput(app.id, true) {
                         detectDragGestures(
                             onDragStart = { onDragStart() },
@@ -300,14 +303,13 @@ private fun HomeTile(
                         )
                     }
                 } else {
-                    Modifier
+                    Modifier.combinedClickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = { onTap() },
+                        onLongClick = { onLongPress() },
+                    )
                 }
-            )
-            .combinedClickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = { onTap() },
-                onLongClick = { onLongPress() },
             )
             .then(if (dragging) Modifier.zIndex(10f) else Modifier)
             .padding(vertical = 3.dp),
