@@ -81,18 +81,7 @@ fun EorzeaPhoneApp() {
         BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 
         val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
-        Box(Modifier.fillMaxSize().pointerInput(state.haptics) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                var moved = false
-                var event = awaitPointerEvent(PointerEventPass.Final)
-                while (event.changes.any { it.pressed }) {
-                    if (event.changes.any { (it.position - down.position).getDistance() > touchSlop }) moved = true
-                    event = awaitPointerEvent(PointerEventPass.Final)
-                }
-                if (state.haptics && !moved) performPhoneHaptic(context, view)
-            }
-        }.onSizeChanged { state.updateShellSize(it.width, it.height) }) {
+        Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
             AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxSize(),

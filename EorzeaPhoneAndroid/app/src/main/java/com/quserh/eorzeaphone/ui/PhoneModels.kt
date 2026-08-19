@@ -1094,6 +1094,9 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     fun openConversation(conv: ChatConversation) {
+        if (hiddenConversations.remove(conv.key)) {
+            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+        }
         openConversationKey = conv.key
         conv.unread = 0
     }
@@ -1450,6 +1453,9 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                         saveChats()
                     } else {
                         conv.add(event.message)
+                        if (!event.message.isFrom(profile?.name) && hiddenConversations.remove(conv.key)) {
+                            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+                        }
                         val index = conversations.indexOf(conv)
                         val target = if (conv.key in pinnedConversations) 0 else conversations.count { it.key in pinnedConversations }
                         if (index != target && index >= 0) {
