@@ -311,6 +311,11 @@ internal object XivChatCodec {
         packInt(gearsetId)
     }
 
+    fun encodeTeleport(name: String): ByteArray = pack {
+        packArrayHeader(1)
+        packString(name)
+    }
+
     fun readHousing(unpacker: MessageUnpacker): GameHousingLocation {
         unpacker.unpackArrayHeader()
         val ward = if (unpacker.tryUnpackNil()) null else unpacker.unpackInt()

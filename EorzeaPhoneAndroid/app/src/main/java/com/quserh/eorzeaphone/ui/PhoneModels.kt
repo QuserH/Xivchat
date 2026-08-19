@@ -1033,6 +1033,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     fun sendChat(text: String) = connection.sendChat(text)
 
+    fun teleportTo(placeName: String) {
+        if (connected && placeName.isNotBlank()) connection.teleport(placeName)
+    }
+
     fun sendToConversation(conv: ChatConversation, text: String) {
         val trimmed = text.trim()
         if (!connected || trimmed.isBlank()) return

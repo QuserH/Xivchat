@@ -222,34 +222,19 @@ private fun VentureRow(retainer: GameRetainer, now: Long) {
 
 @Composable
 fun SubmarineScreen(state: PhoneState) {
-    var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_000); now = Instant.now().epochSecond } }
-    val ventures = state.retainers.filter { it.ventureId > 0 }
-    val idle = state.retainers.filter { it.ventureId == 0L }
-    FeatureFrame("潜水艇 · 雇员远征", state) {
-        if (state.retainers.isEmpty()) {
-            EmptyFeature(if (state.connected) "在侍从铃处打开一次雇员后同步远征信息" else "连接游戏插件后读取雇员远征状态")
-            return@FeatureFrame
-        }
+    FeatureFrame("潜水艇", state) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF205B6E)).padding(18.dp)) {
-                    Text("远征归来", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
-                    Text("${ventures.count { (it.ventureCompleteUnix - now) <= 0 }} 名可收取", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-                    Text("${ventures.size} 名远征中", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF205B6E)).padding(20.dp)) {
+                    Text("潜水艇远征", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                    Text("0 艘航行中", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                    Text("潜水艇数据需插件在游戏内读取房屋工房后同步", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 }
             }
-            if (ventures.isNotEmpty()) {
-                item { Text("远征进行中", color = PhoneMuted, fontSize = 12.sp) }
-                items(ventures, key = { it.id }) { VentureRow(it, now) }
-            }
-            if (idle.isNotEmpty()) {
-                item { Text("待命", color = PhoneMuted, fontSize = 12.sp) }
-                items(idle, key = { it.id }) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(14.dp)) {
-                        Text(it.name, color = PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text("空闲", color = PhoneMuted, fontSize = 12.sp)
-                    }
+            item {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp)) {
+                    Text("暂无潜水艇数据", color = PhoneText, fontWeight = FontWeight.SemiBold)
+                    Text(if (state.connected) "插件端正在完善潜水艇数据读取，打开一次房屋工房后即可同步。" else "连接游戏插件后读取潜水艇状态", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }
@@ -273,7 +258,14 @@ private fun DailyDataRow(state: PhoneState, item: GameDailyEntry) {
         Box(Modifier.size(28.dp).clip(CircleShape).background(if (complete) PhoneGreen else PhoneSurfaceRaised), contentAlignment = Alignment.Center) { Text(if (complete) "✓" else "", color = Color.White, fontWeight = FontWeight.Bold) }
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(item.label, color = PhoneText, fontWeight = FontWeight.SemiBold)
-            val note = when { item.note.isNotBlank() -> item.note; !item.available -> "当前不可读取"; item.goal > 0 -> "$done / ${item.goal}"; else -> "--" }
+            val note = if (item.id == "daily.levequests" && item.available && item.remaining >= 0) {
+                "当前额度 ${item.remaining} / ${item.goal}"
+            } else when {
+                item.note.isNotBlank() -> item.note
+                !item.available -> "当前不可读取"
+                item.goal > 0 -> "$done / ${item.goal}"
+                else -> "--"
+            }
             Text(note, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
             if (item.automatic && item.available && item.goal > 0) LinearProgressIndicator(progress = { done / item.goal.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 7.dp).height(4.dp), color = PhoneAccent, trackColor = PhoneSurfaceRaised)
         }

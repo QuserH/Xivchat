@@ -124,6 +124,8 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
 
     fun equipGearset(gearsetId: Int) = sendCommand(XivChatCodec.encodeJobsAction(gearsetId), 11)
 
+    fun teleport(placeName: String) = sendCommand(XivChatCodec.encodeTeleport(placeName), 12)
+
     fun requestFriends() = sendCommand(XivChatCodec.encodePlayerList(), 6)
 
     fun disconnect() {

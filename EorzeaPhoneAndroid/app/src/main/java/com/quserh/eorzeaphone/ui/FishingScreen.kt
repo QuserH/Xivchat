@@ -371,23 +371,29 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                                     drawCircle(PhoneAccent.copy(alpha = .78f), radius, center, style = Stroke(2.dp.toPx()))
                                 }
                             }
-                            Box(Modifier.offset(x = mapWidth * x - 13.dp, y = mapHeight * y - 13.dp).size(26.dp).clip(CircleShape).background(PhoneAccent.copy(alpha = .86f)), contentAlignment = Alignment.Center) {
-                                Text("钓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
                         }
                         spot.aetherytes.forEach { crystal ->
                             val x = (crystal.x / 2048f).coerceIn(0f, 1f)
                             val y = (crystal.y / 2048f).coerceIn(0f, 1f)
                             Column(
-                                Modifier.offset(x = mapWidth * x - 28.dp, y = mapHeight * y - 14.dp),
+                                Modifier.offset(x = mapWidth * x - 28.dp, y = mapHeight * y - 14.dp)
+                                    .clickable(enabled = state.connected && crystal.name.isNotBlank()) { state.teleportTo(crystal.name) },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 ItemIcon(60453, Modifier.size(28.dp), "晶")
                                 if (crystal.name.isNotBlank()) {
-                                    Box(
-                                        Modifier.padding(top = 1.dp).clip(RoundedCornerShape(4.dp))
-                                            .background(Color(0xCC000000)).padding(horizontal = 3.dp, vertical = 1.dp),
-                                    ) { Text(crystal.name, color = Color.White, fontSize = 8.sp, maxLines = 1) }
+                                    Text(
+                                        crystal.name,
+                                        color = Color.White,
+                                        fontSize = 8.sp,
+                                        maxLines = 1,
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            shadow = androidx.compose.ui.graphics.Shadow(Color(0x66000000), Offset.Zero, 2f),
+                                        ),
+                                    )
+                                    if (state.connected) {
+                                        Text("点击传送", color = Color(0xFF9FE0FF), fontSize = 7.sp, maxLines = 1)
+                                    }
                                 }
                             }
                         }

@@ -1658,6 +1658,12 @@ namespace XIVChatPlugin {
                 case ClientOperation.JobsAction:
                     this._jobsActions.Enqueue(ClientJobsAction.Decode(payload).GearsetId);
                     break;
+                case ClientOperation.Teleport:
+                    var teleport = ClientTeleport.Decode(payload);
+                    if (!string.IsNullOrWhiteSpace(teleport.PlaceName)) {
+                        this._plugin.Functions.ProcessChatBox($"/tp {teleport.PlaceName}");
+                    }
+                    break;
             }
         }
 

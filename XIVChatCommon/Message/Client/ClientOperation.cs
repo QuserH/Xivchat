@@ -11,5 +11,6 @@ namespace XIVChatCommon.Message.Client {
         Channel = 9,
         FriendAction = 10,
         JobsAction = 11,
+        Teleport = 12,
     }
 }
