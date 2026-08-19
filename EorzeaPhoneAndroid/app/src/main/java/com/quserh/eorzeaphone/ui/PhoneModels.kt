@@ -36,6 +36,7 @@ import com.quserh.eorzeaphone.data.GameMapDestination
 import com.quserh.eorzeaphone.data.GameMapExpansion
 import com.quserh.eorzeaphone.data.GameMapRegion
 import com.quserh.eorzeaphone.data.GameMaps
+import com.quserh.eorzeaphone.data.GameFishingLog
 import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
@@ -418,6 +419,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var activity by mutableStateOf<GameActivity?>(null)
     var collections by mutableStateOf<GameCollections?>(null)
     var maps by mutableStateOf<GameMaps?>(null)
+    var fishingLog by mutableStateOf<GameFishingLog?>(null)
     private val favoriteMapIds = mutableStateListOf<Long>().apply {
         addAll(prefs.getStringSet("favoriteMapIds", emptySet()).orEmpty().mapNotNull(String::toLongOrNull))
     }
@@ -477,6 +479,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         loadSavedInventory()
         loadSavedExtras()
         loadSavedCollections()
+        loadFishingLog()
         if (notes.isEmpty() && noteText.isNotBlank()) {
             notes += LocalNote(System.currentTimeMillis(), noteText, System.currentTimeMillis())
             saveLocalNotes()
@@ -745,6 +748,33 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         }.toString()).apply()
     }
 
+    private fun loadFishingLog() {
+        fishingLog = runCatching {
+            val root = JSONObject(prefs.getString(scoped("fishingLogCache"), ""))
+            GameFishingLog(
+                root.optLong("updatedUnix"),
+                android.util.Base64.decode(root.optString("fishBits"), android.util.Base64.DEFAULT),
+                android.util.Base64.decode(root.optString("spearfishBits"), android.util.Base64.DEFAULT),
+            )
+        }.getOrNull()
+    }
+
+    private fun saveFishingLog() {
+        val value = fishingLog ?: return
+        prefs.edit().putString(scoped("fishingLogCache"), JSONObject().apply {
+            put("updatedUnix", value.updatedUnix)
+            put("fishBits", android.util.Base64.encodeToString(value.fishBits, android.util.Base64.NO_WRAP))
+            put("spearfishBits", android.util.Base64.encodeToString(value.spearfishBits, android.util.Base64.NO_WRAP))
+        }.toString()).apply()
+    }
+
+    fun isFishCaught(logId: Int, method: String): Boolean {
+        val bits = if (method == "spear") fishingLog?.spearfishBits else fishingLog?.fishBits
+        val index = if (method == "spear") logId - 20_000 else logId
+        if (bits == null || index < 0 || index / 8 >= bits.size) return false
+        return bits[index / 8].toInt() and (1 shl (index % 8)) != 0
+    }
+
     fun isMapFavorite(rowId: Long): Boolean = rowId in favoriteMapIds
 
     fun toggleMapFavorite(rowId: Long) {
@@ -872,10 +902,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             activeCharacterKey = key
             if (persistSelection) prefs.edit().putString("activeCharacterKey", key).apply()
             chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
-            wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null
+            wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null; fishingLog = null
             friends.clear()
             profile = loadProfileCache()
-            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); friends.addAll(loadFriends())
+            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); friends.addAll(loadFriends())
         }
     }
 
@@ -1270,7 +1300,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         val scopedEvent = event is PhoneEvent.FriendList || event is PhoneEvent.Chat || event is PhoneEvent.Inventory ||
             event is PhoneEvent.Wallet || event is PhoneEvent.Weather || event is PhoneEvent.Jobs ||
             event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
-            event is PhoneEvent.Collections || event is PhoneEvent.Maps
+            event is PhoneEvent.Collections || event is PhoneEvent.Maps || event is PhoneEvent.Fishing
         if (scopedEvent && !connectedCharacterConfirmed) {
             if (awaitingCharacterProfile) pendingCharacterEvents += event
             return
@@ -1411,6 +1441,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             is PhoneEvent.Maps -> {
                 maps = event.maps
                 saveMaps()
+            }
+            is PhoneEvent.Fishing -> {
+                fishingLog = event.log
+                saveFishingLog()
             }
             is PhoneEvent.Profile -> {
                 val previousConnectedKey = connectedCharacterKey

@@ -22,5 +22,7 @@
         Collections = 17,
         /// <summary>Current location and the game map/aetheryte hierarchy.</summary>
         Maps = 18,
+        /// <summary>Caught fish and spearfish notebook bitsets for the active character.</summary>
+        Fishing = 19,
     }
 }

@@ -254,6 +254,12 @@ data class GameMaps(
     val expansions: List<GameMapExpansion>,
 )
 
+data class GameFishingLog(
+    val updatedUnix: Long,
+    val fishBits: ByteArray,
+    val spearfishBits: ByteArray,
+)
+
 sealed interface PhoneEvent {
     data object Connected : PhoneEvent
     data class Disconnected(val reason: String) : PhoneEvent
@@ -272,4 +278,5 @@ sealed interface PhoneEvent {
     data class Activity(val activity: GameActivity) : PhoneEvent
     data class Collections(val collections: GameCollections) : PhoneEvent
     data class Maps(val maps: GameMaps) : PhoneEvent
+    data class Fishing(val log: GameFishingLog) : PhoneEvent
 }

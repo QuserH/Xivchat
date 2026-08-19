@@ -64,7 +64,7 @@ internal object XivChatCodec {
     }
     fun encodePreferences(): ByteArray = pack {
         packArrayHeader(1)
-        packMapHeader(9)
+        packMapHeader(10)
         packInt(3)
         packBoolean(true)
         packInt(4)
@@ -82,6 +82,8 @@ internal object XivChatCodec {
         packInt(9)
         packBoolean(true)
         packInt(10)
+        packBoolean(true)
+        packInt(11)
         packBoolean(true)
     }
 
@@ -357,6 +359,15 @@ internal object XivChatCodec {
             GameMapExpansion(text(field(expansion, 0)), number(field(expansion, 1)).toInt(), regions)
         }
         return GameMaps(text(field(root, 0)), text(field(root, 1)), expansions)
+    }
+
+    fun readFishing(unpacker: MessageUnpacker): GameFishingLog {
+        val fields = unpacker.unpackArrayHeader()
+        val updated = unpacker.unpackLong()
+        fun bits(): ByteArray = unpacker.readPayload(unpacker.unpackBinaryHeader())
+        val fish = if (fields > 1) bits() else byteArrayOf()
+        val spearfish = if (fields > 2) bits() else byteArrayOf()
+        return GameFishingLog(updated, fish, spearfish)
     }
 
     fun readChannel(unpacker: MessageUnpacker): Pair<Int, String> {

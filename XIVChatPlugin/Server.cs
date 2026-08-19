@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Channels;
@@ -54,6 +55,7 @@ namespace XIVChatPlugin {
         private readonly Stopwatch _jobsWatch = new();
         private readonly Stopwatch _dailiesWatch = new();
         private readonly Stopwatch _collectionsWatch = new();
+        private readonly Stopwatch _fishingWatch = new();
         private readonly PhoneActivityTracker _activityTracker;
 
         private readonly CancellationTokenSource _tokenSource = new();
@@ -83,6 +85,7 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingActivity = new();
         private readonly ConcurrentQueue<Guid> _awaitingCollections = new();
         private readonly ConcurrentQueue<Guid> _awaitingMaps = new();
+        private readonly ConcurrentQueue<Guid> _awaitingFishing = new();
 
         private volatile bool _running;
         private bool Running => this._running;
@@ -108,6 +111,8 @@ namespace XIVChatPlugin {
         private long _lastMapsFingerprint;
         private bool _hasMapsSnapshot;
         private ServerMapExpansion[]? _mapCatalog;
+        private long _lastFishingFingerprint;
+        private bool _hasFishingSnapshot;
 
         private static readonly GameInventoryType[] PhoneInventoryTypes = [
             GameInventoryType.Inventory1,
@@ -180,6 +185,7 @@ namespace XIVChatPlugin {
             this._jobsWatch.Start();
             this._dailiesWatch.Start();
             this._collectionsWatch.Start();
+            this._fishingWatch.Start();
             this._activityTracker = new PhoneActivityTracker(plugin);
 
             this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
@@ -369,6 +375,7 @@ namespace XIVChatPlugin {
             this.UpdateDailies();
             this.UpdateCollections();
             this.UpdateMaps();
+            this.UpdateFishing();
             this.UpdateActivity();
 
             while (this._friendActions.TryDequeue(out var friendAction)) {
@@ -476,6 +483,12 @@ namespace XIVChatPlugin {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
                 var maps = this.BuildMapsSnapshot();
                 if (maps != null) client.Queue.Writer.TryWrite(maps);
+            }
+
+            while (this._awaitingFishing.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var fishing = this.BuildFishingSnapshot();
+                if (fishing != null) client.Queue.Writer.TryWrite(fishing);
             }
 
             int time;
@@ -1198,6 +1211,49 @@ namespace XIVChatPlugin {
             this.BroadcastMessage(snapshot, ClientPreference.PhoneMapsSupport);
         }
 
+        private void UpdateFishing() {
+            if (this._fishingWatch.Elapsed < TimeSpan.FromSeconds(2) || this._clients.IsEmpty) return;
+            this._fishingWatch.Restart();
+            var snapshot = this.BuildFishingSnapshot();
+            if (snapshot == null) return;
+            var fingerprint = FishingFingerprint(snapshot);
+            if (this._hasFishingSnapshot && fingerprint == this._lastFishingFingerprint) return;
+            this._hasFishingSnapshot = true;
+            this._lastFishingFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneFishingSupport);
+        }
+
+        private unsafe ServerFishing? BuildFishingSnapshot() {
+            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) return null;
+            try {
+                var state = PlayerState.Instance();
+                if (state == null) return null;
+                var fishCount = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<FishParameter>().Count;
+                var spearfishCount = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<SpearfishingItem>().Count;
+                var fish = new byte[(fishCount + 7) / 8];
+                var spearfish = new byte[(spearfishCount + 7) / 8];
+                Marshal.Copy((IntPtr) state->CaughtFishBitArray.Pointer, fish, 0, fish.Length);
+                Marshal.Copy((IntPtr) state->CaughtSpearfishBitArray.Pointer, spearfish, 0, spearfish.Length);
+                return new ServerFishing {
+                    UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    FishBits = fish,
+                    SpearfishBits = spearfish,
+                };
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture fishing notebook: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static long FishingFingerprint(ServerFishing snapshot) {
+            unchecked {
+                long hash = 17;
+                foreach (var value in snapshot.FishBits) hash = hash * 31 + value;
+                foreach (var value in snapshot.SpearfishBits) hash = hash * 31 + value;
+                return hash;
+            }
+        }
+
         private ServerMaps? BuildMapsSnapshot() {
             if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) return null;
             try {
@@ -1574,6 +1630,10 @@ namespace XIVChatPlugin {
 
                     if (client.GetPreference(ClientPreference.PhoneMapsSupport, false)) {
                         this._awaitingMaps.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneFishingSupport, false)) {
+                        this._awaitingFishing.Enqueue(id);
                     }
 
                     break;

@@ -158,30 +158,6 @@ fun ShortcutsScreen(state: PhoneState) {
 }
 
 @Composable
-fun FishingScreen(state: PhoneState) {
-    val weather = state.weather
-    FeatureFrame("捕鱼", state) {
-        if (weather == null) EmptyFeature(if (state.connected) "等待区域与天气数据…" else "连接游戏后显示钓场环境") else
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                item {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF286476)).padding(18.dp)) {
-                        Text(weather.zone, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Text("当前天气：${weather.current}", color = Color.White.copy(alpha = .8f), modifier = Modifier.padding(top = 5.dp))
-                    }
-                }
-                item { Text("天气窗口", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
-                items(weather.forecast) { window ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(14.dp)) {
-                        Text(window.name, color = PhoneText, modifier = Modifier.weight(1f))
-                        Text(if (window.minutesFromNow <= 0) "现在" else "${window.minutesFromNow} 分后", color = PhoneAccent)
-                    }
-                }
-                item { Text("鱼类图鉴和咬钩记录需要游戏内捕获事件，后续快照到达后会出现在此页。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) }
-            }
-    }
-}
-
-@Composable
 fun MapsScreen(state: PhoneState) {
     val profile = state.profile
     val maps = state.maps

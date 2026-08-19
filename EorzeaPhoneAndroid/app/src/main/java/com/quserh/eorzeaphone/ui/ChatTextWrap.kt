@@ -10,13 +10,14 @@ private fun displayWidth(value: String): Int = value.codePoints().toArray().sumO
 
 internal fun wrapChatTextByUnits(text: String, unitsPerLine: Int): String {
     if (unitsPerLine <= 0) return text
+    val widthLimit = unitsPerLine * 2
     val result = StringBuilder()
     var used = 0
     var cursor = 0
 
     fun appendUnit(value: String, width: Int, atomic: Boolean = false) {
         if (value.isEmpty()) return
-        if (used > 0 && used + width > unitsPerLine) {
+        if (used > 0 && used + width > widthLimit) {
             result.append('\n')
             used = 0
         }
@@ -24,7 +25,7 @@ internal fun wrapChatTextByUnits(text: String, unitsPerLine: Int): String {
         // line, it starts a fresh line instead of being split at a separator.
         result.append(value)
         used += width
-        if (atomic && used > unitsPerLine) {
+        if (atomic && used > widthLimit) {
             result.append('\n')
             used = 0
         }
