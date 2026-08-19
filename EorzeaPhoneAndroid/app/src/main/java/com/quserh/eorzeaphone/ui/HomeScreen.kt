@@ -68,6 +68,7 @@ import com.quserh.eorzeaphone.R
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 private fun eorzeaNow(): String {
     val seconds = System.currentTimeMillis() / 1_000.0 * 144.0 / 7.0
@@ -167,14 +168,26 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, lib
     val bounds = remember { mutableStateMapOf<String, Rect>() }
     var dragId by remember(page) { mutableStateOf<String?>(null) }
     var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
-    var hoverTarget by remember(page) { mutableStateOf<String?>(null) }
     var originRect by remember(page) { mutableStateOf<Rect?>(null) }
+    var originIndex by remember(page) { mutableStateOf(0) }
+    // home grid layout: 4 columns, used to compute the drop slot from finger position
+    val cols = 4
+
+    val applyDrop = { fromApp: PhoneAppItem, fromIdx: Int, fromOrigin: Rect, dx: Float, dy: Float ->
+        val cellW = fromOrigin.width.coerceAtLeast(1f)
+        val cellH = fromOrigin.height.coerceAtLeast(1f)
+        val col = fromIdx % cols + dx / cellW
+        val row = fromIdx / cols + dy / cellH
+        val index = (row * cols + col).roundToInt().coerceIn(0, apps.lastIndex)
+        if (library) state.reorderHomeToIndex(state.homePageCount, fromApp.id, index)
+        else state.reorderHomeToIndex(page, fromApp.id, index)
+    }
 
     Column(
         Modifier.fillMaxSize().padding(top = 4.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        apps.chunked(4).forEach { row ->
+        apps.chunked(cols).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -187,7 +200,7 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, lib
                             library = library,
                             dragging = dragId == app.id,
                             dragOffset = if (dragId == app.id) dragOffset else Offset.Zero,
-                            dimmed = hoverTarget == app.id && dragId != app.id,
+                            dimmed = false,
                             onBounds = { bounds[app.id] = it },
                             onTap = {
                                 if (state.homeEditMode && !library) {
@@ -205,36 +218,28 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, lib
                                 if (state.homeEditMode || library) {
                                     dragId = app.id
                                     originRect = bounds[app.id]
+                                    originIndex = apps.indexOfFirst { it.id == app.id }.coerceAtLeast(0)
                                     dragOffset = Offset.Zero
                                 }
                             },
                             onDrag = { delta ->
-                                if (dragId == app.id) {
-                                    dragOffset += delta
-                                    val orig = originRect ?: bounds[app.id]
-                                    if (orig != null) {
-                                        val center = Offset(orig.center.x + dragOffset.x, orig.center.y + dragOffset.y)
-                                        hoverTarget = apps.firstOrNull { other ->
-                                            other.id != dragId && bounds[other.id]?.contains(center) == true
-                                        }?.id
-                                    }
-                                }
+                                if (dragId == app.id) dragOffset += delta
                             },
                             onDragEnd = {
-                                val target = hoverTarget
+                                val fromApp = app
+                                val fromOrigin = originRect ?: bounds[fromApp.id]
+                                val fromIdx = originIndex
+                                val dx = dragOffset.x
+                                val dy = dragOffset.y
                                 dragId = null
-                                hoverTarget = null
                                 originRect = null
                                 dragOffset = Offset.Zero
-                                if (target != null) {
-                                    if (library) state.reorderHome(state.homePageCount, app.id, target)
-                                    else state.reorderHome(page, app.id, target)
-                                }
+                                if (fromOrigin != null) applyDrop(fromApp, fromIdx, fromOrigin, dx, dy)
                             },
                         )
                     }
                 }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -259,7 +264,7 @@ private fun HomeTile(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(
-                if (pressed) 0.88f else 1f,
+                if (dragging) 1.12f else if (pressed) 0.88f else 1f,
                 animationSpec = spring(dampingRatio = .62f, stiffness = 520f),
                 label = "app-press",
             )
@@ -287,7 +292,7 @@ private fun HomeTile(
                 alpha = if (dimmed) 0.45f else 1f
                 translationX = if (dragging) dragOffset.x else 0f
                 translationY = if (dragging) dragOffset.y else 0f
-                shadowElevation = if (dragging) 12f else 0f
+                shadowElevation = if (dragging) 18f else 0f
             }
             .then(
                 if (editDrag) {

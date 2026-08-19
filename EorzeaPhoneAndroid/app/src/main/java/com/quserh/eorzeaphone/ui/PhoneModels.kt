@@ -187,6 +187,21 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         saveHomeLayout()
     }
 
+    // reorder by target index so the dragged app can be dropped into any slot,
+    // including trailing empty positions (not just swapped with another icon).
+    fun reorderHomeToIndex(page: Int, fromId: String, toIndex: Int) {
+        if (page !in homePageIds.indices) return
+        val current = homePageIds[page].toMutableList()
+        val fromIndex = current.indexOf(fromId)
+        if (fromIndex < 0) return
+        val boundedTo = toIndex.coerceIn(0, current.lastIndex)
+        if (fromIndex == boundedTo) return
+        current.removeAt(fromIndex)
+        current.add(boundedTo, fromId)
+        homePageIds = homePageIds.toMutableList().also { it[page] = current }
+        saveHomeLayout()
+    }
+
     fun removeFromHome(page: Int, id: String) {
         if (page !in homePageIds.indices) return
         val current = homePageIds[page].toMutableList()

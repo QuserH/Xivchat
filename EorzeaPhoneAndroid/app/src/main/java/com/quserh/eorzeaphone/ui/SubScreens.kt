@@ -1,5 +1,7 @@
 package com.quserh.eorzeaphone.ui
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -25,7 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -67,6 +68,9 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -335,24 +339,39 @@ private fun NotificationsSettingsScreen(state: PhoneState) {
 @Composable
 fun ContactsTab(state: PhoneState) {
     var query by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
     var friendsTab by remember { mutableStateOf(true) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     val filtered = state.friends.filter { it.name.contains(query, ignoreCase = true) }
+    LaunchedEffect(searching) { if (searching) { focusRequester.requestFocus(); keyboard?.show() } }
     Column(Modifier.fillMaxSize()) {
-        // header row: title on the left, compact inline search on the right
+        // header row: title on the left; a magnifier opens an inline search with the
+        // keyboard up, so no tall persistent search box takes up space.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 14.dp, top = 8.dp, bottom = 2.dp),
         ) {
             Text("联系人", color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("搜索联系人", color = PhoneMuted, fontSize = 12.sp) },
-                singleLine = true,
-                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.widthIn(min = 130.dp, max = 190.dp),
-            )
+            if (searching) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("搜索联系人", color = PhoneMuted, fontSize = 12.sp) },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.width(150.dp).focusRequester(focusRequester),
+                )
+                Text("✕", color = PhoneMuted, fontSize = 20.sp, modifier = Modifier.clickable { searching = false; query = ""; keyboard?.hide() }.padding(start = 10.dp))
+            } else {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(38.dp).clip(CircleShape).clickable { searching = true },
+                ) {
+                    Text("🔍", fontSize = 19.sp)
+                }
+            }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item("segmented") {
@@ -490,6 +509,9 @@ fun InventoryScreen(state: PhoneState) {
     val groups = listOf("bags" to "背包", "armoury" to "兵装库", "crystals" to "水晶", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
     val selectedTypes = inventoryTypesForGroup(selectedGroup ?: "bags")
     val filtered = state.inventory.filter { (selectedGroup == null || it.container in selectedTypes) && (query.isBlank() || it.name.contains(query, true)) }
+    // system back inside a sub-stock collapses back to the inventory hub rather
+    // than popping the whole inventory screen.
+    BackHandler(enabled = selectedGroup != null) { selectedGroup = null; query = "" }
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF3B1607), Color(0xFF140805))))) {
     ScreenFrame(background = Color.Transparent) {
         ScreenHeader(if (selectedGroup == null) "物品栏" else groups.firstOrNull { it.first == selectedGroup }?.second ?: "物品栏", state,
@@ -961,6 +983,10 @@ private fun computeShowSender(messages: List<GameChatMessage>, i: Int, selfName:
 @Composable
 private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: Long, wrapChars: Int, showSender: Boolean) {
     val timeLabel = timestampLabel(timestamp)
+    val wrapped = wrapByChars(body, wrapChars)
+    // a single unwrapped line shows the time right after the text on the same row;
+    // two or more wrapped lines show the time on its own row, right-aligned.
+    val multiLine = wrapped.contains('\n')
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier
@@ -971,13 +997,22 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
             if (showSender) {
                 Text(author, color = PhoneMuted, fontSize = 11.sp)
             }
-            // adaptive bubble that follows the text width; the time row spans the
-            // full bubble width so the timestamp sits at the bottom-right corner.
             Box(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface)) {
-                Column(Modifier.width(IntrinsicSize.Max).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
-                    Text(wrapByChars(body, wrapChars), color = if (self) Color.White else PhoneText, fontSize = 14.sp, lineHeight = 17.sp)
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.offset(y = (-2).dp))
+                if (multiLine) {
+                    Column(Modifier.width(IntrinsicSize.Max).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
+                        Text(wrapped, color = if (self) Color.White else PhoneText, fontSize = 14.sp, lineHeight = 17.sp)
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                } else {
+                    Row(
+                        Modifier.padding(start = 10.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(wrapped, color = if (self) Color.White else PhoneText, fontSize = 14.sp, lineHeight = 17.sp)
+                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp, lineHeight = 12.sp)
                     }
                 }
             }
