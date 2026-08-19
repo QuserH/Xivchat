@@ -382,27 +382,31 @@ private fun WeatherWidget(state: PhoneState, modifier: Modifier = Modifier) {
     var time by remember { mutableStateOf(eorzeaNow()) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5_000); time = eorzeaNow() } }
     val weather = state.weather
-    Column(
+    val bell = time.substringBefore(':').toIntOrNull() ?: 12
+    val visual = phoneWeatherVisual(weather?.current.orEmpty(), bell)
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(168.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xB5728094))
-            .padding(18.dp),
+            .clickable { state.openApp("skywatcher") },
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                AnimatedContent(weather?.current ?: "等待天气", label = "weather-title") { title -> Text(title, color = Color(0xFF18243A), fontSize = 25.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                Text(weather?.zone ?: "游戏内天气", color = Color(0xFF273247), fontSize = 11.sp)
+        WeatherBackdrop(weather?.current.orEmpty(), bell, Modifier.fillMaxSize())
+        Column(Modifier.fillMaxSize().padding(18.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    AnimatedContent(weather?.current ?: "等待天气", label = "weather-title") { title -> Text(title, color = visual.ink, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    Text(weather?.zone ?: "游戏内天气", color = visual.ink.copy(alpha = .72f), fontSize = 11.sp)
+                }
+                Text(time, color = visual.ink, fontSize = 29.sp, fontWeight = FontWeight.Bold)
             }
-            Text(time, color = Color(0xFF172239), fontSize = 29.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            (weather?.forecast?.take(5) ?: emptyList()).forEach { window ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (window.minutesFromNow <= 0) "现在" else "${window.minutesFromNow}分", color = Color(0xFF2B3547), fontSize = 10.sp)
-                    Text(weatherGlyph(window.name), color = Color.White, fontSize = 18.sp)
+            Spacer(Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                (weather?.forecast?.take(5) ?: emptyList()).forEach { window ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (window.minutesFromNow <= 0) "现在" else "${window.minutesFromNow}分", color = visual.ink.copy(alpha = .78f), fontSize = 10.sp)
+                        Text(weatherGlyph(window.name), color = visual.ink, fontSize = 18.sp)
+                    }
                 }
             }
         }
@@ -427,7 +431,7 @@ private fun PageIndicator(page: Int, count: Int, homeText: Color) {
     }
 }
 
-private fun weatherGlyph(name: String): String = when {
+internal fun weatherGlyph(name: String): String = when {
     name.contains("雷") -> "ϟ"
     name.contains("雪") || name.contains("冰") -> "✻"
     name.contains("雨") -> "☂"

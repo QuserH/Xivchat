@@ -53,6 +53,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -135,18 +136,13 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
 
 @Composable
 fun SettingsScreen(state: PhoneState) {
+    var characterMenu by remember { mutableStateOf(false) }
     val profileName = state.profile?.name?.takeIf { it.isNotBlank() }
-    val profileState = when {
-        state.connected -> "在线"
-        profileName != null -> "离线"
-        else -> null
-    }
     val profileSubtitle = when {
         profileName != null -> {
-            val tag = if (profileState != null) " · $profileState" else ""
             listOf(
                 listOf(state.profile?.homeWorld, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.distinct().joinToString(" · "),
-            ).filter { it.isNotBlank() }.joinToString(" · ") + tag
+            ).filter { it.isNotBlank() }.joinToString(" · ")
         }
         state.connected -> "正在读取角色资料"
         else -> "连接游戏后显示角色资料"
@@ -170,7 +166,28 @@ fun SettingsScreen(state: PhoneState) {
                         Text(profileName ?: if (state.connected) "已连接终端" else "未连接终端", color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                         Text(profileSubtitle, color = PhoneMuted, fontSize = 13.sp)
                     }
-                    Text("›", color = PhoneMuted, fontSize = 32.sp)
+                    Image(
+                        painter = painterResource(if (state.connected) R.drawable.status_online else R.drawable.status_offline),
+                        contentDescription = if (state.connected) "在线" else "离线",
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Box {
+                        Text("›", color = if (!state.connected && state.knownCharacters.size > 1) PhoneAccent else PhoneMuted, fontSize = 32.sp,
+                            modifier = Modifier.clickable(enabled = !state.connected && state.knownCharacters.isNotEmpty()) { characterMenu = true }.padding(horizontal = 4.dp))
+                        DropdownMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
+                            state.knownCharacters.forEach { character ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(character.name, fontWeight = FontWeight.SemiBold)
+                                            Text(character.world, color = PhoneMuted, fontSize = 11.sp)
+                                        }
+                                    },
+                                    onClick = { state.switchCharacter(character.key); characterMenu = false },
+                                )
+                            }
+                        }
+                    }
                 }
             }
             item {
@@ -510,18 +527,24 @@ private fun ContactAction(label: String, icon: Int, tint: Color, enabled: Boolea
 fun InventoryScreen(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var selectedGroup by remember { mutableStateOf<String?>(null) }
+    var selectedRetainerId by remember { mutableStateOf<Long?>(null) }
     var showSearch by remember { mutableStateOf(false) }
     val groups = listOf("bags" to "背包", "armoury" to "兵装库", "crystals" to "水晶", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
     val selectedTypes = inventoryTypesForGroup(selectedGroup ?: "bags")
-    val filtered = state.inventory.filter { (selectedGroup == null || it.container in selectedTypes) && (query.isBlank() || it.name.contains(query, true)) }
+    val filtered = state.inventory.filter {
+        (selectedGroup == null || it.container in selectedTypes) &&
+            (selectedGroup != "retainers" || selectedRetainerId == null || it.retainerId == selectedRetainerId) &&
+            (query.isBlank() || it.name.contains(query, true))
+    }
     // system back inside a sub-stock collapses back to the inventory hub rather
     // than popping the whole inventory screen.
     BackHandler(enabled = showSearch || selectedGroup != null) {
-        if (showSearch) { showSearch = false; query = "" } else { selectedGroup = null; query = "" }
+        if (showSearch) { showSearch = false; query = "" } else { selectedGroup = null; selectedRetainerId = null; query = "" }
     }
     Box(Modifier.fillMaxSize().background(PhoneBackground)) {
     ScreenFrame(background = Color.Transparent) {
-        ScreenHeader(if (selectedGroup == null) "物品栏" else groups.firstOrNull { it.first == selectedGroup }?.second ?: "物品栏", state,
+        val inventoryTitle = selectedRetainerId?.let { id -> state.retainers.firstOrNull { it.id == id }?.name } ?: groups.firstOrNull { it.first == selectedGroup }?.second ?: "物品栏"
+        ScreenHeader(inventoryTitle, state,
             trailing = { Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${formatCount(state.inventory.size)} 件", color = PhoneMuted, fontSize = 12.sp)
                 Box(Modifier.padding(start = 9.dp).size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised).clickable {
@@ -529,7 +552,7 @@ fun InventoryScreen(state: PhoneState) {
                     if (!showSearch) query = ""
                 }, contentAlignment = Alignment.Center) { Text("⌕", color = PhoneAccent, fontSize = 21.sp) }
             } },
-            onBack = if (selectedGroup == null) null else ({ selectedGroup = null; query = "" }),
+            onBack = if (selectedGroup == null) null else ({ selectedGroup = null; selectedRetainerId = null; query = "" }),
             showBack = selectedGroup != null)
         if (state.inventory.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -537,7 +560,7 @@ fun InventoryScreen(state: PhoneState) {
                 Text("背包数据通过加密端口同步", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
             }
         } else if (selectedGroup == null && query.isBlank()) {
-            InventoryHub(state) { selectedGroup = it }
+            InventoryHub(state, open = { selectedGroup = it }, openRetainer = { id -> selectedRetainerId = id; selectedGroup = "retainers" })
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 15.dp, vertical = 12.dp)) {
                 items(filtered.sortedWith(compareBy({ it.container }, { it.slot })), key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
@@ -581,7 +604,7 @@ private fun CompactInventorySearch(value: String, change: (String) -> Unit, modi
 }
 
 @Composable
-private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
+private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer: (Long) -> Unit) {
     val localTypes = inventoryTypesForGroup("bags") + inventoryTypesForGroup("armoury") + inventoryTypesForGroup("crystals") + inventoryTypesForGroup("saddle") + inventoryTypesForGroup("equipped")
     val total = state.inventory.filter { it.container in localTypes }.sumOf { it.quantity }
     val rows = listOf(
@@ -625,15 +648,17 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
                     Divider(Modifier.padding(start = 16.dp), color = PhoneMuted.copy(alpha = .16f))
                 } else {
                     state.retainers.forEach { retainer ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(enabled = retainer.active || retainer.itemCount > 0) { open("retainers") }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        val cachedCount = state.inventory.count { it.retainerId == retainer.id }
+                        val cachedQuantity = state.inventory.filter { it.retainerId == retainer.id }.sumOf { it.quantity }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(enabled = cachedCount > 0) { openRetainer(retainer.id) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
                             Box(Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF8D6AC8)), contentAlignment = Alignment.Center) { Text(retainer.name.take(1), color = Color.White, fontWeight = FontWeight.Bold) }
                             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                 Text(retainer.name.ifBlank { "未命名雇员" }, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                Text(if (retainer.active) "刚刚同步" else "在游戏中打开以更新背包", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                                Text(if (retainer.active) "刚刚同步" else if (cachedCount > 0) "已保存在本机" else "在游戏中打开以同步", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("${formatCount(retainer.itemCount)} 格", color = if (retainer.active) PhoneAccent else PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                if (retainer.quantity > 0) Text("${formatCount(retainer.quantity)} 件", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                                Text("${formatCount(cachedCount)} 格", color = if (retainer.active) PhoneAccent else PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                if (cachedQuantity > 0) Text("${formatCount(cachedQuantity)} 件", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
                             }
                         }
                         Divider(Modifier.padding(start = 73.dp), color = PhoneMuted.copy(alpha = .16f))
@@ -752,28 +777,41 @@ fun ProfileScreen(state: PhoneState) {
 @Composable
 fun SkywatcherScreen(state: PhoneState) {
     val weather = state.weather
-    ScreenFrame {
-        ScreenHeader("天气预报", state)
-        if (weather == null) {
-            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text(if (state.connected) "等待区域天气…" else "连接游戏后显示天气", color = PhoneMuted)
-            }
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF63758D)).padding(20.dp)) {
-                        Text(weather.current, color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                        Text(weather.zone, color = Color(0xFFE0E8F1), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-                        Text("当前区域 · 游戏内天气", color = Color(0xFFD4DDE7), fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
-                    }
+    val bell = weather?.forecast?.firstOrNull()?.eorzeaBell ?: 12
+    val visual = phoneWeatherVisual(weather?.current.orEmpty(), bell)
+    Box(Modifier.fillMaxSize()) {
+        WeatherBackdrop(weather?.current.orEmpty(), bell, Modifier.fillMaxSize())
+        ScreenFrame(background = Color.Transparent) {
+            ScreenHeader("天气预报", state)
+            if (weather == null) {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text(if (state.connected) "等待区域天气…" else "连接游戏后显示天气", color = visual.ink)
                 }
-                item { SectionLabel("未来天气") }
-                items(weather.forecast, key = { "${it.eorzeaBell}-${it.name}" }) { window ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (window.minutesFromNow <= 0) "现在" else "${window.minutesFromNow} 分钟后", color = PhoneAccent, fontSize = 12.sp, modifier = Modifier.width(76.dp))
-                        Text(window.name, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                        Text("艾欧泽亚时 ${window.eorzeaBell}:00", color = PhoneMuted, fontSize = 11.sp)
+            } else {
+                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 25.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(weatherGlyph(weather.current), color = visual.ink, fontSize = 72.sp)
+                            Text(weather.current, color = visual.ink, fontSize = 29.sp, fontWeight = FontWeight.Bold)
+                            Text(weather.zone, color = visual.ink.copy(alpha = .74f), fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
+                            Text("艾欧泽亚时 ${String.format("%02d:00", bell)}", color = visual.ink.copy(alpha = .62f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
                     }
+                    item { Text("未来数小时", color = visual.ink.copy(alpha = .72f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                    items(weather.forecast, key = { "${it.eorzeaBell}-${it.name}" }) { window ->
+                        val rowVisual = phoneWeatherVisual(window.name, window.eorzeaBell)
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(rowVisual.ink.copy(alpha = .12f)).padding(horizontal = 15.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(43.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(rowVisual.top, rowVisual.bottom))), contentAlignment = Alignment.Center) {
+                                Text(weatherGlyph(window.name), color = rowVisual.ink, fontSize = 19.sp)
+                            }
+                            Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                                Text(window.name, color = visual.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Text(if (window.minutesFromNow <= 0) "现在" else "${window.minutesFromNow} 分钟后", color = visual.ink.copy(alpha = .64f), fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+                            }
+                            Text(String.format("%02d:00", window.eorzeaBell), color = visual.ink.copy(alpha = .72f), fontSize = 12.sp)
+                        }
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
                 }
             }
         }
@@ -1105,8 +1143,19 @@ fun WalletScreen(state: PhoneState) {
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
                             ItemIcon(entry.iconId, Modifier.size(34.dp), fallback = entry.name.take(1))
                             Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) { Text(entry.name, color = PhoneText, fontSize = 14.sp); if (entry.cap > 0) Text("上限 ${entry.cap}", color = PhoneMuted, fontSize = 11.sp) }
-                        Text(formatCount(entry.amount), color = PhoneText, fontWeight = FontWeight.Bold)
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    Text(entry.name, color = PhoneText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                    Text(formatCount(entry.amount), color = PhoneGreen, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    if (entry.cap > 0) Text(" / ${formatCount(entry.cap)}", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 2.dp))
+                                }
+                                if (entry.cap > 0) LinearProgressIndicator(
+                                    progress = { (entry.amount.toFloat() / entry.cap.toFloat()).coerceIn(0f, 1f) },
+                                    color = PhoneGreen,
+                                    trackColor = PhoneGreen.copy(alpha = .12f),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(6.dp).clip(CircleShape),
+                                )
+                            }
                         }
                     }
                 }

@@ -160,7 +160,8 @@ internal object XivChatCodec {
             unpacker.skipValue()
             val name = nullableString(unpacker) ?: "物品 $itemId"
             val icon = if (itemFields > 9) unpacker.unpackInt() else 0
-            result += GameInventoryItem(itemId, name, quantity, container, slot, hq, icon)
+            val retainerId = if (itemFields > 10) unpacker.unpackLong() else 0L
+            result += GameInventoryItem(itemId, name, quantity, container, slot, hq, icon, retainerId)
         }
         val containers = ArrayList<GameInventoryContainer>()
         if (fields > 2) {

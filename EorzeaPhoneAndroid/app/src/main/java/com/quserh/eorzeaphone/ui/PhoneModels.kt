@@ -30,6 +30,8 @@ import com.quserh.eorzeaphone.data.GameHousingLocation
 import com.quserh.eorzeaphone.data.GameDailies
 import com.quserh.eorzeaphone.data.GameActivity
 import com.quserh.eorzeaphone.data.GameCollections
+import com.quserh.eorzeaphone.data.GameCollectionCategory
+import com.quserh.eorzeaphone.data.GameCollectionItem
 import com.quserh.eorzeaphone.data.GameMapDestination
 import com.quserh.eorzeaphone.data.GameMapExpansion
 import com.quserh.eorzeaphone.data.GameMapRegion
@@ -172,6 +174,8 @@ data class LocalReminder(
     val done: Boolean,
 )
 
+data class SavedCharacter(val key: String, val name: String, val world: String)
+
 val defaultShortcuts = listOf(
     CustomShortcut("返回", "/return"),
     CustomShortcut("坐骑随机", "/mount \"随机坐骑\""),
@@ -183,6 +187,8 @@ val defaultShortcuts = listOf(
 
 class PhoneState(context: Context, scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
+    private var activeCharacterKey = prefs.getString("activeCharacterKey", "").orEmpty()
+    val knownCharacters = mutableStateListOf<SavedCharacter>().apply { addAll(loadKnownCharacters()) }
     private val appContext = context.applicationContext
     private val activityRef = context as? android.app.Activity
     var screen by mutableStateOf(PhoneScreen.Home)
@@ -376,6 +382,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
     var settingsPage by mutableStateOf<SettingsPage?>(null)
     var editChatTabs by mutableStateOf(false)
+    var editingChatFilterId by mutableStateOf<String?>(null)
     val chats = mutableStateListOf<GameChatMessage>()
     val inventory = mutableStateListOf<GameInventoryItem>()
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
@@ -406,7 +413,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var selectedChatFilterId by mutableStateOf("local")
     var openChatFilterId by mutableStateOf<String?>(null)
     val chatFilters = mutableStateListOf<ChatFilter>().apply {
-        addAll(builtInChatFilters)
+        val muted = prefs.getStringSet("mutedChatTabs", emptySet()).orEmpty()
+        addAll(builtInChatFilters.map { if (it.id in muted) it.copy(alertPolicy = ChatAlertPolicy.Off) else it })
         addAll(loadCustomFilters())
     }
     val conversations = mutableStateListOf<ChatConversation>()
@@ -421,6 +429,11 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         scope.launch(Dispatchers.Main.immediate) { handle(event) }
     }
     private val notifier = PhoneNotifier(context.applicationContext)
+    private var connectedCharacterConfirmed = false
+    private var connectedCharacterKey = ""
+    private val pendingCharacterEvents = mutableListOf<PhoneEvent>()
+
+    private fun scoped(key: String): String = if (activeCharacterKey.isBlank()) key else "$key::$activeCharacterKey"
 
     private fun boolPref(key: String, default: Boolean): MutableState<Boolean> {
         val backing = mutableStateOf(prefs.getBoolean(key, default))
@@ -439,6 +452,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         loadSavedChats()
         loadSavedInventory()
         loadSavedExtras()
+        loadSavedCollections()
         if (notes.isEmpty() && noteText.isNotBlank()) {
             notes += LocalNote(System.currentTimeMillis(), noteText, System.currentTimeMillis())
             saveLocalNotes()
@@ -450,7 +464,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
 
     private fun loadProfileCache(): com.quserh.eorzeaphone.data.PlayerProfile? = runCatching {
-        val s = prefs.getString("profileCache", "")
+        val s = prefs.getString(scoped("profileCache"), "")
         if (s.isNullOrBlank()) return@runCatching null
         val o = JSONObject(s)
         com.quserh.eorzeaphone.data.PlayerProfile(
@@ -467,8 +481,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }.getOrNull()
 
     private fun saveProfileCache(p: com.quserh.eorzeaphone.data.PlayerProfile?) {
-        if (p == null) { prefs.edit().remove("profileCache").apply(); return }
-        prefs.edit().putString("profileCache", JSONObject().apply {
+        if (p == null) { prefs.edit().remove(scoped("profileCache")).apply(); return }
+        prefs.edit().putString(scoped("profileCache"), JSONObject().apply {
             put("name", p.name)
             put("homeWorld", p.homeWorld)
             put("currentWorld", p.currentWorld)
@@ -483,7 +497,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
 
     private fun loadSavedChats() {
         runCatching {
-            val arr = JSONArray(prefs.getString("chatCache", "[]"))
+            val arr = JSONArray(prefs.getString(scoped("chatCache"), "[]"))
             val msgs = mutableListOf<GameChatMessage>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
@@ -516,12 +530,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("self", m.self)
             })
         }
-        prefs.edit().putString("chatCache", arr.toString()).apply()
+        prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()
     }
 
     private fun loadSavedInventory() {
         runCatching {
-            val items = JSONArray(prefs.getString("inventoryItemCache", "[]"))
+            val items = JSONArray(prefs.getString(scoped("inventoryItemCache"), "[]"))
             inventory.clear()
             for (i in 0 until items.length()) {
                 val o = items.getJSONObject(i)
@@ -533,15 +547,16 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     slot = o.optLong("slot"),
                     hq = o.optBoolean("hq"),
                     iconId = o.optInt("iconId"),
+                    retainerId = o.optLong("retainerId"),
                 )
             }
-            val ctrs = JSONArray(prefs.getString("inventoryContainerCache", "[]"))
+            val ctrs = JSONArray(prefs.getString(scoped("inventoryContainerCache"), "[]"))
             inventoryContainers.clear()
             for (i in 0 until ctrs.length()) {
                 val o = ctrs.getJSONObject(i)
                 inventoryContainers += GameInventoryContainer(o.optLong("type"), o.optInt("size"))
             }
-            val savedRetainers = JSONArray(prefs.getString("retainerCache", "[]"))
+            val savedRetainers = JSONArray(prefs.getString(scoped("retainerCache"), "[]"))
             retainers.clear()
             for (i in 0 until savedRetainers.length()) {
                 val o = savedRetainers.getJSONObject(i)
@@ -561,6 +576,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("slot", it.slot)
                 put("hq", it.hq)
                 put("iconId", it.iconId)
+                put("retainerId", it.retainerId)
             })
         }
         val ctrs = JSONArray()
@@ -572,15 +588,15 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity)
         }) }
         prefs.edit()
-            .putString("inventoryItemCache", items.toString())
-            .putString("inventoryContainerCache", ctrs.toString())
-            .putString("retainerCache", savedRetainers.toString())
+            .putString(scoped("inventoryItemCache"), items.toString())
+            .putString(scoped("inventoryContainerCache"), ctrs.toString())
+            .putString(scoped("retainerCache"), savedRetainers.toString())
             .apply()
     }
 
     private fun loadSavedExtras() {
         runCatching {
-            val w = prefs.getString("walletCache", "")
+            val w = prefs.getString(scoped("walletCache"), "")
             if (!w.isNullOrBlank()) {
                 val o = JSONObject(w)
                 val gil = o.optLong("gil")
@@ -594,7 +610,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 wallet = GameWallet(gil, entries)
             }
 
-            val j = prefs.getString("jobsCache", "")
+            val j = prefs.getString(scoped("jobsCache"), "")
             if (!j.isNullOrBlank()) {
                 val arr = JSONArray(j)
                 jobs.clear()
@@ -604,7 +620,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 }
             }
 
-            val d = prefs.getString("dailiesCache", "")
+            val d = prefs.getString(scoped("dailiesCache"), "")
             if (!d.isNullOrBlank()) {
                 val o = JSONObject(d)
                 val arr = o.optJSONArray("entries") ?: JSONArray()
@@ -617,7 +633,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 dailies = GameDailies(o.optLong("nextDailyResetUnix"), o.optLong("nextWeeklyResetUnix"), entries)
             }
 
-            val a = prefs.getString("activityCache", "")
+            val a = prefs.getString(scoped("activityCache"), "")
             if (!a.isNullOrBlank()) {
                 val o = JSONObject(a)
                 activity = GameActivity(
@@ -627,7 +643,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 )
             }
 
-            val w2 = prefs.getString("weatherCache", "")
+            val w2 = prefs.getString(scoped("weatherCache"), "")
             if (!w2.isNullOrBlank()) {
                 val o = JSONObject(w2)
                 val arr = o.optJSONArray("forecast") ?: JSONArray()
@@ -640,7 +656,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 weather = GameWeather(o.optString("zone", ""), o.optString("current", ""), forecast)
             }
 
-            val h = prefs.getString("housingCache", "")
+            val h = prefs.getString(scoped("housingCache"), "")
             if (!h.isNullOrBlank()) {
                 val o = JSONObject(h)
                 housing = GameHousingLocation(
@@ -651,7 +667,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 )
             }
 
-            val m = prefs.getString("mapsCache", "")
+            val m = prefs.getString(scoped("mapsCache"), "")
             if (!m.isNullOrBlank()) {
                 val root = JSONObject(m)
                 val expansionArray = root.optJSONArray("expansions") ?: JSONArray()
@@ -700,7 +716,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("name", expansion.name); put("order", expansion.order); put("regions", regionArray)
             })
         }
-        prefs.edit().putString("mapsCache", JSONObject().apply {
+        prefs.edit().putString(scoped("mapsCache"), JSONObject().apply {
             put("currentZone", value.currentZone); put("currentRegion", value.currentRegion); put("expansions", expansionArray)
         }.toString()).apply()
     }
@@ -720,7 +736,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("itemId", e.itemId); put("name", e.name); put("amount", e.amount); put("cap", e.cap); put("section", e.section); put("iconId", e.iconId)
             })
         }
-        prefs.edit().putString("walletCache", JSONObject().apply { put("gil", w.gil); put("entries", arr) }.toString()).apply()
+        prefs.edit().putString(scoped("walletCache"), JSONObject().apply { put("gil", w.gil); put("entries", arr) }.toString()).apply()
     }
 
     private fun saveJobs() {
@@ -730,7 +746,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("jobId", j.jobId); put("name", j.name); put("abbreviation", j.abbreviation); put("category", j.category); put("level", j.level); put("active", j.active); put("itemLevel", j.itemLevel); put("iconId", j.iconId); put("gearsetId", j.gearsetId)
             })
         }
-        prefs.edit().putString("jobsCache", arr.toString()).apply()
+        prefs.edit().putString(scoped("jobsCache"), arr.toString()).apply()
     }
 
     private fun saveDailies() {
@@ -741,12 +757,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("id", e.id); put("label", e.label); put("weekly", e.weekly); put("automatic", e.automatic); put("available", e.available); put("complete", e.complete); put("remaining", e.remaining); put("goal", e.goal); put("note", e.note)
             })
         }
-        prefs.edit().putString("dailiesCache", JSONObject().apply { put("nextDailyResetUnix", d.nextDailyResetUnix); put("nextWeeklyResetUnix", d.nextWeeklyResetUnix); put("entries", arr) }.toString()).apply()
+        prefs.edit().putString(scoped("dailiesCache"), JSONObject().apply { put("nextDailyResetUnix", d.nextDailyResetUnix); put("nextWeeklyResetUnix", d.nextWeeklyResetUnix); put("entries", arr) }.toString()).apply()
     }
 
     private fun saveActivity() {
         val a = activity ?: return
-        prefs.edit().putString("activityCache", JSONObject().apply {
+        prefs.edit().putString(scoped("activityCache"), JSONObject().apply {
             put("sessionStartedUnix", a.sessionStartedUnix); put("sessionPlaySeconds", a.sessionPlaySeconds); put("sessionExpGained", a.sessionExpGained); put("sessionLevelsGained", a.sessionLevelsGained); put("sessionGilEarned", a.sessionGilEarned); put("sessionDutiesCompleted", a.sessionDutiesCompleted)
             put("todayPlaySeconds", a.todayPlaySeconds); put("todayExpGained", a.todayExpGained); put("todayLevelsGained", a.todayLevelsGained); put("todayGilEarned", a.todayGilEarned); put("todayDutiesCompleted", a.todayDutiesCompleted)
             put("mountsOwned", a.mountsOwned); put("mountsTotal", a.mountsTotal); put("minionsOwned", a.minionsOwned); put("minionsTotal", a.minionsTotal); put("retainerCount", a.retainerCount); put("venturesReady", a.venturesReady); put("venturesActive", a.venturesActive)
@@ -759,17 +775,99 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         w.forecast.forEach { f ->
             arr.put(JSONObject().apply { put("name", f.name); put("minutesFromNow", f.minutesFromNow); put("eorzeaBell", f.eorzeaBell) })
         }
-        prefs.edit().putString("weatherCache", JSONObject().apply { put("zone", w.zone); put("current", w.current); put("forecast", arr) }.toString()).apply()
+        prefs.edit().putString(scoped("weatherCache"), JSONObject().apply { put("zone", w.zone); put("current", w.current); put("forecast", arr) }.toString()).apply()
     }
 
     private fun saveHousing() {
         val h = housing ?: return
-        prefs.edit().putString("housingCache", JSONObject().apply {
+        prefs.edit().putString(scoped("housingCache"), JSONObject().apply {
             if (h.ward != null) put("ward", h.ward) else put("ward", JSONObject.NULL)
             if (h.plot != null) put("plot", h.plot) else put("plot", JSONObject.NULL)
             put("exterior", h.exterior)
             if (h.apartmentWing != null) put("apartmentWing", h.apartmentWing) else put("apartmentWing", JSONObject.NULL)
         }.toString()).apply()
+    }
+
+    private fun loadSavedCollections() {
+        runCatching {
+            val root = JSONArray(prefs.getString(scoped("collectionsCache"), "[]"))
+            val categories = buildList(root.length()) {
+                for (index in 0 until root.length()) {
+                    val category = root.getJSONObject(index)
+                    val rows = category.optJSONArray("items") ?: JSONArray()
+                    val items = buildList(rows.length()) {
+                        for (rowIndex in 0 until rows.length()) {
+                            val row = rows.getJSONObject(rowIndex)
+                            add(GameCollectionItem(row.optLong("id"), row.optString("name"), row.optInt("iconId"), row.optBoolean("owned")))
+                        }
+                    }
+                    add(GameCollectionCategory(category.optInt("id"), category.optInt("total"), category.optInt("owned"), items))
+                }
+            }
+            collections = if (categories.isEmpty()) null else GameCollections(categories)
+        }
+    }
+
+    private fun saveCollections() {
+        val value = collections ?: return
+        val root = JSONArray()
+        value.categories.forEach { category ->
+            val rows = JSONArray()
+            category.items.forEach { item -> rows.put(JSONObject().apply {
+                put("id", item.id); put("name", item.name); put("iconId", item.iconId); put("owned", item.owned)
+            }) }
+            root.put(JSONObject().apply {
+                put("id", category.id); put("total", category.total); put("owned", category.owned); put("items", rows)
+            })
+        }
+        prefs.edit().putString(scoped("collectionsCache"), root.toString()).apply()
+    }
+
+    private fun characterKey(profile: com.quserh.eorzeaphone.data.PlayerProfile): String =
+        "${profile.name.trim().lowercase()}@${profile.homeWorld.trim().lowercase()}"
+
+    private fun loadKnownCharacters(): List<SavedCharacter> = runCatching {
+        val array = JSONArray(prefs.getString("knownCharacters", "[]"))
+        buildList(array.length()) {
+            for (index in 0 until array.length()) {
+                val row = array.getJSONObject(index)
+                val key = row.optString("key")
+                if (key.isNotBlank()) add(SavedCharacter(key, row.optString("name"), row.optString("world")))
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveKnownCharacters() {
+        val array = JSONArray()
+        knownCharacters.forEach { row -> array.put(JSONObject().put("key", row.key).put("name", row.name).put("world", row.world)) }
+        prefs.edit().putString("knownCharacters", array.toString()).apply()
+    }
+
+    private fun activateCharacter(current: com.quserh.eorzeaphone.data.PlayerProfile) {
+        val key = characterKey(current)
+        if (activeCharacterKey != key) {
+            activeCharacterKey = key
+            prefs.edit().putString("activeCharacterKey", key).apply()
+            chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
+            wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null
+            friends.clear()
+            profile = loadProfileCache()
+            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); friends.addAll(loadFriends())
+        }
+        val saved = SavedCharacter(key, current.name, current.homeWorld)
+        val index = knownCharacters.indexOfFirst { it.key == key }
+        if (index >= 0) knownCharacters[index] = saved else knownCharacters.add(saved)
+        saveKnownCharacters()
+    }
+
+    fun switchCharacter(key: String) {
+        if (connected || key == activeCharacterKey || knownCharacters.none { it.key == key }) return
+        activeCharacterKey = key
+        prefs.edit().putString("activeCharacterKey", key).apply()
+        chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
+        wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; friends.clear()
+        profile = loadProfileCache()
+        loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); friends.addAll(loadFriends())
     }
 
     fun updateShellSize(width: Int, height: Int) {
@@ -786,6 +884,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         selectedApp = app
         screen = app.destination
     }
+
+    fun openApp(id: String) { allApps[id]?.let(::open) }
 
     fun showMessagesTab(contacts: Boolean) {
         selectedFriend = null
@@ -893,7 +993,20 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         if (!pinnedConversations.remove(conv.key)) pinnedConversations.add(conv.key)
         prefs.edit().putStringSet("pinnedChatConvs", pinnedConversations).apply()
         conversations.remove(conv)
-        conversations.add(if (conv.key in pinnedConversations) 0 else conversations.size, conv)
+        conversations.add(if (conv.key in pinnedConversations) 0 else pinnedConversations.count { key -> conversations.any { it.key == key } }, conv)
+    }
+
+    fun isConversationPinned(conv: ChatConversation): Boolean = conv.key in pinnedConversations
+
+    fun toggleChatFilterNotifications(filter: ChatFilter) {
+        val index = chatFilters.indexOfFirst { it.id == filter.id }
+        if (index < 0) return
+        val updated = filter.copy(alertPolicy = if (filter.alertPolicy == ChatAlertPolicy.Off) ChatAlertPolicy.All else ChatAlertPolicy.Off)
+        chatFilters[index] = updated
+        val mutedBuiltIns = chatFilters.filter { !it.removable && it.alertPolicy == ChatAlertPolicy.Off }.mapTo(mutableSetOf()) { it.id }
+        prefs.edit().putStringSet("mutedChatTabs", mutedBuiltIns).apply()
+        saveCustomFilters()
+        if (updated.alertPolicy != ChatAlertPolicy.Off) requestNotificationPermission()
     }
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation {
@@ -1099,14 +1212,58 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         saveCustomFilters()
     }
 
+    fun updateChatFilter(filter: ChatFilter, label: String, categories: Set<ChatCategory>, channels: Set<Int>, tintIndex: Int, sendChannel: Int?, layout: ChatLayout,
+                         historyPolicy: ChatHistoryPolicy, alertPolicy: ChatAlertPolicy) {
+        val index = chatFilters.indexOfFirst { it.id == filter.id }
+        if (index < 0) return
+        chatFilters[index] = filter.copy(label = label.trim().take(24).ifBlank { filter.label },
+            categories = categories.ifEmpty { filter.categories }, channels = channels.ifEmpty { filter.channels }, tintIndex = tintIndex,
+            sendChannel = sendChannel, layout = layout, historyPolicy = historyPolicy, alertPolicy = alertPolicy)
+        saveCustomFilters()
+    }
+
     fun refreshFriends() = connection.requestFriends()
 
     fun clearTrustedServer() = connection.clearTrustedServer()
 
     private fun handle(event: PhoneEvent) {
+        val scopedEvent = event is PhoneEvent.FriendList || event is PhoneEvent.Chat || event is PhoneEvent.Inventory ||
+            event is PhoneEvent.Wallet || event is PhoneEvent.Weather || event is PhoneEvent.Jobs ||
+            event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
+            event is PhoneEvent.Collections || event is PhoneEvent.Maps
+        if (scopedEvent && !connectedCharacterConfirmed) {
+            pendingCharacterEvents += event
+            return
+        }
+        if (scopedEvent && activeCharacterKey != connectedCharacterKey) {
+            // A connected stream may only mutate the cache selected by its latest profile frame.
+            // Re-anchor before applying data so an offline character can never receive it.
+            val connectedProfile = knownCharacters.firstOrNull { it.key == connectedCharacterKey }?.let { saved ->
+                com.quserh.eorzeaphone.data.PlayerProfile(
+                    name = saved.name,
+                    homeWorld = saved.world,
+                    currentWorld = saved.world,
+                    location = "",
+                    classJobId = 0,
+                    jobName = "",
+                    level = 0,
+                    territoryId = 0,
+                    itemLevel = 0,
+                )
+            }
+            if (connectedProfile == null) {
+                pendingCharacterEvents += event
+                connectedCharacterConfirmed = false
+                return
+            }
+            activateCharacter(connectedProfile)
+        }
         when (event) {
             PhoneEvent.Connected -> {
                 connected = true
+                connectedCharacterConfirmed = false
+                connectedCharacterKey = ""
+                pendingCharacterEvents.clear()
                 sessionStartedAt = System.currentTimeMillis()
                 sessionGilBaseline = wallet?.gil
                 serverLabel = "已连接游戏"
@@ -1114,6 +1271,9 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             }
             is PhoneEvent.Disconnected -> {
                 connected = false
+                connectedCharacterConfirmed = false
+                connectedCharacterKey = ""
+                pendingCharacterEvents.clear()
                 serverLabel = "未连接游戏"
                 for (index in friends.indices) friends[index] = friends[index].copy(online = false, location = "", job = "")
                 if (statusMessage.isBlank() || statusMessage == "连接成功") statusMessage = event.reason
@@ -1134,9 +1294,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     val conv = getOrCreateConversation(event.message)
                     conv.add(event.message)
                     val index = conversations.indexOf(conv)
-                    if (index > 0) {
+                    val target = if (conv.key in pinnedConversations) 0 else conversations.count { it.key in pinnedConversations }
+                    if (index != target && index >= 0) {
                         conversations.removeAt(index)
-                        conversations.add(0, conv)
+                        conversations.add(target.coerceAtMost(conversations.size), conv)
                     }
                     val isSelf = event.message.isFrom(profile?.name)
                     val isOpen = openConversationKey == conv.key
@@ -1160,12 +1321,19 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 }
             }
             is PhoneEvent.Inventory -> {
+                val activeIds = event.snapshot.retainers.filter { it.active }.mapTo(mutableSetOf()) { it.id }
+                val cachedRetainerItems = inventory.filter { it.retainerId != 0L && it.retainerId !in activeIds }
                 inventory.clear()
+                inventory.addAll(cachedRetainerItems)
                 inventory.addAll(event.snapshot.items)
                 inventoryContainers.clear()
                 inventoryContainers.addAll(event.snapshot.containers)
+                val oldRetainers = retainers.associateBy { it.id }
                 retainers.clear()
-                retainers.addAll(event.snapshot.retainers)
+                retainers.addAll(event.snapshot.retainers.map { incoming ->
+                    val old = oldRetainers[incoming.id]
+                    if (!incoming.active && old != null) incoming.copy(itemCount = old.itemCount, quantity = old.quantity) else incoming
+                })
                 saveInventory()
             }
             is PhoneEvent.Wallet -> {
@@ -1194,14 +1362,20 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 activity = event.activity
                 saveActivity()
             }
-            is PhoneEvent.Collections -> collections = event.collections
+            is PhoneEvent.Collections -> { collections = event.collections; saveCollections() }
             is PhoneEvent.Maps -> {
                 maps = event.maps
                 saveMaps()
             }
             is PhoneEvent.Profile -> {
+                connectedCharacterKey = characterKey(event.profile)
+                activateCharacter(event.profile)
                 profile = event.profile
                 saveProfileCache(event.profile)
+                connectedCharacterConfirmed = true
+                val pending = pendingCharacterEvents.toList()
+                pendingCharacterEvents.clear()
+                pending.forEach(::handle)
             }
             is PhoneEvent.Channel -> {
                 currentChannel = event.channel
@@ -1235,7 +1409,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     private fun loadFriends(): List<PhoneFriend> = runCatching {
-        val array = JSONArray(prefs.getString("friendCache", "[]"))
+        val array = JSONArray(prefs.getString(scoped("friendCache"), "[]"))
         buildList(array.length()) {
             for (index in 0 until array.length()) {
                 val item = array.getJSONObject(index)
@@ -1266,6 +1440,6 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 put("homeWorldId", friend.homeWorldId)
             })
         }
-        prefs.edit().putString("friendCache", array.toString()).apply()
+        prefs.edit().putString(scoped("friendCache"), array.toString()).apply()
     }
 }

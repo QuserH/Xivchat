@@ -21,14 +21,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.data.GameCollectionCategory
 import com.quserh.eorzeaphone.data.GameCollectionItem
+import com.quserh.eorzeaphone.data.CollectionRemote
+import com.quserh.eorzeaphone.data.CollectionRemoteDetail
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
@@ -85,15 +90,21 @@ private fun CollectionsRoot(state: PhoneState, categories: List<GameCollectionCa
                 Text(if (state.connected) "等待收藏数据…" else "连接游戏后查看坐骑、宠物等收藏", color = PhoneMuted)
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item {
-                    Text("本地收藏", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("↗", color = PhoneAccent, fontSize = 19.sp)
+                        Text("绑定角色后可查看各类收藏与具体获取方式。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 10.dp))
+                    }
                 }
-                lazyItems(collectionKinds, key = { it.id }) { kind ->
+                gridItems(collectionKinds, key = { it.id }) { kind ->
                     CollectionCategoryCard(kind, categories.firstOrNull { it.id == kind.id }) { open(kind.id) }
-                }
-                item {
-                    Text("收藏进度由游戏插件实时同步。坐骑、宠物、情感动作、乐谱、面部饰品与九宫幻卡会随插件更新，发型与成就将在后续版本接入完整名录。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
         }
@@ -106,27 +117,23 @@ private fun CollectionCategoryCard(kind: CollectionKind, category: GameCollectio
     val total = category?.total ?: 0
     val ratio = if (total > 0) owned.toFloat() / total else 0f
     val animatedRatio by animateFloatAsState(targetValue = ratio, label = "progress")
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface).clickable(onClick = onClick).padding(16.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth().height(154.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurface).clickable(onClick = onClick).padding(14.dp),
     ) {
-        Box(Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(kind.tint), contentAlignment = Alignment.Center) {
-            Text(kind.label.take(1), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        }
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(kind.label, color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            if (category != null) {
-                Spacer(Modifier.height(7.dp))
-                Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.1f))) {
-                    Box(Modifier.fillMaxWidth(animatedRatio.coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(kind.tint))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(45.dp).clip(RoundedCornerShape(8.dp)).background(kind.tint), contentAlignment = Alignment.Center) {
+                Text(kind.label.take(1), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(progress = { animatedRatio.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxSize(), color = kind.tint, trackColor = PhoneMuted.copy(alpha = .16f), strokeWidth = 5.dp)
+                    Text(if (total > 0) "${(ratio * 100).toInt()}%" else "--", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
-        Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 12.dp)) {
-            Text(if (category == null) "--" else "${formatCount(owned)} / ${formatCount(total)}", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text("已收藏", color = PhoneMuted, fontSize = 10.sp)
-        }
-        Text("›", color = PhoneMuted, fontSize = 26.sp, modifier = Modifier.padding(start = 8.dp))
+        Spacer(Modifier.weight(1f))
+        Text(kind.label, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text(if (category == null) "--" else "${formatCount(owned)} / ${formatCount(total)}", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
     }
 }
 
@@ -195,7 +202,7 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
     }
 
     selected?.let { item ->
-        CollectionItemDetail(item, tint, label, onDismiss = { selected = null })
+        CollectionItemDetail(item, category.id, tint, label, onDismiss = { selected = null })
     }
 
     AnimatedVisibility(visible = showGuide) {
@@ -209,7 +216,10 @@ private fun CollectionsBrowse(state: PhoneState, category: GameCollectionCategor
 }
 
 @Composable
-private fun CollectionItemDetail(item: GameCollectionItem, tint: Color, label: String, onDismiss: () -> Unit) {
+private fun CollectionItemDetail(item: GameCollectionItem, categoryId: Int, tint: Color, label: String, onDismiss: () -> Unit) {
+    var detail by remember(item.id, categoryId) { mutableStateOf<CollectionRemoteDetail?>(null) }
+    var loaded by remember(item.id, categoryId) { mutableStateOf(false) }
+    LaunchedEffect(item.id, categoryId) { detail = CollectionRemote.fetch(categoryId, item.id); loaded = true }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(item.name, color = PhoneText, maxLines = 2, overflow = TextOverflow.Ellipsis) },
@@ -225,13 +235,23 @@ private fun CollectionItemDetail(item: GameCollectionItem, tint: Color, label: S
                     modifier = Modifier.padding(top = 14.dp, bottom = 4.dp),
                 )
                 Text("$label 收藏之一", color = PhoneMuted, fontSize = 12.sp)
-                Text(
-                    if (item.owned) "获取来源：该藏品已记录在游戏解锁名录中。更多来源说明将在后续数据版本补充。"
-                    else "获取来源：目前未纳入完整名录，无法给出确切获取途径。",
-                    color = PhoneMuted,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 14.dp),
-                )
+                detail?.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = PhoneText, fontSize = 12.sp, modifier = Modifier.padding(top = 14.dp)) }
+                detail?.let { remote ->
+                    val facts = listOfNotNull(
+                        remote.patch.takeIf(String::isNotBlank)?.let { "版本 $it" },
+                        remote.rarity.takeIf(String::isNotBlank)?.let { "稀有度 $it" },
+                        remote.tradeable?.let { if (it) "可交易" else "不可交易" },
+                    ).joinToString(" · ")
+                    if (facts.isNotBlank()) Text(facts, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 9.dp))
+                    Text("如何获取", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 6.dp))
+                    if (remote.sources.isEmpty()) Text("暂无获取来源资料", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+                    remote.sources.take(5).forEach { source ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                            Text(source.type.ifBlank { "获取来源" }, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(source.text, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                } ?: Text(if (loaded) "暂时无法获取详细来源" else "正在读取获取方式…", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 14.dp))
             }
         },
         confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭", color = tint) } },

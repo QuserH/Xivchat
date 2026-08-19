@@ -14,6 +14,7 @@ namespace XIVChatCommon.Message.Server {
         [Key(7)] public uint Condition { get; set; }
         [Key(8)] public string? Name { get; set; }
         [Key(9)] public uint IconId { get; set; }
+        [Key(10)] public ulong RetainerId { get; set; }
     }
 
     [MessagePackObject]

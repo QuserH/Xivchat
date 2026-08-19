@@ -538,6 +538,9 @@ namespace XIVChatPlugin {
                 var items = new List<ServerInventoryItem>();
                 var containers = new List<ServerInventoryContainer>();
                 var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
+                var retainerManager = RetainerManager.Instance();
+                var activeRetainer = retainerManager == null ? null : retainerManager->GetActiveRetainer();
+                var activeRetainerId = activeRetainer == null ? 0UL : activeRetainer->RetainerId;
 
                 foreach (var type in PhoneInventoryTypes) {
                     var containerItems = XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(type).ToArray();
@@ -573,13 +576,12 @@ namespace XIVChatPlugin {
                             Condition = item.Condition,
                             Name = name,
                             IconId = iconId,
+                            RetainerId = (uint) item.ContainerType is >= 10000 and <= 12001 ? activeRetainerId : 0,
                         });
                     }
                 }
 
                 var retainers = new List<ServerRetainer>();
-                var retainerManager = RetainerManager.Instance();
-                var activeRetainer = retainerManager == null ? null : retainerManager->GetActiveRetainer();
                 if (retainerManager != null) {
                     var activeItems = items.Where(item => item.ContainerType is >= 10000 and <= 12001).ToArray();
                     var activeCount = activeItems.Length;
@@ -1304,6 +1306,7 @@ namespace XIVChatPlugin {
                     hash = hash * 31 + item.Quantity;
                     hash = hash * 31 + item.ContainerType;
                     hash = hash * 31 + item.InventorySlot;
+                    hash = hash * 31 + item.RetainerId.GetHashCode();
                     hash = hash * 31 + (item.IsHq ? 1 : 0);
                     hash = hash * 31 + item.SpiritbondOrCollectability;
                     hash = hash * 31 + item.Condition;

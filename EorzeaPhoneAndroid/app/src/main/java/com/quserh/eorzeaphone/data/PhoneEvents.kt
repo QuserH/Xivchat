@@ -94,6 +94,7 @@ data class GameInventoryItem(
     val slot: Long,
     val hq: Boolean,
     val iconId: Int = 0,
+    val retainerId: Long = 0,
 )
 
 data class GameInventoryContainer(

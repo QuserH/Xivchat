@@ -20,11 +20,17 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.input.pointer.pointerInteropFilter
-import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import android.view.HapticFeedbackConstants
-import android.view.MotionEvent
 import android.view.ViewConfiguration
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
@@ -41,7 +47,6 @@ private fun PhoneRoute.level(): Int = when (screen) {
     else -> 1
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun EorzeaPhoneApp() {
     val context = LocalContext.current
@@ -50,9 +55,6 @@ fun EorzeaPhoneApp() {
     val darkTheme = state.useDarkTheme(isSystemInDarkTheme())
     EorzeaPhoneTheme(darkTheme = darkTheme) {
         val view = LocalView.current
-        var hapticDownX by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-        var hapticDownY by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-        var hapticMoved by remember { androidx.compose.runtime.mutableStateOf(false) }
         val touchSlop = remember(view) { ViewConfiguration.get(view.context).scaledTouchSlop.toFloat() }
         SideEffect {
             val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
@@ -66,14 +68,17 @@ fun EorzeaPhoneApp() {
         BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 
         val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
-        Box(Modifier.fillMaxSize().pointerInteropFilter { event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { hapticDownX = event.x; hapticDownY = event.y; hapticMoved = false }
-                MotionEvent.ACTION_MOVE -> if (kotlin.math.abs(event.x - hapticDownX) > touchSlop || kotlin.math.abs(event.y - hapticDownY) > touchSlop) hapticMoved = true
-                MotionEvent.ACTION_UP -> if (state.haptics && !hapticMoved) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                MotionEvent.ACTION_CANCEL -> hapticMoved = true
+        Box(Modifier.fillMaxSize().pointerInput(state.haptics) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var moved = false
+                var event = awaitPointerEvent(PointerEventPass.Final)
+                while (event.changes.any { it.pressed }) {
+                    if (event.changes.any { (it.position - down.position).getDistance() > touchSlop }) moved = true
+                    event = awaitPointerEvent(PointerEventPass.Final)
+                }
+                if (state.haptics && !moved) performPhoneHaptic(context, view)
             }
-            false
         }.onSizeChanged { state.updateShellSize(it.width, it.height) }) {
             AnimatedContent(
             targetState = route,
@@ -132,4 +137,15 @@ fun EorzeaPhoneApp() {
             }
         }
     }
+}
+
+private fun performPhoneHaptic(context: Context, view: android.view.View) {
+    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION") context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    } ?: return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(14L, 90))
+    else @Suppress("DEPRECATION") vibrator.vibrate(14L)
 }
