@@ -219,8 +219,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     fun appsForPage(page: Int): List<PhoneAppItem> =
         homePageIds.getOrElse(page) { emptyList() }.mapNotNull { allApps[it] }
 
-    fun homeLibraryApps(): List<PhoneAppItem> =
-        homeLibraryIds.mapNotNull { allApps[it] }
+    fun storeApps(): List<PhoneAppItem> {
+        val apps = AppCatalog.firstPage + AppCatalog.secondPage
+        return apps.sortedByDescending { it.id == "appstore" }
+    }
+
+    fun isAppInstalled(id: String): Boolean = id == "appstore" || homePageIds.any { id in it }
 
     fun reorderHome(page: Int, fromId: String, toId: String) {
         if (page !in homePageIds.indices || fromId == toId) return
@@ -250,6 +254,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     fun removeFromHome(page: Int, id: String) {
+        if (id == "appstore") return
         if (page !in homePageIds.indices) return
         val current = homePageIds[page].toMutableList()
         if (!current.remove(id)) return
@@ -260,11 +265,23 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     fun restoreToHome(page: Int, id: String) {
-        if (page !in homePageIds.indices || id !in homeLibraryIds) return
+        if (page !in homePageIds.indices || id == "appstore" || id !in homeLibraryIds) return
         homeLibraryIds = homeLibraryIds.filterNot { it == id }
         homePageIds = homePageIds.toMutableList().also { it[page] = it[page] + id }
         saveHomeLayout()
         saveHomeLibrary()
+    }
+
+    fun installApp(id: String) {
+        if (id == "appstore" || id !in homeLibraryIds || homePageIds.isEmpty()) return
+        val targetPage = homePageIds.indices.minByOrNull { homePageIds[it].size } ?: 0
+        restoreToHome(targetPage, id)
+    }
+
+    fun uninstallApp(id: String) {
+        if (id == "appstore") return
+        val page = homePageIds.indexOfFirst { id in it }
+        if (page >= 0) removeFromHome(page, id)
     }
 
     fun exitEditMode() {
@@ -292,7 +309,12 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             }
         }.getOrNull() ?: return defaultValue
         if (saved.isEmpty()) return defaultValue
-        return saved
+        val seen = mutableSetOf<String>()
+        val normalized = saved.map { page -> page.filter { seen.add(it) } }.toMutableList()
+        if (normalized.none { "appstore" in it }) {
+            normalized[0] = normalized[0] + "appstore"
+        }
+        return normalized
     }
 
     private fun saveHomeLayout() {
@@ -306,7 +328,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         val result: MutableList<String> = mutableListOf()
         for (i in 0 until arr.length()) {
             val id = arr.optString(i)
-            if (allApps.containsKey(id)) result.add(id)
+            if (id != "appstore" && allApps.containsKey(id) && homePageIds.none { id in it }) result.add(id)
         }
         result
     }.getOrDefault(emptyList())

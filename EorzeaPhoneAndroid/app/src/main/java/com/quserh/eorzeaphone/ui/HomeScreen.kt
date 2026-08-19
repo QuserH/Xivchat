@@ -81,9 +81,11 @@ private fun eorzeaNow(): String {
 fun HomeScreen(state: PhoneState) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < .5f
     val homeText = if (darkTheme) Color.White else MaterialTheme.colorScheme.onBackground
-    val libraryCount = if (state.homeLibraryApps().isNotEmpty()) 1 else 0
-    val totalPages = state.homePageCount + libraryCount
-    val pager = rememberPagerState(initialPage = state.homePage, pageCount = { totalPages })
+    val totalPages = state.homePageCount
+    val pager = rememberPagerState(
+        initialPage = state.homePage.coerceIn(0, (totalPages - 1).coerceAtLeast(0)),
+        pageCount = { totalPages },
+    )
     LaunchedEffect(pager.currentPage) { state.homePage = pager.currentPage }
     Box(Modifier.fillMaxSize()) {
         Image(
@@ -107,11 +109,7 @@ fun HomeScreen(state: PhoneState) {
                 userScrollEnabled = !state.homeEditMode,
                 modifier = Modifier.weight(1f),
             ) { page ->
-                if (page < state.homePageCount) {
-                    SocialPage(state, page)
-                } else {
-                    LibraryPage(state)
-                }
+                SocialPage(state, page)
             }
 
             PageIndicator(pager.currentPage, totalPages, homeText)
@@ -157,19 +155,7 @@ private fun SocialPage(state: PhoneState, page: Int) {
 }
 
 @Composable
-private fun LibraryPage(state: PhoneState) {
-    val homeText = if (MaterialTheme.colorScheme.background.luminance() < .5f) Color.White else MaterialTheme.colorScheme.onBackground
-    val apps = state.homeLibraryApps()
-    if (apps.isEmpty()) return
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-        Text("应用库", color = homeText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
-        Text("点 + 放回主屏幕 · 长按拖拽排序", color = homeText.copy(alpha = .7f), fontSize = 11.sp)
-        AppsGrid(apps, state.homePageCount, state, library = true)
-    }
-}
-
-@Composable
-private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, library: Boolean = false) {
+private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
     val bounds = remember { mutableStateMapOf<String, Rect>() }
     var dragId by remember(page) { mutableStateOf<String?>(null) }
     var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
@@ -184,8 +170,7 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, lib
         val col = fromIdx % cols + dx / cellW
         val row = fromIdx / cols + dy / cellH
         val index = (row * cols + col).roundToInt().coerceIn(0, apps.lastIndex)
-        if (library) state.reorderHomeToIndex(state.homePageCount, fromApp.id, index)
-        else state.reorderHomeToIndex(page, fromApp.id, index)
+        state.reorderHomeToIndex(page, fromApp.id, index)
     }
 
     Column(
@@ -201,26 +186,24 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, lib
                     Box(Modifier.weight(1f)) {
                         HomeTile(
                             app = app,
-                            editing = state.homeEditMode && !library,
-                            library = library,
+                            editing = state.homeEditMode,
+                            removable = app.id != "appstore",
                             dragging = dragId == app.id,
                             dragOffset = if (dragId == app.id) dragOffset else Offset.Zero,
                             dimmed = false,
                             onBounds = { bounds[app.id] = it },
                             onTap = {
-                                if (state.homeEditMode && !library) {
+                                if (state.homeEditMode) {
                                     state.removeFromHome(page, app.id)
-                                } else if (library) {
-                                    state.restoreToHome(page, app.id)
                                 } else {
                                     state.open(app, bounds[app.id])
                                 }
                             },
                             onLongPress = {
-                                if (!library) state.homeEditMode = true
+                                state.homeEditMode = true
                             },
                             onDragStart = {
-                                if (state.homeEditMode || library) {
+                                if (state.homeEditMode) {
                                     dragId = app.id
                                     originRect = bounds[app.id]
                                     originIndex = apps.indexOfFirst { it.id == app.id }.coerceAtLeast(0)
@@ -255,7 +238,7 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState, lib
 private fun HomeTile(
     app: PhoneAppItem,
     editing: Boolean,
-    library: Boolean,
+    removable: Boolean,
     dragging: Boolean,
     dragOffset: Offset,
     dimmed: Boolean,
@@ -274,7 +257,7 @@ private fun HomeTile(
                 animationSpec = spring(dampingRatio = .62f, stiffness = 520f),
                 label = "app-press",
             )
-    val editDrag = editing || library
+    val editDrag = editing
     val shake = rememberInfiniteTransition(label = "shake")
     val rotation by shake.animateFloat(
         initialValue = -2.5f,
@@ -340,17 +323,17 @@ private fun HomeTile(
                     modifier = Modifier.size(34.dp),
                 )
             }
-            if (editing || library) {
+            if (editing && removable) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .size(18.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(if (editing) Color(0xFFE53935) else Color(0xFF2E7D32))
+                        .background(Color(0xFFE53935))
                         .clickable { onTap() },
                 ) {
-                    Text(if (editing) "−" else "+", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("−", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

@@ -131,6 +131,7 @@ fun EorzeaPhoneApp() {
             "fishing" -> FishingScreen(state)
             "maps" -> MapsScreen(state)
             "health" -> HealthScreen(state)
+            "appstore" -> AppStoreScreen(state)
             else -> GenericAppScreen(state)
         }
                 }
