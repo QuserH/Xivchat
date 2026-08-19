@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -184,6 +185,10 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
         AetherphoneTabEditor(state) { editingTab = false }
         return
     }
+    if (state.editChatTabs) {
+        AetherphoneTabEditor(state) { state.editChatTabs = false }
+        return
+    }
     val conversation = state.conversations.firstOrNull { it.key == state.openConversationKey }
     if (conversation != null) {
         AetherphoneConversationScreen(state, conversation)
@@ -246,13 +251,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 }
             }
         }
-        AnimatedVisibility(
-            visible = searching,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-        ) {
-            LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
-        }
+        LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
         val rows = state.conversations.filter {
             active.matchesConversation(it) && (query.isBlank() || it.title.contains(query, true) || it.lastMessage?.text?.contains(query, true) == true)
         }
@@ -416,7 +415,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 Text(preview, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (!conversation.notify) Text("静音", color = AetherLightMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 6.dp))
+                if (!conversation.notify) ImageGlyph(R.drawable.app_notifications, AetherLightMuted.copy(alpha = .62f), Modifier.size(14.dp).padding(start = 2.dp))
                 if (conversation.unread > 0) {
                     Box(
                         Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(Color(0xFFE5485D)),
@@ -483,6 +482,7 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState) {
                     Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Text(friend.world.ifBlank { "未知服务器" }, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
+                if (friend.online) Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF35B865)))
             }
             if (index < friends.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(AetherLightSeparator))
         }
@@ -575,19 +575,24 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
     LightFrame {
         Column(Modifier.fillMaxSize()) {
             LightHeader(conversation.title, state::back) {
+                Text("⌕", color = if (searching) AetherPurple else AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { searching = !searching }.padding(horizontal = 7.dp))
                 Box {
                     Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
                     DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                        DropdownMenuItem(text = { Text(if (searching) "关闭搜索" else "搜索消息") }, onClick = {
-                            searching = !searching
-                            if (!searching) search = ""
+                        DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
+                            conversation.unread = 0
                             overflowOpen = false
                         })
-                        DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
-                            state.toggleConversationNotify(conversation)
+                        DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
+                            state.editChatTabs = true
+                            state.closeConversation()
                             overflowOpen = false
                         })
-                        DropdownMenuItem(text = { Text("清空聊天记录", color = Color(0xFFD64555)) }, onClick = {
+                        DropdownMenuItem(text = { Text("置顶") }, onClick = {
+                            state.toggleConversationPin(conversation)
+                            overflowOpen = false
+                        })
+                        DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
                             state.clearConversation(conversation)
                             overflowOpen = false
                         })
@@ -599,7 +604,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically(),
             ) {
-                LightSearchField(search, { search = it }, "搜索消息", Modifier.padding(horizontal = 20.dp, vertical = 3.dp))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LightSearchField(search, { search = it }, "搜索", Modifier.weight(1f))
+                    Text("⌃", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 6.dp))
+                    Text("⌄", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 5.dp))
+                }
             }
             val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
             if (visible.isEmpty()) {
@@ -607,7 +616,12 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
                 }
             } else {
+                val listState = rememberLazyListState()
+                LaunchedEffect(conversation.key, visible.size, search) {
+                    if (search.isBlank() && visible.isNotEmpty()) listState.scrollToItem(visible.lastIndex)
+                }
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
@@ -680,14 +694,20 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
                     .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
             ) {
-                Text(wrapLightText(message.text, wrapChars), color = if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp)
-                Text(
-                    lightClock(message.timestamp),
-                    color = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted,
-                    fontSize = 9.sp,
-                    lineHeight = 10.sp,
-                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
-                )
+                val body = wrapLightText(message.text, wrapChars)
+                val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
+                if (body.contains('\n')) {
+                    Text(body, color = if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp)
+                    Text(lightClock(message.timestamp), color = timeColor, fontSize = 9.sp, lineHeight = 10.sp,
+                        modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
+                } else {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(body, color = if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        Text(lightClock(message.timestamp), color = timeColor, fontSize = 9.sp, lineHeight = 10.sp,
+                            modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                    }
+                }
             }
         }
     }

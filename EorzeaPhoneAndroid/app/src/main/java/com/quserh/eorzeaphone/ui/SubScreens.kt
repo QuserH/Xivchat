@@ -516,7 +516,7 @@ fun InventoryScreen(state: PhoneState) {
     // system back inside a sub-stock collapses back to the inventory hub rather
     // than popping the whole inventory screen.
     BackHandler(enabled = selectedGroup != null) { selectedGroup = null; query = "" }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF3B1607), Color(0xFF140805))))) {
+    Box(Modifier.fillMaxSize().background(PhoneBackground)) {
     ScreenFrame(background = Color.Transparent) {
         ScreenHeader(if (selectedGroup == null) "物品栏" else groups.firstOrNull { it.first == selectedGroup }?.second ?: "物品栏", state,
             trailing = { Row(verticalAlignment = Alignment.CenterVertically) { Text("${state.inventory.size} 件", color = PhoneMuted, fontSize = 12.sp); Text("  ?", color = PhoneAccent, fontSize = 18.sp, modifier = Modifier.clickable { showTutorial = true }) } },
@@ -572,7 +572,7 @@ private fun CompactInventorySearch(value: String, change: (String) -> Unit) {
         singleLine = true,
         textStyle = androidx.compose.ui.text.TextStyle(color = PhoneText, fontSize = 14.sp),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp).height(44.dp)
-            .clip(RoundedCornerShape(11.dp)).background(Color(0xFF4A2A18)),
+            .clip(RoundedCornerShape(11.dp)).background(PhoneSurfaceRaised),
         decorationBox = { field ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
                 Text("⌕", color = PhoneMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
@@ -597,10 +597,10 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit) {
     )
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF402313)).padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("Gil", color = Color(0xFFFFD36A), fontSize = 12.sp); Text(state.wallet?.gil?.toString() ?: "--", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("金币", color = PhoneMuted, fontSize = 10.sp) }
-                Divider(Modifier.height(54.dp).width(1.dp), color = Color(0x554F321F))
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("携带物品", color = Color.White, fontSize = 12.sp); Text(if (state.inventory.isEmpty()) "--" else total.toString(), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("总数量", color = PhoneMuted, fontSize = 10.sp) }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface).padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("Gil", color = Color(0xFFFFB74D), fontSize = 12.sp); Text(state.wallet?.gil?.toString() ?: "--", color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("金币", color = PhoneMuted, fontSize = 10.sp) }
+                Divider(Modifier.height(54.dp).width(1.dp), color = PhoneMuted.copy(alpha = .25f))
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) { Text("携带物品", color = PhoneText, fontSize = 12.sp); Text(if (state.inventory.isEmpty()) "--" else total.toString(), color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text("总数量", color = PhoneMuted, fontSize = 10.sp) }
             }
         }
         item { SectionLabel("手上有") }
@@ -704,7 +704,7 @@ internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: Stri
 
 @Composable
 private fun InventorySearchRow(item: GameInventoryItem) {
-    Row(Modifier.fillMaxWidth().background(Color(0xFF24130C)).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().background(PhoneSurface).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         InventorySlotCell(item, Modifier.size(49.dp))
         Text(item.name, color = PhoneText, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 16.dp))
         if (item.hq) Text("HQ", color = Color(0xFFFFC071), fontSize = 9.sp, modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(Color(0xFF9A4D13)).padding(horizontal = 5.dp, vertical = 3.dp))

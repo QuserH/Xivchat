@@ -51,6 +51,7 @@ fun EorzeaPhoneApp() {
         }
         DisposableEffect(state) { onDispose { state.disconnect() } }
         BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }
+        BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 
         val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
         Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
@@ -63,17 +64,17 @@ fun EorzeaPhoneApp() {
                     // zoom-in from where the tile was tapped, plus a slide
                     val pivot = androidx.compose.ui.graphics.TransformOrigin(state.launchPivotX, state.launchPivotY)
                     (
-                        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(320, easing = FastOutSlowInEasing))
-                            + fadeIn(tween(240))
+                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(230, easing = FastOutSlowInEasing))
+                            + fadeIn(tween(180))
                             + scaleIn(initialScale = 0.86f, animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f), transformOrigin = pivot)
                         ).togetherWith(
-                        slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(280, easing = FastOutSlowInEasing))
-                            + fadeOut(tween(180))
+                        slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(210, easing = FastOutSlowInEasing))
+                            + fadeOut(tween(140))
                             + scaleOut(targetScale = 0.94f, animationSpec = tween(260), transformOrigin = pivot),
                     )
                 } else {
-                    (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(300, easing = FastOutSlowInEasing)) + fadeIn(tween(220, 60)))
-                        .togetherWith(slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(300, easing = FastOutSlowInEasing)) + fadeOut(tween(180)))
+                    (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(170, 40)))
+                        .togetherWith(slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(210, easing = FastOutSlowInEasing)) + fadeOut(tween(140)))
                 }
             },
             label = "phone-navigation",

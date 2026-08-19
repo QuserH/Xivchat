@@ -4,6 +4,7 @@ import com.goterl.lazysodium.LazySodiumAndroid
 import com.goterl.lazysodium.utils.Key
 import org.msgpack.core.MessagePack
 import org.msgpack.core.MessageUnpacker
+import org.msgpack.value.Value
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.ByteArrayOutputStream
@@ -313,33 +314,35 @@ internal object XivChatCodec {
     }
 
     fun readMaps(unpacker: MessageUnpacker): GameMaps {
-        unpacker.unpackArrayHeader()
-        val currentZone = unpacker.unpackString()
-        val currentRegion = unpacker.unpackString()
-        val expansionCount = unpacker.unpackArrayHeader()
-        val expansions = List(expansionCount) {
-            unpacker.unpackArrayHeader()
-            val expansionName = unpacker.unpackString()
-            val expansionOrder = unpacker.unpackByte().toInt() and 0xff
-            val regionCount = unpacker.unpackArrayHeader()
-            val regions = List(regionCount) {
-                unpacker.unpackArrayHeader()
-                val regionName = unpacker.unpackString()
-                val regionOrder = unpacker.unpackByte().toInt() and 0xff
-                val destinationCount = unpacker.unpackArrayHeader()
-                val destinations = List(destinationCount) {
-                    unpacker.unpackArrayHeader()
-                    GameMapDestination(
-                        rowId = unpacker.unpackLong(),
-                        name = unpacker.unpackString(),
-                        order = unpacker.unpackByte().toInt() and 0xff,
-                    )
-                }
-                GameMapRegion(regionName, regionOrder, destinations)
-            }
-            GameMapExpansion(expansionName, expansionOrder, regions)
+        // MessagePack-CSharp normally emits keyed objects as arrays, but older
+        // plugin builds may emit maps. Decode the complete value so either
+        // representation remains compatible during plugin updates.
+        val root = unpacker.unpackValue()
+        fun field(value: Value, index: Int): Value? = when {
+            value.isArrayValue() -> value.asArrayValue().getOrNilValue(index)
+            value.isMapValue() -> value.asMapValue().entrySet().firstOrNull {
+                it.key.isIntegerValue() && it.key.asIntegerValue().asInt() == index
+            }?.value
+            else -> null
         }
-        return GameMaps(currentZone, currentRegion, expansions)
+        fun text(value: Value?): String = value?.takeIf { it.isStringValue() }?.asStringValue()?.asString().orEmpty()
+        fun number(value: Value?): Long = value?.takeIf { it.isIntegerValue() }?.asIntegerValue()?.asLong() ?: 0L
+        fun array(value: Value?): List<Value> = when {
+            value?.isArrayValue() == true -> value.asArrayValue().list()
+            value?.isMapValue() == true -> value.asMapValue().values().toList()
+            else -> emptyList()
+        }
+
+        val expansions = array(field(root, 2)).map { expansion ->
+            val regions = array(field(expansion, 2)).map { region ->
+                val destinations = array(field(region, 2)).map { destination ->
+                    GameMapDestination(number(field(destination, 0)), text(field(destination, 1)), number(field(destination, 2)).toInt())
+                }
+                GameMapRegion(text(field(region, 0)), number(field(region, 1)).toInt(), destinations)
+            }
+            GameMapExpansion(text(field(expansion, 0)), number(field(expansion, 1)).toInt(), regions)
+        }
+        return GameMaps(text(field(root, 0)), text(field(root, 1)), expansions)
     }
 
     fun readChannel(unpacker: MessageUnpacker): Pair<Int, String> {

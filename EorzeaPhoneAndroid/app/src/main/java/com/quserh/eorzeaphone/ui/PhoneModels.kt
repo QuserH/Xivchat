@@ -363,6 +363,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         PhoneThemeMode.Dark -> true
     }
     var settingsPage by mutableStateOf<SettingsPage?>(null)
+    var editChatTabs by mutableStateOf(false)
     val chats = mutableStateListOf<GameChatMessage>()
     val inventory = mutableStateListOf<GameInventoryItem>()
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
@@ -399,6 +400,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var openConversationKey by mutableStateOf<String?>(null)
     private val mutedConversations: MutableSet<String> =
         (prefs.getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+    private val pinnedConversations: MutableSet<String> =
+        (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pendingSelfTexts = mutableMapOf<String, String>()
     private val connection = XivChatConnection(context, scope) { event ->
         scope.launch(Dispatchers.Main.immediate) { handle(event) }
@@ -858,6 +861,13 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         chats.removeAll(removed)
         conv.clear()
         saveChats()
+    }
+
+    fun toggleConversationPin(conv: ChatConversation) {
+        if (!pinnedConversations.remove(conv.key)) pinnedConversations.add(conv.key)
+        prefs.edit().putStringSet("pinnedChatConvs", pinnedConversations).apply()
+        conversations.remove(conv)
+        conversations.add(if (conv.key in pinnedConversations) 0 else conversations.size, conv)
     }
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation {

@@ -52,6 +52,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -78,6 +79,8 @@ private fun eorzeaNow(): String {
 
 @Composable
 fun HomeScreen(state: PhoneState) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < .5f
+    val homeText = if (darkTheme) Color.White else MaterialTheme.colorScheme.onBackground
     val libraryCount = if (state.homeLibraryApps().isNotEmpty()) 1 else 0
     val totalPages = state.homePageCount + libraryCount
     val pager = rememberPagerState(initialPage = state.homePage, pageCount = { totalPages })
@@ -87,9 +90,9 @@ fun HomeScreen(state: PhoneState) {
             painter = painterResource(R.drawable.wallpaper_dusk_dark),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (darkTheme) 1f else .18f },
         )
-        Box(Modifier.fillMaxSize().background(Color(0x35000020)))
+        Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else Color.White.copy(alpha = .72f)))
 
         Column(
             modifier = Modifier
@@ -98,9 +101,10 @@ fun HomeScreen(state: PhoneState) {
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = 14.dp),
         ) {
-            HomeEditBar(state)
+            HomeEditBar(state, homeText)
             HorizontalPager(
                 state = pager,
+                userScrollEnabled = !state.homeEditMode,
                 modifier = Modifier.weight(1f),
             ) { page ->
                 if (page < state.homePageCount) {
@@ -110,23 +114,23 @@ fun HomeScreen(state: PhoneState) {
                 }
             }
 
-            PageIndicator(pager.currentPage, totalPages)
-            Dock(state)
+            PageIndicator(pager.currentPage, totalPages, homeText)
+            Dock(state, darkTheme)
             Spacer(Modifier.height(8.dp))
         }
     }
 }
 
 @Composable
-private fun HomeEditBar(state: PhoneState) {
+private fun HomeEditBar(state: PhoneState, homeText: Color) {
     if (state.homeEditMode) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("编辑主屏幕", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text("长按拖拽排序 · 点 − 移除", color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
+            Text("编辑主屏幕", color = homeText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("长按拖拽排序 · 点 − 移除", color = homeText.copy(alpha = .8f), fontSize = 11.sp)
             Text(
                 "完成",
                 color = Color(0xFF5BC0EB),
@@ -154,11 +158,12 @@ private fun SocialPage(state: PhoneState, page: Int) {
 
 @Composable
 private fun LibraryPage(state: PhoneState) {
+    val homeText = if (MaterialTheme.colorScheme.background.luminance() < .5f) Color.White else MaterialTheme.colorScheme.onBackground
     val apps = state.homeLibraryApps()
     if (apps.isEmpty()) return
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-        Text("应用库", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
-        Text("点 + 放回主屏幕 · 长按拖拽排序", color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
+        Text("应用库", color = homeText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+        Text("点 + 放回主屏幕 · 长按拖拽排序", color = homeText.copy(alpha = .7f), fontSize = 11.sp)
         AppsGrid(apps, state.homePageCount, state, library = true)
     }
 }
@@ -261,6 +266,7 @@ private fun HomeTile(
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
 ) {
+    val homeText = if (MaterialTheme.colorScheme.background.luminance() < .5f) Color.White else MaterialTheme.colorScheme.onBackground
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(
@@ -350,7 +356,7 @@ private fun HomeTile(
         }
         Text(
             text = app.label,
-            color = Color.White,
+            color = homeText,
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -362,10 +368,11 @@ private fun HomeTile(
 
 @Composable
 fun PhoneStatusBar() {
+    val homeText = if (MaterialTheme.colorScheme.background.luminance() < .5f) Color.White else MaterialTheme.colorScheme.onBackground
     var eorzea by remember { mutableStateOf(eorzeaNow()) }
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5_000); eorzea = eorzeaNow() } }
     Box(Modifier.fillMaxWidth().height(30.dp)) {
-        Text(eorzea, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+        Text(eorzea, color = homeText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
     }
 }
@@ -403,7 +410,7 @@ private fun WeatherWidget(state: PhoneState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PageIndicator(page: Int, count: Int) {
+private fun PageIndicator(page: Int, count: Int, homeText: Color) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
@@ -414,7 +421,7 @@ private fun PageIndicator(page: Int, count: Int) {
                 Modifier
                     .height(7.dp).width(width)
                     .clip(RoundedCornerShape(50))
-                    .background(if (index == page) Color.White else Color(0x887D7890)),
+                    .background(if (index == page) homeText else homeText.copy(alpha = .45f)),
             )
         }
     }
@@ -430,13 +437,13 @@ private fun weatherGlyph(name: String): String = when {
 }
 
 @Composable
-private fun Dock(state: PhoneState) {
+private fun Dock(state: PhoneState, darkTheme: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(92.dp)
             .clip(RoundedCornerShape(25.dp))
-            .background(Color(0x7A323044))
+            .background(if (darkTheme) Color(0x7A323044) else MaterialTheme.colorScheme.surface.copy(alpha = .90f))
             .padding(horizontal = 22.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
