@@ -73,7 +73,12 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                                 1 -> Unit
                                 2 -> onEvent(PhoneEvent.Chat(XivChatCodec.readMessage(unpacker)))
                                 3 -> return@launch
-                                4 -> onEvent(PhoneEvent.Profile(XivChatCodec.readProfile(unpacker)))
+                                4 -> if (payload.isEmpty()) {
+                                    onEvent(PhoneEvent.GameAvailability(false))
+                                } else {
+                                    onEvent(PhoneEvent.Profile(XivChatCodec.readProfile(unpacker)))
+                                }
+                                5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
                                 6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
                                 7 -> XivChatCodec.readBacklog(unpacker).forEach { onEvent(PhoneEvent.Chat(it)) }
                                 8 -> onEvent(PhoneEvent.FriendList(XivChatCodec.readFriends(unpacker)))

@@ -257,6 +257,7 @@ data class GameMaps(
 sealed interface PhoneEvent {
     data object Connected : PhoneEvent
     data class Disconnected(val reason: String) : PhoneEvent
+    data class GameAvailability(val available: Boolean) : PhoneEvent
     data class Error(val message: String) : PhoneEvent
     data class FriendList(val friends: List<GameFriend>) : PhoneEvent
     data class Chat(val message: GameChatMessage) : PhoneEvent

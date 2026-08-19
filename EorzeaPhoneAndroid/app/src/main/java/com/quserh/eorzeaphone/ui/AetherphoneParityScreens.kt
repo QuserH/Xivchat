@@ -795,8 +795,7 @@ private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, s
 }
 
 private fun wrapLightText(value: String, limit: Int): String {
-    if (limit <= 0) return value
-    return value.lineSequence().flatMap { line -> line.chunked(limit).asSequence() }.joinToString("\n")
+    return wrapChatTextByUnits(value, limit)
 }
 
 @Composable

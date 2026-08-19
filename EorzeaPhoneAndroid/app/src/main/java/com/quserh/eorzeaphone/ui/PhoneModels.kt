@@ -155,7 +155,6 @@ class ChatConversation(
 
 private val builtInChatFilters = listOf(
     ChatFilter("fc", "部队", setOf(ChatCategory.FreeCompany), channels = setOf(24), tintIndex = 1, sendChannel = 6),
-    ChatFilter("linkshell", "通讯贝", setOf(ChatCategory.Linkshell), channels = (16..23).toSet() + (37..44).toSet(), tintIndex = 2, sendChannel = 19),
     ChatFilter("local", "本地", setOf(ChatCategory.Public, ChatCategory.Emote, ChatCategory.Party, ChatCategory.System), tintIndex = 0, sendChannel = 1),
 )
 
@@ -317,6 +316,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
 
     var connected by mutableStateOf(false)
+    var gameOnline by mutableStateOf(false)
+        private set
     var serverLabel by mutableStateOf("未连接游戏")
     private val _host = mutableStateOf(prefs.getString("host", "127.0.0.1").orEmpty())
     var host: String
@@ -430,7 +431,8 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     }
     private val notifier = PhoneNotifier(context.applicationContext)
     private var connectedCharacterConfirmed = false
-    private var connectedCharacterKey = ""
+    private var connectedCharacterKey by mutableStateOf("")
+    private var awaitingCharacterProfile = false
     private val pendingCharacterEvents = mutableListOf<PhoneEvent>()
 
     private fun scoped(key: String): String = if (activeCharacterKey.isBlank()) key else "$key::$activeCharacterKey"
@@ -843,32 +845,48 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         prefs.edit().putString("knownCharacters", array.toString()).apply()
     }
 
-    private fun activateCharacter(current: com.quserh.eorzeaphone.data.PlayerProfile) {
-        val key = characterKey(current)
+    private fun loadCharacter(key: String, persistSelection: Boolean) {
         if (activeCharacterKey != key) {
             activeCharacterKey = key
-            prefs.edit().putString("activeCharacterKey", key).apply()
+            if (persistSelection) prefs.edit().putString("activeCharacterKey", key).apply()
             chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
-            wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null
+            wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null
             friends.clear()
             profile = loadProfileCache()
             loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); friends.addAll(loadFriends())
         }
+    }
+
+    private fun rememberCharacter(current: com.quserh.eorzeaphone.data.PlayerProfile): String {
+        val key = characterKey(current)
         val saved = SavedCharacter(key, current.name, current.homeWorld)
         val index = knownCharacters.indexOfFirst { it.key == key }
         if (index >= 0) knownCharacters[index] = saved else knownCharacters.add(saved)
         saveKnownCharacters()
+        return key
+    }
+
+    private inline fun inCharacterScope(key: String, block: () -> Unit) {
+        val displayedKey = activeCharacterKey
+        if (displayedKey == key) {
+            block()
+            return
+        }
+        loadCharacter(key, persistSelection = false)
+        try {
+            block()
+        } finally {
+            loadCharacter(displayedKey, persistSelection = false)
+        }
     }
 
     fun switchCharacter(key: String) {
-        if (connected || key == activeCharacterKey || knownCharacters.none { it.key == key }) return
-        activeCharacterKey = key
-        prefs.edit().putString("activeCharacterKey", key).apply()
-        chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
-        wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; friends.clear()
-        profile = loadProfileCache()
-        loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); friends.addAll(loadFriends())
+        if (key == activeCharacterKey || knownCharacters.none { it.key == key }) return
+        loadCharacter(key, persistSelection = true)
     }
+
+    val activeCharacterOnline: Boolean
+        get() = connected && gameOnline && activeCharacterKey.isNotBlank() && activeCharacterKey == connectedCharacterKey
 
     fun updateShellSize(width: Int, height: Int) {
         shellWidth = width.coerceAtLeast(1).toFloat()
@@ -1232,37 +1250,25 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
             event is PhoneEvent.Collections || event is PhoneEvent.Maps
         if (scopedEvent && !connectedCharacterConfirmed) {
-            pendingCharacterEvents += event
+            if (awaitingCharacterProfile) pendingCharacterEvents += event
             return
         }
         if (scopedEvent && activeCharacterKey != connectedCharacterKey) {
-            // A connected stream may only mutate the cache selected by its latest profile frame.
-            // Re-anchor before applying data so an offline character can never receive it.
-            val connectedProfile = knownCharacters.firstOrNull { it.key == connectedCharacterKey }?.let { saved ->
-                com.quserh.eorzeaphone.data.PlayerProfile(
-                    name = saved.name,
-                    homeWorld = saved.world,
-                    currentWorld = saved.world,
-                    location = "",
-                    classJobId = 0,
-                    jobName = "",
-                    level = 0,
-                    territoryId = 0,
-                    itemLevel = 0,
-                )
-            }
-            if (connectedProfile == null) {
+            if (connectedCharacterKey.isBlank()) {
                 pendingCharacterEvents += event
                 connectedCharacterConfirmed = false
                 return
             }
-            activateCharacter(connectedProfile)
+            inCharacterScope(connectedCharacterKey) { handle(event) }
+            return
         }
         when (event) {
             PhoneEvent.Connected -> {
                 connected = true
+                gameOnline = false
                 connectedCharacterConfirmed = false
                 connectedCharacterKey = ""
+                awaitingCharacterProfile = true
                 pendingCharacterEvents.clear()
                 sessionStartedAt = System.currentTimeMillis()
                 sessionGilBaseline = wallet?.gil
@@ -1271,12 +1277,29 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             }
             is PhoneEvent.Disconnected -> {
                 connected = false
+                gameOnline = false
                 connectedCharacterConfirmed = false
                 connectedCharacterKey = ""
+                awaitingCharacterProfile = false
                 pendingCharacterEvents.clear()
                 serverLabel = "未连接游戏"
                 for (index in friends.indices) friends[index] = friends[index].copy(online = false, location = "", job = "")
                 if (statusMessage.isBlank() || statusMessage == "连接成功") statusMessage = event.reason
+            }
+            is PhoneEvent.GameAvailability -> {
+                if (!event.available) {
+                    gameOnline = false
+                    connectedCharacterConfirmed = false
+                    awaitingCharacterProfile = false
+                    pendingCharacterEvents.clear()
+                    serverLabel = if (connected) "游戏角色离线" else "未连接游戏"
+                    statusMessage = if (connected) "终端已连接，角色未进入游戏" else statusMessage
+                } else if (!connectedCharacterConfirmed) {
+                    gameOnline = false
+                    awaitingCharacterProfile = true
+                    serverLabel = "正在读取在线角色"
+                    statusMessage = "角色已进入游戏，正在读取资料"
+                }
             }
             is PhoneEvent.Error -> statusMessage = event.message
             is PhoneEvent.FriendList -> {
@@ -1368,11 +1391,21 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                 saveMaps()
             }
             is PhoneEvent.Profile -> {
-                connectedCharacterKey = characterKey(event.profile)
-                activateCharacter(event.profile)
-                profile = event.profile
-                saveProfileCache(event.profile)
+                val previousConnectedKey = connectedCharacterKey
+                val key = rememberCharacter(event.profile)
+                val followOnlineCharacter = activeCharacterKey.isBlank() || activeCharacterKey == key ||
+                    (previousConnectedKey.isNotBlank() && activeCharacterKey == previousConnectedKey)
+                connectedCharacterKey = key
+                if (followOnlineCharacter) loadCharacter(key, persistSelection = true)
+                inCharacterScope(key) {
+                    profile = event.profile
+                    saveProfileCache(event.profile)
+                }
+                gameOnline = true
                 connectedCharacterConfirmed = true
+                awaitingCharacterProfile = false
+                serverLabel = "${event.profile.name} · 在线"
+                statusMessage = "角色在线"
                 val pending = pendingCharacterEvents.toList()
                 pendingCharacterEvents.clear()
                 pending.forEach(::handle)

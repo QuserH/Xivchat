@@ -224,6 +224,11 @@ internal object XivChatCodec {
             currentHp, maxHp, currentMp, maxMp, currentCp, maxCp, currentGp, maxGp, itemLevel)
     }
 
+    fun readAvailability(unpacker: MessageUnpacker): Boolean {
+        unpacker.unpackArrayHeader()
+        return unpacker.unpackBoolean()
+    }
+
     fun readWeather(unpacker: MessageUnpacker): GameWeather {
         unpacker.unpackArrayHeader()
         unpacker.skipValue()

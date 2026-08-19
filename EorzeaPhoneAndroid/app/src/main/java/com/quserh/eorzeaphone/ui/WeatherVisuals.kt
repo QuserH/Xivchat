@@ -1,6 +1,7 @@
 package com.quserh.eorzeaphone.ui
 
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -16,6 +17,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.sin
 
 internal enum class PhoneWeatherKind { Clear, Clouds, Fog, Rain, Thunder, Wind, Sand, Heat, Snow, Gloom }
@@ -57,14 +60,20 @@ internal fun phoneWeatherVisual(name: String, bell: Int): PhoneWeatherVisual {
 internal fun WeatherBackdrop(name: String, bell: Int, modifier: Modifier = Modifier) {
     val visual = phoneWeatherVisual(name, bell)
     val transition = rememberInfiniteTransition(label = "weather-ambience")
-    val phase by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(2400), RepeatMode.Restart), label = "weather-phase")
+    val phase by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Restart), label = "weather-phase")
     Box(modifier.background(Brush.verticalGradient(listOf(visual.top, visual.bottom)))) {
         Canvas(Modifier.fillMaxSize()) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
             when (visual.kind) {
-                PhoneWeatherKind.Rain, PhoneWeatherKind.Thunder -> repeat(22) { index ->
-                    val x = ((index * 47f + phase * 180f) % (size.width + 60f)) - 30f
-                    val y = ((index * 83f + phase * size.height * 1.7f) % (size.height + 80f)) - 40f
-                    drawLine(visual.glow.copy(alpha = .45f), Offset(x, y), Offset(x - 9f, y + 29f), 2.2f, StrokeCap.Round)
+                PhoneWeatherKind.Rain, PhoneWeatherKind.Thunder -> {
+                    repeat(22) { index ->
+                        val x = ((index * 47f + phase * 180f) % (size.width + 60f)) - 30f
+                        val y = ((index * 83f + phase * size.height * 1.7f) % (size.height + 80f)) - 40f
+                        drawLine(visual.glow.copy(alpha = .45f), Offset(x, y), Offset(x - 9f, y + 29f), 2.2f, StrokeCap.Round)
+                    }
+                    if (visual.kind == PhoneWeatherKind.Thunder && phase > .78f && phase < .84f) {
+                        drawRect(Color.White.copy(alpha = .22f * (1f - abs(phase - .81f) / .03f)))
+                    }
                 }
                 PhoneWeatherKind.Snow -> repeat(26) { index ->
                     val x = ((index * 61f + sin(phase * 6.28f + index) * 20f) % size.width + size.width) % size.width
@@ -81,10 +90,26 @@ internal fun WeatherBackdrop(name: String, bell: Int, modifier: Modifier = Modif
                     val y = (index * 41f + sin(phase * 6.28f + index) * 25f + size.height) % size.height
                     drawCircle(visual.glow.copy(alpha = .28f), 2.5f, Offset(x, y))
                 }
-                else -> {
-                    drawCircle(visual.glow.copy(alpha = .32f), size.minDimension * .15f, Offset(size.width * .78f, size.height * .23f))
-                    if (visual.kind == PhoneWeatherKind.Clear && bell !in 6..18) repeat(18) { index ->
-                        drawCircle(Color.White.copy(alpha = .45f + (index % 3) * .15f), 1.4f, Offset((index * 79f) % size.width, (index * 43f) % (size.height * .7f)))
+                PhoneWeatherKind.Clouds, PhoneWeatherKind.Gloom -> repeat(7) { index ->
+                    val x = ((phase * size.width * (.12f + index * .012f) + index * size.width * .23f) % (size.width + 180f)) - 90f
+                    val y = size.height * (.16f + (index % 4) * .16f) + sin(phase * 6.283f + index) * 7f
+                    val radius = size.minDimension * (.09f + (index % 3) * .018f)
+                    drawCircle(visual.glow.copy(alpha = .08f + (index % 2) * .035f), radius, Offset(x, y))
+                    drawCircle(visual.glow.copy(alpha = .07f), radius * .78f, Offset(x + radius * .72f, y + 4f))
+                }
+                PhoneWeatherKind.Clear -> {
+                    val pulse = .92f + .08f * sin(phase * 6.283f)
+                    val glowCenter = Offset(size.width * .78f + cos(phase * 6.283f) * 5f, size.height * .23f)
+                    drawCircle(visual.glow.copy(alpha = .18f), size.minDimension * .20f * pulse, glowCenter)
+                    drawCircle(visual.glow.copy(alpha = .40f), size.minDimension * .11f * pulse, glowCenter)
+                    repeat(4) { index ->
+                        val x = ((phase * size.width * .16f + index * size.width * .31f) % (size.width + 120f)) - 60f
+                        val y = size.height * (.34f + index * .11f)
+                        drawLine(Color.White.copy(alpha = .10f), Offset(x, y), Offset(x + 95f, y), 5f, StrokeCap.Round)
+                    }
+                    if (bell !in 6..18) repeat(18) { index ->
+                        val twinkle = .32f + .38f * abs(sin(phase * 6.283f + index * .73f))
+                        drawCircle(Color.White.copy(alpha = twinkle), 1.4f, Offset((index * 79f) % size.width, (index * 43f) % (size.height * .7f)))
                     }
                 }
             }

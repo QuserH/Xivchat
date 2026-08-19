@@ -163,17 +163,19 @@ fun SettingsScreen(state: PhoneState) {
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(profileName ?: if (state.connected) "已连接终端" else "未连接终端", color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(profileName ?: if (state.connected) "已连接终端" else "未连接终端", color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                            Image(
+                                painter = painterResource(if (state.activeCharacterOnline) R.drawable.status_online else R.drawable.status_offline),
+                                contentDescription = if (state.activeCharacterOnline) "在线" else "离线",
+                                modifier = Modifier.padding(start = 5.dp).size(20.dp),
+                            )
+                        }
                         Text(profileSubtitle, color = PhoneMuted, fontSize = 13.sp)
                     }
-                    Image(
-                        painter = painterResource(if (state.connected) R.drawable.status_online else R.drawable.status_offline),
-                        contentDescription = if (state.connected) "在线" else "离线",
-                        modifier = Modifier.size(28.dp),
-                    )
                     Box {
-                        Text("›", color = if (!state.connected && state.knownCharacters.size > 1) PhoneAccent else PhoneMuted, fontSize = 32.sp,
-                            modifier = Modifier.clickable(enabled = !state.connected && state.knownCharacters.isNotEmpty()) { characterMenu = true }.padding(horizontal = 4.dp))
+                        Text("›", color = if (state.knownCharacters.size > 1) PhoneAccent else PhoneMuted, fontSize = 32.sp,
+                            modifier = Modifier.clickable(enabled = state.knownCharacters.isNotEmpty()) { characterMenu = true }.padding(horizontal = 4.dp))
                         DropdownMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
                             state.knownCharacters.forEach { character ->
                                 DropdownMenuItem(
@@ -798,7 +800,7 @@ fun SkywatcherScreen(state: PhoneState) {
                         }
                     }
                     item { Text("未来数小时", color = visual.ink.copy(alpha = .72f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
-                    items(weather.forecast, key = { "${it.eorzeaBell}-${it.name}" }) { window ->
+                    itemsIndexed(weather.forecast, key = { index, window -> "$index-${window.eorzeaBell}-${window.minutesFromNow}-${window.name}" }) { _, window ->
                         val rowVisual = phoneWeatherVisual(window.name, window.eorzeaBell)
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(rowVisual.ink.copy(alpha = .12f)).padding(horizontal = 15.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(43.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(rowVisual.top, rowVisual.bottom))), contentAlignment = Alignment.Center) {
@@ -1101,18 +1103,7 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
 }
 
 private fun wrapByChars(text: String, charsPerLine: Int): String {
-    if (charsPerLine <= 0) return text
-    val sb = StringBuilder()
-    var count = 0
-    for (c in text) {
-        sb.append(c)
-        count++
-        if (count >= charsPerLine) {
-            sb.append('\n')
-            count = 0
-        }
-    }
-    return sb.toString().trimEnd('\n')
+    return wrapChatTextByUnits(text, charsPerLine)
 }
 
 private fun timestampLabel(timestamp: Long): String {
