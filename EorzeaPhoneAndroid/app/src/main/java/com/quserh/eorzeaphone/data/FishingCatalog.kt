@@ -11,6 +11,8 @@ import kotlin.math.floor
 
 data class FishingItemRef(val id: Int, val name: String, val icon: Int)
 
+data class FishingAetheryte(val id: Int, val x: Int, val y: Int, val name: String)
+
 data class FishingSpot(
     val id: Int,
     val name: String,
@@ -24,6 +26,8 @@ data class FishingSpot(
     val mapOffsetY: Int,
     val x: Int,
     val y: Int,
+    val radius: Int,
+    val aetherytes: List<FishingAetheryte>,
 )
 
 data class FishingPredator(val id: Int, val name: String, val icon: Int, val count: Int)
@@ -60,6 +64,9 @@ data class FishingFish(
     val perception: Int,
     val size: String,
     val speed: String,
+    val guide: String,
+    val guidePath: String,
+    val guideAuthor: String,
 ) {
     val isBigFish: Boolean get() = tier != "normal" && tier != "ikdNormalFish"
     val restricted: Boolean get() = startHour != 0.0 || endHour != 24.0 || weather.isNotEmpty() || previousWeather.isNotEmpty()
@@ -119,7 +126,10 @@ object FishingCatalogRepository {
         mooch = row.optJSONArray("mooch")?.itemRefs().orEmpty(),
         path = row.optJSONArray("path")?.itemRefs().orEmpty(),
         spots = row.optJSONArray("spots")?.objects()?.map {
-            FishingSpot(it.optInt("id"), it.optString("name"), it.optString("zone"), it.optString("region"), it.optInt("territory"), it.optInt("weatherRate"), it.optString("mapFile"), it.optInt("mapSizeFactor", 100), it.optInt("mapOffsetX"), it.optInt("mapOffsetY"), it.optInt("x"), it.optInt("y"))
+            val crystals = it.optJSONArray("aetherytes")?.objects()?.map { crystal ->
+                FishingAetheryte(crystal.optInt("id"), crystal.optInt("x"), crystal.optInt("y"), crystal.optString("name"))
+            }.orEmpty()
+            FishingSpot(it.optInt("id"), it.optString("name"), it.optString("zone"), it.optString("region"), it.optInt("territory"), it.optInt("weatherRate"), it.optString("mapFile"), it.optInt("mapSizeFactor", 100), it.optInt("mapOffsetX"), it.optInt("mapOffsetY"), it.optInt("x"), it.optInt("y"), it.optInt("radius"), crystals)
         }.orEmpty(),
         snagging = row.optBoolean("snagging"),
         folkloreId = row.optInt("folklore"),
@@ -131,6 +141,9 @@ object FishingCatalogRepository {
         perception = row.optInt("perception"),
         size = row.optString("size"),
         speed = row.optString("speed"),
+        guide = row.optString("guide"),
+        guidePath = row.optString("guidePath"),
+        guideAuthor = row.optString("guideAuthor"),
     )
 
     private fun JSONArray.objects(): List<JSONObject> = buildList(length()) { for (index in 0 until length()) add(getJSONObject(index)) }

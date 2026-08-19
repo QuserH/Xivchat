@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
@@ -52,8 +53,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,6 +72,7 @@ import com.quserh.eorzeaphone.data.FishingItemRef
 import com.quserh.eorzeaphone.data.FishingMapImageLoader
 import com.quserh.eorzeaphone.data.FishingSpot
 import com.quserh.eorzeaphone.data.FishingWindowCalculator
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -289,7 +294,7 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                         Column(Modifier.fillMaxWidth().clickable { if (spot.mapFile.isNotBlank()) onSpot(spot) }.padding(vertical = 5.dp)) {
                             Text(spot.name, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Text(listOf(spot.region, spot.zone).filter(String::isNotBlank).distinct().joinToString(" · "), color = PhoneMuted, fontSize = 11.sp)
-                            if (spot.mapFile.isNotBlank()) Text("查看地图 · ${spot.x / 10.0}, ${spot.y / 10.0}", color = PhoneAccent, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                            if (spot.mapFile.isNotBlank()) Text("查看地图 · ${spot.displayPosition()}", color = PhoneAccent, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
                         }
                     }
                     if (fish.spots.isEmpty()) Text("该鱼暂无钓场记录", color = PhoneMuted, fontSize = 12.sp)
@@ -299,6 +304,19 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                 DetailSection("补充资料") {
                     if (fish.quest.isNotBlank()) ConditionRow("任务", fish.quest)
                     if (fish.collectableInfo.isNotBlank()) ConditionRow("收藏品", fish.collectableInfo)
+                }
+            }
+            if (fish.guide.isNotBlank() || fish.guidePath.isNotBlank()) item {
+                DetailSection("攻略") {
+                    if (fish.guidePath.isNotBlank()) {
+                        Text("推荐路线", color = PhoneMuted, fontSize = 11.sp)
+                        Text(stripGuideMarkup(fish.guidePath), color = PhoneText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    if (fish.guide.isNotBlank()) {
+                        Text("钓法说明", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 9.dp))
+                        Text(stripGuideMarkup(fish.guide), color = PhoneText, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    if (fish.guideAuthor.isNotBlank()) Text("来源：${fish.guideAuthor}", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }
             item { Text("资料已内置于 APP，来源参考鱼糕与 GatherBuddyReborn。", color = PhoneMuted, fontSize = 10.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) }
@@ -343,14 +361,24 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                         Box(Modifier.fillMaxSize().graphicsLayer(scaleX = mapScale, scaleY = mapScale, translationX = mapPanX, translationY = mapPanY)) {
                         Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "${spot.name}地图", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
                         if (spot.x > 0 && spot.y > 0) {
-                            // Fishing data stores coordinates as hundredths. MapSizeFactor
-                            // is the in-game map scale (200 means a 20 x 20 map).
-                            val mapScale = (spot.mapSizeFactor.coerceAtLeast(100) / 10f)
-                            val x = ((spot.x / 100f - spot.mapOffsetX / 100f) / mapScale).coerceIn(0f, 1f)
-                            val y = ((spot.y / 100f - spot.mapOffsetY / 100f) / mapScale).coerceIn(0f, 1f)
-                            Box(Modifier.offset(x = mapWidth * x - 12.dp, y = mapHeight * y - 12.dp).size(24.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
+                            val x = (spot.x / 2048f).coerceIn(0f, 1f)
+                            val y = (spot.y / 2048f).coerceIn(0f, 1f)
+                            if (spot.radius > 0) {
+                                Canvas(Modifier.fillMaxSize()) {
+                                    val radius = size.minDimension * (spot.radius / 6.25f / 2048f)
+                                    val center = Offset(size.width * x, size.height * y)
+                                    drawCircle(PhoneAccent.copy(alpha = .17f), radius, center)
+                                    drawCircle(PhoneAccent.copy(alpha = .78f), radius, center, style = Stroke(2.dp.toPx()))
+                                }
+                            }
+                            Box(Modifier.offset(x = mapWidth * x - 13.dp, y = mapHeight * y - 13.dp).size(26.dp).clip(CircleShape).background(PhoneAccent.copy(alpha = .86f)), contentAlignment = Alignment.Center) {
                                 Text("钓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+                        spot.aetherytes.forEach { crystal ->
+                            val x = (crystal.x / 2048f).coerceIn(0f, 1f)
+                            val y = (crystal.y / 2048f).coerceIn(0f, 1f)
+                            ItemIcon(60453, Modifier.offset(x = mapWidth * x - 14.dp, y = mapHeight * y - 14.dp).size(28.dp), "晶")
                         }
                         }
                     }
@@ -360,7 +388,7 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("钓场位置", color = PhoneText, fontWeight = FontWeight.SemiBold)
-                        Text("${spot.name} · X ${spot.x / 10.0}, Y ${spot.y / 10.0}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text("${spot.name} · ${spot.displayPosition()}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
                     Text("地图标记", color = PhoneAccent, fontSize = 11.sp)
                 }
@@ -388,56 +416,52 @@ private fun ConditionRow(label: String, value: String) {
 @Composable
 private fun FishingTechniquePath(fish: FishingFish, catalog: FishingCatalog) {
     Text("推荐钓法", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 5.dp))
-    val nodes = fishingTechniqueChain(fish, catalog)
+    val nodes = fishingTechniqueChain(fish)
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         nodes.forEachIndexed { index, node ->
             TechniqueNode(node, catalog.fish.firstOrNull { it.id == node.id })
-            if (index < nodes.lastIndex) Text("→", color = PhoneMuted, fontSize = 23.sp)
+            if (index < nodes.lastIndex) TechniqueArrow(if (index == 0) "上钩" else "以小钓大")
         }
-    }
-    fish.hook.takeIf { it.isNotBlank() && it != "unknown" }?.let { hook ->
-        Text(
-            hookLabel(hook), color = Color(0xFF202124), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(6.dp)).background(Color.White).padding(horizontal = 12.dp, vertical = 5.dp),
-        )
     }
 }
 
-private fun fishingTechniqueChain(fish: FishingFish, catalog: FishingCatalog): List<FishingItemRef> {
+private fun fishingTechniqueChain(fish: FishingFish): List<FishingItemRef> {
     val target = FishingItemRef(fish.id, fish.name, fish.icon)
-    if (fish.mooch.isNotEmpty()) {
-        val chain = mutableListOf<FishingItemRef>()
-        val visited = mutableSetOf<Int>()
-        fun appendSource(ref: FishingItemRef) {
-            if (!visited.add(ref.id)) return
-            val source = catalog.fish.firstOrNull { it.id == ref.id }
-            if (source?.mooch?.isNotEmpty() == true) appendSource(source.mooch.first())
-            else source?.path?.firstOrNull()?.let(chain::add) ?: source?.bait?.firstOrNull()?.let(chain::add)
-            chain.add(ref)
-        }
-        appendSource(fish.mooch.first())
-        return (chain + target).distinctBy { it.id }
-    }
-    val base = fish.path.ifEmpty { fish.bait.take(1) }
-    return (base + target).distinctBy { it.id }
+    // The generated path is already ordered bait -> small fish -> target fish.
+    // Keep every entry: collapsing to the first mooch loses intermediate fish.
+    return (fish.path.ifEmpty { fish.bait.take(1) } + target).distinctBy { it.id }
 }
 
 @Composable
 private fun TechniqueNode(item: FishingItemRef, fish: FishingFish?) {
-    Row(verticalAlignment = Alignment.Bottom) {
-        Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
-            ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
-            fish?.let {
-                if (it.tug.isNotBlank()) MiniBadge(tugShort(it.tug), Color(0xFFE8A83A), Modifier.align(Alignment.TopEnd))
-                if (it.hook.isNotBlank() && it.hook != "unknown") {
-                    MiniBadge(if (it.hook == "precision") "准" else "强", PhoneGreen, Modifier.align(Alignment.BottomStart))
-                }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (fish != null) {
+            Column(Modifier.width(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (fish.tug.isNotBlank()) MiniBadge(tugShort(fish.tug), Color(0xFFE8A83A)) else Spacer(Modifier.height(18.dp))
+                HooksetIcon(fish.hook)
             }
         }
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
+            ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
+        }
+    }
+}
+
+@Composable
+private fun HooksetIcon(value: String) {
+    val resource = when (value) { "precision" -> R.drawable.precision_hookset; "powerful" -> R.drawable.powerful_hookset; else -> 0 }
+    if (resource != 0) Image(painterResource(resource), contentDescription = hookLabel(value), modifier = Modifier.size(20.dp)) else Spacer(Modifier.size(20.dp))
+}
+
+@Composable
+private fun TechniqueArrow(label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 1.dp)) {
+        Text("→", color = PhoneMuted, fontSize = 19.sp, lineHeight = 20.sp)
+        Text(label, color = PhoneMuted, fontSize = 8.sp, maxLines = 1)
     }
 }
 
@@ -471,3 +495,17 @@ private fun formatWindow(start: Long, end: Long): String {
     val endFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
     return "${formatter.format(Date(start))} - ${endFormatter.format(Date(end))}"
 }
+
+private fun FishingSpot.displayPosition(): String {
+    val scale = mapSizeFactor.coerceAtLeast(100) / 100f
+    val xPos = 41f / scale * (x / 2048f) + 1f
+    val yPos = 41f / scale * (y / 2048f) + 1f
+    return "X ${"%.1f".format(Locale.US, xPos)}, Y ${"%.1f".format(Locale.US, yPos)}"
+}
+
+private fun stripGuideMarkup(value: String): String = value
+    .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+    .replace(Regex("<[^>]+>"), "")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&amp;", "&")
