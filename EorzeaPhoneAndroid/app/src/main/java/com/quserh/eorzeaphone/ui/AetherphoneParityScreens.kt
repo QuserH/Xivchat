@@ -240,6 +240,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
+    var messagesExpanded by remember { mutableStateOf(true) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back) {
             Box {
@@ -254,10 +255,31 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 }
             }
         }
-        LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
+        AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
+        }
         val rows = state.conversations.filter { it.category == ChatCategory.Tell && (query.isBlank() || it.title.contains(query, true) || it.lastMessage?.text?.contains(query, true) == true) }
         LazyColumn(Modifier.fillMaxSize().padding(top = 18.dp)) {
-            item("tabs-label") { Text("标签页", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 22.dp, top = 10.dp, bottom = 4.dp)) }
+            item("messages") {
+                val latest = rows.maxByOrNull { it.lastTimestamp ?: 0L }
+                val unread = rows.sumOf { it.unread }
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { messagesExpanded = !messagesExpanded }.padding(horizontal = 43.dp, vertical = 8.dp)) {
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AetherPurple), contentAlignment = Alignment.Center) {
+                        ImageGlyph(R.drawable.app_messages, Color.White, Modifier.size(20.dp))
+                    }
+                    Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                        Text("消息", color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(latest?.lastMessage?.text?.replace('\n', ' ') ?: "好友与其他玩家的私聊", color = AetherLightMuted,
+                            fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (unread > 0) Text(unread.coerceAtMost(99).toString(), color = Color.White, fontSize = 10.sp,
+                        modifier = Modifier.clip(CircleShape).background(Color(0xFFD94B55)).padding(horizontal = 6.dp, vertical = 2.dp))
+                    Text(if (messagesExpanded) "⌃" else "⌄", color = AetherLightMuted, fontSize = 17.sp, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+            if (messagesExpanded) items(rows, key = { "message-${it.key}" }) { conversation -> LightConversationRow(conversation, state) }
+            item("tabs-label") { Text("自定义筛选器", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 22.dp, top = 14.dp, bottom = 4.dp)) }
             items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
                 val selected = filter.id == state.selectedChatFilterId
                 val last = state.chats.lastOrNull(filter::matches)
@@ -269,27 +291,14 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                         Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         if (last != null) Text(last.text.replace('\n', ' '), color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(32.dp).padding(start = 4.dp)) {
-                        last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1) }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).padding(start = 4.dp)) {
+                        last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1, softWrap = false) }
                         ChatTabNotificationIcon(filter.alertPolicy != ChatAlertPolicy.Off) {
                             state.toggleChatFilterNotifications(filter)
                         }
                     }
                 }
             }
-            item("new-tab") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable(onClick = editTab).padding(horizontal = 51.dp, vertical = 10.dp),
-                ) {
-                    Text("＋", color = AetherPurple, fontSize = 22.sp)
-                    Text("新建标签页", color = AetherPurple, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 18.dp))
-                }
-            }
-            if (rows.isNotEmpty()) item("messages-label") {
-                Text("私聊", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 22.dp, top = 10.dp, bottom = 4.dp))
-            }
-            items(rows, key = { it.key }) { conversation -> LightConversationRow(conversation, state) }
             if (rows.isEmpty() && !state.connected) item("empty") {
                 Text("连接游戏后显示聊天消息", color = AetherLightMuted, fontSize = 14.sp,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))

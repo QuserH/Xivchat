@@ -267,16 +267,24 @@ object FishingMapImageLoader {
         val safeName = mapFile.replace('/', '_')
         val file = java.io.File(context.cacheDir, "maps/$safeName.jpg")
         if (file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.let { return@withContext it }
-        val url = "https://xivapi.com/m/$mapFile.jpg"
-        val bitmap = runCatching {
-            val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-                connectTimeout = 10_000
-                readTimeout = 15_000
-                setRequestProperty("User-Agent", "EorzeaPhone/0.4")
-            }
-            try { if (connection.responseCode == 200) connection.inputStream.use(BitmapFactory::decodeStream) else null }
-            finally { connection.disconnect() }
-        }.getOrNull() ?: return@withContext null
+        val area = mapFile.substringBefore('/')
+        val layer = mapFile.substringAfter('/', "00")
+        val urls = listOf(
+            "https://v2.xivapi.com/api/asset/map/$mapFile",
+            "https://xivapi.com/m/$area/$area.$layer.jpg",
+        )
+        val bitmap = urls.firstNotNullOfOrNull { url ->
+            runCatching {
+                val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 8_000
+                    readTimeout = 12_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "EorzeaPhone/0.4")
+                }
+                try { if (connection.responseCode in 200..299) connection.inputStream.use(BitmapFactory::decodeStream) else null }
+                finally { connection.disconnect() }
+            }.getOrNull()
+        } ?: return@withContext null
         runCatching { file.parentFile?.mkdirs(); java.io.FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) } }
         bitmap
     }

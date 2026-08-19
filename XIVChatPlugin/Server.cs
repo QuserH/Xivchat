@@ -113,6 +113,7 @@ namespace XIVChatPlugin {
         private ServerMapExpansion[]? _mapCatalog;
         private long _lastFishingFingerprint;
         private bool _hasFishingSnapshot;
+        private bool? _lastGameAvailability;
 
         private static readonly GameInventoryType[] PhoneInventoryTypes = [
             GameInventoryType.Inventory1,
@@ -120,7 +121,6 @@ namespace XIVChatPlugin {
             GameInventoryType.Inventory3,
             GameInventoryType.Inventory4,
             GameInventoryType.EquippedItems,
-            GameInventoryType.Crystals,
             GameInventoryType.ArmoryOffHand,
             GameInventoryType.ArmoryHead,
             GameInventoryType.ArmoryBody,
@@ -145,14 +145,11 @@ namespace XIVChatPlugin {
             GameInventoryType.RetainerPage5,
             GameInventoryType.RetainerPage6,
             GameInventoryType.RetainerPage7,
-            GameInventoryType.RetainerEquippedItems,
-            GameInventoryType.RetainerCrystals,
             GameInventoryType.FreeCompanyPage1,
             GameInventoryType.FreeCompanyPage2,
             GameInventoryType.FreeCompanyPage3,
             GameInventoryType.FreeCompanyPage4,
             GameInventoryType.FreeCompanyPage5,
-            GameInventoryType.FreeCompanyCrystals,
             GameInventoryType.HousingExteriorStoreroom,
             GameInventoryType.HousingInteriorStoreroom1,
             GameInventoryType.HousingInteriorStoreroom2,
@@ -357,7 +354,16 @@ namespace XIVChatPlugin {
 
         internal unsafe void OnFrameworkUpdate(IFramework framework) {
             var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
-            if (player != null && this._sendPlayerData) {
+            var gameAvailable = XIVChatPlugin.Plugin.ClientState.IsLoggedIn && player != null;
+            if (this._lastGameAvailability != gameAvailable) {
+                this._lastGameAvailability = gameAvailable;
+                this.BroadcastAvailability(gameAvailable);
+                if (!gameAvailable) {
+                    this._sendPlayerData = false;
+                    this.BroadcastMessage(EmptyPlayerData.Instance);
+                }
+            }
+            if (gameAvailable && this._sendPlayerData) {
                 this.BroadcastPlayerData();
                 this._sendPlayerData = false;
             }
@@ -411,8 +417,7 @@ namespace XIVChatPlugin {
                     continue;
                 }
 
-                var available = player != null;
-                client.Queue.Writer.TryWrite(new Availability(available));
+                client.Queue.Writer.TryWrite(new Availability(gameAvailable));
             }
 
             while (this._awaitingHousingLocation.TryDequeue(out var id)) {
@@ -543,7 +548,7 @@ namespace XIVChatPlugin {
         }
 
         private unsafe ServerInventory? BuildInventorySnapshot() {
-            if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
+            if (!XIVChatPlugin.Plugin.ClientState.IsLoggedIn || XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
                 return null;
             }
 
@@ -1993,12 +1998,14 @@ namespace XIVChatPlugin {
         }
 
         internal void OnLogIn() {
+            this._lastGameAvailability = true;
             this.BroadcastAvailability(true);
             // send player data on next framework update
             this._sendPlayerData = true;
         }
 
         internal void OnLogOut(int type, int code) {
+            this._lastGameAvailability = false;
             this.BroadcastAvailability(false);
             this.BroadcastPlayerData();
         }

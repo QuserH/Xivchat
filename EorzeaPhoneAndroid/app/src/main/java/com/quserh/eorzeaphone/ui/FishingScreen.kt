@@ -6,6 +6,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -293,7 +295,11 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
 private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () -> Unit) {
     val context = LocalContext.current
     var bitmap by remember(spot.mapFile) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(spot.mapFile) { bitmap = FishingMapImageLoader.load(context.applicationContext, spot.mapFile) }
+    var loadFinished by remember(spot.mapFile) { mutableStateOf(spot.mapFile.isBlank()) }
+    LaunchedEffect(spot.mapFile) {
+        bitmap = FishingMapImageLoader.load(context.applicationContext, spot.mapFile)
+        loadFinished = true
+    }
     ScreenFrame {
         ScreenHeader(spot.name, state, onBack = onBack, trailing = { Text("地图", color = PhoneMuted, fontSize = 12.sp) })
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -301,7 +307,11 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                 Text(listOf(spot.region, spot.zone).filter(String::isNotBlank).distinct().joinToString(" · "), color = PhoneMuted, fontSize = 12.sp)
                 if (bitmap == null) {
                     Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                        Text(if (spot.mapFile.isBlank()) "该钓场暂无地图资料" else "正在载入地图…", color = PhoneMuted)
+                        Text(when {
+                            spot.mapFile.isBlank() -> "该钓场暂无地图资料"
+                            loadFinished -> "地图资料暂时无法加载"
+                            else -> "正在载入地图…"
+                        }, color = PhoneMuted)
                     }
                 } else {
                     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))) {
@@ -351,29 +361,36 @@ private fun ConditionRow(label: String, value: String) {
 private fun FishingTechniquePath(fish: FishingFish, catalog: FishingCatalog) {
     Text("推荐钓法", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 5.dp))
     val nodes = (fish.path + FishingItemRef(fish.id, fish.name, fish.icon)).distinctBy { it.id }
-    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        items(nodes.size) { index ->
-            val node = nodes[index]
-            val technique = catalog.fish.firstOrNull { it.id == node.id }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TechniqueNode(node, technique)
-                if (index < nodes.lastIndex) Text("→", color = PhoneAccent, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 2.dp))
-            }
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        nodes.forEachIndexed { index, node ->
+            TechniqueNode(node, catalog.fish.firstOrNull { it.id == node.id })
+            if (index < nodes.lastIndex) Text("→", color = PhoneMuted, fontSize = 23.sp)
+        }
+    }
+    val hook = fish.hook.takeIf { it.isNotBlank() && it != "unknown" }
+    if (hook != null) {
+        Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("钓场脱钩统计", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+            Text(hookLabel(hook), color = Color(0xFF202124), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color.White).padding(horizontal = 12.dp, vertical = 5.dp))
         }
     }
 }
 
 @Composable
 private fun TechniqueNode(item: FishingItemRef, fish: FishingFish?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(66.dp)) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
-            ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
-            fish?.let {
-                if (it.tug.isNotBlank()) MiniBadge(tugShort(it.tug), PhoneAccent, Modifier.align(Alignment.TopEnd))
-                if (it.hook.isNotBlank()) MiniBadge(hookShort(it.hook), PhoneGreen, Modifier.align(Alignment.BottomEnd))
+    Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
+        ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
+        fish?.let {
+            if (it.tug.isNotBlank()) MiniBadge(tugShort(it.tug), Color(0xFFE8A83A), Modifier.align(Alignment.TopEnd))
+            if (it.hook.isNotBlank() && it.hook != "unknown") {
+                MiniBadge(if (it.hook == "precision") "准" else "强", PhoneGreen, Modifier.align(Alignment.BottomStart))
             }
         }
-        Text(item.name, color = PhoneText, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 3.dp))
     }
 }
 
@@ -391,7 +408,8 @@ private fun ItemPath(label: String, items: List<FishingItemRef>) {
 
 @Composable
 private fun MiniBadge(text: String, color: Color = PhoneMuted, modifier: Modifier = Modifier) {
-    Text(text, color = color, fontSize = 8.sp, maxLines = 1, modifier = modifier.clip(RoundedCornerShape(4.dp)).background(color.copy(alpha = .88f)).padding(horizontal = 3.dp, vertical = 1.dp))
+    Text(text, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = modifier.clip(CircleShape).background(color).padding(horizontal = 4.dp, vertical = 2.dp))
 }
 
 private fun FishingFish.weatherNames(catalog: FishingCatalog): String = weather.mapNotNull { catalog.weather[it]?.name }.joinToString(" / ")

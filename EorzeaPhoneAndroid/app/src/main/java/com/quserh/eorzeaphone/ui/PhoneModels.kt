@@ -112,6 +112,8 @@ enum class ChatAlertPolicy { All, Mentions, Off }
 
 internal fun formatCount(value: Long): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value)
 internal fun formatCount(value: Int): String = formatCount(value.toLong())
+private val excludedPhoneInventoryContainers = setOf(2001L, 11000L, 12001L, 22001L)
+private fun isPhoneInventoryContainer(type: Long): Boolean = type !in excludedPhoneInventoryContainers
 
 data class OutputChannel(val id: Int, val label: String)
 
@@ -559,7 +561,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             inventory.clear()
             for (i in 0 until items.length()) {
                 val o = items.getJSONObject(i)
-                inventory += GameInventoryItem(
+                val item = GameInventoryItem(
                     itemId = o.optLong("itemId"),
                     name = o.optString("name"),
                     quantity = o.optInt("quantity"),
@@ -569,6 +571,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
                     iconId = o.optInt("iconId"),
                     retainerId = o.optLong("retainerId"),
                 )
+                if (isPhoneInventoryContainer(item.container)) inventory += item
             }
             val ctrs = JSONArray(prefs.getString(scoped("inventoryContainerCache"), "[]"))
             inventoryContainers.clear()
@@ -1390,10 +1393,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             }
             is PhoneEvent.Inventory -> {
                 val activeIds = event.snapshot.retainers.filter { it.active }.mapTo(mutableSetOf()) { it.id }
-                val cachedRetainerItems = inventory.filter { it.retainerId != 0L && it.retainerId !in activeIds }
+                val cachedRetainerItems = inventory.filter { it.retainerId != 0L && it.retainerId !in activeIds && isPhoneInventoryContainer(it.container) }
                 inventory.clear()
                 inventory.addAll(cachedRetainerItems)
-                inventory.addAll(event.snapshot.items)
+                inventory.addAll(event.snapshot.items.filter { isPhoneInventoryContainer(it.container) })
                 inventoryContainers.clear()
                 inventoryContainers.addAll(event.snapshot.containers)
                 val oldRetainers = retainers.associateBy { it.id }
