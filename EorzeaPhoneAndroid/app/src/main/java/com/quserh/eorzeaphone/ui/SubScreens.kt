@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.ChatCategory
+import com.quserh.eorzeaphone.data.GameChatMessage
 import com.quserh.eorzeaphone.data.GameInventoryItem
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
@@ -247,6 +249,19 @@ private fun GeneralSettingsScreen(state: PhoneState) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = state.host, onValueChange = { state.host = it }, label = { Text("游戏电脑 IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) }, label = { Text("端口") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        }
+        SectionLabel("聊天")
+        SettingsGroup {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = state.chatWrapChars.toString(),
+                    onValueChange = { state.chatWrapChars = it.filter(Char::isDigit).toIntOrNull()?.coerceIn(4, 60) ?: state.chatWrapChars },
+                    label = { Text("每行最多字数（自动换行）") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
@@ -849,9 +864,11 @@ private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) 
             }
         } else {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(conv.messages, key = { "${it.timestamp}-${it.sender}-${it.text}" }) { chat ->
+                itemsIndexed(conv.messages, key = { i, chat -> "$i-${chat.timestamp}-${chat.sender}-${chat.text}" }) { i, chat ->
                     val isSelf = chat.self || chat.isFrom(state.profile?.name)
-                    ChatBubble(chat.sender.ifBlank { conv.category.label }, chat.text, isSelf, chat.timestamp)
+                    val name = if (isSelf) (state.profile?.name?.takeIf { it.isNotBlank() } ?: "我") else chat.sender.ifBlank { conv.category.label }
+                    val showSender = computeShowSender(conv.messages, i, state.profile?.name)
+                    ChatBubble(name, chat.text, isSelf, chat.timestamp, state.chatWrapChars, showSender)
                 }
             }
         }
@@ -896,27 +913,60 @@ private fun formatTalkTime(timestamp: Long): String {
 }
 
 @Composable
-private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: Long) {
+private fun computeShowSender(messages: List<GameChatMessage>, i: Int, selfName: String?): Boolean {
+    if (i <= 0) return true
+    val cur = messages[i]
+    val prev = messages[i - 1]
+    val curSelf = cur.self || cur.isFrom(selfName)
+    val prevSelf = prev.self || prev.isFrom(selfName)
+    if (curSelf != prevSelf) return true
+    // same sender: show the name only if the previous message was interrupted
+    // (different sender in between) or more than 1 minute has passed since the
+    // first message of the current run.
+    if (i >= 2 && messages[i - 2].isFrom(selfName) != prevSelf) return true
+    return (cur.timestamp - prev.timestamp) > 60_000L
+}
+
+@Composable
+private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: Long, wrapChars: Int, showSender: Boolean) {
     val timeLabel = timestampLabel(timestamp)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
-        Column(Modifier.fillMaxWidth(0.82f), horizontalAlignment = if (self) Alignment.End else Alignment.Start) {
-            Text(if (self) "我" else author, color = PhoneMuted, fontSize = 11.sp)
+        Column(
+            Modifier
+                .widthIn(max = 300.dp)
+                .wrapContentWidth(),
+            horizontalAlignment = if (self) Alignment.End else Alignment.Start,
+        ) {
+            if (showSender) {
+                Text(author, color = PhoneMuted, fontSize = 11.sp)
+            }
+            // adaptive bubble that wraps text at wrapChars and reserves a bottom row
+            // for the timestamp (bottom-left), independent of the text width.
             Box(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface)) {
-                Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                    Text(body, color = if (self) Color.White else PhoneText, fontSize = 14.sp)
-                    // small time in the bottom corner, on its own row so the bubble grows to fit
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 3.dp),
-                        horizontalArrangement = if (self) Arrangement.End else Arrangement.Start,
-                    ) {
-                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp)
+                Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
+                    Text(wrapByChars(body, wrapChars), color = if (self) Color.White else PhoneText, fontSize = 14.sp)
+                    Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                        Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomStart))
                     }
                 }
             }
         }
     }
+}
+
+private fun wrapByChars(text: String, charsPerLine: Int): String {
+    if (charsPerLine <= 0) return text
+    val sb = StringBuilder()
+    var count = 0
+    for (c in text) {
+        sb.append(c)
+        count++
+        if (count >= charsPerLine) {
+            sb.append('\n')
+            count = 0
+        }
+    }
+    return sb.toString().trimEnd('\n')
 }
 
 private fun timestampLabel(timestamp: Long): String {

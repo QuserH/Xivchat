@@ -315,6 +315,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var noteText by mutableStateOf(prefs.getString("noteText", "").orEmpty())
     var customShortcuts by mutableStateOf(loadCustomShortcuts())
     var chatDraft by mutableStateOf("")
+    private val _chatWrapChars = mutableStateOf(prefs.getInt("chatWrapChars", 20))
+    var chatWrapChars: Int
+        get() = _chatWrapChars.value
+        set(value) { _chatWrapChars.value = value; prefs.edit().putInt("chatWrapChars", value).apply() }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
     var selectedChatFilterId by mutableStateOf("all")
