@@ -15,10 +15,13 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.quserh.eorzeaphone.data.GameChatMessage
 import com.quserh.eorzeaphone.data.ChatCategory
+import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameInventoryContainer
 import com.quserh.eorzeaphone.data.GameInventoryItem
 import com.quserh.eorzeaphone.data.GameWallet
+import com.quserh.eorzeaphone.data.GameWalletEntry
 import com.quserh.eorzeaphone.data.GameWeather
+import com.quserh.eorzeaphone.data.GameWeatherWindow
 import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.GameHousingLocation
 import com.quserh.eorzeaphone.data.GameDailies
@@ -344,6 +347,7 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         ResetReminderReceiver.configure(appContext, resetNotifications)
         loadSavedChats()
         loadSavedInventory()
+        loadSavedExtras()
         if (prefs.getBoolean("autoConnect", true)) {
             connect()
         }
@@ -464,6 +468,141 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             .putString("inventoryItemCache", items.toString())
             .putString("inventoryContainerCache", ctrs.toString())
             .apply()
+    }
+
+    private fun loadSavedExtras() {
+        runCatching {
+            val w = prefs.getString("walletCache", "")
+            if (!w.isNullOrBlank()) {
+                val o = JSONObject(w)
+                val gil = o.optLong("gil")
+                val arr = o.optJSONArray("entries") ?: JSONArray()
+                val entries = buildList(arr.length()) {
+                    for (i in 0 until arr.length()) {
+                        val e = arr.getJSONObject(i)
+                        add(GameWalletEntry(e.optLong("itemId"), e.optString("name", ""), e.optLong("amount"), e.optLong("cap"), e.optString("section", ""), e.optInt("iconId")))
+                    }
+                }
+                wallet = GameWallet(gil, entries)
+            }
+
+            val j = prefs.getString("jobsCache", "")
+            if (!j.isNullOrBlank()) {
+                val arr = JSONArray(j)
+                jobs.clear()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    jobs += GameJob(o.optLong("jobId"), o.optString("name", ""), o.optString("abbreviation", ""), o.optString("category", ""), o.optInt("level"), o.optBoolean("active"), o.optInt("itemLevel"))
+                }
+            }
+
+            val d = prefs.getString("dailiesCache", "")
+            if (!d.isNullOrBlank()) {
+                val o = JSONObject(d)
+                val arr = o.optJSONArray("entries") ?: JSONArray()
+                val entries = buildList(arr.length()) {
+                    for (i in 0 until arr.length()) {
+                        val e = arr.getJSONObject(i)
+                        add(GameDailyEntry(e.optString("id", ""), e.optString("label", ""), e.optBoolean("weekly"), e.optBoolean("automatic"), e.optBoolean("available"), e.optBoolean("complete"), e.optInt("remaining"), e.optInt("goal"), e.optString("note", "")))
+                    }
+                }
+                dailies = GameDailies(o.optLong("nextDailyResetUnix"), o.optLong("nextWeeklyResetUnix"), entries)
+            }
+
+            val a = prefs.getString("activityCache", "")
+            if (!a.isNullOrBlank()) {
+                val o = JSONObject(a)
+                activity = GameActivity(
+                    o.optLong("sessionStartedUnix"), o.optLong("sessionPlaySeconds"), o.optLong("sessionExpGained"), o.optInt("sessionLevelsGained"), o.optLong("sessionGilEarned"), o.optInt("sessionDutiesCompleted"),
+                    o.optLong("todayPlaySeconds"), o.optLong("todayExpGained"), o.optInt("todayLevelsGained"), o.optLong("todayGilEarned"), o.optInt("todayDutiesCompleted"),
+                    o.optInt("mountsOwned"), o.optInt("mountsTotal"), o.optInt("minionsOwned"), o.optInt("minionsTotal"), o.optInt("retainerCount"), o.optInt("venturesReady"), o.optInt("venturesActive"),
+                )
+            }
+
+            val w2 = prefs.getString("weatherCache", "")
+            if (!w2.isNullOrBlank()) {
+                val o = JSONObject(w2)
+                val arr = o.optJSONArray("forecast") ?: JSONArray()
+                val forecast = buildList(arr.length()) {
+                    for (i in 0 until arr.length()) {
+                        val e = arr.getJSONObject(i)
+                        add(GameWeatherWindow(e.optString("name", ""), e.optInt("minutesFromNow"), e.optInt("eorzeaBell")))
+                    }
+                }
+                weather = GameWeather(o.optString("zone", ""), o.optString("current", ""), forecast)
+            }
+
+            val h = prefs.getString("housingCache", "")
+            if (!h.isNullOrBlank()) {
+                val o = JSONObject(h)
+                housing = GameHousingLocation(
+                    if (o.isNull("ward")) null else o.optInt("ward"),
+                    if (o.isNull("plot")) null else o.optInt("plot"),
+                    o.optBoolean("exterior"),
+                    if (o.isNull("apartmentWing")) null else o.optInt("apartmentWing"),
+                )
+            }
+        }
+    }
+
+    private fun saveWallet() {
+        val w = wallet ?: return
+        val arr = JSONArray()
+        w.entries.forEach { e ->
+            arr.put(JSONObject().apply {
+                put("itemId", e.itemId); put("name", e.name); put("amount", e.amount); put("cap", e.cap); put("section", e.section); put("iconId", e.iconId)
+            })
+        }
+        prefs.edit().putString("walletCache", JSONObject().apply { put("gil", w.gil); put("entries", arr) }.toString()).apply()
+    }
+
+    private fun saveJobs() {
+        val arr = JSONArray()
+        jobs.forEach { j ->
+            arr.put(JSONObject().apply {
+                put("jobId", j.jobId); put("name", j.name); put("abbreviation", j.abbreviation); put("category", j.category); put("level", j.level); put("active", j.active); put("itemLevel", j.itemLevel)
+            })
+        }
+        prefs.edit().putString("jobsCache", arr.toString()).apply()
+    }
+
+    private fun saveDailies() {
+        val d = dailies ?: return
+        val arr = JSONArray()
+        d.entries.forEach { e ->
+            arr.put(JSONObject().apply {
+                put("id", e.id); put("label", e.label); put("weekly", e.weekly); put("automatic", e.automatic); put("available", e.available); put("complete", e.complete); put("remaining", e.remaining); put("goal", e.goal); put("note", e.note)
+            })
+        }
+        prefs.edit().putString("dailiesCache", JSONObject().apply { put("nextDailyResetUnix", d.nextDailyResetUnix); put("nextWeeklyResetUnix", d.nextWeeklyResetUnix); put("entries", arr) }.toString()).apply()
+    }
+
+    private fun saveActivity() {
+        val a = activity ?: return
+        prefs.edit().putString("activityCache", JSONObject().apply {
+            put("sessionStartedUnix", a.sessionStartedUnix); put("sessionPlaySeconds", a.sessionPlaySeconds); put("sessionExpGained", a.sessionExpGained); put("sessionLevelsGained", a.sessionLevelsGained); put("sessionGilEarned", a.sessionGilEarned); put("sessionDutiesCompleted", a.sessionDutiesCompleted)
+            put("todayPlaySeconds", a.todayPlaySeconds); put("todayExpGained", a.todayExpGained); put("todayLevelsGained", a.todayLevelsGained); put("todayGilEarned", a.todayGilEarned); put("todayDutiesCompleted", a.todayDutiesCompleted)
+            put("mountsOwned", a.mountsOwned); put("mountsTotal", a.mountsTotal); put("minionsOwned", a.minionsOwned); put("minionsTotal", a.minionsTotal); put("retainerCount", a.retainerCount); put("venturesReady", a.venturesReady); put("venturesActive", a.venturesActive)
+        }.toString()).apply()
+    }
+
+    private fun saveWeather() {
+        val w = weather ?: return
+        val arr = JSONArray()
+        w.forecast.forEach { f ->
+            arr.put(JSONObject().apply { put("name", f.name); put("minutesFromNow", f.minutesFromNow); put("eorzeaBell", f.eorzeaBell) })
+        }
+        prefs.edit().putString("weatherCache", JSONObject().apply { put("zone", w.zone); put("current", w.current); put("forecast", arr) }.toString()).apply()
+    }
+
+    private fun saveHousing() {
+        val h = housing ?: return
+        prefs.edit().putString("housingCache", JSONObject().apply {
+            if (h.ward != null) put("ward", h.ward) else put("ward", JSONObject.NULL)
+            if (h.plot != null) put("plot", h.plot) else put("plot", JSONObject.NULL)
+            put("exterior", h.exterior)
+            if (h.apartmentWing != null) put("apartmentWing", h.apartmentWing) else put("apartmentWing", JSONObject.NULL)
+        }.toString()).apply()
     }
 
     fun updateShellSize(width: Int, height: Int) {
@@ -738,15 +877,29 @@ class PhoneState(context: Context, scope: CoroutineScope) {
             is PhoneEvent.Wallet -> {
                 wallet = event.wallet
                 if (sessionGilBaseline == null) sessionGilBaseline = event.wallet.gil
+                saveWallet()
             }
-            is PhoneEvent.Weather -> weather = event.weather
+            is PhoneEvent.Weather -> {
+                weather = event.weather
+                saveWeather()
+            }
             is PhoneEvent.Jobs -> {
                 jobs.clear()
                 jobs.addAll(event.jobs)
+                saveJobs()
             }
-            is PhoneEvent.Housing -> housing = event.location
-            is PhoneEvent.Dailies -> dailies = event.dailies
-            is PhoneEvent.Activity -> activity = event.activity
+            is PhoneEvent.Housing -> {
+                housing = event.location
+                saveHousing()
+            }
+            is PhoneEvent.Dailies -> {
+                dailies = event.dailies
+                saveDailies()
+            }
+            is PhoneEvent.Activity -> {
+                activity = event.activity
+                saveActivity()
+            }
             is PhoneEvent.Collections -> collections = event.collections
             is PhoneEvent.Profile -> {
                 profile = event.profile
