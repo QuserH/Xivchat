@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -940,12 +941,12 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
             if (showSender) {
                 Text(author, color = PhoneMuted, fontSize = 11.sp)
             }
-            // adaptive bubble that wraps text at wrapChars and reserves a bottom row
-            // for the timestamp (bottom-left), independent of the text width.
+            // adaptive bubble that follows the text width; the time row spans the
+            // full bubble width so the timestamp sits at the bottom-right corner.
             Box(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(12.dp)).background(if (self) PhoneAccent else PhoneSurface)) {
-                Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
+                Column(Modifier.width(IntrinsicSize.Max).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
                     Text(wrapByChars(body, wrapChars), color = if (self) Color.White else PhoneText, fontSize = 14.sp)
-                    Box(Modifier.padding(top = 2.dp)) {
+                    Box(Modifier.fillMaxWidth().padding(top = 2.dp), contentAlignment = Alignment.CenterEnd) {
                         Text(timeLabel, color = if (self) Color.White.copy(alpha = 0.75f) else PhoneMuted, fontSize = 10.sp)
                     }
                 }
