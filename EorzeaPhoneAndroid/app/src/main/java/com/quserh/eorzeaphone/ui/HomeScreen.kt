@@ -447,14 +447,21 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
     ) {
         AppCatalog.dock.forEach { app ->
             var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
+            val interaction = remember(app.id, state) { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
+            val scale by animateFloatAsState(if (pressed) 0.86f else 1f, spring(dampingRatio = .62f, stiffness = 520f), label = "dock-press")
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(58.dp)
                     .onGloballyPositioned { bounds = it.boundsInRoot() }
-                    .clip(RoundedCornerShape(14.dp))
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(MaterialTheme.shapes.large)
                     .background(app.color)
-                    .clickable { if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); state.open(app, bounds) },
+                    .clickable(interactionSource = interaction, indication = null) {
+                        if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        state.open(app, bounds)
+                    },
             ) {
                 Image(
                     painter = painterResource(app.icon),

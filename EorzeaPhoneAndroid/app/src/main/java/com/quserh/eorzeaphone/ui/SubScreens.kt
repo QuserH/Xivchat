@@ -909,7 +909,7 @@ private fun ConversationListTab(state: PhoneState) {
                 if (visibleConvs.isEmpty()) {
                     item { Text("该标签暂无会话", color = PhoneMuted, modifier = Modifier.padding(20.dp)) }
                 }
-                items(visibleConvs, key = { it.key }) { conv -> ConversationRow(conv, state) }
+                items(visibleConvs, key = { it.key }) { conv -> Box(Modifier.animateItem()) { ConversationRow(conv, state) } }
             }
         }
     }
@@ -1147,6 +1147,7 @@ fun WalletScreen(state: PhoneState) {
                 wallet.entries.groupBy { it.section }.forEach { (section, entries) ->
                     item { SectionLabel(section) }
                     items(entries, key = { "${it.itemId}-${it.section}" }) { entry ->
+                        Box(Modifier.animateItem()) {
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
                             ItemIcon(entry.iconId, Modifier.size(34.dp), fallback = entry.name.take(1))
                             Spacer(Modifier.width(12.dp))
@@ -1163,6 +1164,7 @@ fun WalletScreen(state: PhoneState) {
                                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(6.dp).clip(CircleShape),
                                 )
                             }
+                        }
                         }
                     }
                 }

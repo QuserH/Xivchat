@@ -1,9 +1,12 @@
 package com.quserh.eorzeaphone.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -80,7 +83,14 @@ fun FeatureFrame(title: String, state: PhoneState, trailing: (@Composable () -> 
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
         )
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) { content() }
+            var appeared by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { appeared = true }
+            AnimatedVisibility(
+                visible = appeared,
+                enter = fadeIn(tween(260)) + slideInVertically(tween(300), initialOffsetY = { it / 18 }),
+            ) {
+                Box(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) { content() }
+            }
         }
     }
 }
@@ -207,12 +217,12 @@ fun DailiesScreen(state: PhoneState) {
             item { ResetHero("每日重置", daily ?: Duration.ZERO, Color(0xFF237D72)) }
             item { ResetHero("每周重置", weekly ?: Duration.ZERO, Color(0xFF4D62A8)) }
             item { Text("每日", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
-            items(data.entries.filter { !it.weekly }, key = { it.id }) { DailyDataRow(state, it) }
+            items(data.entries.filter { !it.weekly }, key = { it.id }) { Box(Modifier.animateItem()) { DailyDataRow(state, it) } }
             item { Text("每周", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
-            items(data.entries.filter { it.weekly }, key = { it.id }) { DailyDataRow(state, it) }
+            items(data.entries.filter { it.weekly }, key = { it.id }) { Box(Modifier.animateItem()) { DailyDataRow(state, it) } }
             if (state.retainers.any { it.ventureId > 0 }) {
                 item { Text("雇员探险", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
-                items(state.retainers.filter { it.ventureId > 0 }, key = { it.id }) { VentureRow(it, now) }
+                items(state.retainers.filter { it.ventureId > 0 }, key = { it.id }) { Box(Modifier.animateItem()) { VentureRow(it, now) } }
             }
         }
     }
@@ -254,6 +264,7 @@ fun SubmarineScreen(state: PhoneState) {
                 }
             } else {
                 items(vessels, key = { it.name }) { v ->
+                    Box(Modifier.animateItem()) {
                     val remaining = (v.returnUnix - now).coerceAtLeast(0L)
                     val done = remaining == 0L
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (done) Color(0xFF1F3A2C) else PhoneSurface).padding(14.dp)) {
@@ -265,6 +276,7 @@ fun SubmarineScreen(state: PhoneState) {
                             if (done) "可以收取探险成果" else "返航剩余 ${countdownLabel(remaining)}",
                             color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp),
                         )
+                    }
                     }
                 }
             }

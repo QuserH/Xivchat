@@ -158,7 +158,9 @@ fun FishingScreen(state: PhoneState) {
                     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                         if (filtered.isEmpty()) item { Text(if (alarmsOnly) "还没有设置捕鱼闹钟" else "没有符合条件的鱼", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(34.dp)) }
                         items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
-                            FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds) { selected = fishRow }
+                            Box(Modifier.animateItem()) {
+                                FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds) { selected = fishRow }
+                            }
                         }
                     }
                 }

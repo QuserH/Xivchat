@@ -304,7 +304,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
             if (tabsExpanded) items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
                 val selected = filter.id == state.selectedChatFilterId
                 val last = state.chats.lastOrNull(filter::matches)
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id }.padding(horizontal = 43.dp, vertical = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem().clickable { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id }.padding(horizontal = 43.dp, vertical = 8.dp)) {
                     Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
                         Text(filter.label.take(1), color = if (selected) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
@@ -339,7 +339,9 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                     Text(if (messagesExpanded) "⌃" else "⌄", color = AetherLightMuted, fontSize = 17.sp, modifier = Modifier.padding(start = 8.dp))
                 }
             }
-            if (messagesExpanded) items(sortedRows, key = { "message-${it.key}" }) { conversation -> LightConversationRow(conversation, state) }
+            if (messagesExpanded) items(sortedRows, key = { "message-${it.key}" }) { conversation ->
+                Box(Modifier.animateItem()) { LightConversationRow(conversation, state) }
+            }
             if (rows.isEmpty() && !state.connected) item("empty") {
                 Text("连接游戏后显示聊天消息", color = AetherLightMuted, fontSize = 14.sp,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
