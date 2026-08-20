@@ -259,7 +259,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
-    var messagesExpanded by remember { mutableStateOf(true) }
+    var messagesExpanded by remember { mutableStateOf(false) }
     var tabsExpanded by remember { mutableStateOf(true) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back) {
@@ -293,11 +293,11 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 .padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
-                messagesExpanded = true; tabsExpanded = false
-            }
             ChatGroupChip("标签", 0, notify = true, active = tabsExpanded) {
                 tabsExpanded = true; messagesExpanded = false
+            }
+            ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
+                messagesExpanded = true; tabsExpanded = false
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
@@ -556,7 +556,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             modifier = Modifier.fillMaxWidth().combinedClickable(
                 onClick = { state.openConversation(conversation) },
                 onLongClick = { menuOpen = true },
-            ).padding(horizontal = 43.dp, vertical = 8.dp),
+            ).padding(vertical = 10.dp),
         ) {
             Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(lightConversationColor(conversation.category)), contentAlignment = Alignment.Center) {
                 Text(conversation.title.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)

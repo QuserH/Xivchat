@@ -1098,7 +1098,6 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun markPendingSendsFailed() {
-        if (pendingSelfTexts.isEmpty()) return
         fun mark(list: MutableList<GameChatMessage>) {
             for (index in list.indices) {
                 if (list[index].sendState == 1) list[index] = list[index].copy(sendState = 2)
