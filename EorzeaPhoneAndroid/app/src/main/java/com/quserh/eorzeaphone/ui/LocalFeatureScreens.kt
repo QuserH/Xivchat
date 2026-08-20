@@ -28,9 +28,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,15 +69,19 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeatureFrame(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().background(PhoneBackground).windowInsetsPadding(WindowInsets.statusBars).windowInsetsPadding(WindowInsets.navigationBars)) {
-        Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = state::back, modifier = Modifier.size(50.dp)) { Text("‹", color = PhoneAccent, fontSize = 36.sp) }
-            Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            trailing?.invoke()
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) },
+            navigationIcon = { IconButton(onClick = state::back) { Text("‹", color = PhoneAccent, fontSize = 30.sp) } },
+            actions = { trailing?.invoke() },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+        )
+        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) { content() }
         }
-        Box(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) { content() }
     }
 }
 

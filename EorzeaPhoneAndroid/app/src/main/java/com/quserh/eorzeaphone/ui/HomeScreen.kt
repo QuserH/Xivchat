@@ -322,7 +322,7 @@ private fun HomeTile(
                         scaleY = if (dragging) 1f else scale
                         rotationZ = if (editDrag && !dragging) rotation else 0f
                     }
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(MaterialTheme.shapes.large)
                     .background(app.color),
             ) {
                 Image(
@@ -439,8 +439,8 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .height(92.dp)
-            .clip(RoundedCornerShape(25.dp))
-            .background(if (darkTheme) Color(0x7A323044) else MaterialTheme.colorScheme.surface.copy(alpha = .90f))
+            .clip(MaterialTheme.shapes.extraLarge)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .96f))
             .padding(horizontal = 22.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
