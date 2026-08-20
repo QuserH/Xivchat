@@ -278,7 +278,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 !state.isConversationHidden(c) &&
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
-        }
+        }.distinctBy { it.key }
         val sortedRows = rows.sortedWith(
             compareByDescending<ChatConversation> { state.isConversationPinned(it) }.thenByDescending { it.lastTimestamp ?: 0L },
         )
