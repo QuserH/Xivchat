@@ -40,16 +40,17 @@ data class GameChatMessage(
     }
 
     fun displaySender(): String {
-        val n = senderName?.takeIf { it.isNotBlank() } ?: sender.displayPlayerName()
+        val n = senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
         val w = senderWorld?.takeIf { it.isNotBlank() }
-        return if (w == null || n.contains("@")) n else "$n@$w"
+        if (!n.isNullOrBlank()) return if (w.isNullOrBlank() || n.contains('@')) n else "$n@$w"
+        return sender.displayPlayerName()
     }
 
     fun tellTarget(): String {
-        val n = senderName?.takeIf { it.isNotBlank() }
+        val n = senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
         val w = senderWorld?.takeIf { it.isNotBlank() }
-        if (n != null && w != null) return "$n@$w"
-        return sender.replace(Regex("[\\uE000-\\uF8FF]+"), "@").trim()
+        if (!n.isNullOrBlank()) return if (w.isNullOrBlank()) n else "$n@$w"
+        return sender.stripPlayerDecorations()
     }
 
     fun conversationTitle(): String = when {
@@ -93,19 +94,32 @@ internal fun linkshellChannelName(channel: Int): String = when (channel) {
     else -> "通讯贝"
 }
 
+private val PlayerNameDecorations = charArrayOf(
+    '★', '☆', '♡', '♥', '✿', '❀', '⚜', '＊', '*', ' ', '>', '<',
+    '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097',
+)
+
+private val PlayerNameSeparatorRegex = Regex("[\uE000-\uF8FF\u200B\u2060\u00AD\uFEFF\u273F\u2740\u2741]+")
+
+internal fun String.stripPlayerDecorations(): String {
+    var s = this.trim()
+    s = s.trimStart(*PlayerNameDecorations)
+    s = s.trim()
+    s = s.replace(PlayerNameSeparatorRegex, "@")
+    val at = s.indexOf('@')
+    if (at > 0) {
+        val name = s.substring(0, at).trimStart(*PlayerNameDecorations).trim()
+        s = name + s.substring(at)
+    }
+    return s
+}
+
 internal fun String.normalizedPlayerName(): String = this
-    .trim()
-    .trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097')
-    .trim()
+    .stripPlayerDecorations()
+    .replace("@", "")
     .lowercase()
 
-internal fun String.displayPlayerName(): String {
-    val flower = this
-        .replace(Regex("[\\uE000-\\uF8FF]+"), "@")
-        .trimStart('★', '☆', '♡', '♥', '✿', '❀', '⚜', '＊', '*', ' ', '>', '<')
-        .trim()
-    return flower.ifBlank { "对方" }
-}
+internal fun String.displayPlayerName(): String = stripPlayerDecorations().ifBlank { "对方" }
 
 data class GameInventoryItem(
     val itemId: Long,

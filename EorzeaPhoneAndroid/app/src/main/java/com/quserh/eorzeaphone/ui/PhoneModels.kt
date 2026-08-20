@@ -46,6 +46,7 @@ import com.quserh.eorzeaphone.data.PhoneNotifier
 import com.quserh.eorzeaphone.data.ResetReminderReceiver
 import com.quserh.eorzeaphone.data.normalizedPlayerName
 import com.quserh.eorzeaphone.data.displayPlayerName
+import com.quserh.eorzeaphone.data.stripPlayerDecorations
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -139,7 +140,7 @@ class ChatConversation(
     val key: String,
     val category: ChatCategory,
     title: String,
-    val tellRecipient: String = "",
+    var tellRecipient: String = "",
 ) {
     var title by mutableStateOf(title)
     val messages = mutableStateListOf<GameChatMessage>()
@@ -548,7 +549,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             connect()
         }
     }
-    val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
+    val friends = mutableStateListOf<PhoneFriend>().apply {
+        addAll(loadFriends())
+        repairTellRecipients()
+    }
 
     private fun loadProfileCache(): com.quserh.eorzeaphone.data.PlayerProfile? = runCatching {
         val s = prefs.getString(scoped("profileCache"), "")
@@ -601,6 +605,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             add(GameChatChunk(c.optString("text").takeIf { c.has("text") && !c.isNull("text") }, c.optInt("icon", -1).takeIf { it >= 0 }, c.optBoolean("italic"), c.optLong("foreground", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }))
                         }
                     } } ?: emptyList(),
+                    senderName = o.optString("senderName").takeIf { it.isNotBlank() },
+                    senderWorld = o.optString("senderWorld").takeIf { it.isNotBlank() },
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -629,6 +635,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     put("italic", c.italic)
                     if (c.foreground != null) put("foreground", c.foreground)
                 }) } })
+                if (m.senderName != null) put("senderName", m.senderName)
+                if (m.senderWorld != null) put("senderWorld", m.senderWorld)
             })
         }
         prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()
@@ -1007,7 +1015,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null; fishingLog = null
             friends.clear()
             profile = loadProfileCache()
-            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); loadSubmarine(); friends.addAll(loadFriends())
+            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); loadSubmarine(); friends.addAll(loadFriends()); repairTellRecipients()
         }
     }
 
@@ -1129,15 +1137,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val trimmed = text.trim()
         if (!connected || trimmed.isBlank()) return
         val payload = if (conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank()) {
-            var recipient = conv.tellRecipient.trim()
-            recipient = recipient.replace(Regex("[\\uE000-\\uE0FF]+"), "@")
-            val target = if (recipient.contains('@')) {
-                recipient
+            val target = resolveTellTarget(conv.tellRecipient)
+            if (target.isBlank()) {
+                trimmed
             } else {
-                val world = friends.firstOrNull { it.name.normalizedPlayerName() == recipient.normalizedPlayerName() }?.world
-                if (world.isNullOrBlank()) recipient else "$recipient@$world"
+                "/tell $target $trimmed"
             }
-            "/tell $target $trimmed"
         } else {
             trimmed
         }
@@ -1156,6 +1161,36 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         pendingSelfTexts["${conv.key}\u0000$trimmed"] = ""
         saveChats()
         chatDraft = ""
+    }
+    private fun resolveTellTarget(raw: String): String {
+        var r = raw.stripPlayerDecorations()
+        if (r.isBlank() || r.contains('@')) return r
+        val candidates = friends
+            .filter { it.world.isNotBlank() }
+            .map { it.name.stripPlayerDecorations() to it.world }
+            .filter { it.first.isNotBlank() }
+            .distinctBy { it.first }
+            .sortedByDescending { it.first.length }
+        val suffixMatch = candidates.firstOrNull { (name, world) -> r.startsWith(name) && r.length > name.length && r.endsWith(world) }
+        val match = suffixMatch ?: candidates.firstOrNull { (name, _) -> r.startsWith(name) }
+        return if (match != null) "${match.first}@${match.second}" else r
+    }
+
+    private fun repairTellRecipients() {
+        var changed = false
+        for (conv in conversations) {
+            if (conv.category != ChatCategory.Tell) continue
+            val fixed = resolveTellTarget(conv.tellRecipient)
+            if (fixed.isNotBlank() && fixed != conv.tellRecipient) {
+                conv.tellRecipient = fixed
+                changed = true
+            }
+            if (fixed.contains('@') && !conv.title.contains('@')) {
+                conv.title = fixed
+                changed = true
+            }
+        }
+        if (changed) saveChats()
     }
 
     fun markPendingSendsFailed() {
@@ -1308,6 +1343,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
         val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
         conversationByKey[key]?.let { return it }
+        if (message.category == ChatCategory.Tell || routeToTell) {
+            val existing = conversations.firstOrNull { conv ->
+                conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank() &&
+                    conv.tellRecipient.normalizedPlayerName() == message.sender.normalizedPlayerName()
+            }
+            if (existing != null) {
+                conversationByKey[key] = existing
+                return existing
+            }
+        }
         if (message.category == ChatCategory.System) return null
         // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
         // sent message must keep the group conversation visible in the message list.
@@ -1325,8 +1370,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val conv = ChatConversation(
             key,
             if (routeToTell) ChatCategory.Tell else message.category,
-            if (routeToTell) message.sender.displayPlayerName() else (groupTitleOverride(key) ?: groupTitle),
-            if (routeToTell) message.sender else message.tellRecipient(),
+            if (routeToTell) message.displaySender() else (groupTitleOverride(key) ?: groupTitle),
+            if (routeToTell) message.tellTarget() else message.tellRecipient(),
         )
         conv.notify = key !in mutedConversations
         conversations.add(0, conv)
@@ -1336,13 +1381,20 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun ensureTellConversation(recipient: String, displayName: String? = null): ChatConversation {
         val key = "tell:${recipient.normalizedPlayerName()}"
-        return conversationByKey.getOrPut(key) {
-            val title = displayName?.takeIf { it.isNotBlank() } ?: recipient.displayPlayerName()
-            val conv = ChatConversation(key, ChatCategory.Tell, title, recipient)
-            conv.notify = key !in mutedConversations
-            conversations.add(0, conv)
-            conv
+        conversationByKey[key]?.let { return it }
+        conversations.firstOrNull { conv ->
+            conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank() &&
+                conv.tellRecipient.normalizedPlayerName() == recipient.normalizedPlayerName()
+        }?.let { existing ->
+            conversationByKey[key] = existing
+            return existing
         }
+        val title = displayName?.takeIf { it.isNotBlank() } ?: recipient.displayPlayerName()
+        val conv = ChatConversation(key, ChatCategory.Tell, title, recipient)
+        conv.notify = key !in mutedConversations
+        conversations.add(0, conv)
+        conversationByKey[key] = conv
+        return conv
     }
 
     fun saveNote(text: String) {
@@ -1488,8 +1540,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun startTell(friend: PhoneFriend) {
-        val recipient = if (friend.world.isBlank()) friend.name else "${friend.name}@${friend.world}"
-        val conv = ensureTellConversation(recipient, friend.name)
+        val cleanName = friend.name.stripPlayerDecorations()
+        val recipient = if (friend.world.isBlank()) cleanName else "$cleanName@${friend.world}"
+        val conv = ensureTellConversation(recipient, cleanName)
         openConversation(conv)
         selectedApp = AppCatalog.dock.first()
         screen = PhoneScreen.Chat
@@ -1635,6 +1688,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 friends.clear()
                 friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId) })
                 saveFriends()
+                repairTellRecipients()
             }
             is PhoneEvent.Chat -> {
                 cacheChannelColor(event.message)
@@ -1642,6 +1696,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (event.message.channel == 12) {
                     val echoConv = getOrCreateConversation(event.message)
                     if (echoConv != null) {
+                        if (echoConv.category == ChatCategory.Tell) {
+                            val liveTarget = event.message.tellTarget()
+                            if (liveTarget.isNotBlank() && echoConv.tellRecipient != liveTarget) echoConv.tellRecipient = liveTarget
+                        }
                         val dup = echoConv.messages.lastOrNull()?.let { kotlin.math.abs(it.timestamp - event.message.timestamp) < 100L && it.text == event.message.text && it.sender == event.message.sender }
                         if (dup != true) {
                             chats.add(event.message)
@@ -1649,7 +1707,6 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             saveChats()
                         }
                     }
-                    pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
                     if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
                     return
                 }
@@ -1663,9 +1720,11 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         saveChats()
                     } else {
                         conv.add(event.message)
-                        if (conv.category == ChatCategory.Tell && event.message.senderName?.isNotBlank() == true) {
+                        if (conv.category == ChatCategory.Tell) {
                             val liveTitle = event.message.displaySender()
                             if (conv.title != liveTitle) conv.title = liveTitle
+                            val liveTarget = event.message.tellTarget()
+                            if (liveTarget.isNotBlank() && conv.tellRecipient != liveTarget) conv.tellRecipient = liveTarget
                         }
                         if (hiddenConversations.remove(conv.key)) {
                             prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
