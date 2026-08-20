@@ -549,20 +549,20 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
 private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: Boolean, onClick: () -> Unit) {
     val bg = if (active) AetherPurple else AetherLightControl
     val fg = if (active) Color.White else AetherLightText
-    Box {
-        Text(
-            label, color = fg, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 7.dp),
-        )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 6.dp),
+    ) {
+        Text(label, color = fg, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
         if (unread > 0) {
-            Box(
-                Modifier.align(Alignment.TopEnd).padding(top = (-5).dp, end = (-5).dp).size(18.dp).clip(CircleShape)
-                    .background(if (notify) Color(0xFFD93025) else Color(0xFF9AA0A6)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-            }
+            Text(
+                if (unread > 99) "99+" else unread.toString(),
+                color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 6.dp).clip(CircleShape)
+                    .background(if (notify) Color(0xFFD93025) else Color(0xFF9AA0A6))
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+            )
         }
     }
 }

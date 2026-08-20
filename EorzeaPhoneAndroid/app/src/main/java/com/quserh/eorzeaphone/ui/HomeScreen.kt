@@ -151,7 +151,7 @@ private fun HomeEditBar(state: PhoneState, homeText: Color) {
 private fun SocialPage(state: PhoneState, page: Int) {
     Column(Modifier.fillMaxSize()) {
         if (page == 0) {
-            WeatherWidget(state, Modifier.padding(horizontal = LocalContentMargin.current.dp, vertical = 8.dp))
+            WeatherWidget(state, Modifier.padding(vertical = 8.dp))
         }
         AppsGrid(state.appsForPage(page), page, state)
     }
