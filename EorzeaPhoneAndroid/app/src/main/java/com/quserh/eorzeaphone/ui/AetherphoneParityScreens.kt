@@ -568,13 +568,21 @@ private fun channelTag(channel: Int): String = when (channel) {
 // Local / group chat lines carry a "[频道]<名字>" or "名字：" prefix baked into the
 // text. The app already shows the author separately, so strip it before rendering.
 private fun cleanChatText(raw: String, author: String): String {
-    val bracket = Regex("^(?:\\[[^\\]]*\\]\\s*)?(?:<[^>]*>\\s*|＞?[^：:]{1,24}[：:]\\s*)").find(raw)
-    if (bracket != null) return raw.substring(bracket.range.last + 1).trim()
-    var t = raw.trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097').trim()
-    if (author.isNotEmpty() && t.startsWith(author)) {
-        t = t.removePrefix(author).trimStart('：', ':', ' ', '>', '<').trim()
+    var t = raw.trim()
+    t = t.replaceFirst(Regex("^\\[[^\\]]*\\]"), "").trim()
+    val lt = t.indexOf('<')
+    val gt = t.indexOf('>', lt.coerceAtLeast(0))
+    if (gt >= 0) {
+        t = t.substring(gt + 1).trim()
+    } else {
+        val colon = t.indexOfAny(charArrayOf('：', ':'))
+        if (colon in 1..24) {
+            t = t.substring(colon + 1).trim()
+        } else if (author.isNotEmpty() && t.startsWith(author)) {
+            t = t.removePrefix(author).trimStart('：', ':', ' ', '>', '<').trim()
+        }
     }
-    return t
+    return t.ifBlank { raw.trim() }
 }
 
 @Composable
@@ -936,7 +944,8 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         val self = message.self || message.isFrom(state.profile?.name)
                         val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
                         val author = if (self) {
-                            state.profile?.name.orEmpty().ifBlank { "我" }
+                            val me = state.profile?.name.orEmpty().ifBlank { "我" }
+                            if (tag.isNotEmpty()) "[$tag] $me" else me
                         } else if (message.category == ChatCategory.System) {
                             "系统"
                         } else {
