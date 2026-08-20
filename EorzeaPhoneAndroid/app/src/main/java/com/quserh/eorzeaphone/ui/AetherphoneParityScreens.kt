@@ -915,7 +915,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                             conversation.unread = 0
                             overflowOpen = false
                         })
-                        DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
+                        if (conversation.key.startsWith("tab:")) DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
                             state.editingChatFilterId = state.openChatFilterId
                             state.editChatTabs = true
                             state.closeConversation()
@@ -977,15 +977,15 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         } else {
                             val senderName = message.sender.displayPlayerName().ifBlank { conversation.title }
                             val friendWorld = state.friends.firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }?.world
-                            val base = if (friendWorld.isNullOrBlank()) senderName else "$senderName@$friendWorld"
+                            val base = if (friendWorld.isNullOrBlank() || senderName.contains("@")) senderName else "$senderName@$friendWorld"
                             if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
                         Column(Modifier.fillMaxWidth()) {
                             LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"))
                             if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                                 Text(
-                                    "向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
-                                    color = AetherLightText,
+                                    "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
+                                    color = Color(0xFFE5484D),
                                     fontSize = 12.sp,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
@@ -999,6 +999,19 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
+                if (conversation.key.startsWith("tab:")) {
+                    Box {
+                        Box(
+                            modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
+                                .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
+                        ) { Text(state.currentChannelName, color = AetherPink, fontSize = 11.sp, maxLines = 1) }
+                        DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
+                            outputChannels.forEach { channel ->
+                                DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
+                            }
+                        }
+                    }
+                }
                 BasicTextField(
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },

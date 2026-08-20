@@ -93,7 +93,7 @@ internal fun String.normalizedPlayerName(): String = this
 
 internal fun String.displayPlayerName(): String {
     val flower = this
-        .replace(Regex("[\\uE000-\\uE0FF]+"), "@")
+        .replace(Regex("[\\uE000-\\uF8FF]+"), "@")
         .trimStart('★', '☆', '♡', '♥', '✿', '❀', '⚜', '＊', '*', ' ', '>', '<')
         .trim()
     return flower.ifBlank { "对方" }

@@ -1205,19 +1205,20 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun markTellFailureFromSystem(text: String) {
-        val match = Regex("向(.+?)发送悄悄话失败").find(text) ?: return
-        val recipient = match.groupValues[1].trim()
-        val conv = conversations.firstOrNull { it.key == "tell:${recipient.normalizedPlayerName()}" } ?: return
-        // The game confirms the failure with this system message after the outgoing
-        // echo has already cleared the pending state, so match the last self message.
-        val idx = conv.messages.indexOfLast { it.self }
-        if (idx >= 0) {
-            val updated = conv.messages[idx].copy(sendState = 2)
-            conv.messages[idx] = updated
-            val fi = chats.indexOfFirst { it.timestamp == updated.timestamp && it.sender == updated.sender && it.text == updated.text }
-            if (fi >= 0) chats[fi] = updated
-            saveChats()
+        val failed = Regex("(向.+?发送悄悄话失败|无法向.+?发送悄悄话|无法发送|目标(?:玩家|角色)不存在|该玩家不存在|对方不在线|该玩家不在线|不存在该名称的服务器|不存在名为.+?的玩家)").containsMatchIn(text)
+        if (!failed) return
+        var saved = false
+        conversations.filter { it.category == ChatCategory.Tell }.forEach { conv ->
+            val idx = conv.messages.indexOfLast { it.self }
+            if (idx >= 0) {
+                val updated = conv.messages[idx].copy(sendState = 2)
+                conv.messages[idx] = updated
+                val fi = chats.indexOfFirst { it.timestamp == updated.timestamp && it.sender == updated.sender && it.text == updated.text }
+                if (fi >= 0) chats[fi] = updated
+                saved = true
+            }
         }
+        if (saved) saveChats()
     }
 
     private fun inputChannelFor(messageChannel: Int): Int? = when (messageChannel) {
