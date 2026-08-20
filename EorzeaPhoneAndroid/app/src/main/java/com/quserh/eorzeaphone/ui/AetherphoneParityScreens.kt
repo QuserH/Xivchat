@@ -54,6 +54,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
@@ -265,6 +266,8 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     var longPressedTabId by remember { mutableStateOf<String?>(null) }
+    var renameTarget by remember { mutableStateOf<ChatConversation?>(null) }
+    var renameText by remember { mutableStateOf("") }
     var messagesExpanded by remember { mutableStateOf(state.chatListTab == "messages") }
     var tabsExpanded by remember { mutableStateOf(state.chatListTab != "messages") }
     Column(Modifier.fillMaxSize()) {
@@ -304,7 +307,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     }
                 }
                 items(sortedRows, key = { "message-${it.key}" }) { conversation ->
-                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state) }
+                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }) }
                 }
                 if (sortedRows.isEmpty() && !state.connected) item("empty") {
                     Text("连接游戏后显示聊天消息", color = AetherLightMuted, fontSize = 14.sp,
@@ -348,6 +351,23 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 }
             }
         }
+    }
+    renameTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名群聊") },
+            text = {
+                BasicTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it.take(20) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 15.sp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(AetherLightSurface).padding(16.dp),
+                )
+            },
+            confirmButton = { TextButton(onClick = { state.renameGroup(target.key, renameText); renameTarget = null }) { Text("确定") } },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+        )
     }
 }
 
@@ -573,8 +593,11 @@ private fun channelTag(channel: Int): String = when (channel) {
     15 -> "团队"
     24, 85 -> "部队"
     27, 94, 75 -> "新人"
-    in 16..23, in 86..93 -> "通讯贝"
-    in 37..44, in 101..107 -> "跨服通讯贝"
+    in 16..23 -> "通讯贝 ${channel - 15}"
+    in 86..93 -> "通讯贝 ${channel - 85}"
+    37 -> "跨服贝 1"
+    in 38..44 -> "跨服贝 ${channel - 36}"
+    in 101..107 -> "跨服贝 ${channel - 99}"
     29, 28 -> "情感动作"
     else -> ""
 }
@@ -697,7 +720,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LightConversationRow(conversation: ChatConversation, state: PhoneState) {
+private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}) {
     var menuOpen by remember { mutableStateOf(false) }
     val last = conversation.lastMessage
     val preview = when {
@@ -737,6 +760,10 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
                 state.toggleConversationPin(conversation)
+                menuOpen = false
+            })
+            DropdownMenuItem(text = { Text("重命名") }, onClick = {
+                onRename(conversation)
                 menuOpen = false
             })
             DropdownMenuItem(text = { Text("移出列表") }, onClick = {
@@ -956,7 +983,12 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 ) {
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
                         val self = message.self || message.isFrom(state.profile?.name)
-                        val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
+                        val tag = when {
+                            conversation.key.startsWith("tab:") -> channelTag(message.channel)
+                            message.category == ChatCategory.Linkshell -> conversation.title
+                            message.category == ChatCategory.FreeCompany -> "部队"
+                            else -> ""
+                        }
                         val author = if (self) {
                             val me = state.profile?.name.orEmpty().ifBlank { "我" }
                             if (tag.isNotEmpty()) "[$tag] $me" else me

@@ -138,7 +138,7 @@ val outputChannels = listOf(
 class ChatConversation(
     val key: String,
     val category: ChatCategory,
-    val title: String,
+    var title: String,
     val tellRecipient: String = "",
 ) {
     val messages = mutableStateListOf<GameChatMessage>()
@@ -471,6 +471,37 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val hiddenConversations: MutableSet<String> =
         (prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pendingSelfTexts = mutableMapOf<String, String>()
+    private val groupChannelNames = mutableMapOf<Int, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("groupChannelNames", "").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k.toIntOrNull() ?: continue, o.getString(k)) }
+        }
+    }
+    private val groupTitleOverrides = mutableMapOf<String, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("groupTitleOverrides", "").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
+        }
+    }
+    fun groupNameForChannel(messageChannel: Int): String? {
+        val input = when (messageChannel) {
+            in 16..23 -> messageChannel + 3
+            in 86..93 -> messageChannel - 67
+            37 -> 9
+            in 101..107 -> messageChannel - 91
+            else -> return null
+        }
+        return groupChannelNames[input]
+    }
+    fun groupTitleOverride(key: String): String? = groupTitleOverrides[key]
+    fun renameGroup(key: String, name: String) {
+        val clean = name.trim().take(20)
+        if (clean.isEmpty()) groupTitleOverrides.remove(key) else groupTitleOverrides[key] = clean
+        prefs.edit().putString("groupTitleOverrides", JSONObject(groupTitleOverrides).toString()).apply()
+        conversationByKey[key]?.let { it.title = groupTitleOverride(key) ?: (groupNameForChannel(it.messages.firstOrNull()?.channel ?: 0) ?: it.title) }
+    }
     var teleportTarget by mutableStateOf<String?>(null)
     var teleportStatus by mutableStateOf(TeleportStatus.Idle)
     private var teleportTimer: kotlinx.coroutines.Job? = null
@@ -1268,10 +1299,15 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             val existing = conversationByKey[key]
             if (existing != null) return existing
         }
+        val groupTitle = when {
+            message.category == ChatCategory.Linkshell -> groupNameForChannel(message.channel) ?: message.conversationTitle()
+            message.category == ChatCategory.FreeCompany -> "部队"
+            else -> message.conversationTitle()
+        }
         val conv = ChatConversation(
             key,
             if (routeToTell) ChatCategory.Tell else message.category,
-            if (routeToTell) message.sender.displayPlayerName() else message.conversationTitle(),
+            if (routeToTell) message.sender.displayPlayerName() else (groupTitleOverride(key) ?: groupTitle),
             if (routeToTell) message.sender else message.tellRecipient(),
         )
         conv.notify = key !in mutedConversations
@@ -1722,6 +1758,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 pending.forEach(::handle)
             }
             is PhoneEvent.Channel -> {
+                if (event.channel in 9..16 || event.channel in 19..26) {
+                    if (event.name.isNotBlank()) {
+                        groupChannelNames[event.channel] = event.name
+                        prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames).toString()).apply()
+                    }
+                }
                 currentChannel = event.channel
                 currentChannelName = event.name.ifBlank { outputChannels.firstOrNull { it.id == event.channel }?.label ?: "频道 ${event.channel}" }
                 serverLabel = "$currentChannelName · 已连接"

@@ -41,6 +41,7 @@ data class GameChatMessage(
     /** Human friendly title for this message's conversation. */
     fun conversationTitle(): String = when {
         category == ChatCategory.Tell -> sender.displayPlayerName()
+        category == ChatCategory.Linkshell -> linkshellChannelName(channel)
         else -> category.label
     }
 
@@ -72,6 +73,15 @@ enum class ChatCategory(val label: String) {
             else -> System
         }
     }
+}
+
+internal fun linkshellChannelName(channel: Int): String = when (channel) {
+    in 16..23 -> "通讯贝 "
+    in 86..93 -> "通讯贝 "
+    37 -> "跨服贝 1"
+    in 38..44 -> "跨服贝 "
+    in 101..107 -> "跨服贝 "
+    else -> "通讯贝"
 }
 
 internal fun String.normalizedPlayerName(): String = this
