@@ -1312,7 +1312,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         // sent message must keep the group conversation visible in the message list.
         val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell
         if (message.self || message.isFrom(profile?.name)) {
-            if (!groupChannel) return null
+            if (!groupChannel && message.category != ChatCategory.Tell) return null
             val existing = conversationByKey[key]
             if (existing != null) return existing
         }
@@ -1639,8 +1639,15 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 cacheChannelColor(event.message)
                 val convKey = event.message.conversationKey()
                 if (event.message.channel == 12) {
-                    // TellOutgoing echoes the message we just sent; it is already shown
-                    // optimistically, so confirm delivery and drop the duplicate.
+                    val echoConv = getOrCreateConversation(event.message)
+                    if (echoConv != null) {
+                        val dup = echoConv.messages.lastOrNull()?.let { kotlin.math.abs(it.timestamp - event.message.timestamp) < 100L && it.text == event.message.text && it.sender == event.message.sender }
+                        if (dup != true) {
+                            chats.add(event.message)
+                            echoConv.add(event.message)
+                            saveChats()
+                        }
+                    }
                     pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
                     if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
                     return
