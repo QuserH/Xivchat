@@ -197,6 +197,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var screen by mutableStateOf(PhoneScreen.Home)
     var messagesTab by mutableStateOf(false) // false = 聊天, true = 联系人;用于聊天/联系人分页
     var selectedApp by mutableStateOf<PhoneAppItem?>(null)
+    var openLocalRequest by mutableStateOf(0)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
     var homePage by mutableStateOf(0)
     var launchPivotX by mutableStateOf(0.5f)
@@ -1145,12 +1146,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         } else {
             trimmed
         }
-        if (conv.category == ChatCategory.Linkshell) {
-            inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)?.let { connection.changeChannel(it) }
-        } else if (conv.category == ChatCategory.FreeCompany) {
-            connection.changeChannel(6)
+        val sendChannel = when (conv.category) {
+            ChatCategory.Linkshell -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)
+            ChatCategory.FreeCompany -> 6
+            else -> null
         }
-        connection.sendChat(payload)
+        connection.sendChatOnChannel(sendChannel, payload)
         android.util.Log.i("EorzeaPhone", "sendChat payload=" + payload)
         val isTell = conv.category == ChatCategory.Tell
         val selfSender = if (isTell) conv.tellRecipient.ifBlank { profile?.name.orEmpty() } else profile?.name.orEmpty().ifBlank { "我" }
@@ -1242,8 +1243,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private fun markTellFailureFromSystem(text: String) {
         val failed = Regex("(向.+?发送悄悄话失败|无法向.+?发送悄悄话|无法发送|目标(?:玩家|角色)不存在|该玩家不存在|对方不在线|该玩家不在线|不存在该名称的服务器|不存在名为.+?的玩家)").containsMatchIn(text)
         if (!failed) return
+        val target = Regex("向(.+?)发送悄悄话失败|无法向(.+?)发送悄悄话").find(text)
+            ?.let { it.groupValues[1].ifBlank { it.groupValues[2] } }?.trim()?.normalizedPlayerName()
         var saved = false
         conversations.filter { it.category == ChatCategory.Tell }.forEach { conv ->
+            val recipientNorm = conv.tellRecipient.normalizedPlayerName()
+            if (target != null && recipientNorm != target && !recipientNorm.startsWith(target) && !target.startsWith(recipientNorm)) return@forEach
             val idx = conv.messages.indexOfLast { it.self }
             if (idx >= 0) {
                 val updated = conv.messages[idx].copy(sendState = 2)
@@ -1274,6 +1279,23 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         ChatCategory.System -> 30
     }
 
+    fun openDeepLink(key: String) {
+        selectedApp = AppCatalog.dock.first()
+        screen = PhoneScreen.Chat
+        messagesTab = false
+        if (key == "local") {
+            openLocalRequest += 1
+            return
+        }
+        val conv = conversationByKey[key] ?: conversations.firstOrNull { it.key == key }
+        if (conv != null) {
+            openConversation(conv)
+        } else if (key.startsWith("tell:")) {
+            val raw = key.removePrefix("tell:")
+            val created = ensureTellConversation(raw, raw.displayPlayerName())
+            openConversation(created)
+        }
+    }
     fun openConversation(conv: ChatConversation) {
         if (hiddenConversations.remove(conv.key)) {
             prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
@@ -1720,6 +1742,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (selfEcho != null) {
                     markPendingSendsDelivered()
                 } else if (chats.none { kotlin.math.abs(it.timestamp - event.message.timestamp) < 50L && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
+                    if (event.message.category == ChatCategory.System) {
+                        markTellFailureFromSystem(event.message.text)
+                    }
                     chats.add(event.message)
                     val conv = getOrCreateConversation(event.message)
                     if (conv == null) {
@@ -1763,9 +1788,6 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         if (allow) {
                             val title = if (isTell) event.message.sender.ifBlank { conv.title } else matchedTab?.label ?: event.message.category.label
                             notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell, title)
-                        }
-                        if (event.message.category == ChatCategory.System && !isSelf) {
-                            markTellFailureFromSystem(event.message.text)
                         }
                         saveChats()
                     }

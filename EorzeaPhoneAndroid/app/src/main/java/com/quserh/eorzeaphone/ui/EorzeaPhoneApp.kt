@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -71,10 +73,17 @@ private fun PhoneRoute.level(): Int = when (screen) {
 }
 
 @Composable
-fun EorzeaPhoneApp() {
+fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state = remember(context, scope) { PhoneState(context, scope) }
+    LaunchedEffect(deepLink.value) {
+        val key = deepLink.value
+        if (!key.isNullOrBlank()) {
+            state.openDeepLink(key)
+            deepLink.value = null
+        }
+    }
     val darkTheme = state.useDarkTheme(isSystemInDarkTheme())
     EorzeaPhoneTheme(darkTheme = darkTheme) {
         val view = LocalView.current

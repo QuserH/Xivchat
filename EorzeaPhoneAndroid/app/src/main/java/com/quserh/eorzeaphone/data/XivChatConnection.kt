@@ -121,6 +121,22 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
 
     fun changeChannel(channel: Int) = sendCommand(XivChatCodec.encodeChannel(channel), 9)
 
+    fun sendChatOnChannel(channel: Int?, text: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val output = sessionOutput ?: return@launch
+                val key = sessionTx ?: return@launch
+                synchronized(writing) {
+                    if (channel != null) send(output, key, 9, XivChatCodec.encodeChannel(channel))
+                    send(output, key, 2, XivChatCodec.encodeMessage(text))
+                }
+            } catch (error: Throwable) {
+                onEvent(PhoneEvent.Error(error.message ?: "发送失败"))
+                onSendFailure()
+            }
+        }
+    }
+
     fun friendAction(action: Int, contentId: Long, worldId: Int) = sendCommand(XivChatCodec.encodeFriendAction(action, contentId, worldId), 10)
 
     fun equipGearset(gearsetId: Int) = sendCommand(XivChatCodec.encodeJobsAction(gearsetId), 11)

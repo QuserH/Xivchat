@@ -1,10 +1,10 @@
-﻿<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
         <RootNamespace>XIVChatPlugin</RootNamespace>
         <AssemblyName>EorzeaPhone</AssemblyName>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <Version>0.6.0</Version>
+        <Version>0.7.0</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.quserh.eorzeaphone.MainActivity
+import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.R
 
 class PhoneNotifier(private val context: Context) {
@@ -43,7 +44,13 @@ class PhoneNotifier(private val context: Context) {
 
     fun chat(message: GameChatMessage, highPriority: Boolean, title: String? = null) {
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val convKey = when (message.category) {
+            ChatCategory.Tell, ChatCategory.Linkshell, ChatCategory.FreeCompany -> message.conversationKey()
+            else -> "local"
+        }
+        intent.putExtra(MainActivity.EXTRA_CONVERSATION_KEY, convKey)
+        val notificationId = (message.timestamp xor message.sender.hashCode().toLong()).toInt()
+        val pending = PendingIntent.getActivity(context, notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val channel = if (highPriority) TELL_CHANNEL else CHAT_CHANNEL
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.app.Notification.Builder(context, channel)
@@ -57,7 +64,7 @@ class PhoneNotifier(private val context: Context) {
             .setAutoCancel(true)
             .build()
         try {
-            manager.notify((message.timestamp xor message.sender.hashCode().toLong()).toInt(), notification)
+            manager.notify(notificationId, notification)
         } catch (_: SecurityException) {
             // Android 13+ may not have notification permission yet.
         }

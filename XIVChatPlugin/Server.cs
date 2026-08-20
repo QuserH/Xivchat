@@ -1692,6 +1692,7 @@ namespace XIVChatPlugin {
                     break;
                 case ClientOperation.Channel:
                     var channel = ClientChannel.Decode(payload);
+                    this._currentChannel = channel.Channel;
                     this._plugin.Functions.ChangeChatChannel(channel.Channel);
 
                     break;

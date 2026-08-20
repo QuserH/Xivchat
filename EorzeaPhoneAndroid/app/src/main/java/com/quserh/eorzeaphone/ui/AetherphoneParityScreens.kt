@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -211,6 +212,9 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
     val conversation = state.conversations.firstOrNull { it.key == state.openConversationKey }
     val pager = rememberPagerState(initialPage = if (state.messagesTab) 1 else 0, pageCount = { 2 })
     val scope = rememberCoroutineScope()
+    LaunchedEffect(state.openLocalRequest) {
+        if (state.openLocalRequest > 0) showLocalScreen = true
+    }
     LaunchedEffect(pager.currentPage) { state.messagesTab = pager.currentPage == 1 }
     val route = when {
         showLocalScreen -> "local"
@@ -537,20 +541,22 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
 private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: Boolean, onClick: () -> Unit) {
     val bg = if (active) AetherPurple else AetherLightControl
     val fg = if (active) Color.White else AetherLightText
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable(onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 6.dp),
-    ) {
-        Text(label, color = fg, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable(onClick = onClick)
+                .padding(horizontal = 13.dp, vertical = 6.dp),
+        ) {
+            Text(label, color = fg, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
+        }
         if (unread > 0) {
-            Text(
-                if (unread > 99) "99+" else unread.toString(),
-                color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 6.dp).clip(CircleShape)
+            Box(
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 5.dp, y = (-5).dp).clip(CircleShape)
                     .background(if (notify) Color(0xFFD93025) else Color(0xFF9AA0A6))
-                    .padding(horizontal = 5.dp, vertical = 1.dp),
-            )
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            ) {
+                Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
