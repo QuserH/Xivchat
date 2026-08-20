@@ -1,7 +1,8 @@
 package com.quserh.eorzeaphone.ui
-
 import androidx.activity.compose.BackHandler
-
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -61,6 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,7 +101,6 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.round
 import kotlinx.coroutines.launch
-
 @Composable
 fun ScreenFrame(background: Color = PhoneBackground, content: @Composable ColumnScope.() -> Unit) {
     Box(Modifier.fillMaxSize().background(background)) {
@@ -120,7 +121,6 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
         )
     }
 }
-
 @Composable
 fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, onBack: (() -> Unit)? = null, showBack: Boolean = true) {
     Row(
@@ -134,7 +134,6 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
         trailing?.invoke()
     }
 }
-
 @Composable
 fun SettingsScreen(state: PhoneState) {
     var characterMenu by remember { mutableStateOf(false) }
@@ -230,12 +229,10 @@ fun SettingsScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) { content() }
 }
-
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, icon: Int, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 18.dp)) {
@@ -244,7 +241,6 @@ private fun ToggleRow(label: String, checked: Boolean, icon: Int, onChange: (Boo
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
-
 @Composable
 private fun LinkRow(label: String, icon: Int, value: String? = null, onClick: (() -> Unit)? = null) {
     Row(
@@ -257,7 +253,6 @@ private fun LinkRow(label: String, icon: Int, value: String? = null, onClick: ((
         Text("›", color = if (onClick != null) PhoneMuted else PhoneSurfaceRaised, fontSize = 28.sp, modifier = Modifier.padding(horizontal = 15.dp))
     }
 }
-
 @Composable
 fun SettingsSubScreen(state: PhoneState) {
     when (state.settingsPage) {
@@ -268,7 +263,6 @@ fun SettingsSubScreen(state: PhoneState) {
         null -> SettingsScreen(state)
     }
 }
-
 @Composable
 private fun SettingsSubLayout(title: String, state: PhoneState, content: @Composable ColumnScope.() -> Unit) {
     ScreenFrame {
@@ -279,7 +273,6 @@ private fun SettingsSubLayout(title: String, state: PhoneState, content: @Compos
         ) { content() }
     }
 }
-
 @Composable
 private fun GeneralSettingsScreen(state: PhoneState) {
     SettingsSubLayout("通用", state) {
@@ -310,7 +303,6 @@ private fun GeneralSettingsScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 private fun AppearanceSettingsScreen(state: PhoneState) {
     SettingsSubLayout("外观", state) {
@@ -360,7 +352,6 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 private fun SoundSettingsScreen(state: PhoneState) {
     SettingsSubLayout("声音", state) {
@@ -370,7 +361,6 @@ private fun SoundSettingsScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 private fun NotificationsSettingsScreen(state: PhoneState) {
     SettingsSubLayout("通知", state) {
@@ -386,7 +376,6 @@ private fun NotificationsSettingsScreen(state: PhoneState) {
         Text("游戏消息推送需要手机通知权限，开启任意消息通知时会请求授权。", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp))
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ContactsTab(state: PhoneState) {
@@ -446,7 +435,6 @@ fun ContactsTab(state: PhoneState) {
         }
     }
 }
-
 @Composable
 private fun ContactSection(title: String, friends: List<PhoneFriend>, state: PhoneState) {
     Column(Modifier.fillMaxWidth()) {
@@ -459,12 +447,10 @@ private fun ContactSection(title: String, friends: List<PhoneFriend>, state: Pho
         }
     }
 }
-
 @Composable
 private fun SectionLabel(text: String) {
     Text(text, color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 7.dp))
 }
-
 @Composable
 private fun ContactRow(friend: PhoneFriend, onClick: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp)) {
@@ -479,7 +465,6 @@ private fun ContactRow(friend: PhoneFriend, onClick: () -> Unit) {
         Text("›", color = PhoneMuted, fontSize = 25.sp)
     }
 }
-
 @Composable
 private fun MessagesBottomNav(pager: androidx.compose.foundation.pager.PagerState) {
     val scope = rememberCoroutineScope()
@@ -491,7 +476,6 @@ private fun MessagesBottomNav(pager: androidx.compose.foundation.pager.PagerStat
         MessagesNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(1) } }
     }
 }
-
 @Composable
 private fun MessagesNavItem(label: String, icon: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val color = if (selected) PhoneAccent else PhoneMuted
@@ -504,7 +488,6 @@ private fun MessagesNavItem(label: String, icon: Int, selected: Boolean, modifie
         Text(label, color = color, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 3.dp))
     }
 }
-
 @Composable
 fun ContactDetailScreen(state: PhoneState) {
     val friend = state.selectedFriend
@@ -542,7 +525,6 @@ fun ContactDetailScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 private fun ContactAction(label: String, icon: Int, tint: Color, enabled: Boolean, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(enabled = enabled, onClick = onClick).padding(3.dp)) {
@@ -552,7 +534,6 @@ private fun ContactAction(label: String, icon: Int, tint: Color, enabled: Boolea
         Text(label, color = if (enabled) PhoneMuted else Color(0xFF55555D), fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
     }
 }
-
 @Composable
 fun InventoryScreen(state: PhoneState) {
     var query by remember { mutableStateOf("") }
@@ -608,7 +589,6 @@ fun InventoryScreen(state: PhoneState) {
     }
     }
 }
-
 @Composable
 private fun CompactInventorySearch(value: String, change: (String) -> Unit, modifier: Modifier = Modifier) {
     val focusRequester = remember { FocusRequester() }
@@ -632,7 +612,6 @@ private fun CompactInventorySearch(value: String, change: (String) -> Unit, modi
         },
     )
 }
-
 @Composable
 private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer: (Long) -> Unit) {
     val localTypes = inventoryTypesForGroup("bags") + inventoryTypesForGroup("armoury") + inventoryTypesForGroup("saddle") + inventoryTypesForGroup("equipped")
@@ -706,7 +685,6 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
         }
     }
 }
-
 private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
     "bags" -> listOf(0, 1, 2, 3)
     "armoury" -> listOf(3500, 3200, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209, 3300, 3400)
@@ -718,7 +696,6 @@ private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
     "housing" -> listOf(27000, 27001, 27002, 27003, 27004, 27005, 27006, 27007, 27008, 27009, 27010, 27011, 27200)
     else -> emptyList()
 }
-
 private fun inventoryContainerName(type: Long): String = when (type) {
     0L -> "物品栏第 1 页"; 1L -> "物品栏第 2 页"; 2L -> "物品栏第 3 页"; 3L -> "物品栏第 4 页"
     1000L -> "当前装备"; 2001L -> "水晶"
@@ -734,7 +711,6 @@ private fun inventoryContainerName(type: Long): String = when (type) {
     27010L -> "屋内储物柜第 10 页"; 27011L -> "屋内储物柜第 11 页"; 27200L -> "屋外储物柜第 2 页"
     else -> "容器 $type"
 }
-
 private fun defaultContainerSize(type: Long): Int = when (type) {
     in 0L..3L -> 35
     2001L -> 18
@@ -747,7 +723,6 @@ private fun defaultContainerSize(type: Long): Int = when (type) {
     27000L, 27200L -> 50
     else -> 35
 }
-
 @Composable
 private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Modifier) {
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp)).background(if (item?.hq == true) Color(0xFF67522B) else PhoneSurface), contentAlignment = Alignment.Center) {
@@ -756,7 +731,6 @@ private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Mod
         }
     }
 }
-
 @Composable
 internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: String = "", tint: Color = Color.White) {
     var bitmap by remember(iconId) { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -773,7 +747,6 @@ internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: Stri
         }
     }
 }
-
 @Composable
 private fun InventorySearchRow(item: GameInventoryItem) {
     Row(Modifier.fillMaxWidth().background(PhoneSurface).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -784,27 +757,65 @@ private fun InventorySearchRow(item: GameInventoryItem) {
     }
     Divider(Modifier.padding(horizontal = 20.dp), color = Color(0x1AFFFFFF))
 }
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ProfileScreen(state: PhoneState) {
+    val profile = state.profile
+    val avatarKey = state.currentCharacterKey
+    val avatarPath = state.characterAvatar(avatarKey)
+    var avatarBmp by remember(avatarPath) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(avatarPath) { avatarBmp = if (avatarPath.isNotBlank()) runCatching { android.graphics.BitmapFactory.decodeFile(avatarPath) }.getOrNull() else null }
+    var avatarMenu by remember { mutableStateOf(false) }
+    val pickAvatar = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null && avatarKey.isNotBlank()) {
+            val path = state.savePickedAvatar(avatarKey, uri)
+            if (path != null) state.setCharacterAvatar(avatarKey, path)
+        }
+    }
     ScreenFrame {
         ScreenHeader("角色", state)
-        val profile = state.profile
         Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface).padding(20.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(profile?.name ?: "等待角色资料", color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text(profile?.currentWorld?.let { "${profile.homeWorld} · 当前世界 $it" } ?: "角色资料由游戏插件提供", color = PhoneMuted)
-                    Text(profile?.location ?: "", color = PhoneAccent, fontSize = 13.sp)
-                    if (profile != null && profile.jobName.isNotBlank()) Text("${profile.jobName} · Lv.${profile.level}", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier.size(64.dp).clip(CircleShape).background(PhoneAccent)
+                            .combinedClickable(onClick = {}, onLongClick = { avatarMenu = true }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val current = avatarBmp
+                        if (current != null) {
+                            Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            Text(profile?.name?.take(1) ?: "?", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(profile?.name ?: "等待角色资料", color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text(profile?.currentWorld?.let { "${profile.homeWorld} · 当前世界 $it" } ?: "角色资料由游戏插件提供", color = PhoneMuted)
+                        Text(profile?.location ?: "", color = PhoneAccent, fontSize = 13.sp)
+                        if (profile != null && profile.jobName.isNotBlank()) Text("${profile.jobName} · Lv.${profile.level}", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
+            Text("长按头像可更换角色头像（不同角色独立保存）", color = PhoneMuted, fontSize = 12.sp)
             Text("职业与状态", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             Text(if (state.connected) "打开职业或角色页面后，插件会继续补充当前职业、部队和状态。" else "连接游戏后可查看当前角色。", color = PhoneMuted, fontSize = 14.sp)
         }
     }
+    if (avatarMenu) {
+        AlertDialog(
+            onDismissRequest = { avatarMenu = false },
+            title = { Text("更换头像") },
+            text = {
+                Column {
+                    Text("从相册选择", color = PhoneText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarMenu = false; pickAvatar.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
+                    Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setCharacterAvatar(avatarKey, ""); avatarMenu = false }.padding(vertical = 12.dp))
+                }
+            },
+            confirmButton = {},
+        )
+    }
 }
-
 @Composable
 fun SkywatcherScreen(state: PhoneState) {
     val weather = state.weather
@@ -848,7 +859,6 @@ fun SkywatcherScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 fun NotesScreen(state: PhoneState) {
     ScreenFrame {
@@ -856,7 +866,6 @@ fun NotesScreen(state: PhoneState) {
         OutlinedTextField(state.noteText, state::saveNote, placeholder = { Text("记录一条备忘", color = PhoneMuted) }, modifier = Modifier.fillMaxSize().padding(18.dp), shape = RoundedCornerShape(12.dp))
     }
 }
-
 private fun calculateSimple(input: String): String {
     val operatorIndex = input.indices.drop(1).lastOrNull { input[it] in charArrayOf('+', '−', '×', '÷') } ?: return input
     val left = input.substring(0, operatorIndex).toDoubleOrNull() ?: return "错误"
@@ -864,7 +873,6 @@ private fun calculateSimple(input: String): String {
     val result = when (input[operatorIndex]) { '+' -> left + right; '−' -> left - right; '×' -> left * right; '÷' -> if (right == 0.0) return "错误" else left / right; else -> return "错误" }
     return if (result % 1.0 == 0.0) result.toLong().toString() else result.toString().take(14)
 }
-
 @Composable
 fun CalendarScreen(state: PhoneState) {
     val date = remember { LocalDate.now() }
@@ -878,7 +886,6 @@ fun CalendarScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 fun MessagesScreen(state: PhoneState) {
     val openConv = state.conversations.firstOrNull { it.key == state.openConversationKey }
@@ -896,7 +903,6 @@ fun MessagesScreen(state: PhoneState) {
         MessagesBottomNav(pager)
     }
 }
-
 @Composable
 private fun ConversationListTab(state: PhoneState) {
     var filterEditor by remember { mutableStateOf(false) }
@@ -952,7 +958,6 @@ private fun ConversationListTab(state: PhoneState) {
         )
     }
 }
-
 @Composable
 private fun ConversationRow(conv: ChatConversation, state: PhoneState) {
     val last = conv.lastMessage
@@ -986,7 +991,6 @@ private fun ConversationRow(conv: ChatConversation, state: PhoneState) {
         Box(Modifier.fillMaxWidth().padding(start = 79.dp).height(1.dp).background(Color.White.copy(alpha = 0.06f)))
     }
 }
-
 @Composable
 private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) {
     var channelMenu by remember { mutableStateOf(false) }
@@ -1050,13 +1054,11 @@ private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) 
         }
     }
 }
-
 private fun ChatConversation.displayChannelHint(): String = if (tellRecipient.isNotBlank()) {
     tellRecipient.displayPlayerName()
 } else {
     title
 }
-
 private fun convColor(category: ChatCategory): Color = when (category) {
     ChatCategory.Public -> Color(0xFF4C9F70)
     ChatCategory.Party -> Color(0xFF5B8DEF)
@@ -1066,7 +1068,6 @@ private fun convColor(category: ChatCategory): Color = when (category) {
     ChatCategory.Emote -> Color(0xFFE26D8A)
     ChatCategory.System -> Color(0xFF6E7B8C)
 }
-
 private fun formatTalkTime(timestamp: Long): String {
     val time = java.time.Instant.ofEpochMilli(timestamp).atZone(java.time.ZoneId.systemDefault())
     return if (time.toLocalDate() == LocalDate.now()) {
@@ -1075,7 +1076,6 @@ private fun formatTalkTime(timestamp: Long): String {
         time.format(DateTimeFormatter.ofPattern("M/d"))
     }
 }
-
 @Composable
 private fun computeShowSender(messages: List<GameChatMessage>, i: Int, selfName: String?): Boolean {
     if (i <= 0) return true
@@ -1090,7 +1090,6 @@ private fun computeShowSender(messages: List<GameChatMessage>, i: Int, selfName:
     if (i >= 2 && messages[i - 2].isFrom(selfName) != prevSelf) return true
     return (cur.timestamp - prev.timestamp) > 60_000L
 }
-
 @Composable
 private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: Long, wrapChars: Int, showSender: Boolean) {
     val timeLabel = timestampLabel(timestamp)
@@ -1130,16 +1129,13 @@ private fun ChatBubble(author: String, body: String, self: Boolean, timestamp: L
         }
     }
 }
-
 private fun wrapByChars(text: String, charsPerLine: Int): String {
     return wrapChatTextByUnits(text, charsPerLine)
 }
-
 private fun timestampLabel(timestamp: Long): String {
     val time = java.time.Instant.ofEpochMilli(timestamp).atZone(java.time.ZoneId.systemDefault())
     return time.format(DateTimeFormatter.ofPattern("HH:mm"))
 }
-
 @Composable
 fun WalletScreen(state: PhoneState) {
     val wallet = state.wallet
@@ -1185,7 +1181,6 @@ fun WalletScreen(state: PhoneState) {
         }
     }
 }
-
 @Composable
 fun GenericAppScreen(state: PhoneState) {
     val app = state.selectedApp
@@ -1203,7 +1198,6 @@ fun GenericAppScreen(state: PhoneState) {
         }
     }
 }
-
 private fun appDescription(id: String?, state: PhoneState): String = when (id) {
     "skywatcher" -> if (state.connected) "天气组件会在插件提供天气数据后更新。" else "连接游戏后显示当前区域天气。"
     "collections" -> "收藏馆：查看坐骑、宠物和成就收藏。"
@@ -1212,7 +1206,6 @@ private fun appDescription(id: String?, state: PhoneState): String = when (id) {
     "housing" -> "房屋：显示当前角色的房屋位置。"
     else -> if (state.connected) "应用已打开，等待游戏数据。" else "请先在设置中连接游戏插件。"
 }
-
 private fun countdownLabel(seconds: Long): String {
     val s = seconds.coerceAtLeast(0L)
     val d = s / 86400
@@ -1224,7 +1217,6 @@ private fun countdownLabel(seconds: Long): String {
         else -> "${m}分钟"
     }
 }
-
 @Composable
 fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
     androidx.compose.foundation.Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(tint), modifier = modifier.size(28.dp))

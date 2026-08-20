@@ -191,14 +191,14 @@ internal object XivChatCodec {
             val currentWorldId = unpacker.unpackShort().toInt() and 0xffff
             val currentWorld = nullableString(unpacker)
             val homeWorldId = unpacker.unpackShort().toInt() and 0xffff
-            nullableString(unpacker)
+            val homeWorld = nullableString(unpacker)
             unpacker.unpackShort()
             val territory = nullableString(unpacker)
             val classJob = unpacker.unpackByte().toInt()
             val job = nullableString(unpacker)
             repeat(4) { unpacker.skipValue() }
             val contentId = if (fields > 15) unpacker.unpackLong() else 0L
-            result += GameFriend(name ?: "未知玩家", currentWorld ?: "", freeCompany ?: "", territory ?: "", status and (1L shl 47) != 0L, job ?: "", contentId, currentWorldId, homeWorldId, classJob)
+            result += GameFriend(name ?: "未知玩家", currentWorld ?: "", homeWorld ?: "", freeCompany ?: "", territory ?: "", status and (1L shl 47) != 0L, job ?: "", contentId, currentWorldId, homeWorldId, classJob)
         }
         return type to result
     }

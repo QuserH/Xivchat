@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -392,8 +393,15 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             title = { Text("更换图标") },
             text = {
                 Column {
-                    listOf("party" to "小队图标", "fc" to "部队图标").forEach { (value, label) ->
-                        Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target.key, value); iconPickerTarget = null }.padding(vertical = 12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                        builtinConversationIcons.forEach { builtin ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { state.setConversationIcon(target.key, builtin.id); iconPickerTarget = null }) {
+                                Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
+                                    Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
+                                }
+                                Text(builtin.label, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
                     }
                     Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
                     Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target.key, ""); iconPickerTarget = null }.padding(vertical = 12.dp))
@@ -599,12 +607,19 @@ private fun chatDayLabel(timestamp: Long): String {
     val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
     return "${cal.get(java.util.Calendar.YEAR)}年${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日"
 }
+private data class BuiltinConversationIcon(val id: String, val label: String, @DrawableRes val res: Int)
+
+private val builtinConversationIcons = listOf(
+    BuiltinConversationIcon("party", "小队", R.drawable.msg_party),
+    BuiltinConversationIcon("fc", "部队", R.drawable.msg_fc),
+)
+
 @Composable
 private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneState, fallback: String) {
     val icon = state.conversationIcon(conversation.key, conversation.category)
+    val builtin = builtinConversationIcons.firstOrNull { it.id == icon }
     when {
-        icon == "party" -> Image(painterResource(R.drawable.msg_party), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        icon == "fc" -> Image(painterResource(R.drawable.msg_fc), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         icon.startsWith("/") -> {
             var bmp by remember(icon) { mutableStateOf<android.graphics.Bitmap?>(null) }
             LaunchedEffect(icon) { bmp = runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull() }

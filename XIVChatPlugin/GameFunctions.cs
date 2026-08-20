@@ -376,6 +376,10 @@ namespace XIVChatPlugin {
         }
 
         private string? WorldName(ushort id) {
+            if (id == 0) {
+                return null;
+            }
+
             return XIVChatPlugin.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(id)?.Name.ExtractText();
         }
 

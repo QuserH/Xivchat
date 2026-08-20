@@ -79,8 +79,7 @@ private fun PhoneRoute.level(): Int = when (screen) {
 @Composable
 fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val state = remember(context, scope) { PhoneState(context, scope) }
+    val state = remember(context) { (context.applicationContext as com.quserh.eorzeaphone.PhoneApplication).phoneState }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
         val needed = buildList {
@@ -129,7 +128,6 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
-                state.disconnect()
             }
         }
         BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }

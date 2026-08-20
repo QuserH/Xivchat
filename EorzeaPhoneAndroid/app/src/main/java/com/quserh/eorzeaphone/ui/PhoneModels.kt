@@ -7,6 +7,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -86,6 +87,7 @@ data class PhoneAppItem(
 data class PhoneFriend(
     val name: String,
     val world: String,
+    val homeWorld: String = "",
     val location: String = "",
     val online: Boolean,
     val job: String = "",
@@ -192,6 +194,7 @@ val defaultShortcuts = listOf(
 class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
     private var activeCharacterKey = prefs.getString("activeCharacterKey", "").orEmpty()
+    val currentCharacterKey: String get() = activeCharacterKey
     val knownCharacters = mutableStateListOf<SavedCharacter>().apply { addAll(loadKnownCharacters()) }
     private val appContext = context.applicationContext
     private val activityRef = context as? android.app.Activity
@@ -472,10 +475,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         (prefs.getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pinnedConversations: MutableSet<String> =
         (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
-    private val hiddenConversations: MutableSet<String> =
-        (prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+    private val hiddenConversations = mutableStateOf((prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
     private val pendingSelfTexts = mutableMapOf<String, String>()
-    private val conversationIconOverrides = mutableMapOf<String, String>().apply {
+    private val characterAvatars = mutableStateMapOf<String, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("avatarCache", "{}").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
+        }
+    }
+    private val conversationIconOverrides = mutableStateMapOf<String, String>().apply {
         runCatching {
             val o = JSONObject(prefs.getString("convIcons", "{}").orEmpty())
             val it = o.keys()
@@ -521,6 +530,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
     }
 
+    fun characterAvatar(key: String): String = characterAvatars[key] ?: ""
+
+    fun setCharacterAvatar(key: String, path: String) {
+        if (path.isBlank()) characterAvatars.remove(key) else characterAvatars[key] = path
+        runCatching { prefs.edit().putString("avatarCache", JSONObject(characterAvatars).toString()).apply() }
+    }
+
+    fun savePickedAvatar(key: String, uri: android.net.Uri): String? = runCatching {
+        val dir = java.io.File(appContext.filesDir, "avatars").apply { mkdirs() }
+        val file = java.io.File(dir, "avatar-${key.hashCode()}.png")
+        appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
+        file.absolutePath
+    }.getOrNull()
     fun savePickedIcon(key: String, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "conv-icons").apply { mkdirs() }
         val file = java.io.File(dir, "icon-${key.hashCode()}.png")
@@ -1196,8 +1218,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         var r = raw.stripPlayerDecorations()
         if (r.isBlank() || r.contains('@')) return r
         val candidates = friends
-            .filter { it.world.isNotBlank() }
-            .map { it.name.stripPlayerDecorations() to it.world }
+            .filter { (it.world.ifBlank { it.homeWorld }).isNotBlank() }
+            .map { it.name.stripPlayerDecorations() to (it.world.ifBlank { it.homeWorld }) }
             .filter { it.first.isNotBlank() }
             .distinctBy { it.first }
             .sortedByDescending { it.first.length }
@@ -1334,8 +1356,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
     fun openConversation(conv: ChatConversation) {
-        if (hiddenConversations.remove(conv.key)) {
-            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+        if (hiddenConversations.value.remove(conv.key)) {
+            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            hiddenConversations.value = hiddenConversations.value.toMutableSet()
         }
         openConversationKey = conv.key
         conv.unread = 0
@@ -1368,17 +1391,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun isConversationPinned(conv: ChatConversation): Boolean = conv.key in pinnedConversations
 
-    fun isConversationHidden(conv: ChatConversation): Boolean = conv.key in hiddenConversations
+    fun isConversationHidden(conv: ChatConversation): Boolean = conv.key in hiddenConversations.value
 
     fun hideConversation(conv: ChatConversation) {
-        if (hiddenConversations.add(conv.key)) {
-            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+        if (hiddenConversations.value.add(conv.key)) {
+            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            hiddenConversations.value = hiddenConversations.value.toMutableSet()
         }
     }
 
     fun unhideConversation(conv: ChatConversation) {
-        if (hiddenConversations.remove(conv.key)) {
-            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+        if (hiddenConversations.value.remove(conv.key)) {
+            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            hiddenConversations.value = hiddenConversations.value.toMutableSet()
         }
     }
 
@@ -1600,7 +1625,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun startTell(friend: PhoneFriend) {
         val cleanName = friend.name.stripPlayerDecorations()
-        val recipient = if (friend.world.isBlank()) cleanName else "$cleanName@${friend.world}"
+        val friendWorld = friend.world.ifBlank { friend.homeWorld }
+        val recipient = if (friendWorld.isBlank()) cleanName else "$cleanName@$friendWorld"
         val conv = ensureTellConversation(recipient, cleanName)
         openConversation(conv)
         selectedApp = AppCatalog.dock.first()
@@ -1747,13 +1773,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Error -> statusMessage = event.message
             is PhoneEvent.FriendList -> {
                 friends.clear()
-                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
+                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
                 saveFriends()
                 repairTellRecipients()
             }
             is PhoneEvent.PartyList -> {
                 party.clear()
-                party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
+                party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
             }
             is PhoneEvent.Chat -> {
                 cacheChannelColor(event.message)
@@ -1801,8 +1827,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             val liveTarget = event.message.tellTarget()
                             if (liveTarget.isNotBlank() && conv.tellRecipient != liveTarget) conv.tellRecipient = liveTarget
                         }
-                        if (hiddenConversations.remove(conv.key)) {
-                            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
+                        if (hiddenConversations.value.remove(conv.key)) {
+                            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            hiddenConversations.value = hiddenConversations.value.toMutableSet()
                         }
                         val index = conversations.indexOf(conv)
                         val target = if (conv.key in pinnedConversations) 0 else conversations.count { it.key in pinnedConversations }
@@ -1977,6 +2004,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (name.isBlank()) continue
                 add(PhoneFriend(
                     name = name,
+                    homeWorld = item.optString("homeWorld"),
                     world = item.optString("world"),
                     online = false,
                     freeCompany = item.optString("freeCompany"),
@@ -1993,6 +2021,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         friends.forEach { friend ->
             array.put(JSONObject().apply {
                 put("name", friend.name)
+                put("homeWorld", friend.homeWorld)
                 put("world", friend.world)
                 put("freeCompany", friend.freeCompany)
                 put("contentId", friend.contentId)

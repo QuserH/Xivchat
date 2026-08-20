@@ -3,6 +3,7 @@ package com.quserh.eorzeaphone.data
 data class GameFriend(
     val name: String,
     val world: String,
+    val homeWorld: String = "",
     val freeCompany: String,
     val location: String,
     val online: Boolean,
