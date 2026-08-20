@@ -1086,7 +1086,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val trimmed = text.trim()
         if (!connected || trimmed.isBlank()) return
         val payload = if (conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank()) {
-            "/tell ${conv.tellRecipient} $trimmed"
+            val recipient = conv.tellRecipient.trim()
+            val target = if (recipient.contains('@')) {
+                recipient
+            } else {
+                val world = friends.firstOrNull { it.name.normalizedPlayerName() == recipient.normalizedPlayerName() }?.world
+                if (world.isNullOrBlank()) recipient else "$recipient@$world"
+            }
+            "/tell $target $trimmed"
         } else {
             trimmed
         }

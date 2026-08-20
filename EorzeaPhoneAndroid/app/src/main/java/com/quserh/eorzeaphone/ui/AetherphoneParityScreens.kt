@@ -565,6 +565,18 @@ private fun channelTag(channel: Int): String = when (channel) {
     else -> ""
 }
 
+// Local / group chat lines carry a "[频道]<名字>" or "名字：" prefix baked into the
+// text. The app already shows the author separately, so strip it before rendering.
+private fun cleanChatText(raw: String, author: String): String {
+    val bracket = Regex("^(?:\\[[^\\]]*\\]\\s*)?(?:<[^>]*>\\s*|＞?[^：:]{1,24}[：:]\\s*)").find(raw)
+    if (bracket != null) return raw.substring(bracket.range.last + 1).trim()
+    var t = raw.trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097').trim()
+    if (author.isNotEmpty() && t.startsWith(author)) {
+        t = t.removePrefix(author).trimStart('：', ':', ' ', '>', '<').trim()
+    }
+    return t
+}
+
 @Composable
 private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var filter by remember { mutableIntStateOf(0) }
@@ -1023,15 +1035,17 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
                     .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
             ) {
-                val body = wrapLightText(message.text, wrapChars)
+                val cleaned = cleanChatText(message.text, author)
+                val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
+                val body = wrapLightText(cleaned, wrapChars)
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
                 if (body.contains('\n')) {
-                    ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit)
+                    ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit)
                     Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                         modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                 } else {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false))
+                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false))
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
