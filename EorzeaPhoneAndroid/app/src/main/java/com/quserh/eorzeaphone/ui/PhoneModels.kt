@@ -533,6 +533,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
+
     init {
         ResetReminderReceiver.configure(appContext, resetNotifications)
         loadSavedChats()
@@ -545,13 +547,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             notes += LocalNote(System.currentTimeMillis(), noteText, System.currentTimeMillis())
             saveLocalNotes()
         }
+        repairTellRecipients()
         if (prefs.getBoolean("autoConnect", true)) {
             connect()
         }
-    }
-    val friends = mutableStateListOf<PhoneFriend>().apply {
-        addAll(loadFriends())
-        repairTellRecipients()
     }
 
     private fun loadProfileCache(): com.quserh.eorzeaphone.data.PlayerProfile? = runCatching {
