@@ -24,5 +24,7 @@
         Maps = 18,
         /// <summary>Caught fish and spearfish notebook bitsets for the active character.</summary>
         Fishing = 19,
+        /// <summary>Housing workshop submarine vessels and their voyages.</summary>
+        Submarine = 20,
     }
 }

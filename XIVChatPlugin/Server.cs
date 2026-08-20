@@ -56,6 +56,7 @@ namespace XIVChatPlugin {
         private readonly Stopwatch _dailiesWatch = new();
         private readonly Stopwatch _collectionsWatch = new();
         private readonly Stopwatch _fishingWatch = new();
+        private readonly Stopwatch _submarineWatch = new();
         private readonly PhoneActivityTracker _activityTracker;
 
         private readonly CancellationTokenSource _tokenSource = new();
@@ -183,6 +184,7 @@ namespace XIVChatPlugin {
             this._dailiesWatch.Start();
             this._collectionsWatch.Start();
             this._fishingWatch.Start();
+            this._submarineWatch.Start();
             this._activityTracker = new PhoneActivityTracker(plugin);
 
             this._plugin.Functions.ReceiveFriendList += this.OnReceiveFriendList;
@@ -382,6 +384,7 @@ namespace XIVChatPlugin {
             this.UpdateCollections();
             this.UpdateMaps();
             this.UpdateFishing();
+            this.UpdateSubmarine();
             this.UpdateActivity();
 
             while (this._friendActions.TryDequeue(out var friendAction)) {
@@ -1231,6 +1234,46 @@ namespace XIVChatPlugin {
             this._hasFishingSnapshot = true;
             this._lastFishingFingerprint = fingerprint;
             this.BroadcastMessage(snapshot, ClientPreference.PhoneFishingSupport);
+        }
+
+        private void UpdateSubmarine() {
+            if (this._submarineWatch.Elapsed < TimeSpan.FromSeconds(3) || this._clients.IsEmpty) return;
+            this._submarineWatch.Restart();
+            var snapshot = this.BuildSubmarineSnapshot();
+            if (snapshot == null) return;
+            this.BroadcastMessage(snapshot, ClientPreference.PhoneSubmarineSupport);
+        }
+
+        private unsafe ServerSubmarine? BuildSubmarineSnapshot() {
+            try {
+                var manager = HousingManager.Instance();
+                if (manager == null) return null;
+                var territory = manager->WorkshopTerritory;
+                if (territory == null) return null;
+                var sub = territory->Submersible;
+                var vessels = new List<ServerSubmarineVessel>();
+                for (var i = 0; i < Math.Min(4, sub.DataPointers.Length); i++) {
+                    var vessel = sub.DataPointers[i].Value;
+                    if (vessel == null) continue;
+                    var name = vessel->Name.ToString().Trim();
+                    if (name.Length == 0) continue;
+                    var returnTime = (long)(vessel->GetReturnTime().ToUniversalTime() - DateTime.UnixEpoch).TotalSeconds;
+                    vessels.Add(new ServerSubmarineVessel {
+                        Name = name,
+                        ReturnUnix = returnTime,
+                        RankId = vessel->RankId,
+                        CurrentExp = (long)vessel->CurrentExp,
+                        NextLevelExp = (long)vessel->NextLevelExp,
+                    });
+                }
+                return new ServerSubmarine {
+                    UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    Vessels = vessels.ToArray(),
+                };
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not capture submarine: {ex.Message}");
+                return null;
+            }
         }
 
         private unsafe ServerFishing? BuildFishingSnapshot() {

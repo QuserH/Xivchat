@@ -38,6 +38,8 @@ import com.quserh.eorzeaphone.data.GameMapExpansion
 import com.quserh.eorzeaphone.data.GameMapRegion
 import com.quserh.eorzeaphone.data.GameMaps
 import com.quserh.eorzeaphone.data.GameFishingLog
+import com.quserh.eorzeaphone.data.GameSubmarine
+import com.quserh.eorzeaphone.data.GameSubmarineVessel
 import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
@@ -423,6 +425,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var collections by mutableStateOf<GameCollections?>(null)
     var maps by mutableStateOf<GameMaps?>(null)
     var fishingLog by mutableStateOf<GameFishingLog?>(null)
+    var submarine by mutableStateOf<GameSubmarine?>(null)
     private val favoriteMapIds = mutableStateListOf<Long>().apply {
         addAll(prefs.getStringSet("favoriteMapIds", emptySet()).orEmpty().mapNotNull(String::toLongOrNull))
     }
@@ -493,6 +496,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         loadSavedExtras()
         loadSavedCollections()
         loadFishingLog()
+        loadSubmarine()
         if (notes.isEmpty() && noteText.isNotBlank()) {
             notes += LocalNote(System.currentTimeMillis(), noteText, System.currentTimeMillis())
             saveLocalNotes()
@@ -796,6 +800,33 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }.toString()).apply()
     }
 
+    private fun loadSubmarine() {
+        runCatching {
+            val s = prefs.getString(scoped("submarineCache"), "")
+            if (s.isNullOrBlank()) return@runCatching
+            val o = JSONObject(s)
+            val arr = o.optJSONArray("vessels") ?: JSONArray()
+            val vessels = buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val e = arr.getJSONObject(i)
+                    add(GameSubmarineVessel(e.optString("name"), e.optLong("returnUnix"), e.optInt("rankId"), e.optLong("currentExp"), e.optLong("nextLevelExp")))
+                }
+            }
+            submarine = GameSubmarine(o.optLong("updatedUnix"), vessels)
+        }
+    }
+
+    private fun saveSubmarine() {
+        val value = submarine ?: return
+        val arr = JSONArray()
+        value.vessels.forEach { v -> arr.put(JSONObject().apply {
+            put("name", v.name); put("returnUnix", v.returnUnix); put("rankId", v.rankId); put("currentExp", v.currentExp); put("nextLevelExp", v.nextLevelExp)
+        }) }
+        prefs.edit().putString(scoped("submarineCache"), JSONObject().apply {
+            put("updatedUnix", value.updatedUnix); put("vessels", arr)
+        }.toString()).apply()
+    }
+
     fun isFishCaught(logId: Int, method: String): Boolean {
         val bits = if (method == "spear") fishingLog?.spearfishBits else fishingLog?.fishBits
         val index = if (method == "spear") logId - 20_000 else logId
@@ -933,7 +964,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null; fishingLog = null
             friends.clear()
             profile = loadProfileCache()
-            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); friends.addAll(loadFriends())
+            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); loadSubmarine(); friends.addAll(loadFriends())
         }
     }
 
@@ -1570,6 +1601,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Fishing -> {
                 fishingLog = event.log
                 saveFishingLog()
+            }
+            is PhoneEvent.Submarine -> {
+                submarine = event.submarine
+                saveSubmarine()
             }
             is PhoneEvent.Profile -> {
                 val previousConnectedKey = connectedCharacterKey

@@ -85,6 +85,8 @@ internal object XivChatCodec {
         packBoolean(true)
         packInt(11)
         packBoolean(true)
+        packInt(12)
+        packBoolean(true)
     }
 
     private fun pack(block: org.msgpack.core.MessagePacker.() -> Unit): ByteArray {
@@ -417,6 +419,24 @@ internal object XivChatCodec {
         val fish = if (fields > 1) bits() else byteArrayOf()
         val spearfish = if (fields > 2) bits() else byteArrayOf()
         return GameFishingLog(updated, fish, spearfish)
+    }
+
+    fun readSubmarine(unpacker: MessageUnpacker): GameSubmarine {
+        unpacker.unpackArrayHeader()
+        val updated = unpacker.unpackLong()
+        val count = unpacker.unpackArrayHeader()
+        val vessels = ArrayList<GameSubmarineVessel>(count)
+        repeat(count) {
+            unpacker.unpackArrayHeader()
+            vessels += GameSubmarineVessel(
+                name = unpacker.unpackString(),
+                returnUnix = unpacker.unpackLong(),
+                rankId = unpacker.unpackInt(),
+                currentExp = unpacker.unpackLong(),
+                nextLevelExp = unpacker.unpackLong(),
+            )
+        }
+        return GameSubmarine(updated, vessels)
     }
 
     fun readChannel(unpacker: MessageUnpacker): Pair<Int, String> {

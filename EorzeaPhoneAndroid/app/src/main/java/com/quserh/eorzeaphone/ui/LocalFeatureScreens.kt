@@ -56,6 +56,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
+import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import java.time.DayOfWeek
 import java.time.Duration
 import java.time.Instant
@@ -70,7 +71,7 @@ fun FeatureFrame(title: String, state: PhoneState, trailing: (@Composable () -> 
             Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             trailing?.invoke()
         }
-        content()
+        Box(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) { content() }
     }
 }
 
@@ -222,19 +223,39 @@ private fun VentureRow(retainer: GameRetainer, now: Long) {
 
 @Composable
 fun SubmarineScreen(state: PhoneState) {
+    var now by remember { mutableLongStateOf(Instant.now().epochSecond) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_000); now = Instant.now().epochSecond } }
+    val vessels = state.submarine?.vessels.orEmpty()
     FeatureFrame("潜水艇", state) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF205B6E)).padding(20.dp)) {
                     Text("潜水艇远征", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
-                    Text("0 艘航行中", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-                    Text("潜水艇数据需插件在游戏内读取房屋工房后同步", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    Text("${vessels.count { (it.returnUnix - now) > 0 }} 艘航行中", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                    Text("数据在插件进入房屋工房后自动读取同步", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 }
             }
-            item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp)) {
-                    Text("暂无潜水艇数据", color = PhoneText, fontWeight = FontWeight.SemiBold)
-                    Text(if (state.connected) "插件端正在完善潜水艇数据读取，打开一次房屋工房后即可同步。" else "连接游戏插件后读取潜水艇状态", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+            if (vessels.isEmpty()) {
+                item {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp)) {
+                        Text("暂无潜水艇数据", color = PhoneText, fontWeight = FontWeight.SemiBold)
+                        Text(if (state.connected) "进入一次房屋工房后即可同步。" else "连接游戏插件后读取潜水艇状态", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            } else {
+                items(vessels, key = { it.name }) { v ->
+                    val remaining = (v.returnUnix - now).coerceAtLeast(0L)
+                    val done = remaining == 0L
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (done) Color(0xFF1F3A2C) else PhoneSurface).padding(14.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(v.name, color = PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(if (done) "已回港" else "航行中", color = if (done) Color(0xFF4CD487) else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(
+                            if (done) "可以收取探险成果" else "返航剩余 ${countdownLabel(remaining)}",
+                            color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp),
+                        )
+                    }
                 }
             }
         }

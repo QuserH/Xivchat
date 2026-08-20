@@ -94,6 +94,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
+import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.round
@@ -273,7 +274,7 @@ private fun SettingsSubLayout(title: String, state: PhoneState, content: @Compos
     ScreenFrame {
         ScreenHeader(title, state)
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = (10 + LocalContentMargin.current).dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) { content() }
     }

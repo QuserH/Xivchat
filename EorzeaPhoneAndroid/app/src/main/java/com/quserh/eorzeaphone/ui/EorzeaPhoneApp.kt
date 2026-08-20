@@ -2,6 +2,7 @@ package com.quserh.eorzeaphone.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -58,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
 import com.quserh.eorzeaphone.ui.theme.EorzeaPhoneTheme
+import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 
 private data class PhoneRoute(val screen: PhoneScreen, val appId: String, val friendId: Long)
 
@@ -98,6 +101,7 @@ fun EorzeaPhoneApp() {
         BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 
         val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
+        CompositionLocalProvider(LocalContentMargin provides state.contentMargin) {
         Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
             AnimatedContent(
             targetState = route,
@@ -123,7 +127,7 @@ fun EorzeaPhoneApp() {
             },
             label = "phone-navigation",
             ) { target ->
-                Box(Modifier.fillMaxSize().padding(horizontal = state.contentMargin.dp)) {
+                Box(Modifier.fillMaxSize()) {
                 when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
         PhoneScreen.Settings -> SettingsSubScreen(state)
@@ -161,6 +165,7 @@ fun EorzeaPhoneApp() {
                 TeleportBanner(state)
             }
         }
+        }
     }
 }
 }
@@ -180,27 +185,29 @@ private fun performPhoneHaptic(context: Context, view: android.view.View) {
 private fun TeleportBanner(state: PhoneState) {
     val target = state.teleportTarget ?: return
     val done = state.teleportStatus == TeleportStatus.Done
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 56.dp, start = state.contentMargin.dp + 8.dp, end = state.contentMargin.dp + 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (done) Color(0xEE23382A) else Color(0xEE20283A))
-            .pointerInput(state) {
-                detectHorizontalDragGestures(
-                    onHorizontalDrag = { _, _ -> },
-                    onDragEnd = { state.dismissTeleport() },
-                )
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(
+            Modifier
+                .widthIn(max = 340.dp)
+                .padding(top = 56.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (done) Color(0xEE23382A) else Color(0xEE20283A))
+                .pointerInput(state) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { _, _ -> },
+                        onDragEnd = { state.dismissTeleport() },
+                    )
+                }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ItemIcon(60453, Modifier.size(30.dp), "晶")
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(target, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (done) "传送完毕" else "传送中", color = (if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF)), fontSize = 11.sp)
+                }
+                Text(if (done) "✓" else "…", color = if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ItemIcon(60453, Modifier.size(30.dp), "晶")
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(target, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (done) "传送完毕" else "传送中", color = (if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF)), fontSize = 11.sp)
-            }
-            Text(if (done) "✓" else "…", color = if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF), fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

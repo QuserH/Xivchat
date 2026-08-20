@@ -4,9 +4,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-val PhoneAccent = Color(0xFF8669F2)
+/** Adjustable global horizontal inset for feature screens (外观 -> 内容边距). */
+val LocalContentMargin = staticCompositionLocalOf { 16 }
+
+val PhoneAccent = Color(0xFF1C8EFF)
 val PhoneGreen = Color(0xFF27C66A)
 
 val PhoneBackground: Color @Composable get() = MaterialTheme.colorScheme.background

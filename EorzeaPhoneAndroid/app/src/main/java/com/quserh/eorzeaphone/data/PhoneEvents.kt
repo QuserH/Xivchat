@@ -267,6 +267,19 @@ data class GameFishingLog(
     val spearfishBits: ByteArray,
 )
 
+data class GameSubmarineVessel(
+    val name: String,
+    val returnUnix: Long,
+    val rankId: Int,
+    val currentExp: Long,
+    val nextLevelExp: Long,
+)
+
+data class GameSubmarine(
+    val updatedUnix: Long,
+    val vessels: List<GameSubmarineVessel>,
+)
+
 sealed interface PhoneEvent {
     data object Connected : PhoneEvent
     data class Disconnected(val reason: String) : PhoneEvent
@@ -286,4 +299,5 @@ sealed interface PhoneEvent {
     data class Collections(val collections: GameCollections) : PhoneEvent
     data class Maps(val maps: GameMaps) : PhoneEvent
     data class Fishing(val log: GameFishingLog) : PhoneEvent
+    data class Submarine(val submarine: GameSubmarine) : PhoneEvent
 }

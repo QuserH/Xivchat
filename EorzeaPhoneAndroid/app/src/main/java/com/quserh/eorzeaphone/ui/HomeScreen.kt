@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
 import com.quserh.eorzeaphone.R
+import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -103,7 +104,7 @@ fun HomeScreen(state: PhoneState) {
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = (14 + LocalContentMargin.current).dp),
         ) {
             HomeEditBar(state, homeText)
             HorizontalPager(
