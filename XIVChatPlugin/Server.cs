@@ -517,6 +517,7 @@ namespace XIVChatPlugin {
 
             this._sendWatch.Restart();
 
+            Plugin.Log.Info($"[{Plugin.Name}] Sending chat: {message}");
             this._plugin.Functions.ProcessChatBox(message);
         }
 

@@ -1,5 +1,7 @@
 using Dalamud.Hooking;
 using System;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Collections.Generic;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Utility.Signatures;
@@ -30,6 +32,7 @@ namespace XIVChatPlugin {
             internal const string ChannelCommand = "E8 ?? ?? ?? ?? 0F B7 44 37";
             internal const string ChannelNameChange = "E8 ?? ?? ?? ?? BA ?? ?? ?? ?? 48 8D 4D B0 48 8B F8 E8 ?? ?? ?? ?? 41 8B D6";
             internal const string ColourLookup = "48 8D 0D ?? ?? ?? ?? ?? ?? ?? 85 D2 7E";
+            internal const string ProcessChat = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
         }
 
         private Plugin Plugin { get; }
@@ -37,6 +40,7 @@ namespace XIVChatPlugin {
         #region Delegates
 
         private delegate byte IsInputDelegate(nint a1);
+        private delegate void EasierProcessChatBoxDelegate(nint uiModule, nint message, nint unused, byte a4);
 
         private delegate byte IsInputAfkDelegate();
 
@@ -82,6 +86,9 @@ namespace XIVChatPlugin {
 
         [Signature(Signatures.ColourLookup, ScanType = ScanType.StaticAddress)]
         private nint ColourLookup { get; init; }
+
+        [Signature(Signatures.ProcessChat)]
+        private readonly EasierProcessChatBoxDelegate? _easierProcessChatBox;
 
         #endregion
 
@@ -196,27 +203,38 @@ namespace XIVChatPlugin {
 
         internal bool ProcessChatBox(string message) {
             this.HadInput = InputSetters.Normal | InputSetters.Afk;
-
-            var uiModule = UIModule.Instance();
-            var shellModule = RaptureShellModule.Instance();
-            if (uiModule == null || shellModule == null) {
-                Plugin.Log.Warning("Could not send chat message: game UI modules are unavailable.");
-                return false;
+            if (this._easierProcessChatBox != null) {
+                var uiModule = UIModule.Instance();
+                if (uiModule == null) return false;
+                var bytes = Encoding.UTF8.GetBytes(message);
+                var textPtr = Marshal.AllocHGlobal(bytes.Length + 32);
+                Marshal.Copy(bytes, 0, textPtr, bytes.Length);
+                Marshal.WriteByte(textPtr + bytes.Length, 0);
+                var payload = new byte[32];
+                BitConverter.GetBytes((ulong)textPtr).CopyTo(payload, 0);
+                BitConverter.GetBytes((ulong)64).CopyTo(payload, 8);
+                BitConverter.GetBytes((ulong)(bytes.Length + 1)).CopyTo(payload, 16);
+                var box = Marshal.AllocHGlobal(32);
+                Marshal.Copy(payload, 0, box, 32);
+                try {
+                    this._easierProcessChatBox((nint) uiModule, box, IntPtr.Zero, 0);
+                    return true;
+                } finally {
+                    Marshal.FreeHGlobal(box);
+                    Marshal.FreeHGlobal(textPtr);
+                }
             }
-
-            // Use the generated client-struct binding for the current game build.
-            // The old hand-written ProcessChatBox delegate used an obsolete ABI and
-            // corrupted UI state after a remote message was sent.
-            var payload = Utf8String.FromString(message);
+            var shellModule = RaptureShellModule.Instance();
+            Plugin.Log.Warning("ProcessChatBox: legacy delegate unavailable, falling back to ExecuteCommandInner");
+            var ui = UIModule.Instance();
+            if (shellModule == null || ui == null) return false;
+            var payload2 = Utf8String.FromString(message);
             try {
-                shellModule->ExecuteCommandInner(payload, uiModule);
+                shellModule->ExecuteCommandInner(payload2, ui);
                 return true;
-            } catch (Exception ex) {
-                Plugin.Log.Error(ex, "Could not send chat message through RaptureShellModule.");
-                return false;
             } finally {
-                payload->Dtor();
-                IMemorySpace.Free(payload);
+                payload2->Dtor();
+                IMemorySpace.Free(payload2);
             }
         }
 

@@ -1147,6 +1147,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             connection.changeChannel(6)
         }
         connection.sendChat(payload)
+        android.util.Log.i("EorzeaPhone", "sendChat payload=" + payload)
         val isTell = conv.category == ChatCategory.Tell
         val selfSender = if (isTell) conv.tellRecipient.ifBlank { profile?.name.orEmpty() } else profile?.name.orEmpty().ifBlank { "我" }
         val selfMsg = GameChatMessage(System.currentTimeMillis(), selfSender, trimmed, outChannelFor(conv.category), self = true, sendState = if (isTell) 1 else 0)
