@@ -977,7 +977,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         } else {
                             val senderName = message.sender.displayPlayerName().ifBlank { conversation.title }
                             val friendWorld = state.friends.firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }?.world
-                            val base = if (friendWorld.isNullOrBlank()) senderName else "$senderName❀$friendWorld"
+                            val base = if (friendWorld.isNullOrBlank()) senderName else "$senderName@$friendWorld"
                             if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
                         Column(Modifier.fillMaxWidth()) {

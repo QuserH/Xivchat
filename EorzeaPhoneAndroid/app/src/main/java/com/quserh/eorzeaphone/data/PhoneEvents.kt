@@ -88,15 +88,13 @@ internal fun linkshellChannelName(channel: Int): String = when (channel) {
 internal fun String.normalizedPlayerName(): String = this
     .trim()
     .trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097')
-    .substringBefore('@')
     .trim()
     .lowercase()
 
 internal fun String.displayPlayerName(): String {
     val flower = this
-        .replace(Regex("[\\uE000-\\uE0FF]+"), "❀")
+        .replace(Regex("[\\uE000-\\uE0FF]+"), "@")
         .trimStart('★', '☆', '♡', '♥', '✿', '❀', '⚜', '＊', '*', ' ', '>', '<')
-        .substringBefore('@')
         .trim()
     return flower.ifBlank { "对方" }
 }

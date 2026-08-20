@@ -1654,7 +1654,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         saveChats()
                     } else {
                         conv.add(event.message)
-                        if (!event.message.isFrom(profile?.name) && hiddenConversations.remove(conv.key)) {
+                        if (hiddenConversations.remove(conv.key)) {
                             prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
                         }
                         val index = conversations.indexOf(conv)
