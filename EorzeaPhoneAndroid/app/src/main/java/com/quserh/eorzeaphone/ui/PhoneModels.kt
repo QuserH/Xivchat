@@ -1212,7 +1212,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val mutedBuiltIns = chatFilters.filter { !it.removable && it.alertPolicy == ChatAlertPolicy.Off }.mapTo(mutableSetOf()) { it.id }
         prefs.edit().putStringSet("mutedChatTabs", mutedBuiltIns).apply()
         saveCustomFilters()
-        if (updated.alertPolicy != ChatAlertPolicy.Off) requestNotificationPermission()
+        if (updated.alertPolicy != ChatAlertPolicy.Off) {
+            if (!chatNotifications) chatNotifications = true
+            requestNotificationPermission()
+        }
     }
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
@@ -1533,18 +1536,18 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         }
                         val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
                         val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
-                        val alertAllowed = when {
-                            event.message.category == ChatCategory.Tell -> tellNotifications
-                            matchedTab?.alertPolicy == ChatAlertPolicy.All -> true
-                            matchedTab?.alertPolicy == ChatAlertPolicy.Mentions -> mentioned
+                        val isTell = event.message.category == ChatCategory.Tell
+                        val allow = !isSelf && when {
+                            isTell -> chatNotifications && tellNotifications && conv.notify
+                            matchedTab != null -> when (matchedTab.alertPolicy) {
+                                ChatAlertPolicy.All -> true
+                                ChatAlertPolicy.Mentions -> mentioned
+                                ChatAlertPolicy.Off -> false
+                            }
                             else -> false
                         }
-                        if (!isSelf && chatNotifications && conv.notify && alertAllowed) {
-                            val title = if (event.message.category == ChatCategory.Tell) {
-                                event.message.sender.ifBlank { conv.title }
-                            } else {
-                                matchedTab?.label ?: event.message.category.label
-                            }
+                        if (allow) {
+                            val title = if (isTell) event.message.sender.ifBlank { conv.title } else matchedTab?.label ?: event.message.category.label
                             notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell, title)
                         }
                         saveChats()

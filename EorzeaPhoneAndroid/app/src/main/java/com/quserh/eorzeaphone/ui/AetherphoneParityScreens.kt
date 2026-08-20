@@ -789,7 +789,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
                         val self = message.self || message.isFrom(state.profile?.name)
                         val author = if (self) state.profile?.name.orEmpty().ifBlank { "我" } else message.sender.ifBlank { conversation.title }
-                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title)
+                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, conversation.category == ChatCategory.Tell)
                     }
                 }
             }
@@ -858,7 +858,7 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "") {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", isDm: Boolean = false) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) Text(author, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp))
@@ -880,7 +880,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
             }
-            if (message.sendState == 2) {
+            if (message.sendState == 2 && isDm) {
                 Text(
                     "向${recipientTitle.ifBlank { "对方" }}发送悄悄话失败",
                     color = AetherLightMuted,
