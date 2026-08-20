@@ -64,11 +64,12 @@ enum class ChatCategory(val label: String) {
 
     companion object {
         fun fromChannel(channel: Int): ChatCategory = when (channel) {
-            10, 11, 30 -> Public
-            14, 15, 32 -> Party
-            12, 13 -> Tell
-            in 16..23, in 37..44, in 101..107, 27, 36 -> Linkshell
-            24 -> FreeCompany
+            10, 11, 30, 81, 82, 83 -> Public
+            14, 15, 32, 36, 84 -> Party
+            12, 13, 80 -> Tell
+            in 16..23, in 86..93, 37, in 101..107 -> Linkshell
+            24, 85 -> FreeCompany
+            27, 94, 75 -> Public
             28, 29 -> Emote
             else -> System
         }
@@ -76,11 +77,11 @@ enum class ChatCategory(val label: String) {
 }
 
 internal fun linkshellChannelName(channel: Int): String = when (channel) {
-    in 16..23 -> "通讯贝 "
-    in 86..93 -> "通讯贝 "
+    in 16..23 -> "通讯贝 ${channel - 15}"
+    in 86..93 -> "通讯贝 ${channel - 85}"
     37 -> "跨服贝 1"
-    in 38..44 -> "跨服贝 "
-    in 101..107 -> "跨服贝 "
+    in 38..44 -> "跨服贝 ${channel - 36}"
+    in 101..107 -> "跨服贝 ${channel - 99}"
     else -> "通讯贝"
 }
 

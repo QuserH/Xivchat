@@ -1129,7 +1129,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val trimmed = text.trim()
         if (!connected || trimmed.isBlank()) return
         val payload = if (conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank()) {
-            val recipient = conv.tellRecipient.trim()
+            var recipient = conv.tellRecipient.trim()
+            recipient = recipient.replace(Regex("[\\uE000-\\uE0FF]+"), "@")
             val target = if (recipient.contains('@')) {
                 recipient
             } else {
@@ -1142,6 +1143,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
         if (conv.category == ChatCategory.Linkshell) {
             inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)?.let { connection.changeChannel(it) }
+        } else if (conv.category == ChatCategory.FreeCompany) {
+            connection.changeChannel(6)
         }
         connection.sendChat(payload)
         val isTell = conv.category == ChatCategory.Tell
@@ -1303,6 +1306,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
         val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
         conversationByKey[key]?.let { return it }
+        if (message.category == ChatCategory.System) return null
         // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
         // sent message must keep the group conversation visible in the message list.
         val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell

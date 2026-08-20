@@ -649,7 +649,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         } else {
                             msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }
                         }
-                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize)
+                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true)
                     }
                 }
             }
@@ -721,7 +721,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 onLongClick = { menuOpen = true },
             ).padding(vertical = 10.dp),
         ) {
-            Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(lightConversationColor(conversation.category)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
                 Text(conversation.title.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Column(Modifier.weight(1f).padding(start = 13.dp)) {
@@ -975,11 +975,13 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         } else if (message.category == ChatCategory.System) {
                             "系统"
                         } else {
-                            val base = message.sender.displayPlayerName().ifBlank { conversation.title }
+                            val senderName = message.sender.displayPlayerName().ifBlank { conversation.title }
+                            val friendWorld = state.friends.firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }?.world
+                            val base = if (friendWorld.isNullOrBlank()) senderName else "$senderName❀$friendWorld"
                             if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
                         Column(Modifier.fillMaxWidth()) {
-                            LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize)
+                            LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"))
                             if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                                 Text(
                                     "向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -1037,7 +1039,7 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -1067,12 +1069,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val body = wrapLightText(cleaned, wrapChars)
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
                 if (body.contains('\n')) {
-                    ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit)
+                    ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral)
                     Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                         modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                 } else {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false))
+                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral)
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
@@ -1084,7 +1086,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
 
 @Composable
 private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Color, fontSize: androidx.compose.ui.unit.TextUnit,
-                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier) {
+                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, forceColor: Boolean = false) {
     val chunks = message.chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     val inline = buildMap<String, InlineTextContent> {
         chunks.forEachIndexed { index, chunk ->
@@ -1096,7 +1098,7 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
     val annotated = buildAnnotatedString {
         chunks.forEachIndexed { index, chunk ->
             if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else {
-                val chunkColor = chunk.foreground?.let(::chatChunkColor) ?: color
+                val chunkColor = if (forceColor) color else (chunk.foreground?.let(::chatChunkColor) ?: color)
                 withStyle(SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)) { append(chunk.text.orEmpty()) }
             }
         }
