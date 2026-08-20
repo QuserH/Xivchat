@@ -265,8 +265,8 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     var longPressedTabId by remember { mutableStateOf<String?>(null) }
-    var messagesExpanded by remember { mutableStateOf(false) }
-    var tabsExpanded by remember { mutableStateOf(true) }
+    var messagesExpanded by remember { mutableStateOf(state.chatListTab == "messages") }
+    var tabsExpanded by remember { mutableStateOf(state.chatListTab != "messages") }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back)
         AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -288,10 +288,10 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ChatGroupChip("标签", 0, notify = true, active = tabsExpanded) {
-                tabsExpanded = true; messagesExpanded = false
+                state.chatListTab = "tabs"; tabsExpanded = true; messagesExpanded = false
             }
             ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
-                messagesExpanded = true; tabsExpanded = false
+                state.chatListTab = "messages"; messagesExpanded = true; tabsExpanded = false
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {

@@ -413,6 +413,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var editChatTabs by mutableStateOf(false)
     var editingChatFilterId by mutableStateOf<String?>(null)
     val chats = mutableStateListOf<GameChatMessage>()
+    var chatListTab by mutableStateOf("tabs")
     private val channelColorCache = mutableMapOf<Int, Long>()
     fun channelColor(channel: Int): Long? = channelColorCache[channel]
     private fun cacheChannelColor(message: GameChatMessage) {
@@ -1048,6 +1049,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 screen = PhoneScreen.Contacts
                 selectedFriend = null
             }
+            screen == PhoneScreen.Chat || screen == PhoneScreen.Contacts -> {
+                chatListTab = "tabs"
+                home()
+            }
             else -> home()
         }
     }
@@ -1255,8 +1260,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
         val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
         conversationByKey[key]?.let { return it }
-        // Our own sent messages must never spawn a new conversation by themselves.
-        if (message.self || message.isFrom(profile?.name)) return null
+        // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
+        // sent message must keep the group conversation visible in the message list.
+        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell
+        if (message.self || message.isFrom(profile?.name)) {
+            if (!groupChannel) return null
+            val existing = conversationByKey[key]
+            if (existing != null) return existing
+        }
         val conv = ChatConversation(
             key,
             if (routeToTell) ChatCategory.Tell else message.category,
