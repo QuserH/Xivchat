@@ -1655,6 +1655,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         saveChats()
                     } else {
                         conv.add(event.message)
+                        if (conv.category == ChatCategory.Tell && event.message.senderName?.isNotBlank() == true) {
+                            val liveTitle = event.message.displaySender()
+                            if (conv.title != liveTitle) conv.title = liveTitle
+                        }
                         if (hiddenConversations.remove(conv.key)) {
                             prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations).apply()
                         }

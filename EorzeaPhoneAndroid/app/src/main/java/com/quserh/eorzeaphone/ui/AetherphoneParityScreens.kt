@@ -708,6 +708,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
 private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}) {
     var menuOpen by remember { mutableStateOf(false) }
     val last = conversation.lastMessage
+    val rowTitle = if (conversation.category == ChatCategory.Tell) (last?.displaySender() ?: conversation.title) else conversation.title
     val preview = when {
         last == null -> "暂无消息"
         last.self || last.isFrom(state.profile?.name) -> "${state.profile?.name ?: "我"}：${last.text}"
@@ -722,11 +723,11 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             ).padding(vertical = 10.dp),
         ) {
             Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                Text(conversation.title.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(rowTitle.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(conversation.title, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(rowTitle, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
                     conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
                 }
