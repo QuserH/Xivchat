@@ -1039,7 +1039,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val timeUnit = (fontSp - 5).coerceAtLeast(9).sp
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
-            if (showSender) Text(author, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp))
+            if (showSender) {
+                val bubbleInk = if (self) Color.White else AetherLightText
+                val authorAnnotated = buildAnnotatedString {
+                    val close = author.indexOf(']')
+                    if (author.startsWith('[') && close >= 0) {
+                        withStyle(SpanStyle(color = bubbleInk, fontWeight = FontWeight.SemiBold)) { append(author.substring(0, close + 1)) }
+                        withStyle(SpanStyle(color = AetherLightMuted)) { append(" " + author.substring(close + 1).trimStart()) }
+                    } else {
+                        withStyle(SpanStyle(color = AetherLightMuted)) { append(author) }
+                    }
+                }
+                Text(authorAnnotated, fontSize = 11.sp, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp))
+            }
             Column(
                 Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
                     .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
@@ -1143,7 +1155,7 @@ private fun fontIconRect(index: Int): IntArray? = when (index) {
 
 private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, selfName: String?): Boolean {
     if (index == 0) return true
-    fun key(message: GameChatMessage) = if (message.self || message.isFrom(selfName)) "self" else message.sender.trim()
+    fun key(message: GameChatMessage) = if (message.self || message.isFrom(selfName)) "self:${message.channel}" else "${message.channel}:${message.sender.trim()}"
     val currentKey = key(messages[index])
     if (key(messages[index - 1]) != currentKey) return true
     var groupStart = index - 1
