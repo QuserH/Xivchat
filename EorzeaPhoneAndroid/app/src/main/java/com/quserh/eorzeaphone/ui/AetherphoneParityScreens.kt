@@ -109,6 +109,7 @@ import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.normalizedPlayerName
+import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -287,7 +288,24 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
         val sortedRows = rows.sortedWith(
             compareByDescending<ChatConversation> { state.isConversationPinned(it) }.thenByDescending { it.lastTimestamp ?: 0L },
         )
-        LazyColumn(Modifier.fillMaxSize().padding(top = 18.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
+                messagesExpanded = true; tabsExpanded = false
+            }
+            state.chatFilters.forEach { tab ->
+                val unread = state.chats.count { tab.matches(it) && !it.self }
+                ChatGroupChip(tab.label, unread.coerceAtMost(99), notify = tab.alertPolicy != ChatAlertPolicy.Off, active = tabsExpanded && tab.id == state.selectedChatFilterId) {
+                    state.selectedChatFilterId = tab.id
+                    state.openChatFilterId = tab.id
+                    tabsExpanded = true; messagesExpanded = false
+                }
+            }
+        }
+        LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
             item("tabs") {
                 Row(verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().clickable { tabsExpanded = !tabsExpanded }.padding(horizontal = 43.dp, vertical = 8.dp)) {
@@ -522,6 +540,28 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                             close()
                         }.padding(vertical = 18.dp))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: Boolean, onClick: () -> Unit) {
+    val bg = if (active) AetherPurple else AetherLightControl
+    val fg = if (active) Color.White else AetherLightText
+    Box {
+        Text(
+            label, color = fg, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+        )
+        if (unread > 0) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = (-5).dp, end = (-5).dp).size(18.dp).clip(CircleShape)
+                    .background(if (notify) Color(0xFFD93025) else Color(0xFF9AA0A6)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -783,7 +823,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 }
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
