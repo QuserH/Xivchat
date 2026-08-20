@@ -22,35 +22,43 @@ data class GameChatMessage(
     val self: Boolean = false,
     val chunks: List<GameChatChunk> = emptyList(),
     val sendState: Int = 0,
+    val senderName: String? = null,
+    val senderWorld: String? = null,
 ) {
     val category: ChatCategory get() = ChatCategory.fromChannel(channel)
 
     fun isFrom(playerName: String?): Boolean {
-        if (channel == 12) return true // TellOutgoing does not use the local player as its sender.
+        if (channel == 12) return true
         if (playerName.isNullOrBlank()) return false
         return sender.normalizedPlayerName() == playerName.normalizedPlayerName()
     }
 
-    /** Stable key used to group messages into one WeChat-style conversation. */
     fun conversationKey(): String = when (category) {
         ChatCategory.Tell -> "tell:${sender.normalizedPlayerName()}"
         ChatCategory.Linkshell -> "linkshell:$channel"
         else -> category.name
     }
 
-    /** Human friendly title for this message's conversation. */
+    fun displaySender(): String {
+        val n = senderName?.takeIf { it.isNotBlank() } ?: sender.displayPlayerName()
+        val w = senderWorld?.takeIf { it.isNotBlank() }
+        return if (w == null || n.contains("@")) n else "$n@$w"
+    }
+
+    fun tellTarget(): String {
+        val n = senderName?.takeIf { it.isNotBlank() }
+        val w = senderWorld?.takeIf { it.isNotBlank() }
+        if (n != null && w != null) return "$n@$w"
+        return sender.replace(Regex("[\\uE000-\\uF8FF]+"), "@").trim()
+    }
+
     fun conversationTitle(): String = when {
-        category == ChatCategory.Tell -> sender.displayPlayerName()
+        category == ChatCategory.Tell -> displaySender()
         category == ChatCategory.Linkshell -> linkshellChannelName(channel)
         else -> category.label
     }
 
-    /**
-     * The recipient to use when replaying a tell conversation. For tells the
-     * sender field holds the other party (both incoming and outgoing), so we
-     * reuse it as the /tell target.
-     */
-    fun tellRecipient(): String = if (category == ChatCategory.Tell) sender.trim() else ""
+    fun tellRecipient(): String = if (category == ChatCategory.Tell) tellTarget() else ""
 }
 
 enum class ChatCategory(val label: String) {

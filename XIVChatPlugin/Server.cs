@@ -323,12 +323,24 @@ namespace XIVChatPlugin {
 
             chunks.AddRange(ToChunks(message.Message, colour));
 
+            string? senderName = null;
+            string? senderWorld = null;
+            foreach (var payload in message.Sender.Payloads) {
+                if (payload is PlayerPayload playerPayload) {
+                    senderName = playerPayload.PlayerName;
+                    var worldRow = playerPayload.World;
+                    if (worldRow.IsValid) senderWorld = worldRow.Value.Name.ExtractText();
+                }
+            }
+
             var msg = new ServerMessage(
                 DateTime.UtcNow,
                 (ushort) message.LogKind,
                 message.Sender.Encode(),
                 message.Message.Encode(),
-                chunks
+                chunks,
+                senderName,
+                senderWorld
             );
 
             this._backlog.AddLast(msg);

@@ -711,7 +711,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     val preview = when {
         last == null -> "暂无消息"
         last.self || last.isFrom(state.profile?.name) -> "${state.profile?.name ?: "我"}：${last.text}"
-        else -> "${last.sender.displayPlayerName()}：${last.text}"
+        else -> "${last.displaySender()}：${last.text}"
     }.replace('\n', ' ')
     Box {
         Row(
@@ -975,9 +975,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         } else if (message.category == ChatCategory.System) {
                             "系统"
                         } else {
-                            val senderName = message.sender.displayPlayerName().ifBlank { conversation.title }
-                            val friendWorld = state.friends.firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }?.world
-                            val base = if (friendWorld.isNullOrBlank() || senderName.contains("@")) senderName else "$senderName@$friendWorld"
+                            val base = message.displaySender().ifBlank { conversation.title }
                             if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
                         Column(Modifier.fillMaxWidth()) {

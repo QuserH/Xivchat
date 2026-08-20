@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -24,6 +24,12 @@ namespace XIVChatCommon.Message.Server {
         [Key(4)]
         public List<Chunk> Chunks { get; set; }
 
+        [Key(5)]
+        public string? SenderName { get; set; }
+
+        [Key(6)]
+        public string? SenderWorld { get; set; }
+
         [IgnoreMember]
         public string ContentText => XivString.GetText(this.Content);
 
@@ -33,12 +39,14 @@ namespace XIVChatCommon.Message.Server {
         [IgnoreMember]
         protected override byte Code => (byte) ServerOperation.Message;
 
-        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks) {
+        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null) {
             this.Timestamp = timestamp;
             this.Channel = channel;
             this.Sender = sender;
             this.Content = content;
             this.Chunks = chunks;
+            this.SenderName = senderName;
+            this.SenderWorld = senderWorld;
         }
 
         public static ServerMessage Decode(byte[] bytes) {

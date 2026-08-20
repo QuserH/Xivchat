@@ -1648,7 +1648,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 val selfEcho = pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
                 if (selfEcho != null) {
                     markPendingSendsDelivered()
-                } else if (chats.none { it.timestamp == event.message.timestamp && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
+                } else if (chats.none { kotlin.math.abs(it.timestamp - event.message.timestamp) < 50L && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
                     chats.add(event.message)
                     val conv = getOrCreateConversation(event.message)
                     if (conv == null) {

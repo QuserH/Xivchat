@@ -102,9 +102,10 @@ internal object XivChatCodec {
         val sender = decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader()))
         val text = stripChatPrefix(decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader())), sender)
         val chunks = if (fields > 4) readChunks(unpacker, sender) else emptyList()
-        return GameChatMessage(time, sender, text, channel, chunks = chunks)
+        val senderName = if (fields > 5) nullableString(unpacker) else null
+        val senderWorld = if (fields > 6) nullableString(unpacker) else null
+        return GameChatMessage(time, sender, text, channel, chunks = chunks, senderName = senderName, senderWorld = senderWorld)
     }
-
     // The chat line text can embed "[频道]<名字> content" / "<名字> content" / "名字：content".
     // Keep only the actual content; the app shows sender/channel separately.
     private fun stripChatPrefix(raw: String, sender: String): String {
