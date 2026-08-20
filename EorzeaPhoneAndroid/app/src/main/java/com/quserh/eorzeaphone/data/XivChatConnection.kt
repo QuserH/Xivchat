@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -27,96 +28,108 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     private var worker: Job? = null
     private val writing = Any()
     private val connected = AtomicBoolean(false)
+    @Volatile private var reconnectEnabled = false
 
     fun isConnected(): Boolean = connected.get()
 
     fun connect(host: String, port: Int) {
         disconnect()
+        reconnectEnabled = true
         worker = scope.launch(Dispatchers.IO) {
-            try {
-                val keyPair = loadOrCreateKeyPair()
-                val client = Socket()
-                client.tcpNoDelay = true
-                client.connect(InetSocketAddress(host.trim(), port), 8_000)
-                socket = client
-                val input = DataInputStream(BufferedInputStream(client.getInputStream()))
-                val output = DataOutputStream(BufferedOutputStream(client.getOutputStream()))
-                sessionOutput = output
-                output.write(byteArrayOf(XivChatCodec.MAGIC_0.toByte(), XivChatCodec.MAGIC_1.toByte(), XivChatCodec.MAGIC_2.toByte()))
-                output.write(keyPair.publicKey.asBytes)
-                output.flush()
-                val serverPublic = ByteArray(32)
-                input.readFully(serverPublic)
-                val remembered = prefs.getString("serverPublic", null)
-                val serverHex = serverPublic.toHex()
-                if (remembered != null && remembered != serverHex) {
-                    throw SecurityException("游戏插件公钥已变化，请在设置中清除信任后重试")
-                }
-                prefs.edit().putString("serverPublic", serverHex).apply()
-                val (rx, tx) = XivChatCodec.deriveClientKeys(sodium, keyPair.publicKey.asBytes, keyPair.secretKey.asBytes, serverPublic)
-                sessionTx = tx
-                connected.set(true)
-                onEvent(PhoneEvent.Connected)
-                send(output, tx, 8, XivChatCodec.encodePreferences())
-                send(output, tx, 4, XivChatCodec.encodeBacklog(100))
-                send(output, tx, 6, XivChatCodec.encodePlayerList())
-                send(output, tx, 6, XivChatCodec.encodePlayerList(1))
-
-                while (!client.isClosed) {
-                    val frame = XivChatCodec.readSecret(input, sodium, rx)
-                    if (frame.isEmpty()) continue
-                    val code = frame[0].toInt() and 0xff
-                    val payload = frame.copyOfRange(1, frame.size)
-                    val unpacker = org.msgpack.core.MessagePack.newDefaultUnpacker(payload)
-                    try {
-                        try {
-                            when (code) {
-                                1 -> Unit
-                                2 -> onEvent(PhoneEvent.Chat(XivChatCodec.readMessage(unpacker)))
-                                3 -> return@launch
-                                4 -> if (payload.isEmpty()) {
-                                    onEvent(PhoneEvent.GameAvailability(false))
-                                } else {
-                                    onEvent(PhoneEvent.Profile(XivChatCodec.readProfile(unpacker)))
-                                }
-                                5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
-                                6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
-                                7 -> XivChatCodec.readBacklog(unpacker).forEach { onEvent(PhoneEvent.Chat(it)) }
-                                8 -> XivChatCodec.readPlayerList(unpacker).let { (type, players) ->
-                                    if (type == 1) onEvent(PhoneEvent.PartyList(players)) else onEvent(PhoneEvent.FriendList(players))
-                                }
-                                10 -> onEvent(PhoneEvent.Housing(XivChatCodec.readHousing(unpacker)))
-                                11 -> onEvent(PhoneEvent.Inventory(XivChatCodec.readInventory(unpacker)))
-                                12 -> onEvent(PhoneEvent.Wallet(XivChatCodec.readWallet(unpacker)))
-                                13 -> onEvent(PhoneEvent.Weather(XivChatCodec.readWeather(unpacker)))
-                                14 -> onEvent(PhoneEvent.Jobs(XivChatCodec.readJobs(unpacker)))
-                                15 -> onEvent(PhoneEvent.Dailies(XivChatCodec.readDailies(unpacker)))
-                                16 -> onEvent(PhoneEvent.Activity(XivChatCodec.readActivity(unpacker)))
-                                17 -> onEvent(PhoneEvent.Collections(XivChatCodec.readCollections(unpacker)))
-                                18 -> onEvent(PhoneEvent.Maps(XivChatCodec.readMaps(unpacker)))
-                                19 -> onEvent(PhoneEvent.Fishing(XivChatCodec.readFishing(unpacker)))
-                                20 -> onEvent(PhoneEvent.Submarine(XivChatCodec.readSubmarine(unpacker)))
-                            }
-                        } catch (error: Throwable) {
-                            onEvent(PhoneEvent.Error("无法解析游戏数据 ($code): ${error.message ?: "未知错误"}"))
-                        }
-                    } finally {
-                        unpacker.close()
-                    }
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                onEvent(PhoneEvent.Error(error.message ?: "连接失败"))
-            } finally {
-                connected.set(false)
-                sessionOutput = null
-                sessionTx = null
-                socket?.close()
-                socket = null
-                onSendFailure()
-                onEvent(PhoneEvent.Disconnected("连接已断开"))
+            var backoff = 2_000L
+            while (reconnectEnabled && isActive) {
+                runSession(host, port)
+                if (!reconnectEnabled || !isActive) break
+                kotlinx.coroutines.delay(backoff)
+                backoff = (backoff * 2).coerceAtMost(30_000L)
             }
+        }
+    }
+
+    private suspend fun runSession(host: String, port: Int) {
+        try {
+            val keyPair = loadOrCreateKeyPair()
+            val client = Socket()
+            client.tcpNoDelay = true
+            client.connect(InetSocketAddress(host.trim(), port), 8_000)
+            socket = client
+            val input = DataInputStream(BufferedInputStream(client.getInputStream()))
+            val output = DataOutputStream(BufferedOutputStream(client.getOutputStream()))
+            sessionOutput = output
+            output.write(byteArrayOf(XivChatCodec.MAGIC_0.toByte(), XivChatCodec.MAGIC_1.toByte(), XivChatCodec.MAGIC_2.toByte()))
+            output.write(keyPair.publicKey.asBytes)
+            output.flush()
+            val serverPublic = ByteArray(32)
+            input.readFully(serverPublic)
+            val remembered = prefs.getString("serverPublic", null)
+            val serverHex = serverPublic.toHex()
+            if (remembered != null && remembered != serverHex) {
+                throw SecurityException("游戏插件公钥已变化，请在设置中清除信任后重试")
+            }
+            prefs.edit().putString("serverPublic", serverHex).apply()
+            val (rx, tx) = XivChatCodec.deriveClientKeys(sodium, keyPair.publicKey.asBytes, keyPair.secretKey.asBytes, serverPublic)
+            sessionTx = tx
+            connected.set(true)
+            onEvent(PhoneEvent.Connected)
+            send(output, tx, 8, XivChatCodec.encodePreferences())
+            send(output, tx, 4, XivChatCodec.encodeBacklog(100))
+            send(output, tx, 6, XivChatCodec.encodePlayerList())
+            send(output, tx, 6, XivChatCodec.encodePlayerList(1))
+
+            while (!client.isClosed) {
+                val frame = XivChatCodec.readSecret(input, sodium, rx)
+                if (frame.isEmpty()) continue
+                val code = frame[0].toInt() and 0xff
+                val payload = frame.copyOfRange(1, frame.size)
+                val unpacker = org.msgpack.core.MessagePack.newDefaultUnpacker(payload)
+                try {
+                    try {
+                        when (code) {
+                            1 -> Unit
+                            2 -> onEvent(PhoneEvent.Chat(XivChatCodec.readMessage(unpacker)))
+                            3 -> return
+                            4 -> if (payload.isEmpty()) {
+                                onEvent(PhoneEvent.GameAvailability(false))
+                            } else {
+                                onEvent(PhoneEvent.Profile(XivChatCodec.readProfile(unpacker)))
+                            }
+                            5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
+                            6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
+                            7 -> XivChatCodec.readBacklog(unpacker).forEach { onEvent(PhoneEvent.Chat(it)) }
+                            8 -> XivChatCodec.readPlayerList(unpacker).let { (type, players) ->
+                                if (type == 1) onEvent(PhoneEvent.PartyList(players)) else onEvent(PhoneEvent.FriendList(players))
+                            }
+                            10 -> onEvent(PhoneEvent.Housing(XivChatCodec.readHousing(unpacker)))
+                            11 -> onEvent(PhoneEvent.Inventory(XivChatCodec.readInventory(unpacker)))
+                            12 -> onEvent(PhoneEvent.Wallet(XivChatCodec.readWallet(unpacker)))
+                            13 -> onEvent(PhoneEvent.Weather(XivChatCodec.readWeather(unpacker)))
+                            14 -> onEvent(PhoneEvent.Jobs(XivChatCodec.readJobs(unpacker)))
+                            15 -> onEvent(PhoneEvent.Dailies(XivChatCodec.readDailies(unpacker)))
+                            16 -> onEvent(PhoneEvent.Activity(XivChatCodec.readActivity(unpacker)))
+                            17 -> onEvent(PhoneEvent.Collections(XivChatCodec.readCollections(unpacker)))
+                            18 -> onEvent(PhoneEvent.Maps(XivChatCodec.readMaps(unpacker)))
+                            19 -> onEvent(PhoneEvent.Fishing(XivChatCodec.readFishing(unpacker)))
+                            20 -> onEvent(PhoneEvent.Submarine(XivChatCodec.readSubmarine(unpacker)))
+                        }
+                    } catch (error: Throwable) {
+                        onEvent(PhoneEvent.Error("无法解析游戏数据 ($code): ${error.message ?: "未知错误"}"))
+                    }
+                } finally {
+                    unpacker.close()
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            onEvent(PhoneEvent.Error(error.message ?: "连接失败"))
+        } finally {
+            connected.set(false)
+            sessionOutput = null
+            sessionTx = null
+            socket?.close()
+            socket = null
+            onSendFailure()
+            onEvent(PhoneEvent.Disconnected("连接已断开"))
         }
     }
 
@@ -150,6 +163,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     fun requestParty() = sendCommand(XivChatCodec.encodePlayerList(1), 6)
 
     fun disconnect() {
+        reconnectEnabled = false
         worker?.cancel()
         worker = null
         socket?.close()

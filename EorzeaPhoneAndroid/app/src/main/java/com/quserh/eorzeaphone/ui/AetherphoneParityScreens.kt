@@ -3,6 +3,9 @@ package com.quserh.eorzeaphone.ui
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -84,6 +87,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -272,6 +276,15 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
     var longPressedTabId by remember { mutableStateOf<String?>(null) }
     var renameTarget by remember { mutableStateOf<ChatConversation?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var iconPickerTarget by remember { mutableStateOf<ChatConversation?>(null) }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val target = iconPickerTarget
+        iconPickerTarget = null
+        if (uri != null && target != null) {
+            val path = state.savePickedIcon(target.key, uri)
+            if (path != null) state.setConversationIcon(target.key, path)
+        }
+    }
     var messagesExpanded by remember { mutableStateOf(state.chatListTab == "messages") }
     var tabsExpanded by remember { mutableStateOf(state.chatListTab != "messages") }
     Column(Modifier.fillMaxSize()) {
@@ -311,7 +324,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     }
                 }
                 items(sortedRows, key = { "message-${it.key}" }) { conversation ->
-                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }) }
+                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconPickerTarget = it }) }
                 }
                 if (sortedRows.isEmpty() && !state.connected) item("empty") {
                     Text("连接游戏后显示聊天消息", color = AetherLightMuted, fontSize = 14.sp,
@@ -371,6 +384,22 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             },
             confirmButton = { TextButton(onClick = { state.renameGroup(target.key, renameText); renameTarget = null }) { Text("确定") } },
             dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+        )
+    }
+    iconPickerTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { iconPickerTarget = null },
+            title = { Text("更换图标") },
+            text = {
+                Column {
+                    listOf("party" to "小队图标", "fc" to "部队图标").forEach { (value, label) ->
+                        Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target.key, value); iconPickerTarget = null }.padding(vertical = 12.dp))
+                    }
+                    Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
+                    Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target.key, ""); iconPickerTarget = null }.padding(vertical = 12.dp))
+                }
+            },
+            confirmButton = {},
         )
     }
 }
@@ -561,6 +590,34 @@ private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: B
     }
 }
 
+private fun chatDay(timestamp: Long): Int {
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+    return cal.get(java.util.Calendar.YEAR) * 10000 + (cal.get(java.util.Calendar.MONTH) + 1) * 100 + cal.get(java.util.Calendar.DAY_OF_MONTH)
+}
+
+private fun chatDayLabel(timestamp: Long): String {
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+    return "${cal.get(java.util.Calendar.YEAR)}年${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日"
+}
+@Composable
+private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneState, fallback: String) {
+    val icon = state.conversationIcon(conversation.key, conversation.category)
+    when {
+        icon == "party" -> Image(painterResource(R.drawable.msg_party), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        icon == "fc" -> Image(painterResource(R.drawable.msg_fc), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        icon.startsWith("/") -> {
+            var bmp by remember(icon) { mutableStateOf<android.graphics.Bitmap?>(null) }
+            LaunchedEffect(icon) { bmp = runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull() }
+            val current = bmp
+            if (current != null) {
+                Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            } else {
+                Text(fallback.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        else -> Text(fallback.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
 private fun channelDefaultColor(channel: Int): Color = when (channel) {
     10, 81 -> Color(0xFFF7F7F7)
     11, 82 -> Color(0xFFFFA666)
@@ -649,6 +706,10 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     itemsIndexed(msgs, key = { index, msg -> "$index-${msg.timestamp}-${msg.channel}-${msg.text}" }) { index, msg ->
+                        val showDate = index == 0 || chatDay(msg.timestamp) != chatDay(msgs[index - 1].timestamp)
+                        if (showDate) {
+                            Text(chatDayLabel(msg.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                        }
                         val self = msg.self || msg.isFrom(state.profile?.name)
                         val author = if (self) {
                             state.profile?.name.orEmpty().ifBlank { "我" }
@@ -711,7 +772,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}) {
+private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}, onChangeIcon: (ChatConversation) -> Unit = {}) {
     var menuOpen by remember { mutableStateOf(false) }
     val last = conversation.lastMessage
     val rowTitle = if (conversation.category == ChatCategory.Tell) (last?.displaySender() ?: conversation.title) else conversation.title
@@ -728,7 +789,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             ).padding(vertical = 10.dp),
         ) {
             Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                Text(rowTitle.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                ConversationRowIcon(conversation, state, rowTitle)
             }
             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -753,6 +814,10 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 state.toggleConversationPin(conversation)
                 menuOpen = false
             })
+            DropdownMenuItem(text = { Text("更换图标") }, onClick = {
+                onChangeIcon(conversation)
+                menuOpen = false
+            })
             DropdownMenuItem(text = { Text("重命名") }, onClick = {
                 onRename(conversation)
                 menuOpen = false
@@ -771,6 +836,8 @@ private fun AetherphoneContactsList(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var friendsOnly by remember { mutableStateOf(true) }
     val shown = (if (friendsOnly) state.friends else state.party).filter { it.name.contains(query, true) || it.world.contains(query, true) }
+    LaunchedEffect(Unit) { state.refreshParty() }
+    LaunchedEffect(friendsOnly) { if (!friendsOnly) state.refreshParty() }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
             Text("⟳", color = AetherPurple, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends(); state.refreshParty() }.padding(horizontal = 8.dp))
@@ -973,6 +1040,10 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
+                        val showDate = index == 0 || chatDay(message.timestamp) != chatDay(visible[index - 1].timestamp)
+                        if (showDate) {
+                            Text(chatDayLabel(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                        }
                         val self = message.self || message.isFrom(state.profile?.name)
                         val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
                         val author = if (self) {

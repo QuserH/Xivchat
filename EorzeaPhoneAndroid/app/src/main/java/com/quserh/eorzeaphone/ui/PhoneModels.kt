@@ -475,6 +475,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val hiddenConversations: MutableSet<String> =
         (prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pendingSelfTexts = mutableMapOf<String, String>()
+    private val conversationIconOverrides = mutableMapOf<String, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("convIcons", "{}").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
+        }
+    }
     private val groupChannelNames = mutableMapOf<Int, String>().apply {
         runCatching {
             val o = JSONObject(prefs.getString("groupChannelNames", "").orEmpty())
@@ -500,6 +507,26 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         return groupChannelNames[input]
     }
     fun groupTitleOverride(key: String): String? = groupTitleOverrides[key]
+    fun conversationIcon(key: String, category: ChatCategory? = null): String {
+        conversationIconOverrides[key]?.let { return it }
+        return when (category) {
+            ChatCategory.Party -> "party"
+            ChatCategory.FreeCompany -> "fc"
+            else -> ""
+        }
+    }
+
+    fun setConversationIcon(key: String, icon: String) {
+        if (icon.isBlank()) conversationIconOverrides.remove(key) else conversationIconOverrides[key] = icon
+        runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
+    }
+
+    fun savePickedIcon(key: String, uri: android.net.Uri): String? = runCatching {
+        val dir = java.io.File(appContext.filesDir, "conv-icons").apply { mkdirs() }
+        val file = java.io.File(dir, "icon-${key.hashCode()}.png")
+        appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
+        file.absolutePath
+    }.getOrNull()
     fun renameGroup(key: String, name: String) {
         val clean = name.trim().take(20)
         if (clean.isEmpty()) groupTitleOverrides.remove(key) else groupTitleOverrides[key] = clean

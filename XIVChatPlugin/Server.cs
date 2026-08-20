@@ -90,6 +90,7 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingMaps = new();
         private readonly ConcurrentQueue<Guid> _awaitingFishing = new();
 
+        private readonly ConcurrentQueue<Guid> _awaitingParty = new();
         private volatile bool _running;
         private bool Running => this._running;
 
@@ -499,6 +500,11 @@ namespace XIVChatPlugin {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
                 var fishing = this.BuildFishingSnapshot();
                 if (fishing != null) client.Queue.Writer.TryWrite(fishing);
+            }
+            while (this._awaitingParty.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var party = this.BuildPartyList() ?? new ServerPlayerList(PlayerListType.Party, []);
+                client.Queue.Writer.TryWrite(party);
             }
 
             int time;
@@ -1427,19 +1433,29 @@ namespace XIVChatPlugin {
         private ServerPlayerList? BuildPartyList() {
             try {
                 var party = XIVChatPlugin.Plugin.PartyList;
-                if (party == null || party.Length == 0) {
+                var rawLength = party?.Length ?? 0;
+                if (rawLength == 0) {
+                    Plugin.Log.Info("[EorzeaPhone] PartyList empty (service=" + (XIVChatPlugin.Plugin.PartyList != null) + ")");
                     return null;
                 }
 
                 var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
                 var members = new List<Player>();
-                for (var i = 0; i < party.Length; i++) {
+                for (var i = 0; i < rawLength; i++) {
                     var member = party[i];
                     if (member == null) {
                         continue;
                     }
 
                     var name = member.Name?.TextValue ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(name)) {
+                        try {
+                            name = member.GameObject?.Name?.TextValue ?? string.Empty;
+                        } catch {
+                            // ignore
+                        }
+                    }
+
                     if (string.IsNullOrWhiteSpace(name)) {
                         continue;
                     }
@@ -1457,12 +1473,14 @@ namespace XIVChatPlugin {
                     });
                 }
 
+                Plugin.Log.Info($"[EorzeaPhone] PartyList length={rawLength} members={members.Count}");
                 return new ServerPlayerList(PlayerListType.Party, members.ToArray());
             } catch (Exception ex) {
-                Plugin.Log.Warning($"Could not read party list: {ex.Message}");
+                Plugin.Log.Warning($"[EorzeaPhone] Could not read party list: {ex}");
                 return null;
             }
         }
+
 
         private static long ActivityFingerprint(ServerActivity value) {
             unchecked {
@@ -1713,8 +1731,7 @@ namespace XIVChatPlugin {
                             XIVChatPlugin.Plugin.ChatGui.PrintError($"[{Plugin.Name}] 请打开一次游戏内好友列表以启用好友列表功能。通常只需在首次安装或更新后执行一次。");
                         }
                     } else if (playerList.Type == PlayerListType.Party) {
-                        var party = this.BuildPartyList() ?? new ServerPlayerList(PlayerListType.Party, []);
-                        client.Queue.Writer.TryWrite(party);
+                        this._awaitingParty.Enqueue(id);
                     }
 
                     break;

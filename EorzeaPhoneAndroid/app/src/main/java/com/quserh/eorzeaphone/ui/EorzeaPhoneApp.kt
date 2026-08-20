@@ -1,6 +1,8 @@
 package com.quserh.eorzeaphone.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
@@ -33,6 +35,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import android.view.HapticFeedbackConstants
 import android.view.ViewConfiguration
 import android.os.Build
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -77,6 +81,28 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state = remember(context, scope) { PhoneState(context, scope) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    LaunchedEffect(Unit) {
+        val needed = buildList {
+            if (Build.VERSION.SDK_INT >= 33) {
+                add(android.Manifest.permission.POST_NOTIFICATIONS)
+                add(android.Manifest.permission.READ_MEDIA_IMAGES)
+            } else {
+                add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (needed.isNotEmpty()) permissionLauncher.launch(needed.toTypedArray())
+        val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+        val prefs = context.getSharedPreferences("eorzea_phone_ui", android.content.Context.MODE_PRIVATE)
+        if (pm != null && Build.VERSION.SDK_INT >= 23 && !prefs.getBoolean("batteryExemptRequested", false) && !pm.isIgnoringBatteryOptimizations(context.packageName)) {
+            prefs.edit().putBoolean("batteryExemptRequested", true).apply()
+            runCatching {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:${context.packageName}"))
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+        }
+    }
     LaunchedEffect(deepLink.value) {
         val key = deepLink.value
         if (!key.isNullOrBlank()) {
