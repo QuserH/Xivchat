@@ -1769,8 +1769,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Channel -> {
                 if (event.channel in 9..16 || event.channel in 19..26) {
                     if (event.name.isNotBlank()) {
-                        groupChannelNames[event.channel] = event.name
-                        prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames.mapKeys { it.key.toString() }).toString()).apply()
+                        val raw = event.name.trim()
+                        val clean = raw.replaceFirst(Regex("^[跨服]?通讯贝?[0-9一二三四五六七八]*[：:]\\s*"), "").trim()
+                        groupChannelNames[event.channel] = clean.ifBlank { raw }
+                        runCatching {
+                            prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames.mapKeys { it.key.toString() }).toString()).apply()
+                        }
                     }
                 }
                 currentChannel = event.channel
