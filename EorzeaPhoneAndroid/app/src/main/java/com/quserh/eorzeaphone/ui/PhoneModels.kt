@@ -439,6 +439,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var chatWrapChars: Int
         get() = _chatWrapChars.value
         set(value) { _chatWrapChars.value = value; prefs.edit().putInt("chatWrapChars", value).apply() }
+    private val _chatFontSize = mutableStateOf(prefs.getInt("chatFontSize", 14))
+    var chatFontSize: Int
+        get() = _chatFontSize.value
+        set(value) { _chatFontSize.value = value.coerceIn(10, 26); prefs.edit().putInt("chatFontSize", _chatFontSize.value).apply() }
     private val _contentMargin = mutableStateOf(prefs.getInt("contentMargin", 16))
     var contentMargin: Int
         get() = _contentMargin.value
@@ -1148,7 +1152,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val match = Regex("向(.+?)发送悄悄话失败").find(text) ?: return
         val recipient = match.groupValues[1].trim()
         val conv = conversations.firstOrNull { it.key == "tell:${recipient.normalizedPlayerName()}" } ?: return
-        val idx = conv.messages.indexOfLast { it.self && it.sendState == 1 }
+        // The game confirms the failure with this system message after the outgoing
+        // echo has already cleared the pending state, so match the last self message.
+        val idx = conv.messages.indexOfLast { it.self }
         if (idx >= 0) {
             val updated = conv.messages[idx].copy(sendState = 2)
             conv.messages[idx] = updated
@@ -1520,6 +1526,17 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     awaitingCharacterProfile = true
                     serverLabel = "正在读取在线角色"
                     statusMessage = "角色已进入游戏，正在读取资料"
+                    scope.launch(Dispatchers.Main) {
+                        kotlinx.coroutines.delay(4_000)
+                        if (!connectedCharacterConfirmed) {
+                            gameOnline = true
+                            connectedCharacterConfirmed = true
+                            connectedCharacterKey = activeCharacterKey
+                            awaitingCharacterProfile = false
+                            serverLabel = "已连接游戏"
+                            statusMessage = ""
+                        }
+                    }
                 }
             }
             is PhoneEvent.Error -> statusMessage = event.message

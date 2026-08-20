@@ -333,6 +333,19 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
             }
             Text("左右都向内收缩·数值越小越贴近屏幕边缘", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
+        SectionLabel("聊天字号")
+        SettingsGroup {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("消息文字大小", color = PhoneText, modifier = Modifier.weight(1f))
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatFontSize -= 1 }, contentAlignment = Alignment.Center) {
+                    Text("−", color = PhoneAccent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("  ${state.chatFontSize}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatFontSize += 1 }, contentAlignment = Alignment.Center) {
+                    Text("＋", color = PhoneAccent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
         SectionLabel("主题")
         SettingsGroup {
             PhoneThemeMode.entries.forEach { mode ->

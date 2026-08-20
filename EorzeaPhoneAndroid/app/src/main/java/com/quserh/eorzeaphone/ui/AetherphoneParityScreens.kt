@@ -290,16 +290,13 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 tabsExpanded = true; messagesExpanded = false
             }
             ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
-                messagesExpanded = true; tabsExpanded = false
-            }
-            ChatGroupChip("本地", 0, notify = true, active = localExpanded) {
-                localExpanded = true; tabsExpanded = false; messagesExpanded = false
+                localExpanded = false; messagesExpanded = true; tabsExpanded = false
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
             if (localExpanded) {
                 item("local-tabs") {
-                    val labels = listOf("全部", "说话", "喊话", "呼喊", "情感动作")
+                    val labels = listOf("全部", "说话", "喊话", "呼喊")
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         labels.forEachIndexed { i, l ->
                             Text(l, color = if (localFilter == i) Color.White else AetherLightMuted, fontSize = 11.sp,
@@ -309,7 +306,6 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 }
                 val localMsgs = state.chats.filter {
                     when {
-                        localFilter == 4 -> it.category == ChatCategory.Emote
                         localFilter == 1 -> it.channel == 10
                         localFilter == 2 -> it.channel == 11
                         localFilter == 3 -> it.channel == 30
@@ -329,6 +325,13 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                     Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
                 }
             } else if (messagesExpanded) {
+                item("local-entry") {
+                    Row(Modifier.fillMaxWidth().clickable { localExpanded = true; localFilter = 0 }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
+                        Text("本地", color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                        Text("说话/喊话/呼喊/情感动作 ›", color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
                 items(sortedRows, key = { "message-${it.key}" }) { conversation ->
                     Box(Modifier.animateItem()) { LightConversationRow(conversation, state) }
                 }
@@ -844,7 +847,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         } else {
                             message.sender.ifBlank { conversation.title }
                         }
-                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, conversation.category == ChatCategory.Tell)
+                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, conversation.category == ChatCategory.Tell, state.chatFontSize)
                     }
                 }
             }
@@ -913,7 +916,11 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", isDm: Boolean = false) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", isDm: Boolean = false, fontSizeSp: Int = 14) {
+    val fontSp = fontSizeSp.coerceIn(10, 26)
+    val fontUnit = fontSp.sp
+    val lineUnit = (fontSp + 5).sp
+    val timeUnit = (fontSp - 5).coerceAtLeast(9).sp
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) Text(author, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp))
@@ -924,13 +931,13 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val body = wrapLightText(message.text, wrapChars)
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
                 if (body.contains('\n')) {
-                    ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp)
-                    Text(lightClock(message.timestamp), color = timeColor, fontSize = 9.sp, lineHeight = 10.sp,
+                    ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit)
+                    Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                         modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                 } else {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f, fill = false))
-                        Text(lightClock(message.timestamp), color = timeColor, fontSize = 9.sp, lineHeight = 10.sp,
+                        ChatChunkText(message, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false))
+                        Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
                 }
@@ -939,7 +946,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 Text(
                     "向${recipientTitle.ifBlank { "对方" }}发送悄悄话失败",
                     color = AetherLightMuted,
-                    fontSize = 11.sp,
+                    fontSize = (fontSp - 3).coerceAtLeast(10).sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 2.dp),
                 )
