@@ -968,19 +968,14 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 ) {
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
                         val self = message.self || message.isFrom(state.profile?.name)
-                        val tag = when {
-                            conversation.key.startsWith("tab:") -> channelTag(message.channel)
-                            message.category == ChatCategory.Linkshell -> conversation.title
-                            message.category == ChatCategory.FreeCompany -> "部队"
-                            else -> ""
-                        }
+                        val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
                         val author = if (self) {
                             val me = state.profile?.name.orEmpty().ifBlank { "我" }
                             if (tag.isNotEmpty()) "[$tag] $me" else me
                         } else if (message.category == ChatCategory.System) {
                             "系统"
                         } else {
-                            val base = message.sender.ifBlank { conversation.title }
+                            val base = message.sender.displayPlayerName().ifBlank { conversation.title }
                             if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
                         Column(Modifier.fillMaxWidth()) {

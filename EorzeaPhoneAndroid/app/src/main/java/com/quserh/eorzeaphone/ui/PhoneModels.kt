@@ -137,9 +137,11 @@ val outputChannels = listOf(
 
 class ChatConversation(
     val key: String,
-    var title by mutableStateOf(title)
+    val category: ChatCategory,
+    title: String,
     val tellRecipient: String = "",
 ) {
+    var title by mutableStateOf(title)
     val messages = mutableStateListOf<GameChatMessage>()
     var unread by mutableStateOf(0)
     var notify by mutableStateOf(true)
@@ -1322,6 +1324,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         )
         conv.notify = key !in mutedConversations
         conversations.add(0, conv)
+        conversationByKey[key] = conv
         return conv
     }
 
@@ -1780,7 +1783,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (event.channel in 9..16 || event.channel in 19..26) {
                     if (event.name.isNotBlank()) {
                         val raw = event.name.trim()
-                        val clean = raw.replaceFirst(Regex("^[跨服]?通讯贝?[0-9一二三四五六七八]*[：:]\\s*"), "").trim()
+                        val clean = raw.replaceFirst(Regex("^(跨服贝|通讯贝)\\d*[：:]\\s*"), "").trim()
                         groupChannelNames[event.channel] = clean.ifBlank { raw }
                         runCatching {
                             prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames.mapKeys { it.key.toString() }).toString()).apply()
