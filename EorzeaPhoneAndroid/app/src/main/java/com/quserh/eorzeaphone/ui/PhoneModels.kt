@@ -1577,12 +1577,26 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 inventory.addAll(event.snapshot.items.filter { isPhoneInventoryContainer(it.container) })
                 inventoryContainers.clear()
                 inventoryContainers.addAll(event.snapshot.containers)
-                val oldRetainers = retainers.associateBy { it.id }
+                // Merge instead of replace: a fresh snapshot only includes the retainer
+                // list when it is currently loaded in the game, so keep previously known
+                // retainer identities (and their stored counts) when the snapshot omits them.
+                val merged = LinkedHashMap<Long, GameRetainer>()
+                retainers.forEach { old -> merged[old.id] = old }
+                event.snapshot.retainers.forEach { incoming ->
+                    val old = merged[incoming.id]
+                    merged[incoming.id] = if (incoming.active) {
+                        incoming
+                    } else {
+                        incoming.copy(
+                            name = incoming.name.ifBlank { old?.name.orEmpty() },
+                            itemCount = if (incoming.itemCount == 0 && old != null) old.itemCount else incoming.itemCount,
+                            quantity = if (incoming.quantity == 0 && old != null) old.quantity else incoming.quantity,
+                            gil = if (incoming.gil == 0L && old != null) old.gil else incoming.gil,
+                        )
+                    }
+                }
                 retainers.clear()
-                retainers.addAll(event.snapshot.retainers.map { incoming ->
-                    val old = oldRetainers[incoming.id]
-                    if (!incoming.active && old != null) incoming.copy(itemCount = old.itemCount, quantity = old.quantity, gil = old.gil) else incoming
-                })
+                retainers.addAll(merged.values)
                 saveInventory()
             }
             is PhoneEvent.Wallet -> {

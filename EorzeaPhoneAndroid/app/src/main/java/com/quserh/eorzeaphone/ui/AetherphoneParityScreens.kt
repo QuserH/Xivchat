@@ -66,6 +66,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -263,6 +264,8 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
     var longPressedTabId by remember { mutableStateOf<String?>(null) }
     var messagesExpanded by remember { mutableStateOf(false) }
     var tabsExpanded by remember { mutableStateOf(true) }
+    var localExpanded by remember { mutableStateOf(false) }
+    var localFilter by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back)
         AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -289,9 +292,43 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
             ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
                 messagesExpanded = true; tabsExpanded = false
             }
+            ChatGroupChip("本地", 0, notify = true, active = localExpanded) {
+                localExpanded = true; tabsExpanded = false; messagesExpanded = false
+            }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
-            if (messagesExpanded) {
+            if (localExpanded) {
+                item("local-tabs") {
+                    val labels = listOf("全部", "说话", "喊话", "呼喊", "情感动作")
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        labels.forEachIndexed { i, l ->
+                            Text(l, color = if (localFilter == i) Color.White else AetherLightMuted, fontSize = 11.sp,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (localFilter == i) AetherPurple else AetherLightControl).clickable { localFilter = i }.padding(horizontal = 10.dp, vertical = 5.dp))
+                        }
+                    }
+                }
+                val localMsgs = state.chats.filter {
+                    when {
+                        localFilter == 4 -> it.category == ChatCategory.Emote
+                        localFilter == 1 -> it.channel == 10
+                        localFilter == 2 -> it.channel == 11
+                        localFilter == 3 -> it.channel == 30
+                        else -> it.category == ChatCategory.Public || it.category == ChatCategory.Emote
+                    }
+                }.sortedBy { it.timestamp }
+                items(localMsgs, key = { "${it.timestamp}-${it.channel}-${it.text}" }) { msg ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (msg.self) "我" else msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }, color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(lightTalkTime(msg.timestamp), color = AetherLightMuted, fontSize = 10.sp)
+                        }
+                        Text(msg.text, color = AetherLightText, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+                if (localMsgs.isEmpty()) item("local-empty") {
+                    Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
+                }
+            } else if (messagesExpanded) {
                 items(sortedRows, key = { "message-${it.key}" }) { conversation ->
                     Box(Modifier.animateItem()) { LightConversationRow(conversation, state) }
                 }
@@ -800,7 +837,13 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 ) {
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
                         val self = message.self || message.isFrom(state.profile?.name)
-                        val author = if (self) state.profile?.name.orEmpty().ifBlank { "我" } else message.sender.ifBlank { conversation.title }
+                        val author = if (self) {
+                            state.profile?.name.orEmpty().ifBlank { "我" }
+                        } else if (message.category == ChatCategory.System) {
+                            "系统"
+                        } else {
+                            message.sender.ifBlank { conversation.title }
+                        }
                         LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, conversation.category == ChatCategory.Tell)
                     }
                 }
