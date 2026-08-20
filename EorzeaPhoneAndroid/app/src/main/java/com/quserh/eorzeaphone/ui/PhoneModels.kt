@@ -1218,11 +1218,18 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
-        val key = message.conversationKey()
+        // Emotes from a specific player belong inside that player's DM thread.
+        val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
+        val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
         conversationByKey[key]?.let { return it }
         // Our own sent messages must never spawn a new conversation by themselves.
         if (message.self || message.isFrom(profile?.name)) return null
-        val conv = ChatConversation(key, message.category, message.conversationTitle(), message.tellRecipient())
+        val conv = ChatConversation(
+            key,
+            if (routeToTell) ChatCategory.Tell else message.category,
+            if (routeToTell) message.sender.displayPlayerName() else message.conversationTitle(),
+            if (routeToTell) message.sender else message.tellRecipient(),
+        )
         conv.notify = key !in mutedConversations
         conversations.add(0, conv)
         return conv
@@ -1419,6 +1426,15 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         chatFilters.remove(filter)
         if (selectedChatFilterId == filter.id) selectedChatFilterId = ""
         saveCustomFilters()
+    }
+
+    fun pinChatFilter(filter: ChatFilter) {
+        val index = chatFilters.indexOfFirst { it.id == filter.id }
+        if (index > 0) {
+            val item = chatFilters.removeAt(index)
+            chatFilters.add(0, item)
+            saveCustomFilters()
+        }
     }
 
     fun updateChatFilter(filter: ChatFilter, label: String, categories: Set<ChatCategory>, channels: Set<Int>, tintIndex: Int, sendChannel: Int?, layout: ChatLayout,

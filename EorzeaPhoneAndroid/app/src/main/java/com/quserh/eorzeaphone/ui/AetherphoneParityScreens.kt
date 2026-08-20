@@ -254,27 +254,17 @@ private fun LightNavItem(label: String, icon: Int, selected: Boolean, modifier: 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
+    var longPressedTabId by remember { mutableStateOf<String?>(null) }
     var messagesExpanded by remember { mutableStateOf(false) }
     var tabsExpanded by remember { mutableStateOf(true) }
     Column(Modifier.fillMaxSize()) {
-        LightHeader("聊天", state::back) {
-            Box {
-                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
-                DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                    DropdownMenuItem(text = { Text(if (searching) "关闭搜索" else "搜索消息") }, onClick = {
-                        searching = !searching
-                        if (!searching) query = ""
-                        overflowOpen = false
-                    })
-                    DropdownMenuItem(text = { Text("新建标签页") }, onClick = { overflowOpen = false; state.editingChatFilterId = null; editTab() })
-                }
-            }
-        }
+        LightHeader("聊天", state::back)
         AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
         }
@@ -319,19 +309,28 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                     items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
                         val selected = filter.id == state.selectedChatFilterId
                         val last = state.chats.lastOrNull(filter::matches)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem().clickable { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id }.padding(vertical = 8.dp)) {
-                            Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
-                                Text(filter.label.take(1), color = if (selected) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                                Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                if (last != null) Text(last.text.replace('\n', ' '), color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).padding(start = 4.dp)) {
-                                last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1, softWrap = false) }
-                                ChatTabNotificationIcon(filter.alertPolicy != ChatAlertPolicy.Off) {
-                                    state.toggleChatFilterNotifications(filter)
+                        Box {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem().combinedClickable(
+                                onClick = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
+                                onLongClick = { longPressedTabId = filter.id },
+                            ).padding(vertical = 8.dp)) {
+                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
+                                    Text(filter.label.take(1), color = if (selected) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
+                                Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                                    Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    if (last != null) Text(last.text.replace('\n', ' '), color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).padding(start = 4.dp)) {
+                                    last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1, softWrap = false) }
+                                    ChatTabNotificationIcon(filter.alertPolicy != ChatAlertPolicy.Off) {
+                                        state.toggleChatFilterNotifications(filter)
+                                    }
+                                }
+                            }
+                            DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
+                                DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
+                                DropdownMenuItem(text = { Text("删除标签页", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
                             }
                         }
                     }
@@ -590,7 +589,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             })
         }
     }
-    Box(Modifier.fillMaxWidth().padding(start = 90.dp, end = 38.dp).height(1.dp).background(AetherLightSeparator))
+    Spacer(Modifier.height(6.dp))
 }
 
 @Composable
