@@ -205,12 +205,14 @@ private fun LightHeader(
 @Composable
 fun AetherphoneMessagesScreen(state: PhoneState) {
     var editingTab by remember { mutableStateOf(false) }
+    var showLocalScreen by remember { mutableStateOf(false) }
     val openFilter = state.chatFilters.firstOrNull { it.id == state.openChatFilterId }
     val conversation = state.conversations.firstOrNull { it.key == state.openConversationKey }
     val pager = rememberPagerState(initialPage = if (state.messagesTab) 1 else 0, pageCount = { 2 })
     val scope = rememberCoroutineScope()
     LaunchedEffect(pager.currentPage) { state.messagesTab = pager.currentPage == 1 }
     val route = when {
+        showLocalScreen -> "local"
         editingTab -> "new-tab"
         state.editChatTabs -> "edit-tab"
         openFilter != null -> "filter:${openFilter.id}"
@@ -223,6 +225,7 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
         label = "chat-navigation",
     ) { target ->
         when {
+            target == "local" -> AetherphoneLocalScreen(state) { showLocalScreen = false }
             target == "new-tab" -> AetherphoneTabEditor(state) { editingTab = false }
             target == "edit-tab" -> AetherphoneTabEditor(state) { state.editChatTabs = false }
             target.startsWith("filter:") && openFilter != null -> AetherphoneFilterConversationScreen(state, openFilter)
@@ -230,7 +233,7 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
             else -> LightFrame {
                 Column(Modifier.fillMaxSize()) {
                     HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
-                        if (page == 0) AetherphoneConversationList(state) { editingTab = true } else AetherphoneContactsList(state)
+                        if (page == 0) AetherphoneConversationList(state, { editingTab = true }, { showLocalScreen = true }) else AetherphoneContactsList(state)
                     }
                     Row(modifier = Modifier.fillMaxWidth().height(64.dp).background(AetherLightBackground), verticalAlignment = Alignment.CenterVertically) {
                         LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(0) } }
@@ -257,15 +260,13 @@ private fun LightNavItem(label: String, icon: Int, selected: Boolean, modifier: 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) {
+private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, onOpenLocal: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     var longPressedTabId by remember { mutableStateOf<String?>(null) }
     var messagesExpanded by remember { mutableStateOf(false) }
     var tabsExpanded by remember { mutableStateOf(true) }
-    var localExpanded by remember { mutableStateOf(false) }
-    var localFilter by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back)
         AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -290,43 +291,13 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit) 
                 tabsExpanded = true; messagesExpanded = false
             }
             ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
-                localExpanded = false; messagesExpanded = true; tabsExpanded = false
+                messagesExpanded = true; tabsExpanded = false
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
-            if (localExpanded) {
-                item("local-tabs") {
-                    val labels = listOf("全部", "说话", "喊话", "呼喊")
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        labels.forEachIndexed { i, l ->
-                            Text(l, color = if (localFilter == i) Color.White else AetherLightMuted, fontSize = 11.sp,
-                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (localFilter == i) AetherPurple else AetherLightControl).clickable { localFilter = i }.padding(horizontal = 10.dp, vertical = 5.dp))
-                        }
-                    }
-                }
-                val localMsgs = state.chats.filter {
-                    when {
-                        localFilter == 1 -> it.channel == 10
-                        localFilter == 2 -> it.channel == 11
-                        localFilter == 3 -> it.channel == 30
-                        else -> it.category == ChatCategory.Public || it.category == ChatCategory.Emote
-                    }
-                }.sortedBy { it.timestamp }
-                items(localMsgs, key = { "${it.timestamp}-${it.channel}-${it.text}" }) { msg ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (msg.self) "我" else msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }, color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Text(lightTalkTime(msg.timestamp), color = AetherLightMuted, fontSize = 10.sp)
-                        }
-                        Text(msg.text, color = AetherLightText, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
-                    }
-                }
-                if (localMsgs.isEmpty()) item("local-empty") {
-                    Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
-                }
-            } else if (messagesExpanded) {
+            if (messagesExpanded) {
                 item("local-entry") {
-                    Row(Modifier.fillMaxWidth().clickable { localExpanded = true; localFilter = 0 }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { onOpenLocal() }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
                         Text("本地", color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
                         Text("说话/喊话/呼喊/情感动作 ›", color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -575,6 +546,45 @@ private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: B
                     .background(if (notify) Color(0xFFD93025) else Color(0xFF9AA0A6))
                     .padding(horizontal = 5.dp, vertical = 1.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
+    var filter by remember { mutableIntStateOf(0) }
+    val labels = listOf("全部", "说话", "喊话", "呼喊")
+    val msgs = state.chats.filter {
+        when {
+            filter == 1 -> it.channel == 10
+            filter == 2 -> it.channel == 11
+            filter == 3 -> it.channel == 30
+            else -> it.category == ChatCategory.Public || it.category == ChatCategory.Emote
+        }
+    }.sortedBy { it.timestamp }
+    LightFrame {
+        Column(Modifier.fillMaxSize()) {
+            LightHeader("本地", onBack)
+            Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                labels.forEachIndexed { i, l ->
+                    Text(l, color = if (filter == i) Color.White else AetherLightMuted, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (filter == i) AetherPurple else AetherLightControl).clickable { filter = i }.padding(horizontal = 12.dp, vertical = 6.dp))
+                }
+            }
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
+                items(msgs, key = { "${it.timestamp}-${it.channel}-${it.text}" }) { msg ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (msg.self) "我" else msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }, color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(lightTalkTime(msg.timestamp), color = AetherLightMuted, fontSize = 10.sp)
+                        }
+                        Text(msg.text, color = AetherLightText, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+                if (msgs.isEmpty()) item("empty") {
+                    Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
+                }
+            }
         }
     }
 }

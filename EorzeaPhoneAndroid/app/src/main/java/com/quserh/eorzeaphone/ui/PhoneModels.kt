@@ -1673,21 +1673,22 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 saveSubmarine()
             }
             is PhoneEvent.Profile -> {
-                val previousConnectedKey = connectedCharacterKey
-                val key = rememberCharacter(event.profile)
-                val followOnlineCharacter = activeCharacterKey.isBlank() || activeCharacterKey == key ||
-                    (previousConnectedKey.isNotBlank() && activeCharacterKey == previousConnectedKey)
-                connectedCharacterKey = key
-                if (followOnlineCharacter) loadCharacter(key, persistSelection = true)
-                inCharacterScope(key) {
-                    profile = event.profile
-                    saveProfileCache(event.profile)
-                }
+                // Set the online core state first so a data-load failure can never
+                // brick the session (which used to leave the app "connecting" forever).
+                connectedCharacterKey = characterKey(event.profile)
                 gameOnline = true
                 connectedCharacterConfirmed = true
                 awaitingCharacterProfile = false
                 serverLabel = "${event.profile.name} · 在线"
                 statusMessage = "角色在线"
+                runCatching {
+                    val key = rememberCharacter(event.profile)
+                    if (activeCharacterKey.isBlank() || activeCharacterKey == key) loadCharacter(key, persistSelection = true)
+                    inCharacterScope(key) {
+                        profile = event.profile
+                        saveProfileCache(event.profile)
+                    }
+                }
                 val pending = pendingCharacterEvents.toList()
                 pendingCharacterEvents.clear()
                 pending.forEach(::handle)
