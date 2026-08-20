@@ -1532,6 +1532,15 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun clearTrustedServer() = connection.clearTrustedServer()
 
     private fun handle(event: PhoneEvent) {
+        try {
+            handleImpl(event)
+        } catch (t: Throwable) {
+            statusMessage = "处理数据出错: " + (t.message ?: t.javaClass.simpleName)
+            android.util.Log.e("EorzeaPhone", "handle failed", t)
+        }
+    }
+
+    private fun handleImpl(event: PhoneEvent) {
         val scopedEvent = event is PhoneEvent.FriendList || event is PhoneEvent.Chat || event is PhoneEvent.Inventory ||
             event is PhoneEvent.Wallet || event is PhoneEvent.Weather || event is PhoneEvent.Jobs ||
             event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
@@ -1761,7 +1770,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (event.channel in 9..16 || event.channel in 19..26) {
                     if (event.name.isNotBlank()) {
                         groupChannelNames[event.channel] = event.name
-                        prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames).toString()).apply()
+                        prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames.mapKeys { it.key.toString() }).toString()).apply()
                     }
                 }
                 currentChannel = event.channel
