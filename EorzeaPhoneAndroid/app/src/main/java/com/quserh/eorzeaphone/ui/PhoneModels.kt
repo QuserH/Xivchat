@@ -1144,6 +1144,20 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         teleportStatus = TeleportStatus.Idle
     }
 
+    private fun markTellFailureFromSystem(text: String) {
+        val match = Regex("向(.+?)发送悄悄话失败").find(text) ?: return
+        val recipient = match.groupValues[1].trim()
+        val conv = conversations.firstOrNull { it.key == "tell:${recipient.normalizedPlayerName()}" } ?: return
+        val idx = conv.messages.indexOfLast { it.self && it.sendState == 1 }
+        if (idx >= 0) {
+            val updated = conv.messages[idx].copy(sendState = 2)
+            conv.messages[idx] = updated
+            val fi = chats.indexOfFirst { it.timestamp == updated.timestamp && it.sender == updated.sender && it.text == updated.text }
+            if (fi >= 0) chats[fi] = updated
+            saveChats()
+        }
+    }
+
     private fun outChannelFor(category: ChatCategory): Int = when (category) {
         ChatCategory.Tell -> 12
         ChatCategory.Party -> 2
@@ -1564,6 +1578,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         if (allow) {
                             val title = if (isTell) event.message.sender.ifBlank { conv.title } else matchedTab?.label ?: event.message.category.label
                             notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell, title)
+                        }
+                        if (event.message.category == ChatCategory.System && !isSelf) {
+                            markTellFailureFromSystem(event.message.text)
                         }
                         saveChats()
                     }
