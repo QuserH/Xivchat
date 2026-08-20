@@ -137,8 +137,7 @@ val outputChannels = listOf(
 
 class ChatConversation(
     val key: String,
-    val category: ChatCategory,
-    var title: String,
+    var title by mutableStateOf(title)
     val tellRecipient: String = "",
 ) {
     val messages = mutableStateListOf<GameChatMessage>()
@@ -604,7 +603,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             msgs.sortBy { it.timestamp }
             for (m in msgs) {
-                if (chats.none { it.timestamp == m.timestamp && it.sender == m.sender && it.text == m.text }) {
+                if (chats.none { it.timestamp == m.timestamp && it.channel == m.channel && it.sender == m.sender && it.text == m.text }) {
                     chats.add(m)
                     getOrCreateConversation(m)?.add(m)
                 }
@@ -1139,6 +1138,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         } else {
             trimmed
         }
+        if (conv.category == ChatCategory.Linkshell) {
+            inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)?.let { connection.changeChannel(it) }
+        }
         connection.sendChat(payload)
         val isTell = conv.category == ChatCategory.Tell
         val selfSender = if (isTell) conv.tellRecipient.ifBlank { profile?.name.orEmpty() } else profile?.name.orEmpty().ifBlank { "我" }
@@ -1211,6 +1213,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             if (fi >= 0) chats[fi] = updated
             saveChats()
         }
+    }
+
+    private fun inputChannelFor(messageChannel: Int): Int? = when (messageChannel) {
+        in 16..23 -> messageChannel + 3
+        in 86..93 -> messageChannel - 67
+        37 -> 9
+        in 101..107 -> messageChannel - 91
+        else -> null
     }
 
     private fun outChannelFor(category: ChatCategory): Int = when (category) {
@@ -1630,7 +1640,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 val selfEcho = pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
                 if (selfEcho != null) {
                     markPendingSendsDelivered()
-                } else if (chats.none { it.timestamp == event.message.timestamp && it.sender == event.message.sender && it.text == event.message.text }) {
+                } else if (chats.none { it.timestamp == event.message.timestamp && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
                     chats.add(event.message)
                     val conv = getOrCreateConversation(event.message)
                     if (conv == null) {

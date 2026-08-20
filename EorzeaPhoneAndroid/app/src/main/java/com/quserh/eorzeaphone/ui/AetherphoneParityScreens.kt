@@ -516,21 +516,6 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                         "提醒" to when (alertPolicy) { ChatAlertPolicy.All -> "全部"; ChatAlertPolicy.Mentions -> "仅提及"; ChatAlertPolicy.Off -> "关闭" },
                     )
                     settings.forEach { (label, value) ->
-                        Box {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(58.dp).clickable { settingMenu = label }) {
-                            Text(label, color = AetherLightText, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text(value, color = AetherPurple, fontSize = 14.sp)
-                            Text("›", color = AetherLightMuted, fontSize = 28.sp, modifier = Modifier.padding(start = 7.dp))
-                            }
-                            DropdownMenu(expanded = settingMenu == label, onDismissRequest = { settingMenu = null }) {
-                                when (label) {
-                                    "回复发送到" -> outputChannels.forEach { channel -> DropdownMenuItem(text = { Text(channel.label) }, onClick = { sendChannel = channel.id; settingMenu = null }) }
-                                    "布局" -> listOf(ChatLayout.Bubbles to "气泡", ChatLayout.Compact to "紧凑").forEach { (choice, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { layout = choice; settingMenu = null }) }
-                                    "保存记录" -> listOf(ChatHistoryPolicy.Off to "关闭", ChatHistoryPolicy.Session to "本次会话", ChatHistoryPolicy.ThirtyDays to "30 天", ChatHistoryPolicy.Forever to "永久").forEach { (choice, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { historyPolicy = choice; settingMenu = null }) }
-                                    "提醒" -> listOf(ChatAlertPolicy.All to "全部", ChatAlertPolicy.Mentions to "仅提及", ChatAlertPolicy.Off to "关闭").forEach { (choice, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { alertPolicy = choice; settingMenu = null }) }
-                                }
-                            }
-                        }
                     }
                     Text("记录仅保存在这台手机上。", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, bottom = 30.dp))
                 }
@@ -681,7 +666,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Box {
                     Box(
-                        Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
+                        modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
                             .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
                     ) { Text(outputChannels.firstOrNull { it.id == sendChannel }?.label ?: "说话", color = AetherPink, fontSize = 11.sp, maxLines = 1) }
                     DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
@@ -1017,27 +1002,6 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
-                Box {
-                    Box(
-                        modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
-                            .clickable(enabled = conversation.category != ChatCategory.Tell) { channelMenu = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            if (conversation.category == ChatCategory.Tell) "私语" else state.currentChannelName,
-                            color = AetherPink,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 5.dp),
-                        )
-                    }
-                    DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
-                        outputChannels.forEach { channel ->
-                            DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
-                        }
-                    }
-                }
                 BasicTextField(
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },

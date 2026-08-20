@@ -92,12 +92,12 @@ internal fun String.normalizedPlayerName(): String = this
     .lowercase()
 
 internal fun String.displayPlayerName(): String {
-    val clean = this
-        .trim()
-        .trimStart('>', '<', '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097')
+    val flower = this
+        .replace(Regex("[\\uE000-\\uE0FF]+"), "❀")
+        .trimStart('★', '☆', '♡', '♥', '✿', '❀', '⚜', '＊', '*', ' ', '>', '<')
         .substringBefore('@')
         .trim()
-    return clean.ifBlank { "对方" }
+    return flower.ifBlank { "对方" }
 }
 
 data class GameInventoryItem(
