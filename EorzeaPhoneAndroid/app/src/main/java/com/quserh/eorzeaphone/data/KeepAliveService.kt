@@ -40,6 +40,16 @@ class KeepAliveService : Service() {
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // 用户从最近任务划掉时尝试继续存活：立即重启前台服务（系统可能仍会回收）。
+        try {
+            val restart = Intent(applicationContext, KeepAliveService::class.java)
+            restart.setPackage(packageName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(restart) else startService(restart)
+        } catch (_: Throwable) {
+        }
+        super.onTaskRemoved(rootIntent)
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createChannel() {

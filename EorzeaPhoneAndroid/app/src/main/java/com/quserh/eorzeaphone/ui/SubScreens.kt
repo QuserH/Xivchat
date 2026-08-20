@@ -134,6 +134,7 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
         trailing?.invoke()
     }
 }
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(state: PhoneState) {
     var characterMenu by remember { mutableStateOf(false) }
@@ -147,6 +148,17 @@ fun SettingsScreen(state: PhoneState) {
         state.connected -> "正在读取角色资料"
         else -> "连接游戏后显示角色资料"
     }
+    val avatarKey = state.currentCharacterKey
+    val avatarPath = state.characterAvatar(avatarKey)
+    var avatarBmp by remember(avatarPath) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(avatarPath) { avatarBmp = if (avatarPath.isNotBlank()) runCatching { android.graphics.BitmapFactory.decodeFile(avatarPath) }.getOrNull() else null }
+    var avatarMenu by remember { mutableStateOf(false) }
+    val pickAvatar = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null && avatarKey.isNotBlank()) {
+            val path = state.savePickedAvatar(avatarKey, uri)
+            if (path != null) state.setCharacterAvatar(avatarKey, path)
+        }
+    }
     ScreenFrame {
         ScreenHeader("设置", state, showBack = false)
         LazyColumn(
@@ -158,8 +170,17 @@ fun SettingsScreen(state: PhoneState) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(18.dp),
                 ) {
-                    Box(Modifier.size(68.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
-                        Text(profileName?.take(1) ?: "人", color = Color.White, fontSize = 20.sp)
+                    Box(
+                        modifier = Modifier.size(68.dp).clip(CircleShape).background(PhoneAccent)
+                            .combinedClickable(onClick = {}, onLongClick = { avatarMenu = true }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val current = avatarBmp
+                        if (current != null) {
+                            Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            Text(profileName?.take(1) ?: "人", color = Color.White, fontSize = 20.sp)
+                        }
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
@@ -226,7 +247,23 @@ fun SettingsScreen(state: PhoneState) {
             item {
                 Text("数据来源：${state.serverLabel}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
             }
+            item {
+                Text("长按左上角头像可更换角色头像（每个角色独立保存）", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+            }
         }
+    }
+    if (avatarMenu) {
+        AlertDialog(
+            onDismissRequest = { avatarMenu = false },
+            title = { Text("更换头像") },
+            text = {
+                Column {
+                    Text("从相册选择", color = PhoneText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarMenu = false; pickAvatar.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
+                    Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setCharacterAvatar(avatarKey, ""); avatarMenu = false }.padding(vertical = 12.dp))
+                }
+            },
+            confirmButton = {},
+        )
     }
 }
 @Composable

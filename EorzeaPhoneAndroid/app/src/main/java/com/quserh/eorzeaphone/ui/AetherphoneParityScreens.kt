@@ -277,13 +277,13 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
     var longPressedTabId by remember { mutableStateOf<String?>(null) }
     var renameTarget by remember { mutableStateOf<ChatConversation?>(null) }
     var renameText by remember { mutableStateOf("") }
-    var iconPickerTarget by remember { mutableStateOf<ChatConversation?>(null) }
+    var iconKeyTarget by remember { mutableStateOf<String?>(null) }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        val target = iconPickerTarget
-        iconPickerTarget = null
+        val target = iconKeyTarget
+        iconKeyTarget = null
         if (uri != null && target != null) {
-            val path = state.savePickedIcon(target.key, uri)
-            if (path != null) state.setConversationIcon(target.key, path)
+            val path = state.savePickedIcon(target, uri)
+            if (path != null) state.setConversationIcon(target, path)
         }
     }
     var messagesExpanded by remember { mutableStateOf(state.chatListTab == "messages") }
@@ -325,7 +325,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     }
                 }
                 items(sortedRows, key = { "message-${it.key}" }) { conversation ->
-                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconPickerTarget = it }) }
+                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key }) }
                 }
                 if (sortedRows.isEmpty() && !state.connected) item("empty") {
                     Text("连接游戏后显示聊天消息", color = AetherLightMuted, fontSize = 14.sp,
@@ -347,7 +347,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 onLongClick = { longPressedTabId = filter.id },
                             ).padding(vertical = 8.dp)) {
                                 Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
-                                    Text(filter.label.take(1), color = if (selected) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) Color.White else AetherLightMuted)
                                 }
                                 Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                     Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -361,6 +361,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 }
                             }
                             DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
+                                DropdownMenuItem(text = { Text("更换图标") }, onClick = { iconKeyTarget = filter.id; longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("删除标签页", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
                             }
@@ -387,15 +388,16 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
         )
     }
-    iconPickerTarget?.let { target ->
+    iconKeyTarget?.let { target ->
+        var showLibrary by remember { mutableStateOf(false) }
         AlertDialog(
-            onDismissRequest = { iconPickerTarget = null },
-            title = { Text("更换图标") },
+            onDismissRequest = { iconKeyTarget = null },
+            title = { Text(if (showLibrary) "图标库" else "更换图标") },
             text = {
-                Column {
+                if (showLibrary) {
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
                         builtinConversationIcons.forEach { builtin ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { state.setConversationIcon(target.key, builtin.id); iconPickerTarget = null }) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { state.setConversationIcon(target, builtin.id); iconKeyTarget = null }) {
                                 Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
                                     Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
                                 }
@@ -403,8 +405,12 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                             }
                         }
                     }
-                    Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
-                    Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target.key, ""); iconPickerTarget = null }.padding(vertical = 12.dp))
+                } else {
+                    Column {
+                        Text("图标库", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { showLibrary = true }.padding(vertical = 12.dp))
+                        Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
+                        Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target, ""); iconKeyTarget = null }.padding(vertical = 12.dp))
+                    }
                 }
             },
             confirmButton = {},
@@ -606,6 +612,24 @@ private fun chatDay(timestamp: Long): Int {
 private fun chatDayLabel(timestamp: Long): String {
     val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
     return "${cal.get(java.util.Calendar.YEAR)}年${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日"
+}
+@Composable
+private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor: Color = Color.White) {
+    val builtin = builtinConversationIcons.firstOrNull { it.id == icon }
+    when {
+        builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        icon.startsWith("/") -> {
+            var bmp by remember(icon) { mutableStateOf<android.graphics.Bitmap?>(null) }
+            LaunchedEffect(icon) { bmp = runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull() }
+            val current = bmp
+            if (current != null) {
+                Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            } else {
+                Text(fallback.take(1), color = fallbackColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        else -> Text(fallback.take(1), color = fallbackColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
 }
 private data class BuiltinConversationIcon(val id: String, val label: String, @DrawableRes val res: Int)
 
