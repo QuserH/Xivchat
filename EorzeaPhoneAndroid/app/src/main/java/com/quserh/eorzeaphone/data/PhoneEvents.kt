@@ -10,6 +10,7 @@ data class GameFriend(
     val contentId: Long = 0,
     val currentWorldId: Int = 0,
     val homeWorldId: Int = 0,
+    val classJobId: Int = 0,
 )
 
 data class GameChatChunk(val text: String? = null, val icon: Int? = null, val italic: Boolean = false, val foreground: Long? = null)
@@ -317,6 +318,7 @@ sealed interface PhoneEvent {
     data class GameAvailability(val available: Boolean) : PhoneEvent
     data class Error(val message: String) : PhoneEvent
     data class FriendList(val friends: List<GameFriend>) : PhoneEvent
+    data class PartyList(val members: List<GameFriend>) : PhoneEvent
     data class Chat(val message: GameChatMessage) : PhoneEvent
     data class Inventory(val snapshot: GameInventorySnapshot) : PhoneEvent
     data class Wallet(val wallet: GameWallet) : PhoneEvent

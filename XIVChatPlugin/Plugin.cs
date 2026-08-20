@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.Command;
+using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
@@ -39,6 +39,8 @@ namespace XIVChatPlugin {
 
         [PluginService]
         internal static IObjectTable ObjectTable { get; private set; } = null!;
+        [PluginService]
+        internal static IPartyList PartyList { get; private set; } = null!;
 
         [PluginService]
         internal static IUnlockState UnlockState { get; private set; } = null!;

@@ -281,7 +281,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
         }
         val myName = state.profile?.name.orEmpty().normalizedPlayerName()
         val rows = state.conversations.filter { c ->
-            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany) &&
+            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party) &&
                 !state.isConversationHidden(c) &&
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
@@ -717,8 +717,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     val rowTitle = if (conversation.category == ChatCategory.Tell) (last?.displaySender() ?: conversation.title) else conversation.title
     val preview = when {
         last == null -> "暂无消息"
-        last.self || last.isFrom(state.profile?.name) -> "${state.profile?.name ?: "我"}：${last.text}"
-        else -> "${last.displaySender()}：${last.text}"
+        else -> last.text
     }.replace('\n', ' ')
     Box {
         Row(
@@ -771,17 +770,17 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
 private fun AetherphoneContactsList(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var friendsOnly by remember { mutableStateOf(true) }
-    val shown = state.friends.filter { it.name.contains(query, true) || it.world.contains(query, true) }
+    val shown = (if (friendsOnly) state.friends else state.party).filter { it.name.contains(query, true) || it.world.contains(query, true) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
-            Text("⟳", color = AetherPurple, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends() }.padding(horizontal = 8.dp))
+            Text("⟳", color = AetherPurple, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends(); state.refreshParty() }.padding(horizontal = 8.dp))
         }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             item("search") {
                 LightSearchField(query, { query = it }, "搜索")
                 LightSegment(
                     first = "好友",
-                    second = "所有人",
+                    second = "小队",
                     firstSelected = friendsOnly,
                     onSelect = { friendsOnly = it },
                     modifier = Modifier.padding(top = 14.dp, bottom = 18.dp),
@@ -799,7 +798,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
                 item("offline-card") { LightContactCard(offline, state) }
             }
             if (shown.isEmpty()) {
-                item("empty") { Text(if (state.connected) "暂无联系人" else "连接游戏后读取好友列表", color = AetherLightMuted, modifier = Modifier.padding(top = 50.dp).fillMaxWidth(), textAlign = TextAlign.Center) }
+                item("empty") { Text(if (!state.connected) "连接游戏后读取列表" else if (friendsOnly) "暂无联系人" else "暂无小队成员", color = AetherLightMuted, modifier = Modifier.padding(top = 50.dp).fillMaxWidth(), textAlign = TextAlign.Center) }
             }
             item("end") { Spacer(Modifier.height(16.dp)) }
         }
@@ -986,7 +985,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                             if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
                         Column(Modifier.fillMaxWidth()) {
-                            LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"))
+                            LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0)
                             if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                                 Text(
                                     "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -1057,7 +1056,7 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -1076,7 +1075,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                         withStyle(SpanStyle(color = AetherLightMuted)) { append(author) }
                     }
                 }
-                Text(authorAnnotated, fontSize = 11.sp, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
+                    Text(authorAnnotated, fontSize = 11.sp)
+                    if (jobIconId > 0) {
+                        RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
+                    }
+                }
             }
             Column(
                 Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)

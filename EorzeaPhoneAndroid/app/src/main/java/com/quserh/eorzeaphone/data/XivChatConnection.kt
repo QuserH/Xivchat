@@ -60,6 +60,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                 send(output, tx, 8, XivChatCodec.encodePreferences())
                 send(output, tx, 4, XivChatCodec.encodeBacklog(100))
                 send(output, tx, 6, XivChatCodec.encodePlayerList())
+                send(output, tx, 6, XivChatCodec.encodePlayerList(1))
 
                 while (!client.isClosed) {
                     val frame = XivChatCodec.readSecret(input, sodium, rx)
@@ -81,7 +82,9 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                                 5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
                                 6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
                                 7 -> XivChatCodec.readBacklog(unpacker).forEach { onEvent(PhoneEvent.Chat(it)) }
-                                8 -> onEvent(PhoneEvent.FriendList(XivChatCodec.readFriends(unpacker)))
+                                8 -> XivChatCodec.readPlayerList(unpacker).let { (type, players) ->
+                                    if (type == 1) onEvent(PhoneEvent.PartyList(players)) else onEvent(PhoneEvent.FriendList(players))
+                                }
                                 10 -> onEvent(PhoneEvent.Housing(XivChatCodec.readHousing(unpacker)))
                                 11 -> onEvent(PhoneEvent.Inventory(XivChatCodec.readInventory(unpacker)))
                                 12 -> onEvent(PhoneEvent.Wallet(XivChatCodec.readWallet(unpacker)))
@@ -144,6 +147,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     fun teleport(placeName: String) = sendCommand(XivChatCodec.encodeTeleport(placeName), 12)
 
     fun requestFriends() = sendCommand(XivChatCodec.encodePlayerList(), 6)
+    fun requestParty() = sendCommand(XivChatCodec.encodePlayerList(1), 6)
 
     fun disconnect() {
         worker?.cancel()

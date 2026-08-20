@@ -57,6 +57,8 @@ namespace XIVChatPlugin {
         private readonly Stopwatch _collectionsWatch = new();
         private readonly Stopwatch _fishingWatch = new();
         private readonly Stopwatch _submarineWatch = new();
+        private readonly Stopwatch _partyWatch = new();
+        private long _lastPartyFingerprint;
         private readonly PhoneActivityTracker _activityTracker;
 
         private readonly CancellationTokenSource _tokenSource = new();
@@ -385,6 +387,7 @@ namespace XIVChatPlugin {
             this.UpdateFishing();
             this.UpdateSubmarine();
             this.UpdateActivity();
+            this.UpdateParty();
 
             while (this._friendActions.TryDequeue(out var friendAction)) {
                 try {
@@ -1392,6 +1395,74 @@ namespace XIVChatPlugin {
             this._lastActivityFingerprint = fingerprint;
             this.BroadcastMessage(snapshot, ClientPreference.PhoneActivitySupport);
         }
+        private void UpdateParty() {
+            if (this._partyWatch.Elapsed < TimeSpan.FromSeconds(1) || this._clients.IsEmpty) {
+                return;
+            }
+
+            this._partyWatch.Restart();
+            var snapshot = this.BuildPartyList();
+            if (snapshot == null) {
+                if (this._lastPartyFingerprint != 0) {
+                    this._lastPartyFingerprint = 0;
+                    this.BroadcastMessage(new ServerPlayerList(PlayerListType.Party, []));
+                }
+
+                return;
+            }
+
+            var fingerprint = 0L;
+            foreach (var member in snapshot.Players) {
+                fingerprint = HashCode.Combine(fingerprint, member.Name, member.Job, member.CurrentWorldName);
+            }
+
+            if (fingerprint == this._lastPartyFingerprint) {
+                return;
+            }
+
+            this._lastPartyFingerprint = fingerprint;
+            this.BroadcastMessage(snapshot);
+        }
+
+        private ServerPlayerList? BuildPartyList() {
+            try {
+                var party = XIVChatPlugin.Plugin.PartyList;
+                if (party == null || party.Length == 0) {
+                    return null;
+                }
+
+                var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
+                var members = new List<Player>();
+                for (var i = 0; i < party.Length; i++) {
+                    var member = party[i];
+                    if (member == null) {
+                        continue;
+                    }
+
+                    var name = member.Name?.TextValue ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(name)) {
+                        continue;
+                    }
+
+                    var jobId = member.ClassJob.IsValid ? member.ClassJob.RowId : 0u;
+                    var jobName = jobId > 0 ? sheet.GetRowOrDefault(jobId)?.Name.ExtractText() : null;
+                    var worldName = member.World.IsValid ? member.World.Value.Name.ExtractText() : string.Empty;
+                    members.Add(new Player {
+                        Name = name,
+                        CurrentWorldName = worldName,
+                        HomeWorldName = worldName,
+                        Job = (byte) jobId,
+                        JobName = jobName,
+                        ContentId = member.ContentId,
+                    });
+                }
+
+                return new ServerPlayerList(PlayerListType.Party, members.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not read party list: {ex.Message}");
+                return null;
+            }
+        }
 
         private static long ActivityFingerprint(ServerActivity value) {
             unchecked {
@@ -1641,6 +1712,9 @@ namespace XIVChatPlugin {
                         if (!this._plugin.Functions.RequestingFriendList && !this._plugin.Functions.RequestFriendList()) {
                             XIVChatPlugin.Plugin.ChatGui.PrintError($"[{Plugin.Name}] 请打开一次游戏内好友列表以启用好友列表功能。通常只需在首次安装或更新后执行一次。");
                         }
+                    } else if (playerList.Type == PlayerListType.Party) {
+                        var party = this.BuildPartyList() ?? new ServerPlayerList(PlayerListType.Party, []);
+                        client.Queue.Writer.TryWrite(party);
                     }
 
                     break;

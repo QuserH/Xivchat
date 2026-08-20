@@ -178,9 +178,9 @@ internal object XivChatCodec {
         return result
     }
 
-    fun readFriends(unpacker: MessageUnpacker): List<GameFriend> {
+    fun readPlayerList(unpacker: MessageUnpacker): Pair<Int, List<GameFriend>> {
         unpacker.unpackArrayHeader()
-        unpacker.skipValue()
+        val type = unpacker.unpackByte().toInt()
         val count = unpacker.unpackArrayHeader()
         val result = ArrayList<GameFriend>(count)
         repeat(count) {
@@ -194,13 +194,13 @@ internal object XivChatCodec {
             nullableString(unpacker)
             unpacker.unpackShort()
             val territory = nullableString(unpacker)
-            unpacker.unpackByte()
+            val classJob = unpacker.unpackByte().toInt()
             val job = nullableString(unpacker)
             repeat(4) { unpacker.skipValue() }
             val contentId = if (fields > 15) unpacker.unpackLong() else 0L
-            result += GameFriend(name ?: "未知玩家", currentWorld ?: "", freeCompany ?: "", territory ?: "", status and (1L shl 47) != 0L, job ?: "", contentId, currentWorldId, homeWorldId)
+            result += GameFriend(name ?: "未知玩家", currentWorld ?: "", freeCompany ?: "", territory ?: "", status and (1L shl 47) != 0L, job ?: "", contentId, currentWorldId, homeWorldId, classJob)
         }
-        return result
+        return type to result
     }
 
     fun readInventory(unpacker: MessageUnpacker): GameInventorySnapshot {

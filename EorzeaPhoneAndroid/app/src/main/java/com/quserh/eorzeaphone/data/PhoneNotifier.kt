@@ -45,7 +45,7 @@ class PhoneNotifier(private val context: Context) {
     fun chat(message: GameChatMessage, highPriority: Boolean, title: String? = null) {
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val convKey = when (message.category) {
-            ChatCategory.Tell, ChatCategory.Linkshell, ChatCategory.FreeCompany -> message.conversationKey()
+            ChatCategory.Tell, ChatCategory.Linkshell, ChatCategory.FreeCompany, ChatCategory.Party -> message.conversationKey()
             else -> "local"
         }
         intent.putExtra(MainActivity.EXTRA_CONVERSATION_KEY, convKey)

@@ -93,6 +93,7 @@ data class PhoneFriend(
     val contentId: Long = 0,
     val currentWorldId: Int = 0,
     val homeWorldId: Int = 0,
+    val classJobId: Int = 0,
 )
 
 data class ChatFilter(
@@ -535,6 +536,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     val friends = mutableStateListOf<PhoneFriend>().apply { addAll(loadFriends()) }
+    val party = mutableStateListOf<PhoneFriend>()
 
     init {
         ResetReminderReceiver.configure(appContext, resetNotifications)
@@ -1148,6 +1150,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
         val sendChannel = when (conv.category) {
             ChatCategory.Linkshell -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)
+            ChatCategory.Party -> 2
             ChatCategory.FreeCompany -> 6
             else -> null
         }
@@ -1279,6 +1282,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         ChatCategory.System -> 30
     }
 
+    fun jobIconIdFor(sender: String): Int {
+        val norm = sender.normalizedPlayerName()
+        val member = party.firstOrNull { norm.startsWith(it.name.normalizedPlayerName()) }
+            ?: friends.firstOrNull { norm.startsWith(it.name.normalizedPlayerName()) }
+        val jobId = member?.classJobId ?: 0
+        return if (jobId > 0) 62100 + jobId else 0
+    }
     fun openDeepLink(key: String) {
         selectedApp = AppCatalog.dock.first()
         screen = PhoneScreen.Chat
@@ -1377,7 +1387,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         if (message.category == ChatCategory.System) return null
         // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
         // sent message must keep the group conversation visible in the message list.
-        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell
+        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party
         if (message.self || message.isFrom(profile?.name)) {
             if (!groupChannel && message.category != ChatCategory.Tell) return null
             val existing = conversationByKey[key]
@@ -1385,6 +1395,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
         val groupTitle = when {
             message.category == ChatCategory.Linkshell -> groupNameForChannel(message.channel) ?: message.conversationTitle()
+            message.category == ChatCategory.Party -> "小队"
             message.category == ChatCategory.FreeCompany -> "部队"
             else -> message.conversationTitle()
         }
@@ -1621,6 +1632,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun refreshFriends() = connection.requestFriends()
+    fun refreshParty() = connection.requestParty()
 
     fun clearTrustedServer() = connection.clearTrustedServer()
 
@@ -1637,7 +1649,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val scopedEvent = event is PhoneEvent.FriendList || event is PhoneEvent.Chat || event is PhoneEvent.Inventory ||
             event is PhoneEvent.Wallet || event is PhoneEvent.Weather || event is PhoneEvent.Jobs ||
             event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
-            event is PhoneEvent.Collections || event is PhoneEvent.Maps || event is PhoneEvent.Fishing
+            event is PhoneEvent.Collections || event is PhoneEvent.Maps || event is PhoneEvent.Fishing ||
+            event is PhoneEvent.PartyList
         if (scopedEvent && !connectedCharacterConfirmed) {
             if (awaitingCharacterProfile) pendingCharacterEvents += event
             return
@@ -1707,9 +1720,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Error -> statusMessage = event.message
             is PhoneEvent.FriendList -> {
                 friends.clear()
-                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId) })
+                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
                 saveFriends()
                 repairTellRecipients()
+            }
+            is PhoneEvent.PartyList -> {
+                party.clear()
+                party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
             }
             is PhoneEvent.Chat -> {
                 cacheChannelColor(event.message)
