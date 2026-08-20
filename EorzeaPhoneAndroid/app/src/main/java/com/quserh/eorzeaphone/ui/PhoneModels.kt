@@ -1699,12 +1699,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             val liveTarget = event.message.tellTarget()
                             if (liveTarget.isNotBlank() && echoConv.tellRecipient != liveTarget) echoConv.tellRecipient = liveTarget
                         }
-                        val dup = echoConv.messages.lastOrNull()?.let { kotlin.math.abs(it.timestamp - event.message.timestamp) < 100L && it.text == event.message.text && it.sender == event.message.sender }
-                        if (dup != true) {
+                        pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
+                        val existingIdx = echoConv.messages.indexOfLast { it.self && it.text == event.message.text && kotlin.math.abs(it.timestamp - event.message.timestamp) < 30_000L }
+                        if (existingIdx >= 0) {
+                            val existing = echoConv.messages[existingIdx]
+                            val updated = existing.copy(sendState = 0)
+                            echoConv.messages[existingIdx] = updated
+                            val chatIdx = chats.indexOfFirst { it === existing }
+                            if (chatIdx >= 0) chats[chatIdx] = updated
+                        } else if (chats.none { it.timestamp == event.message.timestamp && it.channel == 12 && it.sender == event.message.sender && it.text == event.message.text }) {
                             chats.add(event.message)
                             echoConv.add(event.message)
-                            saveChats()
                         }
+                        saveChats()
                     }
                     if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
                     return
