@@ -1548,6 +1548,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             awaitingCharacterProfile = false
                             serverLabel = "已连接游戏"
                             statusMessage = ""
+                            val pending = pendingCharacterEvents.toList()
+                            pendingCharacterEvents.clear()
+                            pending.forEach(::handle)
                         }
                     }
                 }

@@ -101,7 +101,7 @@ internal object XivChatCodec {
         val channel = unpacker.unpackShort().toInt()
         val sender = decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader()))
         val text = stripChatPrefix(decodeXiv(unpacker.readPayload(unpacker.unpackBinaryHeader())), sender)
-        val chunks = if (fields > 4) readChunks(unpacker) else emptyList()
+        val chunks = if (fields > 4) readChunks(unpacker, sender) else emptyList()
         return GameChatMessage(time, sender, text, channel, chunks = chunks)
     }
 
@@ -122,8 +122,9 @@ internal object XivChatCodec {
         return t.ifBlank { raw.trim() }
     }
 
-    private fun readChunks(unpacker: MessageUnpacker): List<GameChatChunk> {
+    private fun readChunks(unpacker: MessageUnpacker, sender: String): List<GameChatChunk> {
         val count = unpacker.unpackArrayHeader()
+        var firstText = true
         return buildList(count) {
             repeat(count) {
                 val unionFields = unpacker.unpackArrayHeader()
@@ -144,7 +145,9 @@ internal object XivChatCodec {
                                 else -> unpacker.skipValue()
                             }
                         }
-                        if (content.isNotEmpty()) add(GameChatChunk(text = content, italic = italic, foreground = foreground ?: fallback))
+                        val cleaned = if (firstText) stripChatPrefix(content, sender) else content
+                        firstText = false
+                        if (cleaned.isNotEmpty()) add(GameChatChunk(text = cleaned, italic = italic, foreground = foreground ?: fallback))
                     }
                     2 -> {
                         val fields = unpacker.unpackArrayHeader()
