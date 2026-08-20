@@ -442,7 +442,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val _contentMargin = mutableStateOf(prefs.getInt("contentMargin", 16))
     var contentMargin: Int
         get() = _contentMargin.value
-        set(value) { _contentMargin.value = value.coerceIn(4, 48); prefs.edit().putInt("contentMargin", _contentMargin.value).apply() }
+        set(value) { _contentMargin.value = value.coerceIn(0, 60); prefs.edit().putInt("contentMargin", _contentMargin.value).apply() }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
     var selectedChatFilterId by mutableStateOf("")
