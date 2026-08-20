@@ -37,7 +37,24 @@ import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
 import com.quserh.eorzeaphone.ui.theme.EorzeaPhoneTheme
@@ -106,6 +123,7 @@ fun EorzeaPhoneApp() {
             },
             label = "phone-navigation",
             ) { target ->
+                Box(Modifier.fillMaxSize().padding(horizontal = state.contentMargin.dp)) {
                 when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
         PhoneScreen.Settings -> SettingsSubScreen(state)
@@ -136,11 +154,15 @@ fun EorzeaPhoneApp() {
             "health" -> HealthScreen(state)
             "appstore" -> AppStoreScreen(state)
             else -> GenericAppScreen(state)
-        }
+            }
                 }
+            }
+            if (state.teleportStatus != TeleportStatus.Idle) {
+                TeleportBanner(state)
             }
         }
     }
+}
 }
 
 private fun performPhoneHaptic(context: Context, view: android.view.View) {
@@ -152,4 +174,33 @@ private fun performPhoneHaptic(context: Context, view: android.view.View) {
     } ?: return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(14L, 90))
     else @Suppress("DEPRECATION") vibrator.vibrate(14L)
+}
+
+@Composable
+private fun TeleportBanner(state: PhoneState) {
+    val target = state.teleportTarget ?: return
+    val done = state.teleportStatus == TeleportStatus.Done
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 56.dp, start = state.contentMargin.dp + 8.dp, end = state.contentMargin.dp + 8.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (done) Color(0xEE23382A) else Color(0xEE20283A))
+            .pointerInput(state) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, _ -> },
+                    onDragEnd = { state.dismissTeleport() },
+                )
+            }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ItemIcon(60453, Modifier.size(30.dp), "晶")
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(target, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (done) "传送完毕" else "传送中", color = (if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF)), fontSize = 11.sp)
+            }
+            Text(if (done) "✓" else "…", color = if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+    }
 }

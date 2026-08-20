@@ -65,6 +65,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import com.quserh.eorzeaphone.R
 import kotlinx.coroutines.launch
 import java.time.LocalTime
@@ -156,6 +158,7 @@ private fun SocialPage(state: PhoneState, page: Int) {
 
 @Composable
 private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
+    val hapticView = LocalView.current
     val bounds = remember { mutableStateMapOf<String, Rect>() }
     var dragId by remember(page) { mutableStateOf<String?>(null) }
     var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
@@ -193,6 +196,7 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
                             dimmed = false,
                             onBounds = { bounds[app.id] = it },
                             onTap = {
+                                if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                 if (state.homeEditMode) {
                                     state.removeFromHome(page, app.id)
                                 } else {
@@ -429,6 +433,7 @@ internal fun weatherGlyph(name: String): String = when {
 
 @Composable
 private fun Dock(state: PhoneState, darkTheme: Boolean) {
+    val hapticView = LocalView.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -448,7 +453,7 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
                     .onGloballyPositioned { bounds = it.boundsInRoot() }
                     .clip(RoundedCornerShape(14.dp))
                     .background(app.color)
-                    .clickable { state.open(app, bounds) },
+                    .clickable { if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); state.open(app, bounds) },
             ) {
                 Image(
                     painter = painterResource(app.icon),

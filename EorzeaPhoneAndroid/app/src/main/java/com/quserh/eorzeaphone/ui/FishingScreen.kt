@@ -39,6 +39,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
@@ -332,6 +334,7 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
     var mapScale by remember(spot.mapFile) { mutableStateOf(1f) }
     var mapPanX by remember(spot.mapFile) { mutableStateOf(0f) }
     var mapPanY by remember(spot.mapFile) { mutableStateOf(0f) }
+    var pendingTeleport by remember { mutableStateOf<String?>(null) }
     val transformState = rememberTransformableState { zoom, pan, _ ->
         mapScale = (mapScale * zoom).coerceIn(1f, 4f)
         mapPanX += pan.x
@@ -377,7 +380,7 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                             val y = (crystal.y / 2048f).coerceIn(0f, 1f)
                             Column(
                                 Modifier.offset(x = mapWidth * x - 28.dp, y = mapHeight * y - 14.dp)
-                                    .clickable(enabled = state.connected && crystal.name.isNotBlank()) { state.teleportTo(crystal.name) },
+                                    .clickable(enabled = state.connected && crystal.name.isNotBlank()) { pendingTeleport = crystal.name },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 ItemIcon(60453, Modifier.size(28.dp), "晶")
@@ -408,6 +411,16 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                 }
             }
         }
+    }
+    val target = pendingTeleport
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { pendingTeleport = null },
+            title = { Text("确认传送") },
+            text = { Text("确定要传送到 ${target} 吗？") },
+            confirmButton = { TextButton(onClick = { pendingTeleport = null; state.requestTeleport(target) }) { Text("是") } },
+            dismissButton = { TextButton(onClick = { pendingTeleport = null }) { Text("否") } },
+        )
     }
 }
 

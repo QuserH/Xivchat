@@ -318,6 +318,20 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
             ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.app_photos) { state.reducedMotion = it }
             ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.app_settings) { state.keepScreenOn = it }
         }
+        SectionLabel("内容边距")
+        SettingsGroup {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("左右边距", color = PhoneText, modifier = Modifier.weight(1f))
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.contentMargin -= 2 }, contentAlignment = Alignment.Center) {
+                    Text("−", color = PhoneAccent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("  ${state.contentMargin}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.contentMargin += 2 }, contentAlignment = Alignment.Center) {
+                    Text("＋", color = PhoneAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("左右都向内收缩·数值越小越贴近屏幕边缘", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        }
         SectionLabel("主题")
         SettingsGroup {
             PhoneThemeMode.entries.forEach { mode ->

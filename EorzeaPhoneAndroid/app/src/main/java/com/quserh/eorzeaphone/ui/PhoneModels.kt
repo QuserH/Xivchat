@@ -110,6 +110,7 @@ data class ChatFilter(
 enum class ChatLayout { Bubbles, Compact }
 enum class ChatHistoryPolicy { Off, Session, ThirtyDays, Forever }
 enum class ChatAlertPolicy { All, Mentions, Off }
+enum class TeleportStatus { Idle, Teleporting, Done }
 
 internal fun formatCount(value: Long): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value)
 internal fun formatCount(value: Int): String = formatCount(value.toLong())
@@ -183,7 +184,7 @@ val defaultShortcuts = listOf(
     CustomShortcut("离开队伍", "/leave"),
 )
 
-class PhoneState(context: Context, scope: CoroutineScope) {
+class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
     private var activeCharacterKey = prefs.getString("activeCharacterKey", "").orEmpty()
     val knownCharacters = mutableStateListOf<SavedCharacter>().apply { addAll(loadKnownCharacters()) }
@@ -435,6 +436,10 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     var chatWrapChars: Int
         get() = _chatWrapChars.value
         set(value) { _chatWrapChars.value = value; prefs.edit().putInt("chatWrapChars", value).apply() }
+    private val _contentMargin = mutableStateOf(prefs.getInt("contentMargin", 16))
+    var contentMargin: Int
+        get() = _contentMargin.value
+        set(value) { _contentMargin.value = value.coerceIn(4, 48); prefs.edit().putInt("contentMargin", _contentMargin.value).apply() }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
     var selectedChatFilterId by mutableStateOf("")
@@ -452,6 +457,9 @@ class PhoneState(context: Context, scope: CoroutineScope) {
     private val hiddenConversations: MutableSet<String> =
         (prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pendingSelfTexts = mutableMapOf<String, String>()
+    var teleportTarget by mutableStateOf<String?>(null)
+    var teleportStatus by mutableStateOf(TeleportStatus.Idle)
+    private var teleportTimer: kotlinx.coroutines.Job? = null
     private val connection = XivChatConnection(
         context = context,
         scope = scope,
@@ -1081,6 +1089,29 @@ class PhoneState(context: Context, scope: CoroutineScope) {
         confirm(chats)
         conversations.forEach { conv -> confirm(conv.messages) }
         pendingSelfTexts.clear()
+    }
+
+    fun requestTeleport(placeName: String) {
+        val name = placeName.trim()
+        if (name.isEmpty()) return
+        teleportTarget = name
+        teleportStatus = TeleportStatus.Teleporting
+        connection.teleport(name)
+        teleportTimer?.cancel()
+        teleportTimer = scope.launch(Dispatchers.Main) {
+            kotlinx.coroutines.delay(8_000)
+            teleportStatus = TeleportStatus.Done
+            kotlinx.coroutines.delay(3_000)
+            teleportTarget = null
+            teleportStatus = TeleportStatus.Idle
+        }
+    }
+
+    fun dismissTeleport() {
+        teleportTimer?.cancel()
+        teleportTimer = null
+        teleportTarget = null
+        teleportStatus = TeleportStatus.Idle
     }
 
     private fun outChannelFor(category: ChatCategory): Int = when (category) {
