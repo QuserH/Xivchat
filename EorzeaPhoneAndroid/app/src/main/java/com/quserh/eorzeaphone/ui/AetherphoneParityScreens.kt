@@ -550,6 +550,20 @@ private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: B
     }
 }
 
+private fun channelDefaultColor(channel: Int): Color = when (channel) {
+    10, 81 -> Color(0xFFF7F7F7)
+    11, 82 -> Color(0xFFFFA666)
+    30, 83 -> Color(0xFFFFFF00)
+    12, 13, 80 -> Color(0xFFFFB8DE)
+    14, 84, 32 -> Color(0xFF66E5FF)
+    15 -> Color(0xFFFF7F00)
+    24, 85 -> Color(0xFF8C7AFF)
+    27, 94, 75 -> Color(0xFFD4FF7D)
+    29, 28 -> Color(0xFFBAFFF0)
+    56, 57, 58, 59, 60, 61, 62, 64, 65, 66, 67, 68, 71, 72, 73, 74, 75, 76, 79 -> Color(0xFFCCCCCC)
+    in 16..23, in 86..93, in 37..44, in 101..107 -> Color(0xFFD4FF7D)
+    else -> Color(0xFFCCCCCC)
+}
 private fun channelTag(channel: Int): String = when (channel) {
     10, 81 -> "说话"
     11, 82 -> "喊话"
@@ -1041,10 +1055,11 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) {
                 val bubbleInk = if (self) Color.White else AetherLightText
+                val tagColor = message.chunks.firstNotNullOfOrNull { it.foreground }?.let(::chatChunkColor) ?: channelDefaultColor(message.channel)
                 val authorAnnotated = buildAnnotatedString {
                     val close = author.indexOf(']')
                     if (author.startsWith('[') && close >= 0) {
-                        withStyle(SpanStyle(color = bubbleInk, fontWeight = FontWeight.SemiBold)) { append(author.substring(0, close + 1)) }
+                        withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) { append(author.substring(0, close + 1)) }
                         withStyle(SpanStyle(color = AetherLightMuted)) { append(" " + author.substring(close + 1).trimStart()) }
                     } else {
                         withStyle(SpanStyle(color = AetherLightMuted)) { append(author) }

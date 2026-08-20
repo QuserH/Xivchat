@@ -413,6 +413,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var editChatTabs by mutableStateOf(false)
     var editingChatFilterId by mutableStateOf<String?>(null)
     val chats = mutableStateListOf<GameChatMessage>()
+    private val channelColorCache = mutableMapOf<Int, Long>()
+    fun channelColor(channel: Int): Long? = channelColorCache[channel]
+    private fun cacheChannelColor(message: GameChatMessage) {
+        val color = message.chunks.firstNotNullOfOrNull { it.foreground }
+        if (color != null) channelColorCache[message.channel] = color
+    }
     val inventory = mutableStateListOf<GameInventoryItem>()
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
     val retainers = mutableStateListOf<GameRetainer>()
@@ -1553,6 +1559,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 saveFriends()
             }
             is PhoneEvent.Chat -> {
+                cacheChannelColor(event.message)
                 val convKey = event.message.conversationKey()
                 if (event.message.channel == 12) {
                     // TellOutgoing echoes the message we just sent; it is already shown

@@ -321,19 +321,6 @@ namespace XIVChatPlugin {
 
             var colour = this._plugin.Functions.GetChannelColour(message.LogKind) ?? message.LogKind.DefaultColour();
 
-            if (message.Sender.Payloads.Count > 0) {
-                var format = this.FormatFor(message.LogKind);
-                if (format is { IsPresent: true }) {
-                    chunks.Add(new TextChunk(format.Before) {
-                        FallbackColour = colour,
-                    });
-                    chunks.AddRange(ToChunks(message.Sender, colour));
-                    chunks.Add(new TextChunk(format.After) {
-                        FallbackColour = colour,
-                    });
-                }
-            }
-
             chunks.AddRange(ToChunks(message.Message, colour));
 
             var msg = new ServerMessage(
