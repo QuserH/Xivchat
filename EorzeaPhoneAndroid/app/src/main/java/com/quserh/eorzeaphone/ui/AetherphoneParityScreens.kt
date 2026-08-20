@@ -784,16 +784,22 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 BasicTextField(
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },
+                    enabled = state.activeCharacterOnline,
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightSurface),
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp))
+                        .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
                         Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                                if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
-                                field()
+                                if (!state.activeCharacterOnline) {
+                                    Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted.copy(alpha = .72f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                } else {
+                                    if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
+                                    field()
+                                }
                             }
                         }
                     },
@@ -1059,10 +1065,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     Text("⌄", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 5.dp))
                 }
             }
-            if (!state.activeCharacterOnline) {
-                Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted, fontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp))
-            }
+
             val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
             if (visible.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1129,16 +1132,22 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 BasicTextField(
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },
+                    enabled = state.activeCharacterOnline,
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightSurface),
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp))
+                        .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
                         Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                                if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
-                                field()
+                                if (!state.activeCharacterOnline) {
+                                    Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted.copy(alpha = .72f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                } else {
+                                    if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
+                                    field()
+                                }
                             }
                         }
                     },
