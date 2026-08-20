@@ -274,7 +274,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
         }
         val myName = state.profile?.name.orEmpty().normalizedPlayerName()
         val rows = state.conversations.filter { c ->
-            c.category == ChatCategory.Tell &&
+            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany) &&
                 !state.isConversationHidden(c) &&
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
@@ -550,9 +550,26 @@ private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: B
     }
 }
 
+private fun channelTag(channel: Int): String = when (channel) {
+    10, 81 -> "说话"
+    11, 82 -> "喊话"
+    30, 83 -> "呼喊"
+    12, 13, 80 -> "私聊"
+    14, 84, 32 -> "小队"
+    15 -> "团队"
+    24, 85 -> "部队"
+    27, 94, 75 -> "新人"
+    in 16..23, in 86..93 -> "通讯贝"
+    in 37..44, in 101..107 -> "跨服通讯贝"
+    29, 28 -> "情感动作"
+    else -> ""
+}
+
 @Composable
 private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var filter by remember { mutableIntStateOf(0) }
+    var sendChannel by remember { mutableStateOf(1) }
+    var channelMenu by remember { mutableStateOf(false) }
     val labels = listOf("全部", "说话", "喊话", "呼喊")
     val msgs = state.chats.filter {
         when {
@@ -571,19 +588,74 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (filter == i) AetherPurple else AetherLightControl).clickable { filter = i }.padding(horizontal = 12.dp, vertical = 6.dp))
                 }
             }
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
-                items(msgs, key = { "${it.timestamp}-${it.channel}-${it.text}" }) { msg ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (msg.self) "我" else msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }, color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Text(lightTalkTime(msg.timestamp), color = AetherLightMuted, fontSize = 10.sp)
+            val listState = rememberLazyListState()
+            LaunchedEffect(filter, msgs.size) { if (msgs.isNotEmpty()) listState.scrollToItem(msgs.lastIndex) }
+            if (msgs.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    itemsIndexed(msgs, key = { index, msg -> "$index-${msg.timestamp}-${msg.channel}-${msg.text}" }) { index, msg ->
+                        val self = msg.self || msg.isFrom(state.profile?.name)
+                        val author = if (self) {
+                            state.profile?.name.orEmpty().ifBlank { "我" }
+                        } else {
+                            msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }
                         }
-                        Text(msg.text, color = AetherLightText, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize)
                     }
                 }
-                if (msgs.isEmpty()) item("empty") {
-                    Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
+            }
+            val focus = LocalFocusManager.current
+            val send = {
+                val trimmed = state.chatDraft.trim()
+                if (state.activeCharacterOnline && trimmed.isNotBlank()) {
+                    state.changeChannel(outputChannels.first { it.id == sendChannel })
+                    state.sendChat(trimmed)
+                    state.chatDraft = ""
+                    focus.clearFocus()
                 }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Box {
+                    Box(
+                        Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
+                            .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
+                    ) { Text(outputChannels.firstOrNull { it.id == sendChannel }?.label ?: "说话", color = AetherPink, fontSize = 11.sp, maxLines = 1) }
+                    DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
+                        listOf(1, 4, 5).forEach { id ->
+                            DropdownMenuItem(text = { Text(outputChannels.first { it.id == id }.label) }, onClick = { sendChannel = id; channelMenu = false })
+                        }
+                    }
+                }
+                BasicTextField(
+                    value = state.chatDraft,
+                    onValueChange = { state.chatDraft = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightSurface),
+                    decorationBox = { field ->
+                        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                                if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
+                                field()
+                            }
+                        }
+                    },
+                )
+                Box(
+                    Modifier.padding(start = 7.dp).size(38.dp).clip(CircleShape)
+                        .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
+                        .clickable(enabled = state.activeCharacterOnline && state.chatDraft.isNotBlank()) { send() },
+                    contentAlignment = Alignment.Center,
+                ) { Text("↑", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -850,14 +922,27 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 ) {
                     itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
                         val self = message.self || message.isFrom(state.profile?.name)
+                        val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
                         val author = if (self) {
                             state.profile?.name.orEmpty().ifBlank { "我" }
                         } else if (message.category == ChatCategory.System) {
                             "系统"
                         } else {
-                            message.sender.ifBlank { conversation.title }
+                            val base = message.sender.ifBlank { conversation.title }
+                            if (tag.isNotEmpty()) "[$tag] $base" else base
                         }
-                        LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, conversation.category == ChatCategory.Tell, state.chatFontSize)
+                        Column(Modifier.fillMaxWidth()) {
+                            LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize)
+                            if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
+                                Text(
+                                    "向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
+                                    color = AetherLightText,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -926,7 +1011,7 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", isDm: Boolean = false, fontSizeSp: Int = 14) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -951,15 +1036,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
                 }
-            }
-            if (message.sendState == 2 && isDm) {
-                Text(
-                    "向${recipientTitle.ifBlank { "对方" }}发送悄悄话失败",
-                    color = AetherLightMuted,
-                    fontSize = (fontSp - 3).coerceAtLeast(10).sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 2.dp),
-                )
             }
         }
     }
