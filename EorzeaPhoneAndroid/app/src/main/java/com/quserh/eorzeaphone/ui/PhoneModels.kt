@@ -522,6 +522,15 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
         }
     }
+    // A tell key identifies the conversation; its avatar owner is the friend's
+    // immutable game ContentId.  Display names are deliberately not part of it.
+    private val tellAvatarOwners = mutableStateMapOf<String, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("tellAvatarOwners", "{}").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
+        }
+    }
     private val characterAvatars = mutableStateMapOf<String, String>().apply {
         runCatching {
             val o = JSONObject(prefs.getString("avatarCache", "{}").orEmpty())
@@ -562,6 +571,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
     fun groupTitleOverride(key: String): String? = groupTitleOverrides[key]
     fun conversationIcon(key: String, category: ChatCategory? = null): String {
+        if (category == ChatCategory.Tell || key.startsWith("tell:")) {
+            val owner = tellAvatarOwners[key]
+            return owner?.let { friendAvatars[it] } ?: conversationIconOverrides[key].orEmpty()
+        }
         conversationIconOverrides[key]?.let { return it }
         return when (category) {
             ChatCategory.Party -> "party"
@@ -571,6 +584,18 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun setConversationIcon(key: String, icon: String) {
+        if (key.startsWith("tell:")) {
+            val owner = tellAvatarOwners[key]
+            if (owner != null) {
+                setFriendAvatar(owner, icon)
+            } else {
+                // Keep the user's choice visible until the next friend snapshot
+                // supplies the ContentId needed to make it a shared avatar.
+                if (icon.isBlank()) conversationIconOverrides.remove(key) else conversationIconOverrides[key] = icon
+                runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
+            }
+            return
+        }
         if (icon.isBlank()) conversationIconOverrides.remove(key) else conversationIconOverrides[key] = icon
         runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
     }
@@ -582,30 +607,79 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         runCatching { prefs.edit().putString("avatarCache", JSONObject(characterAvatars).toString()).apply() }
     }
 
-    fun friendAvatar(name: String): String = friendAvatars[name.normalizedPlayerName()] ?: ""
+    private fun friendAvatarOwner(friend: PhoneFriend): String = when {
+        friend.contentId != 0L -> "content:${friend.contentId}"
+        else -> "fallback:${friend.name.normalizedPlayerName()}@${friend.homeWorld.ifBlank { friend.world }.trim().lowercase()}"
+    }
 
-    fun setFriendAvatar(name: String, iconId: String) {
-        val key = name.normalizedPlayerName()
-        if (iconId.isBlank()) friendAvatars.remove(key) else friendAvatars[key] = iconId
+    fun friendAvatar(friend: PhoneFriend): String = friendAvatars[friendAvatarOwner(friend)] ?: ""
+
+    private fun setFriendAvatar(owner: String, iconId: String) {
+        if (iconId.isBlank()) friendAvatars.remove(owner) else friendAvatars[owner] = iconId
         runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
     }
 
-    fun savePickedFriendAvatar(name: String, uri: android.net.Uri): String? = runCatching {
+    fun setFriendAvatar(friend: PhoneFriend, iconId: String) = setFriendAvatar(friendAvatarOwner(friend), iconId)
+
+    fun savePickedFriendAvatar(friend: PhoneFriend, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "friend-avatars").apply { mkdirs() }
-        val file = java.io.File(dir, "fa-${name.normalizedPlayerName().hashCode()}.png")
+        val file = java.io.File(dir, "fa-${friendAvatarOwner(friend).hashCode()}.png")
         appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
         file.absolutePath
     }.getOrNull()
 
-    private fun ensureFriendAvatars(friends: List<com.quserh.eorzeaphone.data.GameFriend>) {
-        val pool = builtinConversationIcons.map { it.id }
+    private fun linkFriendAvatars(friendEntries: Iterable<PhoneFriend>) {
+        var avatarsChanged = false
+        var ownersChanged = false
+        var iconsChanged = false
+        friendEntries.forEach { friend ->
+            val owner = friendAvatarOwner(friend)
+            if (friendAvatars[owner] == null) {
+                friendAvatars[friend.name.normalizedPlayerName()]?.let {
+                    friendAvatars[owner] = it
+                    avatarsChanged = true
+                }
+            }
+            conversations.filter { it.category == ChatCategory.Tell && it.tellRecipient.tellNamePart() == friend.name.tellNamePart() }.forEach { conversation ->
+                if (tellAvatarOwners[conversation.key] != owner) {
+                    tellAvatarOwners[conversation.key] = owner
+                    ownersChanged = true
+                }
+                if (friendAvatars[owner] == null) {
+                    conversationIconOverrides[conversation.key]?.let {
+                        friendAvatars[owner] = it
+                        avatarsChanged = true
+                    }
+                }
+                if (friendAvatars[owner] == null) {
+                    // v0.7.10 wrote a tell's normalized key directly into the
+                    // friend map.  Move that selected image onto ContentId once.
+                    friendAvatars[conversation.key.removePrefix("tell:")]?.let {
+                        friendAvatars[owner] = it
+                        avatarsChanged = true
+                    }
+                }
+                if (conversationIconOverrides.remove(conversation.key) != null) iconsChanged = true
+            }
+        }
+        if (avatarsChanged) runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
+        if (ownersChanged) runCatching { prefs.edit().putString("tellAvatarOwners", JSONObject(tellAvatarOwners).toString()).apply() }
+        if (iconsChanged) runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
+    }
+
+    private fun ensureFriendAvatars(friendEntries: Iterable<PhoneFriend>) {
+        // Only the images in the dedicated "头像" library tab may be assigned
+        // automatically.  The previous pool included party and FC system icons.
+        val pool = builtinConversationIcons.filter { it.category == "avatar" }.map { it.id }
         if (pool.isEmpty()) return
         var changed = false
         val rnd = java.util.Random()
-        for (friend in friends) {
-            val key = friend.name.normalizedPlayerName()
+        for (friend in friendEntries) {
+            val key = friendAvatarOwner(friend)
             if (key.isBlank()) continue
-            if (friendAvatars[key] == null) {
+            val current = friendAvatars[key]
+            // Repair automatically-assigned system icons saved by older builds.
+            if (current == null || builtinConversationIcons.firstOrNull { it.id == current }?.category == "system") {
                 friendAvatars[key] = pool[rnd.nextInt(pool.size)]
                 changed = true
             }
@@ -628,7 +702,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val clean = name.trim().take(20)
         if (clean.isEmpty()) groupTitleOverrides.remove(key) else groupTitleOverrides[key] = clean
         prefs.edit().putString("groupTitleOverrides", JSONObject(groupTitleOverrides).toString()).apply()
-        conversationByKey[key]?.let { it.title = groupTitleOverride(key) ?: (groupNameForChannel(it.messages.firstOrNull()?.channel ?: 0) ?: it.title) }
+        val renamed = groupTitleOverride(key)
+        conversations.filter { it.key == key }.forEach { conversation ->
+            conversation.title = renamed ?: (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
+        }
+        conversationByKey[key]?.let { conversation ->
+            conversation.title = renamed ?: (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
+        }
     }
     var teleportTarget by mutableStateOf<String?>(null)
     var teleportStatus by mutableStateOf(TeleportStatus.Idle)
@@ -643,9 +723,23 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private var connectedCharacterConfirmed = false
     private var connectedCharacterKey by mutableStateOf("")
     private var awaitingCharacterProfile = false
+    private var gameAvailability = false
+    private var availabilityEpoch = 0
     private val pendingCharacterEvents = mutableListOf<PhoneEvent>()
 
     private fun scoped(key: String): String = if (activeCharacterKey.isBlank()) key else "$key::$activeCharacterKey"
+
+    private fun markFriendsOffline() {
+        var changed = false
+        for (index in friends.indices) {
+            val friend = friends[index]
+            if (friend.online || friend.location.isNotBlank() || friend.job.isNotBlank()) {
+                friends[index] = friend.copy(online = false, location = "", job = "")
+                changed = true
+            }
+        }
+        if (changed) saveFriends()
+    }
 
     private fun boolPref(key: String, default: Boolean): MutableState<Boolean> {
         val backing = mutableStateOf(prefs.getBoolean(key, default))
@@ -665,6 +759,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     init {
         ResetReminderReceiver.configure(appContext, resetNotifications)
         loadSavedChats()
+        linkFriendAvatars(friends)
+        ensureFriendAvatars(friends)
         loadSavedInventory()
         loadSavedExtras()
         loadSavedCollections()
@@ -1521,7 +1617,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         // Emotes from a specific player belong inside that player's DM thread.
         val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
         val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
-        conversationByKey[key]?.let { return it }
+        conversationByKey[key]?.let { existing ->
+            if (existing.category == ChatCategory.Tell) linkFriendAvatars(friends)
+            return existing
+        }
         if (message.category == ChatCategory.Tell || routeToTell) {
             val msgName = message.tellNamePart()
             val existing = conversations.firstOrNull { conv ->
@@ -1530,6 +1629,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             if (existing != null) {
                 conversationByKey[key] = existing
+                linkFriendAvatars(friends)
                 return existing
             }
         }
@@ -1557,6 +1657,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         conv.notify = key !in mutedConversations
         conversations.add(0, conv)
         conversationByKey[key] = conv
+        if (conv.category == ChatCategory.Tell) linkFriendAvatars(friends)
         return conv
     }
 
@@ -1725,6 +1826,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val friendWorld = friend.world.ifBlank { friend.homeWorld }
         val recipient = if (friendWorld.isBlank()) cleanName else "$cleanName@$friendWorld"
         val conv = ensureTellConversation(recipient, cleanName)
+        linkFriendAvatars(listOf(friend))
         openConversation(conv)
         selectedApp = AppCatalog.dock.first()
         screen = PhoneScreen.Chat
@@ -1818,6 +1920,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             PhoneEvent.Connected -> {
                 connected = true
                 gameOnline = false
+                gameAvailability = false
+                availabilityEpoch++
                 connectedCharacterConfirmed = false
                 connectedCharacterKey = ""
                 awaitingCharacterProfile = true
@@ -1830,15 +1934,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Disconnected -> {
                 connected = false
                 gameOnline = false
+                gameAvailability = false
+                availabilityEpoch++
                 connectedCharacterConfirmed = false
                 connectedCharacterKey = ""
                 awaitingCharacterProfile = false
                 pendingCharacterEvents.clear()
                 serverLabel = "未连接游戏"
-                for (index in friends.indices) friends[index] = friends[index].copy(online = false, location = "", job = "")
+                markFriendsOffline()
                 if (statusMessage.isBlank() || statusMessage == "连接成功") statusMessage = event.reason
             }
             is PhoneEvent.GameAvailability -> {
+                gameAvailability = event.available
+                val eventEpoch = ++availabilityEpoch
                 if (!event.available) {
                     gameOnline = false
                     connectedCharacterConfirmed = false
@@ -1846,6 +1954,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     pendingCharacterEvents.clear()
                     serverLabel = if (connected) "游戏角色离线" else "未连接游戏"
                     statusMessage = if (connected) "终端已连接，角色未进入游戏" else statusMessage
+                    markFriendsOffline()
                 } else if (!connectedCharacterConfirmed) {
                     gameOnline = false
                     awaitingCharacterProfile = true
@@ -1853,7 +1962,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     statusMessage = "角色已进入游戏，正在读取资料"
                     scope.launch(Dispatchers.Main) {
                         kotlinx.coroutines.delay(4_000)
-                        if (!connectedCharacterConfirmed) {
+                        // A title-screen/logout availability frame can arrive while this
+                        // fallback is waiting.  Never revive that session as online.
+                        if (gameAvailability && availabilityEpoch == eventEpoch && !connectedCharacterConfirmed) {
                             gameOnline = true
                             connectedCharacterConfirmed = true
                             connectedCharacterKey = activeCharacterKey
@@ -1869,9 +1980,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             is PhoneEvent.Error -> statusMessage = event.message
             is PhoneEvent.FriendList -> {
-                ensureFriendAvatars(event.friends)
                 friends.clear()
                 friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
+                linkFriendAvatars(friends)
+                ensureFriendAvatars(friends)
                 saveFriends()
                 repairTellRecipients()
             }

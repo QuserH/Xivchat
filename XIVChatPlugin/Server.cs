@@ -25,6 +25,7 @@ using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Server;
 using Dalamud.Game.Chat;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Group;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Environment;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
@@ -118,6 +119,10 @@ namespace XIVChatPlugin {
         private long _lastFishingFingerprint;
         private bool _hasFishingSnapshot;
         private bool? _lastGameAvailability;
+        // ClientState/ObjectTable can remain populated briefly during the trip to
+        // the title screen.  Once Dalamud reports logout, do not advertise that
+        // stale player as available again before the next login event.
+        private volatile bool _logoutObserved;
 
         private static readonly GameInventoryType[] PhoneInventoryTypes = [
             GameInventoryType.Inventory1,
@@ -358,7 +363,7 @@ namespace XIVChatPlugin {
 
         internal unsafe void OnFrameworkUpdate(IFramework framework) {
             var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
-            var gameAvailable = XIVChatPlugin.Plugin.ClientState.IsLoggedIn && player != null;
+            var gameAvailable = !this._logoutObserved && XIVChatPlugin.Plugin.ClientState.IsLoggedIn && player != null;
             if (this._lastGameAvailability != gameAvailable) {
                 this._lastGameAvailability = gameAvailable;
                 this.BroadcastAvailability(gameAvailable);
@@ -1432,6 +1437,16 @@ namespace XIVChatPlugin {
 
         private ServerPlayerList? BuildPartyList() {
             try {
+                var native = this.BuildPartyListNative();
+                if (native != null) {
+                    Plugin.Log.Info($"[EorzeaPhone] PartyList native members={native.Count}");
+                    return new ServerPlayerList(PlayerListType.Party, native.ToArray());
+                }
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"[EorzeaPhone] Could not read native party list: {ex}");
+            }
+
+            try {
                 var party = XIVChatPlugin.Plugin.PartyList;
                 var rawLength = party?.Length ?? 0;
                 if (rawLength == 0) {
@@ -1479,6 +1494,84 @@ namespace XIVChatPlugin {
                 Plugin.Log.Warning($"[EorzeaPhone] Could not read party list: {ex}");
                 return null;
             }
+        }
+
+        private unsafe List<Player>? BuildPartyListNative() {
+            var manager = FFXIVClientStructs.FFXIV.Client.Game.Group.GroupManager.Instance();
+            if (manager == null) {
+                return null;
+            }
+
+            var group = &manager->MainGroup;
+            var count = Math.Min((int) group->MemberCount, 8);
+            if (count == 0) {
+                Plugin.Log.Info("[EorzeaPhone] Native party empty");
+                return null;
+            }
+
+            var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
+            var members = new List<Player>(count);
+            for (var i = 0; i < count; i++) {
+                var member = group->GetPartyMemberByIndex(i);
+                if (member == null || (member->ContentId == 0 && member->EntityId == 0)) {
+                    continue;
+                }
+
+                var name = this.ReadPartyMemberName(member);
+                if (string.IsNullOrWhiteSpace(name)) {
+                    continue;
+                }
+
+                var jobId = member->ClassJob;
+                var jobName = jobId > 0 ? sheet.GetRowOrDefault(jobId)?.Name.ExtractText() : null;
+                var homeWorld = member->HomeWorld;
+                var worldName = this.WorldName(homeWorld) ?? string.Empty;
+                members.Add(new Player {
+                    Name = name,
+                    CurrentWorld = homeWorld,
+                    CurrentWorldName = worldName,
+                    HomeWorld = homeWorld,
+                    HomeWorldName = worldName,
+                    Job = jobId,
+                    JobName = jobName,
+                    ContentId = member->ContentId,
+                });
+            }
+
+            Plugin.Log.Info($"[EorzeaPhone] Native party count={count} members={members.Count}");
+            return members.Count > 0 ? members : null;
+        }
+
+        private unsafe string ReadPartyMemberName(FFXIVClientStructs.FFXIV.Client.Game.Group.PartyMember* member) {
+            try {
+                if (member->NameOverride != null) {
+                    var overrideName = member->NameOverride->ToString();
+                    if (!string.IsNullOrWhiteSpace(overrideName)) {
+                        return overrideName;
+                    }
+                }
+            } catch {
+                // name override unavailable; fall through
+            }
+
+            try {
+                var name = member->NameString;
+                if (!string.IsNullOrWhiteSpace(name)) {
+                    return name;
+                }
+            } catch {
+                // raw name unavailable
+            }
+
+            return string.Empty;
+        }
+
+        private string? WorldName(ushort id) {
+            if (id == 0) {
+                return null;
+            }
+
+            return XIVChatPlugin.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(id)?.Name.ExtractText();
         }
 
 
@@ -2152,6 +2245,7 @@ namespace XIVChatPlugin {
         }
 
         internal void OnLogIn() {
+            this._logoutObserved = false;
             this._lastGameAvailability = true;
             this.BroadcastAvailability(true);
             // send player data on next framework update
@@ -2159,9 +2253,13 @@ namespace XIVChatPlugin {
         }
 
         internal void OnLogOut(int type, int code) {
+            this._logoutObserved = true;
+            this._sendPlayerData = false;
             this._lastGameAvailability = false;
             this.BroadcastAvailability(false);
-            this.BroadcastPlayerData();
+            // Do not generate a profile here: ObjectTable may still contain the
+            // departing player for a few frames after the title screen appears.
+            this.BroadcastMessage(EmptyPlayerData.Instance);
         }
 
         internal void OnTerritoryChange(uint @uint) => this._sendPlayerData = true;

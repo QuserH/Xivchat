@@ -852,7 +852,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     var menuOpen by remember { mutableStateOf(false) }
     var pressOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val last = conversation.lastMessage
-    val rowTitle = if (conversation.category == ChatCategory.Tell) (last?.displaySender() ?: conversation.title) else conversation.title
+    val rowTitle = conversation.title
     val preview = when {
         last == null -> "暂无消息"
         else -> last.text
@@ -928,8 +928,8 @@ private fun AetherphoneContactsList(state: PhoneState) {
         val friend = avatarFriend
         avatarFriend = null
         if (uri != null && friend != null) {
-            val path = state.savePickedFriendAvatar(friend.name, uri)
-            if (path != null) state.setFriendAvatar(friend.name, path)
+            val path = state.savePickedFriendAvatar(friend, uri)
+            if (path != null) state.setFriendAvatar(friend, path)
         }
     }
     Column(Modifier.fillMaxSize()) {
@@ -970,12 +970,12 @@ private fun AetherphoneContactsList(state: PhoneState) {
             title = { Text(if (avatarShowLibrary) "图标库" else "更换好友头像") },
             text = {
                 if (avatarShowLibrary) {
-                    BuiltinIconLibrary(onSelect = { state.setFriendAvatar(friend.name, it); avatarFriend = null })
+                    BuiltinIconLibrary(onSelect = { state.setFriendAvatar(friend, it); avatarFriend = null })
                 } else {
                     Column {
                         Text("图标库", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarShowLibrary = true }.padding(vertical = 12.dp))
                         Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickFriendAvatar.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
-                        Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setFriendAvatar(friend.name, ""); avatarFriend = null }.padding(vertical = 12.dp))
+                        Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setFriendAvatar(friend, ""); avatarFriend = null }.padding(vertical = 12.dp))
                     }
                 }
             },
@@ -994,7 +994,7 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onCh
                 modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { state.openFriend(friend) }, onLongClick = { onChangeAvatar(friend) }).padding(horizontal = 20.dp, vertical = 11.dp),
             ) {
                 Box(Modifier.size(44.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                    SmallConversationIcon(state.friendAvatar(friend.name), friend.name.take(1), if (friend.online) AetherPurple else Color(0xFFA7A7AE))
+                    SmallConversationIcon(state.friendAvatar(friend), friend.name.take(1), if (friend.online) AetherPurple else Color(0xFFA7A7AE))
                 }
                 Column(Modifier.weight(1f).padding(start = 16.dp)) {
                     Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
