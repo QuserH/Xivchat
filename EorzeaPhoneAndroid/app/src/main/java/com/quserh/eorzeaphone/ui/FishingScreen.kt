@@ -34,11 +34,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
@@ -61,7 +63,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,7 +143,7 @@ fun FishingScreen(state: PhoneState) {
         if (route.second != null && currentMapSpot != null && catalog != null) {
             FishingMapScreen(currentMapSpot, state) { mapSpot = null }
         } else if (fish != null && catalog != null) {
-            FishingDetail(state, fish, catalog!!, alarmVersion, onSpot = { mapSpot = it }) { enabled ->
+            FishingDetail(state, fish, catalog!!, alarmVersion, onBack = { selected = null }, onSpot = { mapSpot = it }) { enabled ->
                 FishingAlarmStore.set(context, fish, catalog!!, enabled)
                 if (enabled) state.requestNotificationPermission()
                 alarmVersion++
@@ -201,8 +206,12 @@ fun FishingScreen(state: PhoneState) {
                         list.sortWith(compareBy({ availability[it.id] == null }, { availability[it.id] ?: Long.MAX_VALUE }, { it.name }))
                         list
                     }
-                    FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null)
-                    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    val listState = rememberLazyListState()
+                    LaunchedEffect(versionFilter, filter, alarmsOnly) { listState.scrollToItem(0) }
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        item("fishing-header") {
+                            FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null)
+                        }
                         if (filtered.isEmpty()) item { Text(if (alarmsOnly) "还没有设置捕鱼闹钟" else "没有符合条件的鱼", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(34.dp)) }
                         items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
                             Box(Modifier.animateItem()) {
@@ -278,14 +287,14 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remai
 }
 
 @Composable
-private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: FishingCatalog, alarmVersion: Int, onSpot: (FishingSpot) -> Unit, onAlarm: (Boolean) -> Unit) {
+private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: FishingCatalog, alarmVersion: Int, onBack: () -> Unit, onSpot: (FishingSpot) -> Unit, onAlarm: (Boolean) -> Unit) {
     val context = LocalContext.current
     val alarm = remember(fish.id, alarmVersion) { FishingAlarmStore.isEnabled(context, fish.id) }
     var leadMinutes by remember(alarmVersion) { mutableStateOf(FishingAlarmStore.leadMinutes(context)) }
     val caught = state.isFishCaught(fish.logId, fish.method)
     val window = remember(fish, catalog, System.currentTimeMillis() / 60_000L) { FishingWindowCalculator.nextWindow(fish, catalog) }
     ScreenFrame {
-        ScreenHeader(fish.name, state)
+        ScreenHeader(fish.name, state, onBack = onBack)
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -375,12 +384,16 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
             if (fish.guide.isNotBlank() || fish.guidePath.isNotBlank()) item {
                 DetailSection("攻略") {
                     if (fish.guidePath.isNotBlank()) {
-                        Text("推荐路线", color = PhoneMuted, fontSize = 11.sp)
-                        Text(stripGuideMarkup(fish.guidePath), color = PhoneText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text("推荐路线", color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        guideParagraphs(fish.guidePath).forEach { paragraph ->
+                            Text(paragraph, color = PhoneText, fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 6.dp))
+                        }
                     }
                     if (fish.guide.isNotBlank()) {
-                        Text("钓法说明", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 9.dp))
-                        Text(stripGuideMarkup(fish.guide), color = PhoneText, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text("钓法说明", color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = if (fish.guidePath.isNotBlank()) 12.dp else 0.dp))
+                        guideParagraphs(fish.guide).forEach { paragraph ->
+                            Text(paragraph, color = PhoneText, fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 6.dp))
+                        }
                     }
                     if (fish.guideAuthor.isNotBlank()) Text("来源：${fish.guideAuthor}", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                 }
@@ -573,7 +586,7 @@ private fun TooltipIcon(icon: Int, name: String, size: Dp = 46.dp, fallback: Str
         if (show) {
             Popup(
                 alignment = Alignment.TopCenter,
-                offset = IntOffset(0, (size.value * 0.5f + 24).roundToInt()),
+                offset = IntOffset(0, size.value.roundToInt() + 8),
                 onDismissRequest = { show = false },
                 properties = PopupProperties(focusable = true),
             ) {
@@ -585,8 +598,10 @@ private fun TooltipIcon(icon: Int, name: String, size: Dp = 46.dp, fallback: Str
 
 @Composable
 private fun TooltipBubble(text: String) {
-    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF26242E)).padding(horizontal = 10.dp, vertical = 6.dp)) {
-        Text(text, color = Color.White, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    val container = MaterialTheme.colorScheme.inverseSurface
+    val content = MaterialTheme.colorScheme.inverseOnSurface
+    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(container).padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Text(text, color = content, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -653,3 +668,45 @@ private fun stripGuideMarkup(value: String): String = value
     .replace("&lt;", "<")
     .replace("&gt;", ">")
     .replace("&amp;", "&")
+
+private fun guideParagraphs(raw: String): List<AnnotatedString> = raw
+    .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+    .split("\n")
+    .map { it.trim() }
+    .filter { it.isNotBlank() }
+    .map { buildGuideAnnotated(it) }
+
+private fun buildGuideAnnotated(line: String): AnnotatedString {
+    val result = AnnotatedString.Builder()
+    val spanRegex = Regex("""<span\s+style="color:([^"]+)">([^<]*)</span>""")
+    val skillRegex = Regex("<([^<>]{1,12})>")
+    val itemRegex = Regex("【([^】]{1,40})】")
+    val tagRegex = Regex("<[^>]+>")
+    var from = 0
+    while (from < line.length) {
+        val candidates = listOfNotNull(
+            spanRegex.find(line, from)?.let { it to "span" },
+            skillRegex.find(line, from)?.let { it to "skill" },
+            itemRegex.find(line, from)?.let { it to "item" },
+            tagRegex.find(line, from)?.let { it to "tag" },
+        )
+        val match = candidates.minByOrNull { it.first.range.first }
+        if (match == null) {
+            result.append(line.substring(from))
+            break
+        }
+        val (m, kind) = match
+        if (m.range.first > from) result.append(line.substring(from, m.range.first))
+        when (kind) {
+            "span" -> {
+                val color = runCatching { Color(android.graphics.Color.parseColor(m.groupValues[1])) }.getOrNull() ?: Color(0xFFD8D8DE)
+                result.withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) { append(m.groupValues[2]) }
+            }
+            "skill" -> result.withStyle(SpanStyle(color = PhoneAccent, fontWeight = FontWeight.SemiBold)) { append("〈${m.groupValues[1]}〉") }
+            "item" -> result.withStyle(SpanStyle(color = Color(0xFFFFC071), fontWeight = FontWeight.SemiBold)) { append(m.groupValues[0]) }
+            else -> Unit
+        }
+        from = m.range.last + 1
+    }
+    return result.toAnnotatedString()
+}

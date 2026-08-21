@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -1119,7 +1120,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
         }
     }
     LightFrame {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().imePadding()) {
             LightHeader(
                 title = conversation.title,
                 onBack = state::back,
@@ -1129,10 +1130,13 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 },
                 trailing = {
-                    Text("⌕", color = if (searching) AetherPurple else AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { searching = !searching }.padding(horizontal = 7.dp))
                     Box {
                         Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
                         DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                            DropdownMenuItem(text = { Text("搜索聊天内容") }, onClick = {
+                                searching = true
+                                overflowOpen = false
+                            })
                             DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
                                 conversation.unread = 0
                                 overflowOpen = false
@@ -1159,60 +1163,78 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 },
             )
-            AnimatedVisibility(
-                visible = searching,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    LightSearchField(search, { search = it }, "搜索", Modifier.weight(1f))
-                    Text("⌃", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 6.dp))
-                    Text("⌄", color = AetherLightMuted, fontSize = 19.sp, modifier = Modifier.padding(start = 5.dp))
-                }
-            }
-
-            val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
-            if (visible.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                    Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
-                }
-            } else {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
                 val listState = rememberLazyListState()
+                val matchIndices = remember(visible, search) {
+                    if (search.isBlank()) emptyList() else visible.indices.filter { i -> visible[i].text.contains(search, true) || visible[i].sender.contains(search, true) }
+                }
+                var matchIndex by remember(matchIndices.size) { mutableIntStateOf(0) }
+                val scrollScope = rememberCoroutineScope()
+                val jumpToMatch: (Int) -> Unit = { delta ->
+                    if (matchIndices.isNotEmpty()) {
+                        matchIndex = ((matchIndex + delta) % matchIndices.size + matchIndices.size) % matchIndices.size
+                        scrollScope.launch { listState.animateScrollToItem(matchIndices[matchIndex]) }
+                    }
+                }
                 LaunchedEffect(conversation.key, visible.size, search) {
                     if (search.isBlank() && visible.isNotEmpty()) listState.scrollToItem(visible.lastIndex)
                 }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
-                ) {
-                    itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
-                        val showDate = index == 0 || chatDay(message.timestamp) != chatDay(visible[index - 1].timestamp)
-                        if (showDate) {
-                            Text(chatDayLabel(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                        }
-                        val self = message.self || message.isFrom(state.profile?.name)
-                        val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
-                        val author = if (self) {
-                            val me = state.profile?.name.orEmpty().ifBlank { "我" }
-                            if (tag.isNotEmpty()) "[$tag] $me" else me
-                        } else if (message.category == ChatCategory.System) {
-                            "系统"
-                        } else {
-                            val base = message.displaySender().ifBlank { conversation.title }
-                            if (tag.isNotEmpty()) "[$tag] $base" else base
-                        }
-                        Column(Modifier.fillMaxWidth()) {
-                            LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0)
-                            if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
-                                Text(
-                                    "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
-                                    color = Color(0xFFE5484D),
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
-                                )
+                if (visible.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        itemsIndexed(visible, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
+                            val showDate = index == 0 || chatDay(message.timestamp) != chatDay(visible[index - 1].timestamp)
+                            if (showDate) {
+                                Text(chatDayLabel(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
                             }
+                            val self = message.self || message.isFrom(state.profile?.name)
+                            val tag = if (conversation.key.startsWith("tab:")) channelTag(message.channel) else ""
+                            val author = if (self) {
+                                val me = state.profile?.name.orEmpty().ifBlank { "我" }
+                                if (tag.isNotEmpty()) "[$tag] $me" else me
+                            } else if (message.category == ChatCategory.System) {
+                                "系统"
+                            } else {
+                                val base = message.displaySender().ifBlank { conversation.title }
+                                if (tag.isNotEmpty()) "[$tag] $base" else base
+                            }
+                            Column(Modifier.fillMaxWidth()) {
+                                LightChatBubble(author, message, self, shouldShowLightSender(visible, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = search)
+                                if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
+                                    Text(
+                                        "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
+                                        color = Color(0xFFE5484D),
+                                        fontSize = 12.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = searching,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        LightSearchField(search, { search = it }, "搜索聊天内容", Modifier.weight(1f))
+                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { jumpToMatch(-1) }, contentAlignment = Alignment.Center) {
+                            Text("⌃", color = AetherLightMuted, fontSize = 18.sp)
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { jumpToMatch(1) }, contentAlignment = Alignment.Center) {
+                            Text("⌄", color = AetherLightMuted, fontSize = 18.sp)
                         }
                     }
                 }
@@ -1280,7 +1302,7 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
 }
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "") {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -1315,12 +1337,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val body = wrapLightText(cleaned, wrapChars)
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
                 if (body.contains('\n')) {
-                    ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral)
+                    ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral, highlight = highlight)
                     Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                         modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
                 } else {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral)
+                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                             modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
@@ -1332,7 +1354,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
 
 @Composable
 private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Color, fontSize: androidx.compose.ui.unit.TextUnit,
-                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, forceColor: Boolean = false) {
+                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, forceColor: Boolean = false, highlight: String = "") {
     val chunks = message.chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     val inline = buildMap<String, InlineTextContent> {
         chunks.forEachIndexed { index, chunk ->
@@ -1345,7 +1367,8 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
         chunks.forEachIndexed { index, chunk ->
             if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else {
                 val chunkColor = if (forceColor) color else (chunk.foreground?.let(::chatChunkColor) ?: color)
-                withStyle(SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)) { append(chunk.text.orEmpty()) }
+                val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
+                appendHighlighted(chunk.text.orEmpty(), highlight, spanStyle, Color(0x66FFEB3B))
             }
         }
     }
@@ -1356,6 +1379,26 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
         fontWeight = if (message.category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
     )
     Text(annotated, inlineContent = inline, style = style, modifier = modifier)
+}
+
+private fun AnnotatedString.Builder.appendHighlighted(text: String, query: String, style: SpanStyle, highlight: Color) {
+    if (query.isBlank()) {
+        withStyle(style) { append(text) }
+        return
+    }
+    val lower = text.lowercase()
+    val q = query.lowercase()
+    var from = 0
+    while (true) {
+        val index = lower.indexOf(q, from)
+        if (index < 0) {
+            withStyle(style) { append(text.substring(from)) }
+            break
+        }
+        if (index > from) withStyle(style) { append(text.substring(from, index)) }
+        withStyle(style.merge(SpanStyle(background = highlight))) { append(text.substring(index, index + q.length)) }
+        from = index + q.length
+    }
 }
 
 private fun chatChunkColor(value: Long): Color {
