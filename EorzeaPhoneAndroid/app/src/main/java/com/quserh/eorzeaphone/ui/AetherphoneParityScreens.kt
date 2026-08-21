@@ -1071,14 +1071,6 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
             LightHeader(
                 title = friend?.name ?: "联系人",
                 onBack = state::back,
-                titleIcon = {
-                    val f = friend
-                    if (f != null) {
-                        Box(Modifier.padding(start = 6.dp).size(30.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                            SmallConversationIcon(state.friendAvatar(f), f.name.take(1), AetherPurple)
-                        }
-                    }
-                },
                 trailing = {
                     Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.padding(horizontal = 8.dp))
                 },
