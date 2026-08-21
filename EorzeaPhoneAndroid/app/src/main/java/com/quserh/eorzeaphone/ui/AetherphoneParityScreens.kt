@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -66,6 +67,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -205,23 +207,18 @@ private fun LightHeader(
     titleIcon: (@Composable () -> Unit)? = null,
 ) {
     val headerMargin = LocalContentMargin.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().height(70.dp).padding(start = (headerMargin.coerceAtLeast(2) - 2).dp, end = 14.dp),
-    ) {
-        Text(
-            "‹",
-            color = AetherPurple,
-            fontSize = 40.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.Light,
-            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 8.dp),
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.weight(1f),
-        ) {
+    Box(Modifier.fillMaxWidth().height(70.dp).padding(start = (headerMargin.coerceAtLeast(2) - 2).dp, end = 14.dp)) {
+        Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
+            Text(
+                "‹",
+                color = AetherPurple,
+                fontSize = 40.sp,
+                lineHeight = 32.sp,
+                fontWeight = FontWeight.Light,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 8.dp),
+            )
+        }
+        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 title,
                 color = AetherLightText,
@@ -233,7 +230,7 @@ private fun LightHeader(
             )
             titleIcon?.invoke()
         }
-        Row(modifier = Modifier.widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
+        Row(Modifier.align(Alignment.CenterEnd).widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
     }
 }
 
@@ -1484,9 +1481,18 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 LaunchedEffect(imeVisible, visible.size) {
                     if (imeVisible && search.isBlank() && visible.isNotEmpty()) listState.scrollToItem(visible.lastIndex)
                 }
-                val hasSendFailure = visible.any { it.sendState == 2 }
-                LaunchedEffect(hasSendFailure) {
-                    if (hasSendFailure && visible.isNotEmpty()) listState.animateScrollToItem(visible.lastIndex)
+                val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
+                LaunchedEffect(failureTick) {
+                    val failedIdx = visible.indexOfLast { it.sendState == 2 }
+                    if (failedIdx >= 0 && visible.isNotEmpty()) {
+                        listState.animateScrollToItem(failedIdx)
+                        val info = listState.layoutInfo
+                        val item = info.visibleItemsInfo.firstOrNull { it.index == failedIdx } ?: info.visibleItemsInfo.lastOrNull()
+                        if (item != null) {
+                            val overflow = item.offset + item.size - info.viewportEndOffset
+                            if (overflow > 0) listState.animateScrollBy(overflow.toFloat())
+                        }
+                    }
                 }
                 if (visible.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -1602,23 +1608,25 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
             }
-            Column(
-                Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
-                    .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
-            ) {
-                val cleaned = cleanChatText(message.text, author)
-                val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
-                val body = wrapLightText(cleaned, wrapChars)
-                val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-                if (body.contains('\n')) {
-                    ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral, highlight = highlight)
-                    Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                        modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
-                } else {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
+            SelectionContainer {
+                Column(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
+                        .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
+                ) {
+                    val cleaned = cleanChatText(message.text, author)
+                    val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
+                    val body = wrapLightText(cleaned, wrapChars)
+                    val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
+                    if (body.contains('\n')) {
+                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral, highlight = highlight)
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                            modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                            modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
+                    } else {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
+                            Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
+                                modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                        }
                     }
                 }
             }
@@ -1648,6 +1656,7 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
     }
     val style = androidx.compose.ui.text.TextStyle(
         color = color, fontSize = fontSize, lineHeight = lineHeight,
+        textAlign = TextAlign.Justify,
         fontStyle = if (message.category == ChatCategory.Emote) FontStyle.Italic else FontStyle.Normal,
         fontFamily = if (message.category == ChatCategory.System) FontFamily.Monospace else FontFamily.Default,
         fontWeight = if (message.category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,

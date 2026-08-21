@@ -2074,7 +2074,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             else -> false
                         }
                         if (allow) {
-                            val title = if (isTell) event.message.sender.ifBlank { conv.title } else matchedTab?.label ?: event.message.category.label
+                            val title = if (isTell) conv.title.ifBlank { event.message.sender } else matchedTab?.label ?: event.message.category.label
                             notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell, title)
                         }
                         saveChats()

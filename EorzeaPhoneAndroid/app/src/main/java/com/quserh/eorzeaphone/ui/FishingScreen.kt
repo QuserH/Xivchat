@@ -132,6 +132,48 @@ fun FishingScreen(state: PhoneState) {
     var alarmVersion by remember { mutableStateOf(0) }
     var mapSpot by remember { mutableStateOf<FishingSpot?>(null) }
 
+    // 列表状态与可捕获数据提升到界面顶层：进出详情/返回时不重置滑动位置、不重新计算
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    var availability by remember(catalog) { mutableStateOf<Map<Int, Long?>>(emptyMap()) }
+    var availabilityReady by remember(catalog) { mutableStateOf(false) }
+    LaunchedEffect(catalog, nowMillis) {
+        val data = catalog ?: return@LaunchedEffect
+        val now = nowMillis
+        if (availability.isEmpty()) availabilityReady = false
+        availability = withContext(Dispatchers.Default) {
+            val map = HashMap<Int, Long?>(data.fish.size)
+            for (f in data.fish) {
+                val window = FishingWindowCalculator.nextWindow(f, data, now - 1_000L)
+                map[f.id] = if (window != null && window.startMillis <= now && window.endMillis > now) (window.endMillis - now) else null
+            }
+            map
+        }
+        availabilityReady = true
+    }
+    val listState = rememberLazyListState()
+    var pinHeader by remember { mutableStateOf(false) }
+    var lastScrollPos by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                val headerNaturalVisible = index == 0 && offset == 0
+                val pos = index * 100000L + offset
+                if (pos > lastScrollPos) {
+                    pinHeader = false
+                } else if (pos < lastScrollPos) {
+                    pinHeader = !headerNaturalVisible
+                }
+                lastScrollPos = pos
+            }
+    }
+    LaunchedEffect(versionFilter, filter, alarmsOnly) { listState.scrollToItem(0) }
+
     LaunchedEffect(Unit) {
         catalog = FishingCatalogRepository.load(context).also { FishingAlarmStore.refresh(context, it) }
     }
@@ -187,50 +229,11 @@ fun FishingScreen(state: PhoneState) {
                                 }
                             }.toList()
                     }
-                    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
-                    LaunchedEffect(Unit) {
-                        while (true) {
-                            delay(30_000)
-                            nowMillis = System.currentTimeMillis()
-                        }
-                    }
-                    var availability by remember(data) { mutableStateOf<Map<Int, Long?>>(emptyMap()) }
-                    var availabilityReady by remember(data) { mutableStateOf(false) }
-                    LaunchedEffect(data, nowMillis) {
-                        val now = nowMillis
-                        availabilityReady = false
-                        availability = withContext(Dispatchers.Default) {
-                            val map = HashMap<Int, Long?>(data.fish.size)
-                            for (f in data.fish) {
-                                val window = FishingWindowCalculator.nextWindow(f, data, now - 1_000L)
-                                map[f.id] = if (window != null && window.startMillis <= now && window.endMillis > now) (window.endMillis - now) else null
-                            }
-                            map
-                        }
-                        availabilityReady = true
-                    }
                     val filtered = remember(baseFiltered, availability, filter) {
                         val list = baseFiltered.filter { f -> filter != FishingFilter.Available || availability[f.id] != null }.toMutableList()
                         list.sortWith(compareBy({ availability[it.id] == null }, { availability[it.id] ?: Long.MAX_VALUE }, { it.name }))
                         list
                     }
-                    val listState = rememberLazyListState()
-                    var pinHeader by remember { mutableStateOf(false) }
-                    var lastScrollPos by remember { mutableLongStateOf(0L) }
-                    LaunchedEffect(listState) {
-                        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-                            .collect { (index, offset) ->
-                                val headerNaturalVisible = index == 0 && offset == 0
-                                val pos = index * 100000L + offset
-                                if (pos > lastScrollPos) {
-                                    pinHeader = false
-                                } else if (pos < lastScrollPos) {
-                                    pinHeader = !headerNaturalVisible
-                                }
-                                lastScrollPos = pos
-                            }
-                    }
-                    LaunchedEffect(versionFilter, filter, alarmsOnly) { listState.scrollToItem(0) }
                     Box(Modifier.fillMaxSize()) {
                         LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             item("fishing-header") {
@@ -356,8 +359,19 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
             }
             item {
                 DetailSection("下次捕获窗口") {
+                    var detailNow by remember(fish.id) { mutableLongStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(fish.id) {
+                        while (true) {
+                            delay(1_000)
+                            detailNow = System.currentTimeMillis()
+                        }
+                    }
                     if (window == null) Text("暂未计算到可用窗口", color = PhoneMuted, fontSize = 13.sp) else {
-                        Text(if (window.startMillis <= System.currentTimeMillis() + 1_000L) "现在可以捕获" else formatWindow(window.startMillis, window.endMillis), color = if (window.startMillis <= System.currentTimeMillis() + 1_000L) PhoneGreen else PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        if (window.startMillis <= detailNow && window.endMillis > detailNow) {
+                            Text("可捕获 · 剩 ${formatRemainingSeconds(window.endMillis - detailNow)}", color = PhoneGreen, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Text(if (window.startMillis <= detailNow + 1_000L) "现在可以捕获" else formatWindow(window.startMillis, window.endMillis), color = if (window.startMillis <= detailNow + 1_000L) PhoneGreen else PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        }
                         window.spot?.let { Text("${it.region} · ${it.zone} · ${it.name}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
                     }
                     Text("提前提醒：${leadMinutes} 分钟", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 13.dp))
@@ -701,6 +715,18 @@ private fun formatRemaining(millis: Long): String {
         hours > 0 && minutes > 0 -> "${hours}小时${minutes}分"
         hours > 0 -> "${hours}小时"
         else -> "${minutes}分"
+    }
+}
+
+private fun formatRemainingSeconds(millis: Long): String {
+    val totalSeconds = (millis / 1_000L).coerceAtLeast(1)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return when {
+        hours > 0 -> "${hours}小时${minutes}分${seconds}秒"
+        minutes > 0 -> "${minutes}分${seconds}秒"
+        else -> "${seconds}秒"
     }
 }
 
