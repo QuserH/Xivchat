@@ -1,152 +1,168 @@
-# Dalamud plugins — game API mapping (first draft)
+# Dalamud 插件 — 游戏接口映射（V1 初稿，中文）
 
-This is the first draft (v1) of the Dalamud/"卫月" plugin API mapping and plugin index.  I created this file as the initial deliverable and pushed it to the `api` branch.
+> 文件位置：docs/dalamud_plugins_api_mapping_v1.md（api 分支）
 
-Location: docs/dalamud_plugins_api_mapping_v1.md (in branch `api`).
-
----
-
-## Summary
-
-Goal: find public Dalamud plugins that read game state and identify which game/Dalamud APIs they call so you can implement a plugin that reads game data and forwards it to your app.
-
-What I delivered in this first draft:
-- a short, prioritized index of representative Dalamud plugins (initial 10+ examples),
-- for each example: the main Dalamud/game interfaces used and one or two source links (permalink) showing the calls,
-- a short consolidated list of common Dalamud / game APIs to rely on,
-- recommended ways for a plugin to send data to an external app and short pros/cons,
-- next steps (how I'll produce the full "top 100" detailed mapping in the branch).
-
-Note: this is a working draft. The automated code search I use returns partial results per query — I'll run a full pass over the top 100 candidates next and attach per-repo code snippets & permalinks.
+说明：这是第一版中文初稿。我已将初稿提交到你仓库的 api 分支。本稿为工作文档，后续我会把前 100 个最相关的仓库逐一做静态检索并把每个插件调用的游戏接口、代码片段与 permalink 补充到本文件中。
 
 ---
 
-## Representative plugin examples (quick index & findings)
+## 概要
 
-I started by extracting and confirming interface usage from several popular/open plugins. Each entry below lists the repo, a short note, and 1–2 source permalinks where the plugin uses Dalamud/game APIs.
+目标：在公开仓库中找出 Dalamud（“卫月”）插件，识别它们读取/使用游戏状态时调用的 Dalamud / FFXIV 接口，以便你实现一个插件，从游戏中读取信息并将其传回你自己的 app（手机/服务端）。
 
-1) TPie — ring hotbar plugin
-   - Repo: https://github.com/Tischel/TPie
-   - Observed APIs: IClientState, IObjectTable, ICommandManager, IDalamudPluginInterface, IDataManager, IFramework, IGameGui, ISigScanner, IGameInteropProvider, IKeyState, IPluginLog, ITextureProvider
-   - Example source: TPie/Plugin.cs — shows services injected and singletons: https://github.com/Tischel/TPie/blob/a861c2132284430e6b2d4666d6fc708051d9b115/TPie/Plugin.cs
-   - Helpers using game data: CooldownHelper.cs (uses ActionManager / FFXIVClientStructs): https://github.com/Tischel/TPie/blob/a861c2132284430e6b2d4666d6fc708051d9b115/TPie/Helpers/CooldownHelper.cs
+本次交付（初稿 v1）包含：
+- 一批代表性插件示例及它们使用的主要 Dalamud / 游戏接口（示例源码行链接）
+- 常用的 Dalamud / 游戏接口汇总，便于直接引用
+- 将游戏信息传回外部 App 的推荐方式（优缺点）
+- 后续工作计划（我将如何产出完整的“前 100”映射）
 
-2) DelvUI — full UI replacement
-   - Repo: https://github.com/DelvUI/DelvUI
-   - Observed APIs: many Dalamud services (IPluginLog, IChatGui, IGameGui, IFramework, ISigScanner, IObjectTable, IClientState, ITextureProvider, INotificationManager, IPartyList, ITargetManager, etc.), use of FFXIVClientStructs and hooking for some features
-   - Example sources: README and PullTimerHelper (hooking Agent update, GameInteropProvider hooks): https://github.com/DelvUI/DelvUI/blob/edc6ec52620ddf3feaa28115e69329a09b865f4a/README.md
+注意：我使用的自动检索会分页限制结果。接下来的完整 Top-100 扫描会把更多源码 permalinks 补齐并以中文写出每个插件的调用点说明。
+
+---
+
+## 代表性插件示例（快速索引与发现）
+
+以下是我已抽取并确认的若干热门或典型插件，列出仓库与主要调用的接口，并附 1–2 个源码 permalink 作为示例：
+
+1) TPie — 圆形热键环插件
+   - 仓库：https://github.com/Tischel/TPie
+   - 常用接口：IClientState、IObjectTable、ICommandManager、IDalamudPluginInterface、IDataManager、IFramework、IGameGui、ISigScanner、IGameInteropProvider、IKeyState、IPluginLog、ITextureProvider
+   - 示例源码：Plugin.cs（服务注入）
+     https://github.com/Tischel/TPie/blob/a861c2132284430e6b2d4666d6fc708051d9b115/TPie/Plugin.cs
+     CooldownHelper（使用 ActionManager / FFXIVClientStructs）：
+     https://github.com/Tischel/TPie/blob/a861c2132284430e6b2d4666d6fc708051d9b115/TPie/Helpers/CooldownHelper.cs
+
+2) DelvUI — 完整 UI 替换插件
+   - 仓库：https://github.com/DelvUI/DelvUI
+   - 常用接口：大量 Dalamud 服务（IPluginLog、IChatGui、IGameGui、IFramework、ISigScanner、IObjectTable、IClientState、ITextureProvider、INotificationManager、IPartyList 等），并使用 Hook 读取/拦截游戏内部行为
+   - 示例源码：PullTimerHelper（Hook 游戏 Agent）：
      https://github.com/DelvUI/DelvUI/blob/edc6ec52620ddf3feaa28115e69329a09b865f4a/DelvUI/Helpers/PullTimerHelper.cs
 
-3) Brio — GPose / actor APIs + plugin IPC
-   - Repo: https://github.com/Etheirys/Brio
-   - Observed APIs: many Dalamud services injected via [PluginService], framework update events, IDataManager/Lumina, IObjectTable, IClientState; provides its own IPC API for other plugins (BrioAPI), uses ICallGateSubscriber
-   - Example sources: DalamudService, BrioAPI bindings: https://github.com/Etheirys/Brio/blob/76254a165e839fc97e4edae065905d7c3976652e/Brio/Game/Core/DalamudService.cs
+3) Brio — GPose / Actor API 与插件间 IPC
+   - 仓库：https://github.com/Etheirys/Brio
+   - 常用接口：通过 PluginService 注入的 Banyak Dalamud 服务（IFramework、IClientState、IObjectTable、IDataManager 等），并提供自己的 IPC（BrioAPI，使用 ICallGateSubscriber）
+   - 示例源码：DalamudService（服务注入）与 BrioAPI
+     https://github.com/Etheirys/Brio/blob/76254a165e839fc97e4edae065905d7c3976652e/Brio/Game/Core/DalamudService.cs
      https://github.com/Etheirys/Brio/blob/76254a165e839fc97e4edae065905d7c3976652e/BrioAPI_V2.cs
 
-4) Triad Buddy (FFTriadBuddy) — reads UI + game memory for Triple Triad
-   - Repo: https://github.com/MgAl2O4/FFTriadBuddyDalamud
-   - Observed APIs: IDataManager, ICommandManager, IFramework, IGameGui, ISigScanner, ITextureProvider; uses unsafe memory readers to parse game UI/agents; uses UiReaderScheduler to find addons by name.
-   - Example sources: plugin/service and UIReaderScheduler: https://github.com/MgAl2O4/FFTriadBuddyDalamud/blob/1bffa57921d3eedbb201c227b6ea05f35a0ee75e/plugin/Service.cs
+4) Triad Buddy — 读 UI 与内存（Triple Triad）
+   - 仓库：https://github.com/MgAl2O4/FFTriadBuddyDalamud
+   - 常用接口：IDataManager、ICommandManager、IFramework、IGameGui、ISigScanner、ITextureProvider；并使用不安全内存读取解析游戏 Agent/UI
+   - 示例源码：Service.cs 和 UIReaderScheduler
+     https://github.com/MgAl2O4/FFTriadBuddyDalamud/blob/1bffa57921d3eedbb201c227b6ea05f35a0ee75e/plugin/Service.cs
      https://github.com/MgAl2O4/FFTriadBuddyDalamud/blob/1bffa57921d3eedbb201c227b6ea05f35a0ee75e/utils/UIReaderScheduler.cs
 
-5) DeathRecap — packet hooks and combat/event capture
-   - Repo: https://github.com/Kouzukii/ffxiv-deathrecap
-   - Observed APIs: IDalamudPluginInterface injection, ICommandManager, IDataManager, IChatGui, IObjectTable, IPartyList, ICondition, IClientState, IFramework, GameInteropProvider + HookFromSignature, FFXIVClientStructs for parsing packets. Uses custom payloads in chat links to open UI.
-   - Example sources: Service.cs (services via plugin interface) and CombatEventCapture hooking signatures: https://github.com/Kouzukii/ffxiv-deathrecap/blob/658ec3a19614f225e354b207ebba87aaf64943c7/Service.cs
+5) DeathRecap — 抓包 Hook 捕获战斗事件
+   - 仓库：https://github.com/Kouzukii/ffxiv-deathrecap
+   - 常用接口：IDalamudPluginInterface 注入、多种 Dalamud 服务、GameInteropProvider HookFromSignature、FFXIVClientStructs（解析包 / 内存）
+   - 示例源码：Service.cs 与 CombatEventCapture（Hook）
+     https://github.com/Kouzukii/ffxiv-deathrecap/blob/658ec3a19614f225e354b207ebba87aaf64943c7/Service.cs
      https://github.com/Kouzukii/ffxiv-deathrecap/blob/658ec3a19614f225e354b207ebba87aaf64943c7/Events/CombatEventCapture.cs
 
-6) MidiBard — midi player plugin that integrates with game state and IPC
-   - Repo: https://github.com/akira0245/MidiBard
-   - Observed APIs: many Dalamud services via injection (plugin interface, ClientState, ChatGui, DataManager, GameGui, KeyState, etc.), uses IPC and local socket/agent logic to coordinate playback across clients, agent/agent interface for Gold Saucer features
-   - Example sources: Midibard/DalamudApi/api.cs (service declarations), IPC handlers: https://github.com/akira0245/MidiBard/blob/976b78b801f1ad84ace1ab86f91c31fe9fe5e769/Midibard/DalamudApi/api.cs
+6) MidiBard — MIDI 演奏与插件内部 IPC
+   - 仓库：https://github.com/akira0245/MidiBard
+   - 常用接口：通过注入获得的多项 Dalamud 服务（ClientState、ChatGui、DataManager、GameGui、KeyState 等），内部使用 IPC/本地通信实现合奏与控制
+   - 示例源码：Midibard/DalamudApi 和 IPCHandlers
+     https://github.com/akira0245/MidiBard/blob/976b78b801f1ad84ace1ab86f91c31fe9fe5e769/Midibard/DalamudApi/api.cs
      https://github.com/akira0245/MidiBard/blob/976b78b801f1ad84ace1ab86f91c31fe9fe5e769/Midibard/IPC/IPCHandles.cs
 
-7) LMeter — ACT integration (overlay) and many Dalamud services
-   - Repo: https://github.com/lichie567/LMeter
-   - Observed APIs: IClientState, ICommandManager, ICondition, IDalamudPluginInterface, IDataManager, IFramework, IGameGui, IJobGauges, IObjectTable, IPartyList, ITargetManager, IChatGui, ITextureProvider, INotificationManager; integrates with ACT via WebSocket or IPC
-   - Example sources: LMeter/Plugin.cs (service registration & singletons): https://github.com/lichie567/LMeter/blob/7921aeb703321be2feb28f147c3be2b7a9649c71/LMeter/Plugin.cs
+7) LMeter — ACT 集成叠加器
+   - 仓库：https://github.com/lichie567/LMeter
+   - 常用接口：IClientState、ICommandManager、ICondition、IDalamudPluginInterface、IDataManager、IFramework、IGameGui、IJobGauges、IObjectTable、IPartyList、ITargetManager 等；与 ACT 通过 WebSocket 或 IINACT IPC 连接
+   - 示例源码：Plugin.cs（服务注册）
+     https://github.com/lichie567/LMeter/blob/7921aeb703321be2feb28f147c3be2b7a9649c71/LMeter/Plugin.cs
 
-8) BossMod — deep game integration, hooks, FFXIVClientStructs
-   - Repo: https://github.com/awgil/ffxiv_bossmod
-   - Observed APIs: extensive FFXIVClientStructs usage, ActionManager hooks, SigScanner, HookAddress use, IClientState, IObjectTable, IFramework and more
-   - Example sources: Service.cs (services via PluginService), Data/ClientState.cs and numerous hook usages: https://github.com/awgil/ffxiv_bossmod/blob/162fde51b5e56ca133cbc13502ae03548a23f461/BossMod/Framework/Service.cs
+8) BossMod — 深度集成、Hook 与 FFXIVClientStructs 应用
+   - 仓库：https://github.com/awgil/ffxiv_bossmod
+   - 常用接口：大量 FFXIVClientStructs 使用、ActionManager Hook、SigScanner 与 HookAddress、IClientState、IObjectTable、IFramework 等
+   - 示例源码：Framework/Service.cs、Data/ClientState.cs
+     https://github.com/awgil/ffxiv_bossmod/blob/162fde51b5e56ca133cbc13502ae03548a23f461/BossMod/Framework/Service.cs
      https://github.com/awgil/ffxiv_bossmod/blob/162fde51b5e56ca133cbc13502ae03548a23f461/BossMod/Data/ClientState.cs
 
-9) AutoDuty — automation/navigation plugin (hooks, memory reads)
-   - Repo: https://github.com/ffxivcode/AutoDuty
-   - Observed APIs: many Dalamud services, SigScanner, hooks, FFXIVClientStructs, uses in-memory calls to perform movement & UI automation
-   - Example sources: AutoDuty/AutoDuty.cs and helpers: https://github.com/ffxivcode/AutoDuty/blob/53f4e7400f9791f4534f803a2ec2d2ff709375ba/AutoDuty/AutoDuty.cs
+9) AutoDuty — 导航/自动化插件（内存读写与 Hook）
+   - 仓库：https://github.com/ffxivcode/AutoDuty
+   - 常用接口：多项 Dalamud 服务、SigScanner、Hook、FFXIVClientStructs，用以执行移动/交互自动化
+   - 示例源码：AutoDuty.cs
+     https://github.com/ffxivcode/AutoDuty/blob/53f4e7400f9791f4534f803a2ec2d2ff709375ba/AutoDuty/AutoDuty.cs
 
-10) VFXEditor — VFX editing, FFXIVClientStructs, UI hooks
-   - Repo: https://github.com/0ceal0t/Dalamud-VFXEditor
-   - Observed APIs: IClientState, IFramework, ICommandManager, IObjectTable, ISigScanner, IDataManager, ITargetManager, IGameInteropProvider, and direct FFXIVClientStructs usage for VFX and animation manipulation
-   - Example sources: Dalamud service registration and interop: https://github.com/0ceal0t/Dalamud-VFXEditor/blob/d29a10b7ab9013d274cca7e9b7298e69678348fc/VFXEditor/Dalamud.cs
-
-
----
-
-## Common Dalamud / game interfaces you will use (consolidated)
-
-These are the services & APIs that appear across many plugins and are the primary entry points to read game state. When you implement your plugin, request them in the constructor or via [PluginService] injection.
-
-- IDalamudPluginInterface (plugin lifecycle, UiBuilder, GetIpcSubscriber / CallGate)
-- IClientState (LocalPlayer, IsPvP, TerritoryType, etc.)
-- IObjectTable (search objects, LocalPlayer, iterate scene objects)
-- IFramework (RunOnTick, Update events)
-- IDataManager / Lumina (GetExcelSheet<T> — static game data)
-- ICommandManager (slash commands)
-- IChatGui (send/receive chat, AddChatLinkHandler)
-- IGameGui (GetAddonByName, UI addon pointers)
-- IKeyState (keyboard state)
-- ISigScanner (signature scanning: for hooking or locating functions)
-- IGameInteropProvider (HookFromSignature / HookFromAddress)
-- IPluginLog (logging)
-- ITextureProvider (icon/texture lookups)
-- ICondition (ConditionFlag checks — in combat, zoning, cutscene)
-- IPartyList / ITargetManager / IJobGauges / IToastGui / INotificationManager — optional but common
-- FFXIVClientStructs — direct memory structures for low-level readers & hooks
-
-When possible, prefer using Dalamud provided high-level services (IClientState, IObjectTable, IDataManager). Use FFXIVClientStructs and signature hooks only when necessary (e.g., to capture packets, or read UI data that Dalamud doesn't expose).
+10) VFXEditor — VFX / 动画 / 音效 编辑器
+    - 仓库：https://github.com/0ceal0t/Dalamud-VFXEditor
+    - 常用接口：IClientState、IFramework、ICommandManager、IObjectTable、ISigScanner、IDataManager、ITargetManager、IGameInteropProvider，以及 FFXIVClientStructs 的 VFX/动画 互操作
+    - 示例源码：Dalamud 服务注册
+      https://github.com/0ceal0t/Dalamud-VFXEditor/blob/d29a10b7ab9013d274cca7e9b7298e69678348fc/VFXEditor/Dalamud.cs
 
 ---
 
-## Sending plugin data to your external app — recommended options
+## 常用的 Dalamud / 游戏接口（汇总）
 
-1) WebSocket (local) — recommended for real-time bidirectional data. Plugin acts as WebSocket client connecting to your app's local server or vice versa. Pros: realtime, cross-platform. Cons: need local port and firewall considerations.
-2) HTTP POST to local app — simple to implement; plugin posts JSON. Pros: easy; Cons: one-way and polling required or server push needed.
-3) TCP/UDP socket — low-level efficient; UDP for lossy telemetry, TCP for reliability. Cons: manual framing and reconnect handling.
-4) File (JSON / SQLite) — simplest, safe; app polls files. Cons: latency and file locking considerations.
-5) Dalamud Plugin IPC — only for communication between Dalamud plugins (not external apps).
+下面这些接口在多数插件中经常出现，建议你的插件按需注入并以此读取所需信息：
 
-Security / compliance notes:
-- Avoid automating game actions that could be considered cheating. Reading state is normally fine, but automated actions or packet injection can be risky.
-- When opening network listeners, restrict to loopback (127.0.0.1) to avoid exposing local data.
+- IDalamudPluginInterface（插件生命周期、UiBuilder、GetIpcSubscriber / CallGate）
+- IClientState（LocalPlayer、IsPvP、TerritoryType 等）
+- IObjectTable（场景对象检索、LocalPlayer、SearchById 等）
+- IFramework（RunOnTick、Update 事件 —— 每帧/定时读取）
+- IDataManager / Lumina（GetExcelSheet<T>，读取静态游戏数据表）
+- ICommandManager（注册 /slash 命令）
+- IChatGui（发送/接收聊天、AddChatLinkHandler）
+- IGameGui（GetAddonByName —— 读取游戏界面 Addon 指针）
+- IKeyState（键盘状态）
+- ISigScanner（签名扫描：定位游戏函数地址）
+- IGameInteropProvider（HookFromSignature / HookFromAddress）
+- IPluginLog（日志）
+- ITextureProvider（图标/贴图查找）
+- ICondition（ConditionFlag，例如 BoundByDuty / InCombat / WatchingCutscene）
+- IPartyList / ITargetManager / IJobGauges / IToastGui / INotificationManager —— 常用但按需使用
+- FFXIVClientStructs —— 当高层 API 不够时用于直接读取/写入游戏内存结构
 
-Example small WebSocket push (C#-pseudo, inside plugin)
+建议优先使用高层 Dalamud 服务（IClientState、IObjectTable、IDataManager 等），仅在必要时使用 FFXIVClientStructs / Hook（因为直接内存读取或 Hook 风险更高且对游戏更新敏感）。
+
+---
+
+## 把游戏数据传回外部 App 的实现方式（推荐与权衡）
+
+1) WebSocket（本地）—— 推荐用于实时双向通信。插件作为 WebSocket 客户端连接到你的本地服务端（或反向）。优点：实时、双向；缺点：需要本地端口与防火墙设置。
+2) HTTP POST（推送）—— 插件向本地服务发 JSON POST。优点：实现简单、易调试；缺点：为单向，若需实时性需配合轮询或长连接。
+3) TCP/UDP Socket —— 低层协议，UDP 适合丢包可容忍的遥测数据，TCP 保证可靠性。优点：高效；缺点：需自行实现协议、重连与分包处理。
+4) 写文件（JSON/SQLite）—— 最简单，外部 App 定期轮询读取。优点：实现最容易，兼容性好；缺点：延迟高、文件锁与并发问题需考量。
+5) Dalamud 插件内 IPC —— 只能在 Dalamud 插件间使用，不适合对接外部 App。
+
+安全与合规提示：
+- 强烈建议只使用 loopback（127.0.0.1）地址绑定，避免暴露到网络。不要上传敏感数据到第三方。 
+- 尽量避免自动化玩家行为（例如模拟输入、自动操作）以降低封禁风险——读取和导出信息通常是可接受的，但直接替玩家下指令或注入包存在风险。
+
+示例（C# + WebSocket 推送，伪代码）：
 
 ```csharp
-// Pseudo: run on a background thread
+// 插件内后台任务示例
 var ws = new ClientWebSocket();
 await ws.ConnectAsync(new Uri("ws://127.0.0.1:42000"), CancellationToken.None);
-while(ws.State == WebSocketState.Open) {
-  var payload = JsonConvert.SerializeObject(new { time = DateTime.UtcNow, player = clientState.LocalPlayer?.Name?.TextValue });
-  var bytes = Encoding.UTF8.GetBytes(payload);
-  await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
-  await Task.Delay(250);
+while (ws.State == WebSocketState.Open) {
+    var payload = new {
+        time = DateTime.UtcNow,
+        player = clientState.LocalPlayer?.Name?.TextValue,
+        hp = clientState.LocalPlayer?.CurrentHp
+    };
+    var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(payload));
+    await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+    await Task.Delay(250); // 每 250ms 发送一次
 }
 ```
 
 ---
 
-## Next steps (what I'll run next and deliver to `api` branch)
+## 后续步骤（我会如何推进 Top-100 的完整映射）
 
-- Gather a prioritized list of the *top 100* candidate repositories (search results filtered for real Dalamud plugins). I'll generate a table of those 100 repos with quick tags (is_fork, last_updated, stars) and then run code extraction over them.
-- For each confirmed Dalamud plugin in that 100, extract the exact code locations where game/Dalamud services are consumed and where any external communication (HTTP/WS/IPC/file) is implemented. I'll add per-plugin subsections with permalinks and short API lists.
-- Push the full mapping document(s) to `docs/` on the `api` branch. I'll also include a machine-readable CSV/JSON index that your app can later consume if desired.
+- 生成一个优先排序的 Top-100 插件候选列表（按匹配度 / star / 最近提交活跃度排序），并提交为索引文件（CSV/JSON）到 docs/ 下。
+- 对这 100 个仓库逐一运行静态搜索与抽取：定位服务注入点（Plugin 构造/PluginService）、FFXIVClientStructs 调用、SigScanner/Hook 调用、以及任何网络/文件/IPC 导出实现。
+- 为每个确认为 Dalamud 插件的仓库在文档中增加小节，包含：
+  - 仓库链接 + 简短说明
+  - 调用的主要 Dalamud / 游戏接口清单（按服务名列出）
+  - 关键调用或导出实现的源码 permalink（1–3 个精确行范围）
+  - 是否对外通信（HTTP/WS/TCP/File/IPC）及位置
+- 我会按每 10–20 个仓库分批推送到 api 分支，方便你审阅；最终把 Top-100 的完整初稿合并成 docs/dalamud_plugins_api_mapping_v1.md（中文）。
 
-Estimated ETA for the complete "Top 100" pass and per-repo code snippets: ~6–12 hours. I will push intermediate updates to the `api` branch as I process groups of repositories.
+预计时间：Complete Top-100 初稿约 6–12 小时（会分批提交，先提交前 20 个结果）。
 
 ---
 
-If you'd like, I can (next) start by producing the prioritized 100-repo index and commit it to the branch. Confirm and I'll proceed — I'll then run the automated extraction over them and push the first full batch of per-plugin entries.
-
+现在我继续对 Top-100 候选做索引与代码检索，并且所有后续文档都会以中文写出并提交到 api 分支。有任何优先仓库或额外格式（例如要 Excel/CSV 输出）请告诉我，我会一并输出。
