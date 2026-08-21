@@ -195,13 +195,19 @@ private fun LightHeader(
     trailing: @Composable RowScope.() -> Unit = {},
     titleIcon: (@Composable () -> Unit)? = null,
 ) {
+    val headerMargin = LocalContentMargin.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 14.dp),
+        modifier = Modifier.fillMaxWidth().height(70.dp).padding(start = (headerMargin.coerceAtLeast(2) - 2).dp, end = 14.dp),
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(46.dp)) {
-            Text("‹", color = AetherPurple, fontSize = 40.sp, lineHeight = 32.sp, fontWeight = FontWeight.Light)
-        }
+        Text(
+            "‹",
+            color = AetherPurple,
+            fontSize = 40.sp,
+            lineHeight = 32.sp,
+            fontWeight = FontWeight.Light,
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 8.dp),
+        )
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,

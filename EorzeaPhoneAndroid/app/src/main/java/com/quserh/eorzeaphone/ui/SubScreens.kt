@@ -123,13 +123,18 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
 }
 @Composable
 fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, onBack: (() -> Unit)? = null, showBack: Boolean = true) {
+    val margin = LocalContentMargin.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = (margin.coerceAtLeast(2) - 2).dp, end = 18.dp, top = 12.dp, bottom = 12.dp),
     ) {
-        if (showBack) TextButton(onClick = (onBack ?: state::back), contentPadding = ButtonDefaults.TextButtonContentPadding) {
-            Text("‹", color = PhoneAccent, fontSize = 38.sp, lineHeight = 30.sp)
-        } else Spacer(Modifier.width(12.dp))
+        if (showBack) Text(
+            "‹",
+            color = PhoneAccent,
+            fontSize = 38.sp,
+            lineHeight = 30.sp,
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
+        ) else Spacer(Modifier.width(12.dp))
         Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         trailing?.invoke()
     }

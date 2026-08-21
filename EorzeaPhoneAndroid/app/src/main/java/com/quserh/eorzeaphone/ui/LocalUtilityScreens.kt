@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
@@ -183,8 +184,8 @@ fun MapsScreen(state: PhoneState) {
     }
     val favorites = maps?.expansions.orEmpty().flatMap { it.regions }.flatMap { it.destinations }.filter { state.isMapFavorite(it.rowId) }
     ScreenFrame(background = Color(0xFFF5F5FA)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 21.dp)) {
-            Text("‹", color = purple, fontSize = 40.sp, modifier = Modifier.clickable { state.back() }.padding(end = 12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(66.dp).padding(start = LocalContentMargin.current.dp, end = 21.dp)) {
+            Text("‹", color = purple, fontSize = 40.sp, modifier = Modifier.clickable { state.back() }.padding(end = 4.dp))
             Text("地图", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
             Box(Modifier.size(40.dp))
         }

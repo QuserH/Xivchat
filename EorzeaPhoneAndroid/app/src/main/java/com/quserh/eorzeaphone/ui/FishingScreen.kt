@@ -46,6 +46,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,8 +65,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.quserh.eorzeaphone.data.FishingAlarmStore
 import com.quserh.eorzeaphone.data.FishingCatalog
 import com.quserh.eorzeaphone.data.FishingCatalogRepository
@@ -89,6 +97,18 @@ import kotlin.math.roundToInt
 
 private enum class FishingFilter(val label: String) { All("全部"), Available("可捕获"), Big("鱼王"), Spear("刺鱼"), Caught("已捕获"), Missing("未捕获") }
 
+private data class ExpansionTab(val version: Int?, val label: String)
+
+private val expansionTabs = listOf(
+    ExpansionTab(null, "全部"),
+    ExpansionTab(2, "重生之境"),
+    ExpansionTab(3, "苍穹之禁城"),
+    ExpansionTab(4, "红莲之狂潮"),
+    ExpansionTab(5, "暗影之逆焰"),
+    ExpansionTab(6, "晓月之终途"),
+    ExpansionTab(7, "金曦之遗辉"),
+)
+
 @Composable
 fun FishingScreen(state: PhoneState) {
     val context = LocalContext.current
@@ -96,6 +116,7 @@ fun FishingScreen(state: PhoneState) {
     var selected by remember { mutableStateOf<FishingFish?>(null) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(FishingFilter.All) }
+    var versionFilter by remember { mutableStateOf<Int?>(null) }
     var alarmsOnly by remember { mutableStateOf(false) }
     var alarmVersion by remember { mutableStateOf(0) }
     var mapSpot by remember { mutableStateOf<FishingSpot?>(null) }
@@ -138,15 +159,16 @@ fun FishingScreen(state: PhoneState) {
                 } else {
                     val alarmIds = remember(alarmVersion, alarmsOnly) { FishingAlarmStore.enabledIds(context) }
                     val caught = remember(state.fishingLog, data) { data.fish.count { state.isFishCaught(it.logId, it.method) } }
-                    val filtered = remember(data, query, filter, alarmsOnly, alarmVersion, state.fishingLog) {
+                    val baseFiltered = remember(data, query, versionFilter, filter, alarmsOnly, alarmVersion, state.fishingLog) {
                         val needle = query.trim()
                         data.fish.asSequence()
                             .filter { !alarmsOnly || it.id in alarmIds }
+                            .filter { versionFilter == null || it.version.toInt() == versionFilter }
                             .filter { needle.isBlank() || it.name.contains(needle, true) || it.spots.any { spot -> spot.name.contains(needle, true) || spot.region.contains(needle, true) || spot.zone.contains(needle, true) } }
                             .filter {
                                 when (filter) {
                                     FishingFilter.All -> true
-                                    FishingFilter.Available -> FishingWindowCalculator.availableNow(it, data)
+                                    FishingFilter.Available -> true
                                     FishingFilter.Big -> it.isBigFish
                                     FishingFilter.Spear -> it.method == "spear"
                                     FishingFilter.Caught -> state.isFishCaught(it.logId, it.method)
@@ -154,12 +176,37 @@ fun FishingScreen(state: PhoneState) {
                                 }
                             }.toList()
                     }
-                    FishingListHeader(query, { query = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null)
+                    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            delay(30_000)
+                            nowMillis = System.currentTimeMillis()
+                        }
+                    }
+                    var availability by remember(data, versionFilter, filter, alarmsOnly, alarmVersion, state.fishingLog, baseFiltered) { mutableStateOf<Map<Int, Long?>>(emptyMap()) }
+                    LaunchedEffect(baseFiltered, data, nowMillis) {
+                        val base = baseFiltered
+                        val now = nowMillis
+                        availability = withContext(Dispatchers.Default) {
+                            val map = HashMap<Int, Long?>()
+                            for (f in base) {
+                                val window = FishingWindowCalculator.nextWindow(f, data, now - 1_000L)
+                                map[f.id] = if (window != null && window.startMillis <= now && window.endMillis > now) (window.endMillis - now) else null
+                            }
+                            map
+                        }
+                    }
+                    val filtered = remember(baseFiltered, availability, filter) {
+                        val list = baseFiltered.filter { f -> filter != FishingFilter.Available || availability[f.id] != null }.toMutableList()
+                        list.sortWith(compareBy({ availability[it.id] == null }, { availability[it.id] ?: Long.MAX_VALUE }, { it.name }))
+                        list
+                    }
+                    FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null)
                     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                         if (filtered.isEmpty()) item { Text(if (alarmsOnly) "还没有设置捕鱼闹钟" else "没有符合条件的鱼", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(34.dp)) }
                         items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
                             Box(Modifier.animateItem()) {
-                                FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds) { selected = fishRow }
+                                FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availability[fishRow.id]) { selected = fishRow }
                             }
                         }
                     }
@@ -170,14 +217,21 @@ fun FishingScreen(state: PhoneState) {
 }
 
 @Composable
-private fun FishingListHeader(query: String, onQuery: (String) -> Unit, filter: FishingFilter, onFilter: (FishingFilter) -> Unit, caught: Int, total: Int, synced: Boolean) {
+private fun FishingListHeader(query: String, onQuery: (String) -> Unit, versionFilter: Int?, onVersionFilter: (Int?) -> Unit, filter: FishingFilter, onFilter: (FishingFilter) -> Unit, caught: Int, total: Int, synced: Boolean) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(10.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp)) {
             Text("⌕", color = PhoneMuted, fontSize = 20.sp)
             BasicTextField(query, onQuery, singleLine = true, textStyle = TextStyle(color = PhoneText, fontSize = 14.sp), modifier = Modifier.weight(1f).padding(horizontal = 9.dp), decorationBox = { field -> Box(contentAlignment = Alignment.CenterStart) { if (query.isBlank()) Text("搜索鱼类、钓场或地区", color = PhoneMuted, fontSize = 13.sp); field() } })
             if (query.isNotEmpty()) Text("×", color = PhoneMuted, fontSize = 20.sp, modifier = Modifier.clickable { onQuery("") })
         }
-        Row(Modifier.fillMaxWidth().padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = 9.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            expansionTabs.forEach { tab ->
+                val selected = versionFilter == tab.version
+                Text(tab.label, color = if (selected) Color.White else PhoneMuted, fontSize = 12.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.clip(RoundedCornerShape(13.dp)).background(if (selected) PhoneAccent else PhoneSurface).clickable { onVersionFilter(tab.version) }.padding(horizontal = 13.dp, vertical = 6.dp))
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FishingFilter.entries.forEach { item ->
                 Text(item.label, color = if (filter == item) Color.White else PhoneMuted, fontSize = 11.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(13.dp)).background(if (filter == item) PhoneAccent else PhoneSurface).clickable { onFilter(item) }.padding(vertical = 6.dp))
@@ -191,7 +245,7 @@ private fun FishingListHeader(query: String, onQuery: (String) -> Unit, filter: 
 }
 
 @Composable
-private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, onClick: () -> Unit) {
+private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remainingMillis: Long?, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().background(PhoneSurface).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
             ItemIcon(fish.icon, Modifier.fillMaxSize(), fish.name.take(2))
@@ -200,15 +254,23 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, onCli
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(fish.name, color = if (caught) PhoneText else PhoneText.copy(alpha = .82f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(
+                    if (remainingMillis != null) "可捕获 · 剩 ${formatRemaining(remainingMillis)}" else "暂不可捕获",
+                    color = if (remainingMillis != null) PhoneGreen else PhoneMuted.copy(alpha = .55f),
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    modifier = Modifier.padding(end = 5.dp),
+                )
                 if (alarm) Text("◉", color = PhoneAccent, fontSize = 13.sp)
             }
             val place = fish.spots.firstOrNull()?.let { listOf(it.region, it.name).filter(String::isNotBlank).distinct().joinToString(" · ") }.orEmpty()
             Text(place.ifBlank { if (fish.method == "spear") "刺鱼笔记" else "钓鱼笔记" }, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 4.dp)) {
-                MiniBadge(if (fish.method == "spear") "刺鱼" else tugLabel(fish.tug))
+                if (fish.method == "spear") MiniBadge("刺鱼")
                 if (fish.isBigFish) MiniBadge("鱼王", PhoneAccent)
                 if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}")
                 if (fish.weather.isNotEmpty()) MiniBadge("天气")
+                MiniBadge("版本 ${formatPatch(fish.version)}", PhoneMuted)
             }
         }
         Text("›", color = PhoneMuted, fontSize = 25.sp, modifier = Modifier.padding(start = 7.dp))
@@ -474,16 +536,58 @@ private fun TechniqueNode(item: FishingItemRef, fish: FishingFish?) {
                 HooksetIcon(fish.hook)
             }
         }
-        Box(Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised)) {
-            ItemIcon(item.icon, Modifier.fillMaxSize(), item.name.take(1))
-        }
+        TooltipIcon(item.icon, item.name, 46.dp, item.name.take(1))
     }
 }
 
 @Composable
 private fun HooksetIcon(value: String) {
     val resource = when (value) { "precision" -> R.drawable.precision_hookset; "powerful" -> R.drawable.powerful_hookset; else -> 0 }
-    if (resource != 0) Image(painterResource(resource), contentDescription = hookLabel(value), modifier = Modifier.size(20.dp)) else Spacer(Modifier.size(20.dp))
+    if (resource != 0) {
+        var show by remember { mutableStateOf(false) }
+        Box {
+            Image(painterResource(resource), contentDescription = hookLabel(value), modifier = Modifier.size(20.dp).clickable { show = !show })
+            if (show) {
+                Popup(
+                    alignment = Alignment.TopCenter,
+                    offset = IntOffset(0, 22),
+                    onDismissRequest = { show = false },
+                    properties = PopupProperties(focusable = true),
+                ) {
+                    TooltipBubble(hookLabel(value))
+                }
+            }
+        }
+    } else {
+        Spacer(Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun TooltipIcon(icon: Int, name: String, size: Dp = 46.dp, fallback: String = name.take(1)) {
+    var show by remember { mutableStateOf(false) }
+    Box {
+        Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { show = !show }, contentAlignment = Alignment.Center) {
+            ItemIcon(icon, Modifier.fillMaxSize(), fallback)
+        }
+        if (show) {
+            Popup(
+                alignment = Alignment.TopCenter,
+                offset = IntOffset(0, (size.value * 0.5f + 24).roundToInt()),
+                onDismissRequest = { show = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                TooltipBubble(name)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TooltipBubble(text: String) {
+    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF26242E)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Text(text, color = Color.White, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @Composable
@@ -499,7 +603,7 @@ private fun ItemPath(label: String, items: List<FishingItemRef>) {
     Text(label, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 5.dp))
     items.forEachIndexed { index, item ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
-            ItemIcon(item.icon, Modifier.size(32.dp), item.name.take(1))
+            TooltipIcon(item.icon, item.name, 32.dp, item.name.take(1))
             Text(item.name, color = PhoneText, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
             if (index < items.lastIndex) Text("  →", color = PhoneAccent, fontSize = 13.sp)
         }
@@ -523,6 +627,17 @@ private fun formatWindow(start: Long, end: Long): String {
     val formatter = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
     val endFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
     return "${formatter.format(Date(start))} - ${endFormatter.format(Date(end))}"
+}
+
+private fun formatRemaining(millis: Long): String {
+    val totalMinutes = (millis / 60_000L).coerceAtLeast(1)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 && minutes > 0 -> "${hours}小时${minutes}分"
+        hours > 0 -> "${hours}小时"
+        else -> "${minutes}分"
+    }
 }
 
 private fun FishingSpot.displayPosition(): String {
