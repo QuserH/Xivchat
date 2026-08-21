@@ -194,18 +194,20 @@ fun FishingScreen(state: PhoneState) {
                             nowMillis = System.currentTimeMillis()
                         }
                     }
-                    var availability by remember(data, versionFilter, filter, alarmsOnly, alarmVersion, state.fishingLog, baseFiltered) { mutableStateOf<Map<Int, Long?>>(emptyMap()) }
-                    LaunchedEffect(baseFiltered, data, nowMillis) {
-                        val base = baseFiltered
+                    var availability by remember(data) { mutableStateOf<Map<Int, Long?>>(emptyMap()) }
+                    var availabilityReady by remember(data) { mutableStateOf(false) }
+                    LaunchedEffect(data, nowMillis) {
                         val now = nowMillis
+                        availabilityReady = false
                         availability = withContext(Dispatchers.Default) {
-                            val map = HashMap<Int, Long?>()
-                            for (f in base) {
+                            val map = HashMap<Int, Long?>(data.fish.size)
+                            for (f in data.fish) {
                                 val window = FishingWindowCalculator.nextWindow(f, data, now - 1_000L)
                                 map[f.id] = if (window != null && window.startMillis <= now && window.endMillis > now) (window.endMillis - now) else null
                             }
                             map
                         }
+                        availabilityReady = true
                     }
                     val filtered = remember(baseFiltered, availability, filter) {
                         val list = baseFiltered.filter { f -> filter != FishingFilter.Available || availability[f.id] != null }.toMutableList()
@@ -234,7 +236,18 @@ fun FishingScreen(state: PhoneState) {
                             item("fishing-header") {
                                 FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null, showCounts = true)
                             }
-                            if (filtered.isEmpty()) item { Text(if (alarmsOnly) "还没有设置捕鱼闹钟" else "没有符合条件的鱼", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(34.dp)) }
+                            if (filtered.isEmpty()) item {
+                                Text(
+                                    when {
+                                        filter == FishingFilter.Available && !availabilityReady -> "正在计算可捕获时间…"
+                                        alarmsOnly -> "还没有设置捕鱼闹钟"
+                                        else -> "没有符合条件的鱼"
+                                    },
+                                    color = PhoneMuted,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(34.dp),
+                                )
+                            }
                             items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
                                 Box(Modifier.animateItem()) {
                                     FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availability[fishRow.id]) { selected = fishRow }

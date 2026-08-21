@@ -775,10 +775,13 @@ private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Mod
 }
 @Composable
 internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: String = "", tint: Color = Color.White) {
-    var bitmap by remember(iconId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var bitmap by remember(iconId) { mutableStateOf(ItemIconLoader.peek(iconId)) }
     val app = LocalContext.current.applicationContext
     LaunchedEffect(iconId) {
-        if (iconId > 0) bitmap = ItemIconLoader.load(app, iconId)
+        if (iconId > 0) {
+            val cached = ItemIconLoader.peek(iconId)
+            if (cached != null) bitmap = cached else bitmap = ItemIconLoader.load(app, iconId)
+        }
     }
     val bmp = bitmap
     if (bmp != null) {

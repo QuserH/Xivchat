@@ -22,6 +22,12 @@ object ItemIconLoader {
 
     fun diskCache(app: Context): File = File(app.cacheDir, "icons").apply { mkdirs() }
 
+    /** 同步读取内存缓存（UI 线程可直接调用），未命中返回 null。 */
+    fun peek(iconId: Int): Bitmap? {
+        if (iconId <= 0) return null
+        return memCache.get(urlFor(iconId))
+    }
+
     fun urlFor(iconId: Int): String {
         if (iconId <= 0) return ""
         val digits = "%06d".format(iconId)
