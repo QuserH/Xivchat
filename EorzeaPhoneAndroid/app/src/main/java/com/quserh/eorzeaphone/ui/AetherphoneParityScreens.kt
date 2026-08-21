@@ -1147,9 +1147,9 @@ private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub
                 state.closeConversation()
             },
         )
-        ChatSub.SearchHistory -> ChatSearchHistoryScreen(onBack = onPop, onOpenInput = { onPush(ChatSub.SearchInput) })
+        ChatSub.SearchHistory -> ChatSearchHistoryScreen(onBack = onPop, onOpenInput = { onPush(ChatSub.SearchInput) }, onOpenCalendar = { onPush(ChatSub.Calendar) })
         ChatSub.SearchInput -> ChatSearchInputScreen(state, conversation, onBack = onPop, onOpenMessage = { timestamp -> onPush(ChatSub.MessageView(timestamp)) })
-        is ChatSub.MessageView -> ChatMessageViewScreen(state, conversation, sub.anchorTimestamp, onBack = onPop, onOpenCalendar = { onPush(ChatSub.Calendar) })
+        is ChatSub.MessageView -> ChatMessageViewScreen(state, conversation, sub.anchorTimestamp, onBack = onPop)
         ChatSub.Calendar -> ChatCalendarScreen(conversation, onBack = onPop, onOpenDay = { firstTs -> onPush(ChatSub.MessageView(firstTs)) })
         ChatSub.Main -> Unit
     }
@@ -1193,18 +1193,27 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
 }
 
 @Composable
-private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        LightHeader("查找聊天记录", onBack) {}
-        Column(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 10.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightControl)
-                    .clickable(onClick = onOpenInput).padding(horizontal = 13.dp),
-            ) {
-                Text("⌕", color = AetherLightMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
-                Text("搜索聊天记录", color = AetherLightMuted, fontSize = 14.sp)
+private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit, onOpenCalendar: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            LightHeader("查找聊天记录", onBack) {}
+            Column(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 10.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightControl)
+                        .clickable(onClick = onOpenInput).padding(horizontal = 13.dp),
+                ) {
+                    Text("⌕", color = AetherLightMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                    Text("搜索聊天记录", color = AetherLightMuted, fontSize = 14.sp)
+                }
             }
+        }
+        Box(
+            Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 22.dp).size(54.dp).clip(CircleShape)
+                .background(AetherPurple).clickable(onClick = onOpenCalendar),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("📅", color = Color.White, fontSize = 22.sp)
         }
     }
 }
@@ -1307,28 +1316,19 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
 }
 
 @Composable
-private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversation, anchorTimestamp: Long, onBack: () -> Unit, onOpenCalendar: () -> Unit) {
+private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversation, anchorTimestamp: Long, onBack: () -> Unit) {
     val messages = conversation.messages
     val listState = rememberLazyListState()
     val anchorIndex = remember(messages.size, anchorTimestamp) { messages.indexOfFirst { it.timestamp == anchorTimestamp }.coerceAtLeast(0) }
     LaunchedEffect(anchorIndex, messages.size) {
         if (messages.isNotEmpty()) listState.scrollToItem(anchorIndex)
     }
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            LightHeader(conversation.title, onBack) {}
-            if (messages.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp) }
-            } else {
-                ChatMessagesLazyColumn(messages, conversation, state, "", listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp))
-            }
-        }
-        Box(
-            Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 22.dp).size(54.dp).clip(CircleShape)
-                .background(AetherPurple).clickable(onClick = onOpenCalendar),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("📅", color = Color.White, fontSize = 22.sp)
+    Column(Modifier.fillMaxSize()) {
+        LightHeader(conversation.title, onBack) {}
+        if (messages.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp) }
+        } else {
+            ChatMessagesLazyColumn(messages, conversation, state, "", listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp))
         }
     }
 }
@@ -1438,40 +1438,36 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 },
                 trailing = {
-                    Box {
-                        Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
-                        DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                            DropdownMenuItem(text = { Text("聊天设置") }, onClick = {
-                                overflowOpen = false
-                                pushChatSub(ChatSub.Settings)
-                            })
-                            DropdownMenuItem(text = { Text("搜索聊天内容") }, onClick = {
-                                searching = true
-                                overflowOpen = false
-                            })
-                            DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
-                                conversation.unread = 0
-                                overflowOpen = false
-                            })
-                            if (conversation.key.startsWith("tab:")) DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
-                                state.editingChatFilterId = state.openChatFilterId
-                                state.editChatTabs = true
-                                state.closeConversation()
-                                overflowOpen = false
-                            })
-                            DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
-                                state.toggleConversationPin(conversation)
-                                overflowOpen = false
-                            })
-                            DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
-                                state.toggleConversationNotify(conversation)
-                                overflowOpen = false
-                            })
-                            DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
-                                state.clearConversation(conversation)
-                                overflowOpen = false
-                            })
+                    if (conversation.key.startsWith("tab:")) {
+                        Box {
+                            Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
+                            DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                                DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
+                                    conversation.unread = 0
+                                    overflowOpen = false
+                                })
+                                DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
+                                    state.editingChatFilterId = state.openChatFilterId
+                                    state.editChatTabs = true
+                                    state.closeConversation()
+                                    overflowOpen = false
+                                })
+                                DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
+                                    state.toggleConversationPin(conversation)
+                                    overflowOpen = false
+                                })
+                                DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
+                                    state.toggleConversationNotify(conversation)
+                                    overflowOpen = false
+                                })
+                                DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
+                                    state.clearConversation(conversation)
+                                    overflowOpen = false
+                                })
+                            }
                         }
+                    } else {
+                        Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.Settings) }.padding(horizontal = 10.dp))
                     }
                 },
             )
