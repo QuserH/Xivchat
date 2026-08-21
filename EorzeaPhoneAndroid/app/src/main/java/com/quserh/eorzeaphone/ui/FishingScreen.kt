@@ -2,6 +2,7 @@ package com.quserh.eorzeaphone.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -9,6 +10,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -49,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,6 +65,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -78,6 +83,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import com.quserh.eorzeaphone.data.FishingAlarmStore
 import com.quserh.eorzeaphone.data.FishingCatalog
@@ -207,15 +213,42 @@ fun FishingScreen(state: PhoneState) {
                         list
                     }
                     val listState = rememberLazyListState()
+                    var pinHeader by remember { mutableStateOf(false) }
+                    var lastScrollPos by remember { mutableLongStateOf(0L) }
+                    LaunchedEffect(listState) {
+                        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+                            .collect { (index, offset) ->
+                                val headerNaturalVisible = index == 0 && offset == 0
+                                val pos = index * 100000L + offset
+                                if (pos > lastScrollPos) {
+                                    pinHeader = false
+                                } else if (pos < lastScrollPos) {
+                                    pinHeader = !headerNaturalVisible
+                                }
+                                lastScrollPos = pos
+                            }
+                    }
                     LaunchedEffect(versionFilter, filter, alarmsOnly) { listState.scrollToItem(0) }
-                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        item("fishing-header") {
-                            FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null)
+                    Box(Modifier.fillMaxSize()) {
+                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            item("fishing-header") {
+                                FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null, showCounts = true)
+                            }
+                            if (filtered.isEmpty()) item { Text(if (alarmsOnly) "还没有设置捕鱼闹钟" else "没有符合条件的鱼", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(34.dp)) }
+                            items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
+                                Box(Modifier.animateItem()) {
+                                    FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availability[fishRow.id]) { selected = fishRow }
+                                }
+                            }
                         }
-                        if (filtered.isEmpty()) item { Text(if (alarmsOnly) "还没有设置捕鱼闹钟" else "没有符合条件的鱼", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(34.dp)) }
-                        items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
-                            Box(Modifier.animateItem()) {
-                                FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availability[fishRow.id]) { selected = fishRow }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = pinHeader,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                            enter = fadeIn(tween(160)) + expandVertically(tween(160)),
+                            exit = fadeOut(tween(120)) + shrinkVertically(tween(120)),
+                        ) {
+                            Column(Modifier.fillMaxWidth().background(PhoneBackground)) {
+                                FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null, showCounts = false)
                             }
                         }
                     }
@@ -226,7 +259,7 @@ fun FishingScreen(state: PhoneState) {
 }
 
 @Composable
-private fun FishingListHeader(query: String, onQuery: (String) -> Unit, versionFilter: Int?, onVersionFilter: (Int?) -> Unit, filter: FishingFilter, onFilter: (FishingFilter) -> Unit, caught: Int, total: Int, synced: Boolean) {
+private fun FishingListHeader(query: String, onQuery: (String) -> Unit, versionFilter: Int?, onVersionFilter: (Int?) -> Unit, filter: FishingFilter, onFilter: (FishingFilter) -> Unit, caught: Int, total: Int, synced: Boolean, showCounts: Boolean = true) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(10.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp)) {
             Text("⌕", color = PhoneMuted, fontSize = 20.sp)
@@ -246,9 +279,11 @@ private fun FishingListHeader(query: String, onQuery: (String) -> Unit, versionF
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(13.dp)).background(if (filter == item) PhoneAccent else PhoneSurface).clickable { onFilter(item) }.padding(vertical = 6.dp))
             }
         }
-        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("钓鱼笔记", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(if (synced) "$caught / $total 已捕获" else "$total 条资料 · 等待游戏同步", color = PhoneMuted, fontSize = 11.sp)
+        if (showCounts) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("钓鱼笔记", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (synced) "$caught / $total 已捕获" else "$total 条资料 · 等待游戏同步", color = PhoneMuted, fontSize = 11.sp)
+            }
         }
     }
 }
@@ -563,7 +598,7 @@ private fun HooksetIcon(value: String) {
             if (show) {
                 Popup(
                     alignment = Alignment.TopCenter,
-                    offset = IntOffset(0, 22),
+                    offset = IntOffset(0, with(LocalDensity.current) { 24.dp.roundToPx() }),
                     onDismissRequest = { show = false },
                     properties = PopupProperties(focusable = true),
                 ) {
@@ -579,6 +614,7 @@ private fun HooksetIcon(value: String) {
 @Composable
 private fun TooltipIcon(icon: Int, name: String, size: Dp = 46.dp, fallback: String = name.take(1)) {
     var show by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
     Box {
         Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { show = !show }, contentAlignment = Alignment.Center) {
             ItemIcon(icon, Modifier.fillMaxSize(), fallback)
@@ -586,7 +622,7 @@ private fun TooltipIcon(icon: Int, name: String, size: Dp = 46.dp, fallback: Str
         if (show) {
             Popup(
                 alignment = Alignment.TopCenter,
-                offset = IntOffset(0, size.value.roundToInt() + 8),
+                offset = IntOffset(0, with(density) { (size + 8.dp).roundToPx() }),
                 onDismissRequest = { show = false },
                 properties = PopupProperties(focusable = true),
             ) {
@@ -669,8 +705,17 @@ private fun stripGuideMarkup(value: String): String = value
     .replace("&gt;", ">")
     .replace("&amp;", "&")
 
+private fun String.decodeHtmlEntities(): String = this
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&#39;", "'")
+    .replace("&nbsp;", " ")
+    .replace("&amp;", "&")
+
 private fun guideParagraphs(raw: String): List<AnnotatedString> = raw
     .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+    .decodeHtmlEntities()
     .split("\n")
     .map { it.trim() }
     .filter { it.isNotBlank() }
