@@ -124,19 +124,30 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
 @Composable
 fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, onBack: (() -> Unit)? = null, showBack: Boolean = true) {
     val margin = LocalContentMargin.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(start = (margin.coerceAtLeast(2) - 2).dp, end = 18.dp, top = 12.dp, bottom = 12.dp),
-    ) {
-        if (showBack) Text(
-            "‹",
-            color = PhoneAccent,
-            fontSize = 38.sp,
-            lineHeight = 30.sp,
-            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
-        ) else Spacer(Modifier.width(12.dp))
-        Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        trailing?.invoke()
+    val sidePad = (margin.coerceAtLeast(2) - 2).dp
+    Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
+        Box(Modifier.align(Alignment.CenterStart)) {
+            if (showBack) Text(
+                "‹",
+                color = PhoneAccent,
+                fontSize = 38.sp,
+                lineHeight = 30.sp,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
+            ) else Spacer(Modifier.width(12.dp))
+        }
+        Text(
+            title,
+            color = PhoneText,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 50.dp),
+        )
+        Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.End) {
+            trailing?.invoke()
+        }
     }
 }
 @OptIn(ExperimentalFoundationApi::class)

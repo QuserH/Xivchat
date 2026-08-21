@@ -104,6 +104,7 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -207,7 +208,10 @@ private fun LightHeader(
     titleIcon: (@Composable () -> Unit)? = null,
 ) {
     val headerMargin = LocalContentMargin.current
-    Box(Modifier.fillMaxWidth().height(70.dp).padding(start = (headerMargin.coerceAtLeast(2) - 2).dp, end = 14.dp)) {
+    val density = LocalDensity.current
+    var titleWidth by remember(title) { mutableStateOf(0.dp) }
+    val sidePad = (headerMargin.coerceAtLeast(2) - 2).dp
+    Box(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = sidePad)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
             Text(
                 "‹",
@@ -218,7 +222,7 @@ private fun LightHeader(
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 8.dp),
             )
         }
-        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.align(Alignment.Center)) {
             Text(
                 title,
                 color = AetherLightText,
@@ -227,8 +231,13 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
-            titleIcon?.invoke()
+            if (titleIcon != null) {
+                Box(Modifier.align(Alignment.CenterStart).offset(x = titleWidth + 6.dp)) {
+                    titleIcon()
+                }
+            }
         }
         Row(Modifier.align(Alignment.CenterEnd).widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
     }
@@ -967,9 +976,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        LightHeader("联系人", state::back) {
-            Text("⟳", color = AetherPurple, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends(); state.refreshParty() }.padding(horizontal = 8.dp))
-        }
+        LightHeader("联系人", state::back) {}
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             item("search") {
                 LightSearchField(query, { query = it }, "搜索")
@@ -1271,7 +1278,8 @@ private fun dayKey(timestamp: Long): String {
 
 @Composable
 private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier) {
-    LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    SelectionContainer {
+        LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(messages, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
@@ -1300,6 +1308,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     )
                 }
             }
+        }
         }
     }
 }
@@ -1608,11 +1617,10 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
             }
-            SelectionContainer {
-                Column(
-                    Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
-                        .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
-                ) {
+            Column(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
+                    .animateContentSize().padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
+            ) {
                     val cleaned = cleanChatText(message.text, author)
                     val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
                     val body = wrapLightText(cleaned, wrapChars)
@@ -1629,7 +1637,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                         }
                     }
                 }
-            }
         }
     }
 }

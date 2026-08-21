@@ -140,17 +140,24 @@ fun FishingScreen(state: PhoneState) {
             nowMillis = System.currentTimeMillis()
         }
     }
-    var availability by remember(catalog) { mutableStateOf<Map<Int, Long?>>(emptyMap()) }
+    var displayNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            displayNow = System.currentTimeMillis()
+        }
+    }
+    var availabilityEnd by remember(catalog) { mutableStateOf<Map<Int, Long>>(emptyMap()) }
     var availabilityReady by remember(catalog) { mutableStateOf(false) }
     LaunchedEffect(catalog, nowMillis) {
         val data = catalog ?: return@LaunchedEffect
         val now = nowMillis
-        if (availability.isEmpty()) availabilityReady = false
-        availability = withContext(Dispatchers.Default) {
-            val map = HashMap<Int, Long?>(data.fish.size)
+        if (availabilityEnd.isEmpty()) availabilityReady = false
+        availabilityEnd = withContext(Dispatchers.Default) {
+            val map = HashMap<Int, Long>(data.fish.size)
             for (f in data.fish) {
                 val window = FishingWindowCalculator.nextWindow(f, data, now - 1_000L)
-                map[f.id] = if (window != null && window.startMillis <= now && window.endMillis > now) (window.endMillis - now) else null
+                if (window != null && window.startMillis <= now && window.endMillis > now) map[f.id] = window.endMillis
             }
             map
         }
@@ -229,9 +236,9 @@ fun FishingScreen(state: PhoneState) {
                                 }
                             }.toList()
                     }
-                    val filtered = remember(baseFiltered, availability, filter) {
-                        val list = baseFiltered.filter { f -> filter != FishingFilter.Available || availability[f.id] != null }.toMutableList()
-                        list.sortWith(compareBy({ availability[it.id] == null }, { availability[it.id] ?: Long.MAX_VALUE }, { it.name }))
+                    val filtered = remember(baseFiltered, availabilityEnd, filter) {
+                        val list = baseFiltered.filter { f -> filter != FishingFilter.Available || availabilityEnd[f.id] != null }.toMutableList()
+                        list.sortWith(compareBy({ availabilityEnd[it.id] == null }, { availabilityEnd[it.id] ?: Long.MAX_VALUE }, { it.name }))
                         list
                     }
                     Box(Modifier.fillMaxSize()) {
@@ -253,7 +260,7 @@ fun FishingScreen(state: PhoneState) {
                             }
                             items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
                                 Box(Modifier.animateItem()) {
-                                    FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availability[fishRow.id]) { selected = fishRow }
+                                    FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availabilityEnd[fishRow.id]?.let { it - displayNow }) { selected = fishRow }
                                 }
                             }
                         }
@@ -315,7 +322,7 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remai
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(fish.name, color = if (caught) PhoneText else PhoneText.copy(alpha = .82f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Text(
-                    if (remainingMillis != null) "可捕获 · 剩 ${formatRemaining(remainingMillis)}" else "暂不可捕获",
+                    if (remainingMillis != null) "可捕获 · 剩 ${formatRemainingSeconds(remainingMillis)}" else "暂不可捕获",
                     color = if (remainingMillis != null) PhoneGreen else PhoneMuted.copy(alpha = .55f),
                     fontSize = 10.sp,
                     maxLines = 1,
@@ -326,11 +333,11 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remai
             val place = fish.spots.firstOrNull()?.let { listOf(it.region, it.name).filter(String::isNotBlank).distinct().joinToString(" · ") }.orEmpty()
             Text(place.ifBlank { if (fish.method == "spear") "刺鱼笔记" else "钓鱼笔记" }, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 4.dp)) {
-                if (fish.method == "spear") MiniBadge("刺鱼")
+                if (fish.method == "spear") MiniBadge("刺鱼", Color(0xFF3E9BD6))
                 if (fish.isBigFish) MiniBadge("鱼王", PhoneAccent)
-                if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}")
-                if (fish.weather.isNotEmpty()) MiniBadge("天气")
-                MiniBadge("版本 ${formatPatch(fish.version)}", PhoneMuted)
+                if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}", Color(0xFF8C7AFF))
+                if (fish.weather.isNotEmpty()) MiniBadge("天气", Color(0xFFFFA149))
+                MiniBadge("版本 ${formatPatch(fish.version)}", Color(0xFF35B865))
             }
         }
         Text("›", color = PhoneMuted, fontSize = 25.sp, modifier = Modifier.padding(start = 7.dp))
