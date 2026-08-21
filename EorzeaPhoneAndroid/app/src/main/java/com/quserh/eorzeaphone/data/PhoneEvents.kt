@@ -122,6 +122,10 @@ internal fun String.normalizedPlayerName(): String = this
     .lowercase()
 
 internal fun String.displayPlayerName(): String = stripPlayerDecorations().ifBlank { "对方" }
+internal fun String.tellNamePart(): String = substringBefore('@').stripPlayerDecorations().trim().lowercase()
+internal fun GameChatMessage.tellNamePart(): String =
+    senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()?.lowercase()
+        ?: sender.tellNamePart()
 
 data class GameInventoryItem(
     val itemId: Long,

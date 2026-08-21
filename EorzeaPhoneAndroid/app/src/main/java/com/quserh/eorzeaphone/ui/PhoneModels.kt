@@ -1,6 +1,7 @@
 package com.quserh.eorzeaphone.ui
 
 import android.content.Context
+import com.quserh.eorzeaphone.R
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.annotation.DrawableRes
@@ -48,6 +49,7 @@ import com.quserh.eorzeaphone.data.ResetReminderReceiver
 import com.quserh.eorzeaphone.data.normalizedPlayerName
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.stripPlayerDecorations
+import com.quserh.eorzeaphone.data.tellNamePart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -83,6 +85,42 @@ data class PhoneAppItem(
     val color: Color,
     val destination: PhoneScreen = PhoneScreen.App,
 )
+
+data class BuiltinConversationIcon(val id: String, val label: String, @DrawableRes val res: Int, val category: String = "")
+
+val builtinConversationIcons = listOf(
+    BuiltinConversationIcon("party", "小队", R.drawable.msg_party, "system"),
+    BuiltinConversationIcon("fc", "部队", R.drawable.msg_fc, "system"),    BuiltinConversationIcon("gpose_01", "贴纸1", R.drawable.gpose_01, "avatar"),
+    BuiltinConversationIcon("gpose_02", "贴纸2", R.drawable.gpose_02, "avatar"),
+    BuiltinConversationIcon("gpose_03", "贴纸3", R.drawable.gpose_03, "avatar"),
+    BuiltinConversationIcon("gpose_04", "贴纸4", R.drawable.gpose_04, "avatar"),
+    BuiltinConversationIcon("gpose_05", "贴纸5", R.drawable.gpose_05, "avatar"),
+    BuiltinConversationIcon("gpose_06", "贴纸6", R.drawable.gpose_06, "avatar"),
+    BuiltinConversationIcon("gpose_07", "贴纸7", R.drawable.gpose_07, "avatar"),
+    BuiltinConversationIcon("gpose_08", "贴纸8", R.drawable.gpose_08, "avatar"),
+    BuiltinConversationIcon("gpose_09", "贴纸9", R.drawable.gpose_09, "avatar"),
+    BuiltinConversationIcon("gpose_10", "贴纸10", R.drawable.gpose_10, "avatar"),
+    BuiltinConversationIcon("gpose_11", "贴纸11", R.drawable.gpose_11, "avatar"),
+    BuiltinConversationIcon("gpose_12", "贴纸12", R.drawable.gpose_12, "avatar"),
+    BuiltinConversationIcon("gpose_13", "贴纸13", R.drawable.gpose_13, "avatar"),
+    BuiltinConversationIcon("gpose_14", "贴纸14", R.drawable.gpose_14, "avatar"),
+    BuiltinConversationIcon("gpose_15", "贴纸15", R.drawable.gpose_15, "avatar"),
+    BuiltinConversationIcon("gpose_16", "贴纸16", R.drawable.gpose_16, "avatar"),
+    BuiltinConversationIcon("gpose_17", "贴纸17", R.drawable.gpose_17, "avatar"),
+    BuiltinConversationIcon("gpose_18", "贴纸18", R.drawable.gpose_18, "avatar"),
+    BuiltinConversationIcon("gpose_19", "贴纸19", R.drawable.gpose_19, "avatar"),
+    BuiltinConversationIcon("gpose_20", "贴纸20", R.drawable.gpose_20, "avatar"),
+    BuiltinConversationIcon("gpose_21", "贴纸21", R.drawable.gpose_21, "avatar"),
+    BuiltinConversationIcon("gpose_22", "贴纸22", R.drawable.gpose_22, "avatar"),
+    BuiltinConversationIcon("gpose_23", "贴纸23", R.drawable.gpose_23, "avatar"),
+    BuiltinConversationIcon("gpose_24", "贴纸24", R.drawable.gpose_24, "avatar"),
+    BuiltinConversationIcon("gpose_25", "贴纸25", R.drawable.gpose_25, "avatar"),
+    BuiltinConversationIcon("gpose_26", "贴纸26", R.drawable.gpose_26, "avatar"),
+    BuiltinConversationIcon("gpose_27", "贴纸27", R.drawable.gpose_27, "avatar"),
+    BuiltinConversationIcon("gpose_28", "贴纸28", R.drawable.gpose_28, "avatar"),
+    BuiltinConversationIcon("gpose_29", "贴纸29", R.drawable.gpose_29, "avatar"),
+    BuiltinConversationIcon("gpose_30", "贴纸30", R.drawable.gpose_30, "avatar"),
+    BuiltinConversationIcon("gpose_31", "贴纸31", R.drawable.gpose_31, "avatar"),)
 
 data class PhoneFriend(
     val name: String,
@@ -477,6 +515,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val hiddenConversations = mutableStateOf((prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
     private val pendingSelfTexts = mutableMapOf<String, String>()
+    private val friendAvatars = mutableStateMapOf<String, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("friendAvatars", "{}").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
+        }
+    }
     private val characterAvatars = mutableStateMapOf<String, String>().apply {
         runCatching {
             val o = JSONObject(prefs.getString("avatarCache", "{}").orEmpty())
@@ -537,6 +582,36 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         runCatching { prefs.edit().putString("avatarCache", JSONObject(characterAvatars).toString()).apply() }
     }
 
+    fun friendAvatar(name: String): String = friendAvatars[name.normalizedPlayerName()] ?: ""
+
+    fun setFriendAvatar(name: String, iconId: String) {
+        val key = name.normalizedPlayerName()
+        if (iconId.isBlank()) friendAvatars.remove(key) else friendAvatars[key] = iconId
+        runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
+    }
+
+    fun savePickedFriendAvatar(name: String, uri: android.net.Uri): String? = runCatching {
+        val dir = java.io.File(appContext.filesDir, "friend-avatars").apply { mkdirs() }
+        val file = java.io.File(dir, "fa-${name.normalizedPlayerName().hashCode()}.png")
+        appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
+        file.absolutePath
+    }.getOrNull()
+
+    private fun ensureFriendAvatars(friends: List<com.quserh.eorzeaphone.data.GameFriend>) {
+        val pool = builtinConversationIcons.map { it.id }
+        if (pool.isEmpty()) return
+        var changed = false
+        val rnd = java.util.Random()
+        for (friend in friends) {
+            val key = friend.name.normalizedPlayerName()
+            if (key.isBlank()) continue
+            if (friendAvatars[key] == null) {
+                friendAvatars[key] = pool[rnd.nextInt(pool.size)]
+                changed = true
+            }
+        }
+        if (changed) runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
+    }
     fun savePickedAvatar(key: String, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "avatars").apply { mkdirs() }
         val file = java.io.File(dir, "avatar-${key.hashCode()}.png")
@@ -1230,6 +1305,27 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun repairTellRecipients() {
         var changed = false
+        val byName = mutableMapOf<String, ChatConversation>()
+        val toRemove = mutableListOf<ChatConversation>()
+        for (conv in conversations) {
+            if (conv.category != ChatCategory.Tell) continue
+            val name = conv.tellRecipient.tellNamePart()
+            if (name.isBlank()) continue
+            val existing = byName[name]
+            if (existing == null) {
+                byName[name] = conv
+            } else {
+                val keep = if (existing.messages.size >= conv.messages.size) existing else conv
+                val drop = if (keep === existing) conv else existing
+                drop.messages.forEach { keep.add(it) }
+                toRemove.add(drop)
+                changed = true
+            }
+        }
+        if (toRemove.isNotEmpty()) {
+            conversations.removeAll(toRemove)
+            toRemove.forEach { conversationByKey.remove(it.key) }
+        }
         for (conv in conversations) {
             if (conv.category != ChatCategory.Tell) continue
             val fixed = resolveTellTarget(conv.tellRecipient)
@@ -1237,7 +1333,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 conv.tellRecipient = fixed
                 changed = true
             }
-            if (fixed.contains('@') && !conv.title.contains('@')) {
+            if (groupTitleOverride(conv.key) == null && fixed.contains('@') && !conv.title.contains('@')) {
                 conv.title = fixed
                 changed = true
             }
@@ -1427,9 +1523,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
         conversationByKey[key]?.let { return it }
         if (message.category == ChatCategory.Tell || routeToTell) {
+            val msgName = message.tellNamePart()
             val existing = conversations.firstOrNull { conv ->
-                conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank() &&
-                    conv.tellRecipient.normalizedPlayerName() == message.sender.normalizedPlayerName()
+                conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank() && msgName.isNotBlank() &&
+                    conv.tellRecipient.tellNamePart() == msgName
             }
             if (existing != null) {
                 conversationByKey[key] = existing
@@ -1468,7 +1565,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         conversationByKey[key]?.let { return it }
         conversations.firstOrNull { conv ->
             conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank() &&
-                conv.tellRecipient.normalizedPlayerName() == recipient.normalizedPlayerName()
+                conv.tellRecipient.tellNamePart() == recipient.tellNamePart()
         }?.let { existing ->
             conversationByKey[key] = existing
             return existing
@@ -1772,6 +1869,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             is PhoneEvent.Error -> statusMessage = event.message
             is PhoneEvent.FriendList -> {
+                ensureFriendAvatars(event.friends)
                 friends.clear()
                 friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
                 saveFriends()
@@ -1823,7 +1921,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         conv.add(event.message)
                         if (conv.category == ChatCategory.Tell) {
                             val liveTitle = event.message.displaySender()
-                            if (conv.title != liveTitle) conv.title = liveTitle
+                            if (conv.title != liveTitle && groupTitleOverride(conv.key) == null) conv.title = liveTitle
                             val liveTarget = event.message.tellTarget()
                             if (liveTarget.isNotBlank() && conv.tellRecipient != liveTarget) conv.tellRecipient = liveTarget
                         }

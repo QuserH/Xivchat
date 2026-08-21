@@ -27,7 +27,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.horizontalScroll
+import kotlin.math.roundToInt
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -341,11 +346,16 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
                         val selected = filter.id == state.selectedChatFilterId
                         val last = state.chats.lastOrNull(filter::matches)
+                        var tabPress by remember(filter.id) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                         Box {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem().combinedClickable(
-                                onClick = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
-                                onLongClick = { longPressedTabId = filter.id },
-                            ).padding(vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem()
+                                .pointerInput(filter.id) {
+                                    detectTapGestures(
+                                        onTap = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
+                                        onLongPress = { offset -> tabPress = offset; longPressedTabId = filter.id },
+                                    )
+                                }
+                                .padding(vertical = 8.dp)) {
                                 Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
                                     SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) Color.White else AetherLightMuted)
                                 }
@@ -360,10 +370,12 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                     }
                                 }
                             }
+                            Box(Modifier.offset { IntOffset(tabPress.x.roundToInt(), tabPress.y.roundToInt()) }) {
                             DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
                                 DropdownMenuItem(text = { Text("更换图标") }, onClick = { iconKeyTarget = filter.id; longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("删除标签页", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
+                            }
                             }
                         }
                     }
@@ -395,16 +407,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             title = { Text(if (showLibrary) "图标库" else "更换图标") },
             text = {
                 if (showLibrary) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        builtinConversationIcons.forEach { builtin ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { state.setConversationIcon(target, builtin.id); iconKeyTarget = null }) {
-                                Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                                    Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
-                                }
-                                Text(builtin.label, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-                            }
-                        }
-                    }
+                    BuiltinIconLibrary(onSelect = { state.setConversationIcon(target, it); iconKeyTarget = null })
                 } else {
                     Column {
                         Text("图标库", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { showLibrary = true }.padding(vertical = 12.dp))
@@ -614,6 +617,39 @@ private fun chatDayLabel(timestamp: Long): String {
     return "${cal.get(java.util.Calendar.YEAR)}年${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日"
 }
 @Composable
+private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
+    var libraryTab by remember { mutableStateOf("all") }
+    val categories = listOf("all") + builtinConversationIcons.map { it.category }.distinct().filter { it.isNotBlank() }
+    val shownIcons = if (libraryTab == "all") builtinConversationIcons else builtinConversationIcons.filter { it.category == libraryTab }
+    Column {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            categories.forEach { cat ->
+                val label = when (cat) {
+                    "all" -> "全部"
+                    "avatar" -> "头像"
+                    else -> cat
+                }
+                Text(label, color = if (libraryTab == cat) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(13.dp)).background(if (libraryTab == cat) AetherPurple else AetherLightControl).clickable { libraryTab = cat }.padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+        }
+        Column(Modifier.fillMaxWidth().height(220.dp).verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
+            shownIcons.chunked(4).forEach { rowIcons ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rowIcons.forEach { builtin ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).clickable { onSelect(builtin.id) }) {
+                            Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
+                                Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
+                            }
+                            Text(builtin.label, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp), maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+@Composable
 private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor: Color = Color.White) {
     val builtin = builtinConversationIcons.firstOrNull { it.id == icon }
     when {
@@ -631,12 +667,7 @@ private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor:
         else -> Text(fallback.take(1), color = fallbackColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
-private data class BuiltinConversationIcon(val id: String, val label: String, @DrawableRes val res: Int)
 
-private val builtinConversationIcons = listOf(
-    BuiltinConversationIcon("party", "小队", R.drawable.msg_party),
-    BuiltinConversationIcon("fc", "部队", R.drawable.msg_fc),
-)
 
 @Composable
 private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneState, fallback: String) {
@@ -819,6 +850,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
 @Composable
 private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}, onChangeIcon: (ChatConversation) -> Unit = {}) {
     var menuOpen by remember { mutableStateOf(false) }
+    var pressOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val last = conversation.lastMessage
     val rowTitle = if (conversation.category == ChatCategory.Tell) (last?.displaySender() ?: conversation.title) else conversation.title
     val preview = when {
@@ -828,10 +860,14 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().combinedClickable(
-                onClick = { state.openConversation(conversation) },
-                onLongClick = { menuOpen = true },
-            ).padding(vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { state.openConversation(conversation) },
+                        onLongPress = { offset -> pressOffset = offset; menuOpen = true },
+                    )
+                }
+                .padding(vertical = 10.dp),
         ) {
             Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
                 ConversationRowIcon(conversation, state, rowTitle)
@@ -854,7 +890,8 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 }
             }
         }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+        Box(Modifier.offset { IntOffset(pressOffset.x.roundToInt(), pressOffset.y.roundToInt()) }) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
                 state.toggleConversationPin(conversation)
                 menuOpen = false
@@ -872,17 +909,29 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 menuOpen = false
             })
         }
+        }
     }
     Spacer(Modifier.height(6.dp))
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun AetherphoneContactsList(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var friendsOnly by remember { mutableStateOf(true) }
     val shown = (if (friendsOnly) state.friends else state.party).filter { it.name.contains(query, true) || it.world.contains(query, true) }
     LaunchedEffect(Unit) { state.refreshParty() }
     LaunchedEffect(friendsOnly) { if (!friendsOnly) state.refreshParty() }
+    var avatarFriend by remember { mutableStateOf<PhoneFriend?>(null) }
+    var avatarShowLibrary by remember { mutableStateOf(false) }
+    val pickFriendAvatar = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val friend = avatarFriend
+        avatarFriend = null
+        if (uri != null && friend != null) {
+            val path = state.savePickedFriendAvatar(friend.name, uri)
+            if (path != null) state.setFriendAvatar(friend.name, path)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
             Text("⟳", color = AetherPurple, fontSize = 27.sp, modifier = Modifier.clickable { state.refreshFriends(); state.refreshParty() }.padding(horizontal = 8.dp))
@@ -902,12 +951,12 @@ private fun AetherphoneContactsList(state: PhoneState) {
             val offline = shown.filter { !it.online }
             if (online.isNotEmpty()) {
                 item("online-label") { Text("在线 · ${formatCount(online.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
-                item("online-card") { LightContactCard(online, state) }
+                item("online-card") { LightContactCard(online, state, onChangeAvatar = { avatarFriend = it }) }
                 item("online-gap") { Spacer(Modifier.height(18.dp)) }
             }
             if (offline.isNotEmpty()) {
                 item("offline-label") { Text("离线 · ${formatCount(offline.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
-                item("offline-card") { LightContactCard(offline, state) }
+                item("offline-card") { LightContactCard(offline, state, onChangeAvatar = { avatarFriend = it }) }
             }
             if (shown.isEmpty()) {
                 item("empty") { Text(if (!state.connected) "连接游戏后读取列表" else if (friendsOnly) "暂无联系人" else "暂无小队成员", color = AetherLightMuted, modifier = Modifier.padding(top = 50.dp).fillMaxWidth(), textAlign = TextAlign.Center) }
@@ -915,18 +964,37 @@ private fun AetherphoneContactsList(state: PhoneState) {
             item("end") { Spacer(Modifier.height(16.dp)) }
         }
     }
+    avatarFriend?.let { friend ->
+        AlertDialog(
+            onDismissRequest = { avatarFriend = null },
+            title = { Text(if (avatarShowLibrary) "图标库" else "更换好友头像") },
+            text = {
+                if (avatarShowLibrary) {
+                    BuiltinIconLibrary(onSelect = { state.setFriendAvatar(friend.name, it); avatarFriend = null })
+                } else {
+                    Column {
+                        Text("图标库", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarShowLibrary = true }.padding(vertical = 12.dp))
+                        Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickFriendAvatar.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
+                        Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setFriendAvatar(friend.name, ""); avatarFriend = null }.padding(vertical = 12.dp))
+                    }
+                }
+            },
+            confirmButton = {},
+        )
+    }
 }
 
 @Composable
-private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onChangeAvatar: (PhoneFriend) -> Unit = {}) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(AetherLightSurface)) {
         friends.forEachIndexed { index, friend ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().clickable { state.openFriend(friend) }.padding(horizontal = 20.dp, vertical = 11.dp),
+                modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { state.openFriend(friend) }, onLongClick = { onChangeAvatar(friend) }).padding(horizontal = 20.dp, vertical = 11.dp),
             ) {
                 Box(Modifier.size(44.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                    Text(friend.name.take(1), color = if (friend.online) AetherPurple else Color(0xFFA7A7AE), fontSize = 16.sp)
+                    SmallConversationIcon(state.friendAvatar(friend.name), friend.name.take(1), if (friend.online) AetherPurple else Color(0xFFA7A7AE))
                 }
                 Column(Modifier.weight(1f).padding(start = 16.dp)) {
                     Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -1728,3 +1796,4 @@ private fun activityDuration(seconds: Long): String {
     val minutes = seconds / 60
     return if (minutes >= 60) "${minutes / 60}小时${minutes % 60}分" else "${minutes}分钟"
 }
+
