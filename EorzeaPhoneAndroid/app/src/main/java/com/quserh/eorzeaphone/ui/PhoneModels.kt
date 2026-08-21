@@ -614,6 +614,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun friendAvatar(friend: PhoneFriend): String = friendAvatars[friendAvatarOwner(friend)] ?: ""
 
+    /** 按角色名（忽略服务器/装饰）查好友在线状态；非好友返回 null。 */
+    fun friendOnlineFor(name: String): Boolean? {
+        val key = name.tellNamePart().normalizedPlayerName()
+        if (key.isBlank()) return null
+        return friends.firstOrNull { it.name.tellNamePart().normalizedPlayerName() == key }?.online
+    }
+
     private fun setFriendAvatar(owner: String, iconId: String) {
         if (iconId.isBlank()) friendAvatars.remove(owner) else friendAvatars[owner] = iconId
         runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }

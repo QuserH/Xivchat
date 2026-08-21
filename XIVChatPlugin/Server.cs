@@ -1497,49 +1497,131 @@ namespace XIVChatPlugin {
         }
 
         private unsafe List<Player>? BuildPartyListNative() {
+            var members = new List<Player>();
+            var seen = new HashSet<ulong>();
+
             var manager = FFXIVClientStructs.FFXIV.Client.Game.Group.GroupManager.Instance();
-            if (manager == null) {
-                return null;
+            if (manager != null) {
+                var group = &manager->MainGroup;
+                var count = Math.Min((int) group->MemberCount, 8);
+                if (count > 0) {
+                    var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
+                    for (var i = 0; i < count; i++) {
+                        var member = group->GetPartyMemberByIndex(i);
+                        if (member == null || (member->ContentId == 0 && member->EntityId == 0)) {
+                            continue;
+                        }
+
+                        var player = this.BuildPartyPlayer(member, sheet);
+                        if (player == null) {
+                            continue;
+                        }
+
+                        if (player.ContentId != 0 && !seen.Add(player.ContentId)) {
+                            continue;
+                        }
+
+                        members.Add(player);
+                    }
+                }
             }
 
-            var group = &manager->MainGroup;
-            var count = Math.Min((int) group->MemberCount, 8);
-            if (count == 0) {
+            // 跨服小队：本队列表在 InfoProxyCrossRealm 中，MainGroup.MemberCount 可能为 0。
+            if (members.Count == 0) {
+                var cross = FFXIVClientStructs.FFXIV.Client.UI.Info.InfoProxyCrossRealm.Instance();
+                if (cross != null && cross->IsCrossRealm) {
+                    var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
+                    var groupCount = Math.Min((int) cross->GroupCount, 6);
+                    for (var gi = 0; gi < groupCount && members.Count < 8; gi++) {
+                        var memberCount = Math.Min((int) FFXIVClientStructs.FFXIV.Client.UI.Info.InfoProxyCrossRealm.GetGroupMemberCount(gi), 8);
+                        for (var mi = 0; mi < memberCount && members.Count < 8; mi++) {
+                            var member = FFXIVClientStructs.FFXIV.Client.UI.Info.InfoProxyCrossRealm.GetGroupMember((uint) mi, gi);
+                            if (member == null || (member->ContentId == 0 && member->EntityId == 0)) {
+                                continue;
+                            }
+
+                            var player = this.BuildCrossRealmPlayer(member, sheet);
+                            if (player == null) {
+                                continue;
+                            }
+
+                            if (player.ContentId != 0 && !seen.Add(player.ContentId)) {
+                                continue;
+                            }
+
+                            members.Add(player);
+                        }
+                    }
+                }
+            }
+
+            if (members.Count == 0) {
                 Plugin.Log.Info("[EorzeaPhone] Native party empty");
                 return null;
             }
 
-            var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ClassJob>();
-            var members = new List<Player>(count);
-            for (var i = 0; i < count; i++) {
-                var member = group->GetPartyMemberByIndex(i);
-                if (member == null || (member->ContentId == 0 && member->EntityId == 0)) {
-                    continue;
-                }
+            Plugin.Log.Info($"[EorzeaPhone] Native party members={members.Count}");
+            return members;
+        }
 
-                var name = this.ReadPartyMemberName(member);
-                if (string.IsNullOrWhiteSpace(name)) {
-                    continue;
-                }
-
-                var jobId = member->ClassJob;
-                var jobName = jobId > 0 ? sheet.GetRowOrDefault(jobId)?.Name.ExtractText() : null;
-                var homeWorld = member->HomeWorld;
-                var worldName = this.WorldName(homeWorld) ?? string.Empty;
-                members.Add(new Player {
-                    Name = name,
-                    CurrentWorld = homeWorld,
-                    CurrentWorldName = worldName,
-                    HomeWorld = homeWorld,
-                    HomeWorldName = worldName,
-                    Job = jobId,
-                    JobName = jobName,
-                    ContentId = member->ContentId,
-                });
+        private unsafe Player? BuildPartyPlayer(FFXIVClientStructs.FFXIV.Client.Game.Group.PartyMember* member, Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ClassJob>? sheet) {
+            var name = this.ReadPartyMemberName(member);
+            if (string.IsNullOrWhiteSpace(name)) {
+                return null;
             }
 
-            Plugin.Log.Info($"[EorzeaPhone] Native party count={count} members={members.Count}");
-            return members.Count > 0 ? members : null;
+            var jobId = member->ClassJob;
+            var jobName = jobId > 0 ? sheet.GetRowOrDefault(jobId)?.Name.ExtractText() : null;
+            var homeWorld = member->HomeWorld;
+            var worldName = this.WorldName(homeWorld) ?? string.Empty;
+            return new Player {
+                Name = name,
+                CurrentWorld = homeWorld,
+                CurrentWorldName = worldName,
+                HomeWorld = homeWorld,
+                HomeWorldName = worldName,
+                Job = jobId,
+                JobName = jobName,
+                ContentId = member->ContentId,
+            };
+        }
+
+        private unsafe Player? BuildCrossRealmPlayer(FFXIVClientStructs.FFXIV.Client.UI.Info.CrossRealmMember* member, Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ClassJob>? sheet) {
+            var name = this.ReadCrossRealmMemberName(member);
+            if (string.IsNullOrWhiteSpace(name)) {
+                return null;
+            }
+
+            var jobId = member->ClassJobId;
+            var jobName = jobId > 0 ? sheet.GetRowOrDefault(jobId)?.Name.ExtractText() : null;
+            var hw = member->HomeWorld;
+            var homeWorld = hw < 0 ? (ushort) 0 : (ushort) hw;
+            var cw = member->CurrentWorld;
+            var currentWorld = cw < 0 ? (ushort) 0 : (ushort) cw;
+            var worldName = this.WorldName(homeWorld) ?? string.Empty;
+            return new Player {
+                Name = name,
+                CurrentWorld = currentWorld,
+                CurrentWorldName = this.WorldName(currentWorld) ?? worldName,
+                HomeWorld = homeWorld,
+                HomeWorldName = worldName,
+                Job = jobId,
+                JobName = jobName,
+                ContentId = member->ContentId,
+            };
+        }
+
+        private unsafe string ReadCrossRealmMemberName(FFXIVClientStructs.FFXIV.Client.UI.Info.CrossRealmMember* member) {
+            try {
+                var name = member->NameString;
+                if (!string.IsNullOrWhiteSpace(name)) {
+                    return name;
+                }
+            } catch {
+                // raw name unavailable
+            }
+
+            return string.Empty;
         }
 
         private unsafe string ReadPartyMemberName(FFXIVClientStructs.FFXIV.Client.Game.Group.PartyMember* member) {

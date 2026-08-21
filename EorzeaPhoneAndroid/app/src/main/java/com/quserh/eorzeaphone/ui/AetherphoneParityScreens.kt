@@ -111,6 +111,7 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
@@ -192,6 +193,7 @@ private fun LightHeader(
     title: String,
     onBack: () -> Unit,
     trailing: @Composable RowScope.() -> Unit = {},
+    titleIcon: (@Composable () -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -200,16 +202,22 @@ private fun LightHeader(
         IconButton(onClick = onBack, modifier = Modifier.size(46.dp)) {
             Text("‹", color = AetherPurple, fontSize = 40.sp, lineHeight = 32.sp, fontWeight = FontWeight.Light)
         }
-        Text(
-            title,
-            color = AetherLightText,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
             modifier = Modifier.weight(1f),
-        )
+        ) {
+            Text(
+                title,
+                color = AetherLightText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            titleIcon?.invoke()
+        }
         Row(modifier = Modifier.widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
     }
 }
@@ -846,6 +854,17 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     }
 }
 
+@Composable
+private fun FriendStatusIcon(state: PhoneState, name: String, size: Dp = 14.dp, modifier: Modifier = Modifier) {
+    if (!state.activeCharacterOnline) return
+    val online = state.friendOnlineFor(name) ?: return
+    Image(
+        painter = painterResource(if (online) R.drawable.status_online else R.drawable.status_offline),
+        contentDescription = if (online) "在线" else "离线",
+        modifier = modifier.size(size),
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}, onChangeIcon: (ChatConversation) -> Unit = {}) {
@@ -874,6 +893,9 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             }
             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (conversation.category == ChatCategory.Tell || conversation.key.startsWith("tell:")) {
+                        FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp))
+                    }
                     Text(rowTitle, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
                     conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
@@ -1000,7 +1022,7 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onCh
                     Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Text(friend.world.ifBlank { "未知服务器" }, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
-                if (friend.online) Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF35B865)))
+                if (friend.online) Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
             }
             if (index < friends.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(AetherLightSeparator))
         }
@@ -1092,36 +1114,45 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
     }
     LightFrame {
         Column(Modifier.fillMaxSize()) {
-            LightHeader(conversation.title, state::back) {
-                Text("⌕", color = if (searching) AetherPurple else AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { searching = !searching }.padding(horizontal = 7.dp))
-                Box {
-                    Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
-                    DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                        DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
-                            conversation.unread = 0
-                            overflowOpen = false
-                        })
-                        if (conversation.key.startsWith("tab:")) DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
-                            state.editingChatFilterId = state.openChatFilterId
-                            state.editChatTabs = true
-                            state.closeConversation()
-                            overflowOpen = false
-                        })
-                        DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
-                            state.toggleConversationPin(conversation)
-                            overflowOpen = false
-                        })
-                        DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
-                            state.toggleConversationNotify(conversation)
-                            overflowOpen = false
-                        })
-                        DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
-                            state.clearConversation(conversation)
-                            overflowOpen = false
-                        })
+            LightHeader(
+                title = conversation.title,
+                onBack = state::back,
+                titleIcon = {
+                    if (conversation.key.startsWith("tell:")) {
+                        FriendStatusIcon(state, conversation.tellRecipient.ifBlank { conversation.title }, 16.dp, Modifier.padding(start = 6.dp))
                     }
-                }
-            }
+                },
+                trailing = {
+                    Text("⌕", color = if (searching) AetherPurple else AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { searching = !searching }.padding(horizontal = 7.dp))
+                    Box {
+                        Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
+                        DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                            DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
+                                conversation.unread = 0
+                                overflowOpen = false
+                            })
+                            if (conversation.key.startsWith("tab:")) DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
+                                state.editingChatFilterId = state.openChatFilterId
+                                state.editChatTabs = true
+                                state.closeConversation()
+                                overflowOpen = false
+                            })
+                            DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
+                                state.toggleConversationPin(conversation)
+                                overflowOpen = false
+                            })
+                            DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
+                                state.toggleConversationNotify(conversation)
+                                overflowOpen = false
+                            })
+                            DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
+                                state.clearConversation(conversation)
+                                overflowOpen = false
+                            })
+                        }
+                    }
+                },
+            )
             AnimatedVisibility(
                 visible = searching,
                 enter = fadeIn() + expandVertically(),
