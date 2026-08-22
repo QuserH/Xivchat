@@ -818,7 +818,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             filter == 1 -> it.channel == 10
             filter == 2 -> it.channel == 11
             filter == 3 -> it.channel == 30
-            else -> it.category == ChatCategory.Public || it.category == ChatCategory.Emote
+            else -> (it.category == ChatCategory.Public || it.category == ChatCategory.Emote) && it.channel != 27 && it.channel != 75 && it.channel != 94
         }
     }.sortedBy { it.timestamp }
     LightFrame {
@@ -928,6 +928,21 @@ private fun FriendStatusIcon(state: PhoneState, name: String, size: Dp = 14.dp, 
     )
 }
 
+@Composable
+private fun LightMessagePreview(message: GameChatMessage?, color: Color, fontSize: TextUnit = 13.sp, modifier: Modifier = Modifier) {
+    if (message == null) {
+        Text("暂无消息", color = color, fontSize = fontSize, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
+        return
+    }
+    val lineH = (fontSize.value + 4).sp
+    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
+    val fallback = cleanChatText(message.text, "").replace('\n', ' ').trim().ifBlank { " " }
+    val ink = remember(message, color, fontSize, lineH) { chatBubbleInk(message.chunks, fallback, color, true, "", light, fontSize, lineH, axisFont) }
+    val inline = chatBubbleInline(message.chunks, fallback, fontSize, lineH)
+    Text(ink.annotated, color = color, fontSize = fontSize, lineHeight = lineH, inlineContent = inline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LightConversationRow(conversation: ChatConversation, state: PhoneState, onRename: (ChatConversation) -> Unit = {}, onChangeIcon: (ChatConversation) -> Unit = {}) {
@@ -964,7 +979,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                     conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(preview, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    LightMessagePreview(last, AetherLightMuted, 13.sp, Modifier.weight(1f))
                     if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
                     if (conversation.unread > 0) {
                         Box(
