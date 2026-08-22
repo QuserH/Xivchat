@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class XivChatConnection(context: Context, private val scope: CoroutineScope, private val onEvent: (PhoneEvent) -> Unit, private val onSendFailure: () -> Unit = {}) {
     private val prefs = context.getSharedPreferences("eorzea_phone_connection", Context.MODE_PRIVATE)
-    private var maxSeenChatTs = prefs.getLong("chatLastSeenTs", 0L)
     private val sodium = LazySodiumAndroid(SodiumAndroid())
     private var socket: Socket? = null
     @Volatile private var sessionOutput: DataOutputStream? = null
@@ -73,7 +72,8 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
             connected.set(true)
             onEvent(PhoneEvent.Connected)
             send(output, tx, 8, XivChatCodec.encodePreferences())
-            if (maxSeenChatTs > 0L) send(output, tx, 5, XivChatCodec.encodeCatchUp(maxSeenChatTs)) else send(output, tx, 4, XivChatCodec.encodeBacklog(100))
+            // 角色资料到达后再按该角色游标补传；这里先拉最近 100 条（插件按当前角色过滤）
+            send(output, tx, 4, XivChatCodec.encodeBacklog(100))
             send(output, tx, 6, XivChatCodec.encodePlayerList())
             send(output, tx, 6, XivChatCodec.encodePlayerList(1))
 
@@ -87,7 +87,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                     try {
                         when (code) {
                             1 -> Unit
-                            2 -> { val m = XivChatCodec.readMessage(unpacker); if (m.timestamp > maxSeenChatTs) { maxSeenChatTs = m.timestamp; prefs.edit().putLong("chatLastSeenTs", maxSeenChatTs).apply() }; onEvent(PhoneEvent.Chat(m)) }
+                            2 -> { val m = XivChatCodec.readMessage(unpacker); onEvent(PhoneEvent.Chat(m)) }
                             3 -> return
                             4 -> if (payload.isEmpty()) {
                                 onEvent(PhoneEvent.GameAvailability(false))
@@ -96,7 +96,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             }
                             5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
                             6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
-                            7 -> XivChatCodec.readBacklog(unpacker).forEach { m -> if (m.timestamp > maxSeenChatTs) { maxSeenChatTs = m.timestamp; prefs.edit().putLong("chatLastSeenTs", maxSeenChatTs).apply() }; onEvent(PhoneEvent.Chat(m)) }
+                            7 -> XivChatCodec.readBacklog(unpacker).forEach { m -> onEvent(PhoneEvent.Chat(m)) }
                             8 -> XivChatCodec.readPlayerList(unpacker).let { (type, players) ->
                                 if (type == 1) onEvent(PhoneEvent.PartyList(players)) else onEvent(PhoneEvent.FriendList(players))
                             }
@@ -137,6 +137,12 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     fun sendChat(text: String) = sendCommand(XivChatCodec.encodeMessage(text), 2)
 
     fun changeChannel(channel: Int) = sendCommand(XivChatCodec.encodeChannel(channel), 9)
+
+    // 按角色游标补传：在确认连接角色后调用，插件只返回该角色在该时间点之后的消息
+    fun requestCatchUp(afterMillis: Long) {
+        if (afterMillis <= 0L) return
+        sendCommand(XivChatCodec.encodeCatchUp(afterMillis), 5)
+    }
 
     fun sendChatOnChannel(channel: Int?, text: String) {
         scope.launch(Dispatchers.IO) {

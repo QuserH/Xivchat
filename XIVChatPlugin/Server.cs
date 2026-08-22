@@ -361,7 +361,7 @@ namespace XIVChatPlugin {
             );
 
             if (this._plugin.Config.BacklogEnabled) {
-                msg.CharacterTag = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
+                msg.CharacterTag = this.CurrentCharacterTag();
                 lock (this._backlogLock) {
                     this._backlog.AddLast(msg);
                     while (this._backlog.Count > this._plugin.Config.BacklogCount) {
@@ -1891,7 +1891,7 @@ namespace XIVChatPlugin {
                         }
 
                         var m = node.Value;
-                        if (currentTag == null || m.CharacterTag == null || m.CharacterTag == currentTag) backlogMessages.Add(m);
+                        if (MatchesCurrentCharacter(m, currentTag)) backlogMessages.Add(m);
                         node = node.Previous;
                     }
 
@@ -2096,15 +2096,28 @@ namespace XIVChatPlugin {
             }
         }
 
-        private string? GetBacklogPath() {
+        private string GetBacklogDirectory() {
             var p = this._plugin.Config.BacklogPath;
             if (string.IsNullOrWhiteSpace(p))
-                return Path.Combine(XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName, "chat_backlog.bin");
+                return XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName;
             var path = p.Trim();
-            // 若用户填的是目录（或尾部带分隔符），在该目录下补一个默认文件名。
+            // BacklogPath 现在按“目录”理解：每个角色一个 chat_backlog_<角色>.bin 文件。
             if (Directory.Exists(path) || path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))
-                return Path.Combine(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), "chat_backlog.bin");
-            return path;
+                return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var dir = Path.GetDirectoryName(path);
+            return string.IsNullOrEmpty(dir) ? XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName : dir;
+        }
+
+        private static string SanitizeForFileName(string tag) {
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new StringBuilder(tag.Length);
+            foreach (var c in tag) sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+            return sb.ToString();
+        }
+
+        private string GetBacklogFilePath(string? characterTag) {
+            if (string.IsNullOrWhiteSpace(characterTag)) return string.Empty;
+            return Path.Combine(this.GetBacklogDirectory(), $"chat_backlog_{SanitizeForFileName(characterTag)}.bin");
         }
 
         private void MaybePersistBacklog() {
@@ -2117,41 +2130,112 @@ namespace XIVChatPlugin {
         internal void FlushBacklog() => this.PersistBacklog();
 
         private void PersistBacklog() {
-            var path = this.GetBacklogPath();
-            if (path == null) return;
+            if (!this._plugin.Config.BacklogEnabled) return;
+            var dir = this.GetBacklogDirectory();
             try {
-                var dir = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                Directory.CreateDirectory(dir);
                 List<ServerMessage> snapshot;
                 lock (this._backlogLock) { snapshot = this._backlog.ToList(); }
-                var bytes = MessagePack.MessagePackSerializer.Serialize(snapshot);
-                File.WriteAllBytes(path, bytes);
+                // 按角色分组，每个角色一个文件；文件头部带角色标识，读取时校验。
+                foreach (var group in snapshot.Where(m => !string.IsNullOrEmpty(m.CharacterTag)).GroupBy(m => m.CharacterTag!)) {
+                    var path = this.GetBacklogFilePath(group.Key);
+                    if (string.IsNullOrEmpty(path)) continue;
+                    var file = new BacklogFile {
+                        CharacterTag = group.Key,
+                        WrittenAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        Messages = group.ToList(),
+                    };
+                    File.WriteAllBytes(path, MessagePack.MessagePackSerializer.Serialize(file));
+                }
             } catch (Exception ex) {
-                Plugin.Log.Error($"Could not persist backlog to '{path}': {ex.Message}");
+                Plugin.Log.Error($"Could not persist backlog to '{dir}': {ex.Message}");
             }
         }
 
         private void LoadBacklog() {
             if (!this._plugin.Config.BacklogEnabled) return;
-            var path = this.GetBacklogPath();
-            if (path == null || !File.Exists(path)) return;
+            var dir = this.GetBacklogDirectory();
+            if (!Directory.Exists(dir)) return;
             try {
-                var bytes = File.ReadAllBytes(path);
-                var list = MessagePack.MessagePackSerializer.Deserialize<List<ServerMessage>>(bytes);
+                var loaded = new List<ServerMessage>();
+                // 新格式：每角色一个文件（头部带角色标识）
+                foreach (var path in Directory.EnumerateFiles(dir, "chat_backlog_*.bin")) {
+                    try {
+                        var file = MessagePack.MessagePackSerializer.Deserialize<BacklogFile>(File.ReadAllBytes(path));
+                        if (file == null || string.IsNullOrEmpty(file.CharacterTag)) continue;
+                        foreach (var m in file.Messages) {
+                            // 无角色标识的消息归属不明，丢弃以防串号
+                            if (m == null || string.IsNullOrEmpty(m.CharacterTag)) continue;
+                            loaded.Add(m);
+                        }
+                    } catch (Exception ex) {
+                        Plugin.Log.Error($"Could not load backlog from '{path}': {ex.Message}");
+                    }
+                }
+                // 旧格式单文件兼容：仅当还没有任何分角色文件时读取并迁移，读完删除旧文件，避免每次启动重复合并
+                var hasPerCharFiles = Directory.EnumerateFiles(dir, "chat_backlog_*.bin").Any();
+                var legacyPath = Path.Combine(dir, "chat_backlog.bin");
+                if (!hasPerCharFiles && File.Exists(legacyPath)) {
+                    try {
+                        var legacy = MessagePack.MessagePackSerializer.Deserialize<List<ServerMessage>>(File.ReadAllBytes(legacyPath));
+                        foreach (var m in legacy) {
+                            if (m == null || string.IsNullOrEmpty(m.CharacterTag)) continue;
+                            loaded.Add(m);
+                        }
+                        File.Delete(legacyPath);
+                    } catch (Exception ex) {
+                        Plugin.Log.Error($"Could not load legacy backlog from '{legacyPath}': {ex.Message}");
+                    }
+                }
+                var configured = this._plugin.Config.BacklogPath?.Trim();
+                if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured) && !configured.Equals(legacyPath, StringComparison.OrdinalIgnoreCase) && !hasPerCharFiles) {
+                    try {
+                        var legacy2 = MessagePack.MessagePackSerializer.Deserialize<List<ServerMessage>>(File.ReadAllBytes(configured));
+                        foreach (var m in legacy2) {
+                            if (m == null || string.IsNullOrEmpty(m.CharacterTag)) continue;
+                            loaded.Add(m);
+                        }
+                        File.Delete(configured);
+                    } catch (Exception ex) {
+                        Plugin.Log.Error($"Could not load legacy backlog from '{configured}': {ex.Message}");
+                    }
+                }
                 lock (this._backlogLock) {
                     this._backlog.Clear();
-                    foreach (var m in list) {
+                    foreach (var m in loaded.OrderBy(x => x.Timestamp)) {
                         this._backlog.AddLast(m);
                         if (this._backlog.Count > this._plugin.Config.BacklogCount) this._backlog.RemoveFirst();
                     }
                 }
-                Plugin.Log.Info($"Loaded {list.Count} backlog messages from '{path}'");
+                Plugin.Log.Info($"Loaded {loaded.Count} backlog messages from '{dir}'");
             } catch (Exception ex) {
-                Plugin.Log.Error($"Could not load backlog from '{path}': {ex.Message}");
+                Plugin.Log.Error($"Could not load backlog from '{dir}': {ex.Message}");
             }
         }
 
-        private string? CurrentCharacterTag() => XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
+        private string? CurrentCharacterTag() {
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
+            if (player == null) return null;
+            var name = player.Name.TextValue;
+            try {
+                var world = player.HomeWorld.Value.Name.ExtractText();
+                if (!string.IsNullOrWhiteSpace(world)) return $"{name}@{world}";
+            } catch {
+                // ignore, fall back to name-only
+            }
+            return name;
+        }
+
+        // 判定一条 backlog 消息是否属于当前角色。新格式是 名字@服务器；
+        // 旧格式只有名字（不含@），仅当与当前角色名字一致时才归入（兼容旧文件）。
+        private static bool MatchesCurrentCharacter(ServerMessage m, string? fullTag) {
+            if (string.IsNullOrEmpty(fullTag)) return false;
+            if (string.IsNullOrEmpty(m.CharacterTag)) return false; // 归属不明，丢弃防串号
+            if (m.CharacterTag == fullTag) return true;
+            var at = fullTag.IndexOf('@');
+            if (at > 0 && m.CharacterTag == fullTag.Substring(0, at)) return true;
+            return false;
+        }
 
         private static int? GetSenderStatusIcon(byte[] sender) {
             if (sender == null) return null;
@@ -2275,7 +2359,7 @@ namespace XIVChatPlugin {
 
         private IEnumerable<ServerMessage> MessagesAfter(DateTime time) {
             var tag = this.CurrentCharacterTag();
-            return this._backlog.Where(msg => msg.Timestamp > time && (tag == null || msg.CharacterTag == null || msg.CharacterTag == tag)).ToArray();
+            return this._backlog.Where(msg => msg.Timestamp > time && MatchesCurrentCharacter(msg, tag)).ToArray();
         }
 
         private static IEnumerable<string> Wrap(string input) {
@@ -2477,6 +2561,18 @@ namespace XIVChatPlugin {
             this._plugin.Functions.ReceiveFriendList -= this.OnReceiveFriendList;
             this.PersistBacklog();
         }
+    }
+
+    [MessagePackObject]
+    public class BacklogFile {
+        [Key(0)]
+        public string? CharacterTag { get; set; }
+
+        [Key(1)]
+        public long WrittenAtUnixMs { get; set; }
+
+        [Key(2)]
+        public List<ServerMessage> Messages { get; set; } = [];
     }
 
     internal static class TcpListenerExt {

@@ -288,6 +288,122 @@ val defaultShortcuts = listOf(
 
 class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("eorzea_phone_ui", Context.MODE_PRIVATE)
+    private val connectionPrefs = context.getSharedPreferences("eorzea_phone_connection", Context.MODE_PRIVATE)
+    // ---- 每角色独立存储：每个角色一个 SharedPreferences 文件，文件内带角色头标识 ----
+    private val charStoreCache = mutableMapOf<String, android.content.SharedPreferences>()
+    private val charStoreDataKeys = listOf(
+        "chatCache", "profileCache", "inventoryItemCache", "inventoryContainerCache", "retainerCache",
+        "walletCache", "jobsCache", "dailiesCache", "activityCache", "weatherCache", "housingCache",
+        "mapsCache", "fishingLogCache", "submarineCache", "collectionsCache", "friendCache",
+    )
+    private val charStoreStateKeys = listOf("clearedChatFilters", "convIcons", "groupChannelNames", "groupTitleOverrides")
+    private val charStoreSetKeys = listOf("mutedChatConvs", "pinnedChatConvs", "hiddenChatConvs")
+
+    private fun charStoreFileName(charKey: String): String {
+        val safe = charKey.lowercase().replace(Regex("[^a-z0-9._\\-]"), "_").take(48)
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(charKey.toByteArray(Charsets.UTF_8))
+        val hash = digest.take(6).joinToString("") { "%02x".format(it) }
+        return "eorzea_phone_char_${safe}_$hash"
+    }
+
+    private fun charPrefs(charKey: String = activeCharacterKey): android.content.SharedPreferences {
+        if (charKey.isBlank()) return prefs
+        charStoreCache[charKey]?.let { return it }
+        val store = appContext.getSharedPreferences(charStoreFileName(charKey), Context.MODE_PRIVATE)
+        val existing = store.getString("__char_key__", null)
+        val chosen = if (existing != null && existing != charKey) {
+            // 文件头标识与目标角色不符：绝不写入（避免污染其它角色），改用修复文件。
+            appContext.getSharedPreferences(charStoreFileName(charKey) + "_repaired", Context.MODE_PRIVATE)
+        } else {
+            store
+        }
+        charStoreCache[charKey] = chosen
+        ensureCharStore(chosen, charKey)
+        return chosen
+    }
+
+    private fun ensureCharStore(store: android.content.SharedPreferences, charKey: String) {
+        val existing = store.getString("__char_key__", null)
+        if (existing == charKey) return
+        if (existing != null) return
+        val at = charKey.lastIndexOf('@')
+        store.edit()
+            .putString("__char_key__", charKey)
+            .putString("__char_name__", if (at > 0) charKey.substring(0, at) else charKey)
+            .putString("__char_world__", if (at > 0) charKey.substring(at + 1) else "")
+            .putLong("__char_created__", System.currentTimeMillis())
+            .apply()
+        migrateLegacyScopedData(store, charKey)
+    }
+
+    // 旧版把每个角色的数据存在同一文件里（key::角色名）。首次访问角色文件时迁移过来。
+    private fun migrateLegacyScopedData(store: android.content.SharedPreferences, charKey: String) {
+        runCatching {
+            val edit = store.edit()
+            var dirty = false
+            for (key in charStoreDataKeys) {
+                val old = prefs.getString("$key::$charKey", null)
+                if (old != null && !store.contains(key)) { edit.putString(key, old); dirty = true }
+            }
+            for (key in charStoreStateKeys) {
+                val old = prefs.getString(key, null)
+                if (old != null && !store.contains(key)) { edit.putString(key, old); dirty = true }
+            }
+            for (key in charStoreSetKeys) {
+                val old = prefs.getStringSet(key, null)
+                if (old != null && !store.contains(key)) { edit.putStringSet(key, old); dirty = true }
+            }
+            // 旧版全局聊天游标迁移到当前角色（一次性）
+            if (!store.contains("chatLastSeenTs")) {
+                val oldCursor = connectionPrefs.getLong("chatLastSeenTs", 0L)
+                if (oldCursor > 0L) {
+                    edit.putLong("chatLastSeenTs", oldCursor)
+                    connectionPrefs.edit().remove("chatLastSeenTs").apply()
+                    dirty = true
+                }
+            }
+            if (dirty) edit.apply()
+        }
+    }
+
+    private fun chatCursorTs(charKey: String): Long = charPrefs(charKey).getLong("chatLastSeenTs", 0L)
+
+    private fun updateChatCursorTs(ts: Long) {
+        if (ts <= 0L) return
+        val store = charPrefs()
+        if (ts > store.getLong("chatLastSeenTs", 0L)) {
+            store.edit().putLong("chatLastSeenTs", ts).apply()
+        }
+    }
+
+    // 切换角色后重载会话级状态（置顶/免打扰/隐藏/重命名/频道名/清空时间点/会话图标）
+    private fun reloadPerCharacterState() {
+        val store = charPrefs()
+        runCatching {
+            clearedFilters.clear()
+            val cf = JSONObject(store.getString("clearedChatFilters", "{}"))
+            val it = cf.keys()
+            while (it.hasNext()) { val k = it.next(); clearedFilters[k] = cf.getLong(k) }
+            mutedConversations.clear()
+            mutedConversations.addAll(store.getStringSet("mutedChatConvs", emptySet()) ?: emptySet())
+            pinnedConversations.clear()
+            pinnedConversations.addAll(store.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet())
+            hiddenConversations.value = (store.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+            conversationIconOverrides.clear()
+            val ci = JSONObject(store.getString("convIcons", "{}").orEmpty())
+            val it2 = ci.keys()
+            while (it2.hasNext()) { val k = it2.next(); conversationIconOverrides[k] = ci.getString(k) }
+            groupChannelNames.clear()
+            val gn = JSONObject(store.getString("groupChannelNames", "").orEmpty())
+            val it3 = gn.keys()
+            while (it3.hasNext()) { val k = it3.next(); k.toIntOrNull()?.let { groupChannelNames[it] = gn.getString(k) } }
+            groupTitleOverrides.clear()
+            val gt = JSONObject(store.getString("groupTitleOverrides", "").orEmpty())
+            val it4 = gt.keys()
+            while (it4.hasNext()) { val k = it4.next(); groupTitleOverrides[k] = gt.getString(k) }
+        }
+    }
+
     private var activeCharacterKey = prefs.getString("activeCharacterKey", "").orEmpty()
     val currentCharacterKey: String get() = activeCharacterKey
     val knownCharacters = mutableStateListOf<SavedCharacter>().apply { addAll(loadKnownCharacters()) }
@@ -577,7 +693,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     // 其它窗口/筛选器仍引用时保留，直到没有任何引用才真正从本地删除。
     private val clearedFilters = mutableStateMapOf<String, Long>().apply {
         runCatching {
-            val o = JSONObject(prefs.getString("clearedChatFilters", "{}"))
+            val o = JSONObject(charPrefs().getString("clearedChatFilters", "{}"))
             o.keys().forEach { k -> put(k, o.getLong(k)) }
         }
     }
@@ -585,16 +701,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private fun persistClearedFilters() {
         val o = JSONObject()
         clearedFilters.forEach { (k, v) -> o.put(k, v) }
-        prefs.edit().putString("clearedChatFilters", o.toString()).apply()
+        charPrefs().edit().putString("clearedChatFilters", o.toString()).apply()
     }
     val conversations = mutableStateListOf<ChatConversation>()
     private val conversationByKey = mutableMapOf<String, ChatConversation>()
     var openConversationKey by mutableStateOf<String?>(null)
     private val mutedConversations: MutableSet<String> =
-        (prefs.getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+        (charPrefs().getStringSet("mutedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val pinnedConversations: MutableSet<String> =
-        (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
-    private val hiddenConversations = mutableStateOf((prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
+        (charPrefs().getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+    private val hiddenConversations = mutableStateOf((charPrefs().getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
     private val pendingSelfTexts = mutableMapOf<String, String>()
     private val pendingSends = mutableListOf<GameChatMessage>()
     private val friendAvatars = mutableStateMapOf<String, String>().apply {
@@ -622,21 +738,21 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
     private val conversationIconOverrides = mutableStateMapOf<String, String>().apply {
         runCatching {
-            val o = JSONObject(prefs.getString("convIcons", "{}").orEmpty())
+            val o = JSONObject(charPrefs().getString("convIcons", "{}").orEmpty())
             val it = o.keys()
             while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
         }
     }
     private val groupChannelNames = mutableMapOf<Int, String>().apply {
         runCatching {
-            val o = JSONObject(prefs.getString("groupChannelNames", "").orEmpty())
+            val o = JSONObject(charPrefs().getString("groupChannelNames", "").orEmpty())
             val it = o.keys()
             while (it.hasNext()) { val k = it.next(); put(k.toIntOrNull() ?: continue, o.getString(k)) }
         }
     }
     private val groupTitleOverrides = mutableMapOf<String, String>().apply {
         runCatching {
-            val o = JSONObject(prefs.getString("groupTitleOverrides", "").orEmpty())
+            val o = JSONObject(charPrefs().getString("groupTitleOverrides", "").orEmpty())
             val it = o.keys()
             while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
         }
@@ -674,12 +790,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 // Keep the user's choice visible until the next friend snapshot
                 // supplies the ContentId needed to make it a shared avatar.
                 if (icon.isBlank()) conversationIconOverrides.remove(key) else conversationIconOverrides[key] = icon
-                runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
+                runCatching { charPrefs().edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
             }
             return
         }
         if (icon.isBlank()) conversationIconOverrides.remove(key) else conversationIconOverrides[key] = icon
-        runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
+        runCatching { charPrefs().edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
     }
 
     fun characterAvatar(key: String): String = characterAvatars[key] ?: ""
@@ -753,7 +869,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
         if (avatarsChanged) runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
         if (ownersChanged) runCatching { prefs.edit().putString("tellAvatarOwners", JSONObject(tellAvatarOwners).toString()).apply() }
-        if (iconsChanged) runCatching { prefs.edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
+        if (iconsChanged) runCatching { charPrefs().edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
     }
 
     private fun ensureFriendAvatars(friendEntries: Iterable<PhoneFriend>) {
@@ -790,7 +906,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun renameGroup(key: String, name: String) {
         val clean = name.trim().take(20)
         if (clean.isEmpty()) groupTitleOverrides.remove(key) else groupTitleOverrides[key] = clean
-        prefs.edit().putString("groupTitleOverrides", JSONObject(groupTitleOverrides).toString()).apply()
+        charPrefs().edit().putString("groupTitleOverrides", JSONObject(groupTitleOverrides).toString()).apply()
         val renamed = groupTitleOverride(key)
         conversations.filter { it.key == key }.forEach { conversation ->
             conversation.title = renamed ?: (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
@@ -815,8 +931,6 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private var gameAvailability = false
     private var availabilityEpoch = 0
     private val pendingCharacterEvents = mutableListOf<PhoneEvent>()
-
-    private fun scoped(key: String): String = if (activeCharacterKey.isBlank()) key else "$key::$activeCharacterKey"
 
     private fun markFriendsOffline() {
         var changed = false
@@ -866,7 +980,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun loadProfileCache(): com.quserh.eorzeaphone.data.PlayerProfile? = runCatching {
-        val s = prefs.getString(scoped("profileCache"), "")
+        val s = charPrefs().getString("profileCache", "")
         if (s.isNullOrBlank()) return@runCatching null
         val o = JSONObject(s)
         com.quserh.eorzeaphone.data.PlayerProfile(
@@ -883,8 +997,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }.getOrNull()
 
     private fun saveProfileCache(p: com.quserh.eorzeaphone.data.PlayerProfile?) {
-        if (p == null) { prefs.edit().remove(scoped("profileCache")).apply(); return }
-        prefs.edit().putString(scoped("profileCache"), JSONObject().apply {
+        if (p == null) { charPrefs().edit().remove("profileCache").apply(); return }
+        charPrefs().edit().putString("profileCache", JSONObject().apply {
             put("name", p.name)
             put("homeWorld", p.homeWorld)
             put("currentWorld", p.currentWorld)
@@ -899,7 +1013,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun loadSavedChats() {
         runCatching {
-            val arr = JSONArray(prefs.getString(scoped("chatCache"), "[]"))
+            val arr = JSONArray(charPrefs().getString("chatCache", "[]"))
             val msgs = mutableListOf<GameChatMessage>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
@@ -920,6 +1034,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     senderWorld = o.optString("senderWorld").takeIf { it.isNotBlank() },
                     senderStatusName = o.optString("senderStatusName").takeIf { it.isNotBlank() },
                     senderStatusIcon = if (o.has("senderStatusIcon")) o.optInt("senderStatusIcon") else null,
+                    characterTag = o.optString("characterTag").takeIf { it.isNotBlank() },
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -934,7 +1049,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun saveChats() {
         val snapshot = chats.toList()
-        val scopedKey = scoped("chatCache")
+        val chatStore = charPrefs()
         scope.launch(Dispatchers.IO) {
             val arr = JSONArray()
             snapshot.forEach { m ->
@@ -955,15 +1070,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (m.senderWorld != null) put("senderWorld", m.senderWorld)
                     if (m.senderStatusName != null) put("senderStatusName", m.senderStatusName)
                     if (m.senderStatusIcon != null) put("senderStatusIcon", m.senderStatusIcon)
+                    if (m.characterTag != null) put("characterTag", m.characterTag)
                 })
             }
-            prefs.edit().putString(scopedKey, arr.toString()).apply()
+            chatStore.edit().putString("chatCache", arr.toString()).apply()
         }
     }
 
     private fun loadSavedInventory() {
         runCatching {
-            val items = JSONArray(prefs.getString(scoped("inventoryItemCache"), "[]"))
+            val items = JSONArray(charPrefs().getString("inventoryItemCache", "[]"))
             inventory.clear()
             for (i in 0 until items.length()) {
                 val o = items.getJSONObject(i)
@@ -979,13 +1095,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 )
                 if (isPhoneInventoryContainer(item.container)) inventory += item
             }
-            val ctrs = JSONArray(prefs.getString(scoped("inventoryContainerCache"), "[]"))
+            val ctrs = JSONArray(charPrefs().getString("inventoryContainerCache", "[]"))
             inventoryContainers.clear()
             for (i in 0 until ctrs.length()) {
                 val o = ctrs.getJSONObject(i)
                 inventoryContainers += GameInventoryContainer(o.optLong("type"), o.optInt("size"))
             }
-            val savedRetainers = JSONArray(prefs.getString(scoped("retainerCache"), "[]"))
+            val savedRetainers = JSONArray(charPrefs().getString("retainerCache", "[]"))
             retainers.clear()
             for (i in 0 until savedRetainers.length()) {
                 val o = savedRetainers.getJSONObject(i)
@@ -1016,16 +1132,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         retainers.forEach { retainer -> savedRetainers.put(JSONObject().apply {
             put("id", retainer.id); put("name", retainer.name); put("itemCount", retainer.itemCount); put("quantity", retainer.quantity); put("gil", retainer.gil); put("ventureId", retainer.ventureId); put("ventureCompleteUnix", retainer.ventureCompleteUnix)
         }) }
-        prefs.edit()
-            .putString(scoped("inventoryItemCache"), items.toString())
-            .putString(scoped("inventoryContainerCache"), ctrs.toString())
-            .putString(scoped("retainerCache"), savedRetainers.toString())
+        charPrefs().edit()
+            .putString("inventoryItemCache", items.toString())
+            .putString("inventoryContainerCache", ctrs.toString())
+            .putString("retainerCache", savedRetainers.toString())
             .apply()
     }
 
     private fun loadSavedExtras() {
         runCatching {
-            val w = prefs.getString(scoped("walletCache"), "")
+            val w = charPrefs().getString("walletCache", "")
             if (!w.isNullOrBlank()) {
                 val o = JSONObject(w)
                 val gil = o.optLong("gil")
@@ -1039,7 +1155,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 wallet = GameWallet(gil, entries)
             }
 
-            val j = prefs.getString(scoped("jobsCache"), "")
+            val j = charPrefs().getString("jobsCache", "")
             if (!j.isNullOrBlank()) {
                 val arr = JSONArray(j)
                 jobs.clear()
@@ -1049,7 +1165,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 }
             }
 
-            val d = prefs.getString(scoped("dailiesCache"), "")
+            val d = charPrefs().getString("dailiesCache", "")
             if (!d.isNullOrBlank()) {
                 val o = JSONObject(d)
                 val arr = o.optJSONArray("entries") ?: JSONArray()
@@ -1062,7 +1178,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 dailies = GameDailies(o.optLong("nextDailyResetUnix"), o.optLong("nextWeeklyResetUnix"), entries)
             }
 
-            val a = prefs.getString(scoped("activityCache"), "")
+            val a = charPrefs().getString("activityCache", "")
             if (!a.isNullOrBlank()) {
                 val o = JSONObject(a)
                 activity = GameActivity(
@@ -1072,7 +1188,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 )
             }
 
-            val w2 = prefs.getString(scoped("weatherCache"), "")
+            val w2 = charPrefs().getString("weatherCache", "")
             if (!w2.isNullOrBlank()) {
                 val o = JSONObject(w2)
                 val arr = o.optJSONArray("forecast") ?: JSONArray()
@@ -1085,7 +1201,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 weather = GameWeather(o.optString("zone", ""), o.optString("current", ""), forecast)
             }
 
-            val h = prefs.getString(scoped("housingCache"), "")
+            val h = charPrefs().getString("housingCache", "")
             if (!h.isNullOrBlank()) {
                 val o = JSONObject(h)
                 housing = GameHousingLocation(
@@ -1096,7 +1212,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 )
             }
 
-            val m = prefs.getString(scoped("mapsCache"), "")
+            val m = charPrefs().getString("mapsCache", "")
             if (!m.isNullOrBlank()) {
                 val root = JSONObject(m)
                 val expansionArray = root.optJSONArray("expansions") ?: JSONArray()
@@ -1145,14 +1261,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 put("name", expansion.name); put("order", expansion.order); put("regions", regionArray)
             })
         }
-        prefs.edit().putString(scoped("mapsCache"), JSONObject().apply {
+        charPrefs().edit().putString("mapsCache", JSONObject().apply {
             put("currentZone", value.currentZone); put("currentRegion", value.currentRegion); put("expansions", expansionArray)
         }.toString()).apply()
     }
 
     private fun loadFishingLog() {
         fishingLog = runCatching {
-            val root = JSONObject(prefs.getString(scoped("fishingLogCache"), ""))
+            val root = JSONObject(charPrefs().getString("fishingLogCache", ""))
             GameFishingLog(
                 root.optLong("updatedUnix"),
                 android.util.Base64.decode(root.optString("fishBits"), android.util.Base64.DEFAULT),
@@ -1163,7 +1279,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun saveFishingLog() {
         val value = fishingLog ?: return
-        prefs.edit().putString(scoped("fishingLogCache"), JSONObject().apply {
+        charPrefs().edit().putString("fishingLogCache", JSONObject().apply {
             put("updatedUnix", value.updatedUnix)
             put("fishBits", android.util.Base64.encodeToString(value.fishBits, android.util.Base64.NO_WRAP))
             put("spearfishBits", android.util.Base64.encodeToString(value.spearfishBits, android.util.Base64.NO_WRAP))
@@ -1172,7 +1288,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun loadSubmarine() {
         runCatching {
-            val s = prefs.getString(scoped("submarineCache"), "")
+            val s = charPrefs().getString("submarineCache", "")
             if (s.isNullOrBlank()) return@runCatching
             val o = JSONObject(s)
             val arr = o.optJSONArray("vessels") ?: JSONArray()
@@ -1192,7 +1308,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         value.vessels.forEach { v -> arr.put(JSONObject().apply {
             put("name", v.name); put("returnUnix", v.returnUnix); put("rankId", v.rankId); put("currentExp", v.currentExp); put("nextLevelExp", v.nextLevelExp)
         }) }
-        prefs.edit().putString(scoped("submarineCache"), JSONObject().apply {
+        charPrefs().edit().putString("submarineCache", JSONObject().apply {
             put("updatedUnix", value.updatedUnix); put("vessels", arr)
         }.toString()).apply()
     }
@@ -1219,7 +1335,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 put("itemId", e.itemId); put("name", e.name); put("amount", e.amount); put("cap", e.cap); put("section", e.section); put("iconId", e.iconId)
             })
         }
-        prefs.edit().putString(scoped("walletCache"), JSONObject().apply { put("gil", w.gil); put("entries", arr) }.toString()).apply()
+        charPrefs().edit().putString("walletCache", JSONObject().apply { put("gil", w.gil); put("entries", arr) }.toString()).apply()
     }
 
     private fun saveJobs() {
@@ -1229,7 +1345,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 put("jobId", j.jobId); put("name", j.name); put("abbreviation", j.abbreviation); put("category", j.category); put("level", j.level); put("active", j.active); put("itemLevel", j.itemLevel); put("iconId", j.iconId); put("gearsetId", j.gearsetId)
             })
         }
-        prefs.edit().putString(scoped("jobsCache"), arr.toString()).apply()
+        charPrefs().edit().putString("jobsCache", arr.toString()).apply()
     }
 
     private fun saveDailies() {
@@ -1240,12 +1356,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 put("id", e.id); put("label", e.label); put("weekly", e.weekly); put("automatic", e.automatic); put("available", e.available); put("complete", e.complete); put("remaining", e.remaining); put("goal", e.goal); put("note", e.note)
             })
         }
-        prefs.edit().putString(scoped("dailiesCache"), JSONObject().apply { put("nextDailyResetUnix", d.nextDailyResetUnix); put("nextWeeklyResetUnix", d.nextWeeklyResetUnix); put("entries", arr) }.toString()).apply()
+        charPrefs().edit().putString("dailiesCache", JSONObject().apply { put("nextDailyResetUnix", d.nextDailyResetUnix); put("nextWeeklyResetUnix", d.nextWeeklyResetUnix); put("entries", arr) }.toString()).apply()
     }
 
     private fun saveActivity() {
         val a = activity ?: return
-        prefs.edit().putString(scoped("activityCache"), JSONObject().apply {
+        charPrefs().edit().putString("activityCache", JSONObject().apply {
             put("sessionStartedUnix", a.sessionStartedUnix); put("sessionPlaySeconds", a.sessionPlaySeconds); put("sessionExpGained", a.sessionExpGained); put("sessionLevelsGained", a.sessionLevelsGained); put("sessionGilEarned", a.sessionGilEarned); put("sessionDutiesCompleted", a.sessionDutiesCompleted)
             put("todayPlaySeconds", a.todayPlaySeconds); put("todayExpGained", a.todayExpGained); put("todayLevelsGained", a.todayLevelsGained); put("todayGilEarned", a.todayGilEarned); put("todayDutiesCompleted", a.todayDutiesCompleted)
             put("mountsOwned", a.mountsOwned); put("mountsTotal", a.mountsTotal); put("minionsOwned", a.minionsOwned); put("minionsTotal", a.minionsTotal); put("retainerCount", a.retainerCount); put("venturesReady", a.venturesReady); put("venturesActive", a.venturesActive)
@@ -1258,12 +1374,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         w.forecast.forEach { f ->
             arr.put(JSONObject().apply { put("name", f.name); put("minutesFromNow", f.minutesFromNow); put("eorzeaBell", f.eorzeaBell) })
         }
-        prefs.edit().putString(scoped("weatherCache"), JSONObject().apply { put("zone", w.zone); put("current", w.current); put("forecast", arr) }.toString()).apply()
+        charPrefs().edit().putString("weatherCache", JSONObject().apply { put("zone", w.zone); put("current", w.current); put("forecast", arr) }.toString()).apply()
     }
 
     private fun saveHousing() {
         val h = housing ?: return
-        prefs.edit().putString(scoped("housingCache"), JSONObject().apply {
+        charPrefs().edit().putString("housingCache", JSONObject().apply {
             if (h.ward != null) put("ward", h.ward) else put("ward", JSONObject.NULL)
             if (h.plot != null) put("plot", h.plot) else put("plot", JSONObject.NULL)
             put("exterior", h.exterior)
@@ -1273,7 +1389,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun loadSavedCollections() {
         runCatching {
-            val root = JSONArray(prefs.getString(scoped("collectionsCache"), "[]"))
+            val root = JSONArray(charPrefs().getString("collectionsCache", "[]"))
             val categories = buildList(root.length()) {
                 for (index in 0 until root.length()) {
                     val category = root.getJSONObject(index)
@@ -1303,7 +1419,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 put("id", category.id); put("total", category.total); put("owned", category.owned); put("items", rows)
             })
         }
-        prefs.edit().putString(scoped("collectionsCache"), root.toString()).apply()
+        charPrefs().edit().putString("collectionsCache", root.toString()).apply()
     }
 
     private fun characterKey(profile: com.quserh.eorzeaphone.data.PlayerProfile): String =
@@ -1335,6 +1451,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             friends.clear()
             profile = loadProfileCache()
             loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); loadSubmarine(); friends.addAll(loadFriends()); repairTellRecipients()
+            reloadPerCharacterState()
         }
     }
 
@@ -1683,7 +1800,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun openConversation(conv: ChatConversation) {
         appInForeground = true
         if (hiddenConversations.value.remove(conv.key)) {
-            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            charPrefs().edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
             hiddenConversations.value = hiddenConversations.value.toMutableSet()
         }
         openConversationKey = conv.key
@@ -1698,7 +1815,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun toggleConversationNotify(conv: ChatConversation) {
         conv.notify = !conv.notify
         if (conv.notify) mutedConversations.remove(conv.key) else mutedConversations.add(conv.key)
-        prefs.edit().putStringSet("mutedChatConvs", mutedConversations).apply()
+        charPrefs().edit().putStringSet("mutedChatConvs", mutedConversations).apply()
     }
 
     fun clearConversation(conv: ChatConversation) {
@@ -1733,7 +1850,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun toggleConversationPin(conv: ChatConversation) {
         if (!pinnedConversations.remove(conv.key)) pinnedConversations.add(conv.key)
-        prefs.edit().putStringSet("pinnedChatConvs", pinnedConversations).apply()
+        charPrefs().edit().putStringSet("pinnedChatConvs", pinnedConversations).apply()
         conversations.remove(conv)
         conversations.add(if (conv.key in pinnedConversations) 0 else pinnedConversations.count { key -> conversations.any { it.key == key } }, conv)
     }
@@ -1744,14 +1861,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun hideConversation(conv: ChatConversation) {
         if (hiddenConversations.value.add(conv.key)) {
-            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            charPrefs().edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
             hiddenConversations.value = hiddenConversations.value.toMutableSet()
         }
     }
 
     fun unhideConversation(conv: ChatConversation) {
         if (hiddenConversations.value.remove(conv.key)) {
-            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            charPrefs().edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
             hiddenConversations.value = hiddenConversations.value.toMutableSet()
         }
     }
@@ -2061,7 +2178,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             event is PhoneEvent.Wallet || event is PhoneEvent.Weather || event is PhoneEvent.Jobs ||
             event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
             event is PhoneEvent.Collections || event is PhoneEvent.Maps || event is PhoneEvent.Fishing ||
-            event is PhoneEvent.PartyList
+            event is PhoneEvent.PartyList || event is PhoneEvent.Channel || event is PhoneEvent.Submarine
         if (scopedEvent && !connectedCharacterConfirmed) {
             if (awaitingCharacterProfile) pendingCharacterEvents += event
             return
@@ -2158,6 +2275,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId, it.status) })
             }
             is PhoneEvent.Chat -> {
+                // 数据归属校验：插件每条消息带角色标识（名字@服务器），与连接角色不符则丢弃防串号
+                if (connectedCharacterKey.isNotBlank()) {
+                    val tag = event.message.characterTag
+                    if (tag != null && tag.isNotBlank()) {
+                        val expectedName = connectedCharacterKey.substringBefore('@')
+                        val match = tag == connectedCharacterKey || (!tag.contains('@') && tag == expectedName)
+                        if (!match) {
+                            android.util.Log.w("EorzeaPhone", "丢弃归属不符的消息 tag=$tag expected=$connectedCharacterKey")
+                            return
+                        }
+                    }
+                }
+                updateChatCursorTs(event.message.timestamp)
                 cacheChannelColor(event.message)
                 val convKey = event.message.conversationKey()
                 if (event.message.channel == 12) {
@@ -2204,7 +2334,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             if (liveTarget.isNotBlank() && conv.tellRecipient != liveTarget) conv.tellRecipient = liveTarget
                         }
                         if (hiddenConversations.value.remove(conv.key)) {
-                            prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+                            charPrefs().edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
             hiddenConversations.value = hiddenConversations.value.toMutableSet()
                         }
                         val index = conversations.indexOf(conv)
@@ -2320,6 +2450,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 statusMessage = "角色在线"
                 refreshFriends()
                 refreshParty()
+                // 连接锚定角色后按该角色自己的游标补传，修复重启后关机前消息丢失
+                runCatching { connection.requestCatchUp(chatCursorTs(newCharacterKey)) }
                 runCatching {
                     val key = rememberCharacter(event.profile)
                     if (activeCharacterKey.isBlank() || activeCharacterKey == key) loadCharacter(key, persistSelection = true)
@@ -2339,7 +2471,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         val clean = raw.replaceFirst(Regex("^(跨服贝|通讯贝)\\d*[：:]\\s*"), "").trim()
                         groupChannelNames[event.channel] = clean.ifBlank { raw }
                         runCatching {
-                            prefs.edit().putString("groupChannelNames", JSONObject(groupChannelNames.mapKeys { it.key.toString() }).toString()).apply()
+                            charPrefs().edit().putString("groupChannelNames", JSONObject(groupChannelNames.mapKeys { it.key.toString() }).toString()).apply()
                         }
                     }
                 }
@@ -2374,7 +2506,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun loadFriends(): List<PhoneFriend> = runCatching {
-        val array = JSONArray(prefs.getString(scoped("friendCache"), "[]"))
+        val array = JSONArray(charPrefs().getString("friendCache", "[]"))
         buildList(array.length()) {
             for (index in 0 until array.length()) {
                 val item = array.getJSONObject(index)
@@ -2407,6 +2539,6 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 put("homeWorldId", friend.homeWorldId)
             })
         }
-        prefs.edit().putString(scoped("friendCache"), array.toString()).apply()
+        charPrefs().edit().putString("friendCache", array.toString()).apply()
     }
 }

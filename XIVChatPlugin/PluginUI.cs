@@ -163,7 +163,7 @@ namespace XIVChatPlugin {
                 ImGui.SameLine();
                 if (ImGui.Button("立即保存历史")) this.Plugin.Server.FlushBacklog();
                 ImGui.SameLine();
-                HelpMarker("留空则存到插件配置目录 chat_backlog.bin；可填绝对路径（如 D:\\backlog\\chat.bin）");
+                HelpMarker("留空则存到插件配置目录；可填目录（如 D:\\backlog）。每个角色单独一个 chat_backlog_<角色>.bin 文件，文件头部带角色标识。");
 
                 ImGui.Spacing();
 
