@@ -454,30 +454,32 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
             val interaction = remember(app.id, state) { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(if (pressed) 0.86f else 1f, spring(dampingRatio = .62f, stiffness = 520f), label = "dock-press")
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(58.dp)
-                    .onGloballyPositioned { bounds = it.boundsInRoot() }
-                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                    .clip(MaterialTheme.shapes.large)
-                    .background(app.color)
-                    .clickable(interactionSource = interaction, indication = null) {
-                        if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        state.open(app, bounds)
-                    },
-            ) {
-                Image(
-                    painter = painterResource(app.icon),
-                    contentDescription = app.label,
-                    colorFilter = ColorFilter.tint(Color.White),
-                    modifier = Modifier.size(36.dp),
-                )
+            Box(Modifier.size(60.dp)) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(58.dp)
+                        .onGloballyPositioned { bounds = it.boundsInRoot() }
+                        .graphicsLayer { scaleX = scale; scaleY = scale }
+                        .clip(MaterialTheme.shapes.large)
+                        .background(app.color)
+                        .clickable(interactionSource = interaction, indication = null) {
+                            if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            state.open(app, bounds)
+                        },
+                ) {
+                    Image(
+                        painter = painterResource(app.icon),
+                        contentDescription = app.label,
+                        colorFilter = ColorFilter.tint(Color.White),
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
                 if (app.destination == PhoneScreen.Chat) {
                     val unread = state.conversations.filter { it.notify }.sumOf { it.unread }
                     if (unread > 0) {
                         Box(
-                            Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Color(0xFFE5485D)),
+                            Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Color(0xFFE5485D)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 3.dp))
