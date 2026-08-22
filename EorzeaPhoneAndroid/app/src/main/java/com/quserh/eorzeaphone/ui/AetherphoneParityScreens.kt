@@ -2114,6 +2114,9 @@ private fun chatChunkColor(value: Long): Color {
 private fun statusIconDrawable(index: Int): Int? = when (index) {
     77 -> R.drawable.fst_new            // 新人
     78 -> R.drawable.fst_mentor         // 指导者
+    79 -> R.drawable.fst_pvementor      // 战斗指导者
+    80 -> R.drawable.fst_tradementor    // 制作采集指导者
+    81 -> R.drawable.fst_pvpmentor      // 对战指导者
     95 -> R.drawable.fst_returner       // 回归者
     else -> null
 }
