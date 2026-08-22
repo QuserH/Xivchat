@@ -123,8 +123,8 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
         val lifecycleOwner = LocalLifecycleOwner.current
         DisposableEffect(state, lifecycleOwner) {
             val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) { state.ensureConnectedOnResume(); state.appInForeground = true }
-                else if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) state.appInForeground = false
+                if (event == Lifecycle.Event.ON_RESUME || event == Lifecycle.Event.ON_START) { if (event == Lifecycle.Event.ON_RESUME) state.ensureConnectedOnResume(); state.appInForeground = true }
+                else if (event == Lifecycle.Event.ON_STOP) state.appInForeground = false
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
