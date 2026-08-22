@@ -415,7 +415,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 }
                                 Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                     Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    if (last != null) Text(last.text.replace('\n', ' '), color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                                    if (last != null) LightMessagePreview(last, AetherLightMuted, 12.sp, Modifier.padding(top = 2.dp))
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).padding(start = 4.dp)) {
                                     last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1, softWrap = false) }
