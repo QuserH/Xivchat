@@ -124,9 +124,12 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
@@ -237,7 +240,7 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = 3.dp),
+                modifier = Modifier.offset(y = 4.dp),
                 onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
             if (titleIcon != null) {
@@ -381,7 +384,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 } else {
                     items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
                         val selected = filter.id == state.selectedChatFilterId
-                        val last = state.chats.lastOrNull(filter::matches)
+                        val last = state.chats.lastOrNull { filter.matches(it) && it.timestamp > state.clearedUntil(filter.id) }
                         var tabPress by remember(filter.id) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                         Box {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem()
@@ -1024,7 +1027,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
     }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
-            Box(Modifier.offset(y = (-3).dp).size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
                 LightRefreshIcon(AetherPurple, Modifier.size(26.dp))
             }
         }
@@ -1741,16 +1744,73 @@ private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatF
     AetherphoneConversationScreen(state, conversation)
 }
 
+private class ChatInk(
+    val annotated: AnnotatedString,
+    val placeholders: List<AnnotatedString.Range<Placeholder>>,
+)
+
+private fun chatBubbleInk(
+    chunks: List<GameChatChunk>, fallback: String, color: Color, forceColor: Boolean, highlight: String, light: Boolean,
+    fontSize: TextUnit, lineHeight: TextUnit,
+): ChatInk {
+    val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    val builder = AnnotatedString.Builder()
+    val placeholders = mutableListOf<AnnotatedString.Range<Placeholder>>()
+    var len = 0
+    useChunks.forEachIndexed { index, chunk ->
+        if (chunk.icon != null) {
+            val alt = "◆"
+            builder.appendInlineContent("icon-$index", alt)
+            placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + alt.length))
+            len += alt.length
+        } else {
+            val text = decodeChatEntities(chunk.text.orEmpty())
+            val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
+            val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
+            builder.appendHighlighted(text, highlight, spanStyle, Color(0x66FFEB3B))
+            len += text.length
+        }
+    }
+    return ChatInk(builder.toAnnotatedString(), placeholders)
+}
+
+@Composable
+private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, fontSize: TextUnit, lineHeight: TextUnit): Map<String, InlineTextContent> {
+    val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    return buildMap {
+        useChunks.forEachIndexed { index, chunk ->
+            if (chunk.icon != null) put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
+                ChatInlineIcon(chunk.icon)
+            })
+        }
+    }
+}
+
+private fun chatBubbleStyle(color: Color, fontSize: TextUnit, lineHeight: TextUnit, category: ChatCategory, align: TextAlign): androidx.compose.ui.text.TextStyle =
+    androidx.compose.ui.text.TextStyle(
+        color = color, fontSize = fontSize, lineHeight = lineHeight, textAlign = align,
+        fontStyle = if (category == ChatCategory.Emote) FontStyle.Italic else FontStyle.Normal,
+        fontFamily = if (category == ChatCategory.System) FontFamily.Monospace else FontFamily.Default,
+        fontWeight = if (category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
+    )
+
 @Composable
 private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "") {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
     val timeUnit = (fontSp - 5).coerceAtLeast(9).sp
+    val dens = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val cleaned = cleanChatText(message.text, author).ifBlank { " " }
+    val timeText = lightClock(message.timestamp)
+    val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
+    val baseColor = if (self) Color.White else AetherLightText
+    val bubbleBg = if (self) AetherPurple else AetherLightSurface
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) {
-                val bubbleInk = if (self) Color.White else AetherLightText
                 val tagColor = (message.chunks.firstNotNullOfOrNull { it.foreground }?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: themeAdjustedChannelColor(channelDefaultColor(message.channel)))
                 val authorAnnotated = buildAnnotatedString {
                     val close = author.indexOf(']')
@@ -1763,85 +1823,46 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
                     Text(authorAnnotated, fontSize = 11.sp)
-                    if (jobIconId > 0) {
-                        RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
-                    }
+                    if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
                 }
             }
-            Column(
-                Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
-                    .padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
+            BoxWithConstraints(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(bubbleBg),
             ) {
-                val cleaned = cleanChatText(message.text, author)
-                val renderMsg = message
-                val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-                val timeText = lightClock(message.timestamp)
-                val density = LocalDensity.current
-                val fontPx = with(density) { fontUnit.toPx() }
-                val timeFontPx = with(density) { timeUnit.toPx() }
-                val textPx = remember(cleaned, fontPx) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = fontPx }.measureText(cleaned) }
-                val timePx = remember(timeText, timeFontPx) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = timeFontPx }.measureText(timeText) }
-                val inlineTime = textPx + with(density) { 8.dp.toPx() } + timePx <= with(density) { 288.dp.toPx() } - with(density) { 6.dp.toPx() }
-                if (inlineTime) {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
+                val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
+                val contentPx = with(dens) { bubbleContent.toPx() }
+                val ink = remember(message, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
+                    chatBubbleInk(message.chunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit)
+                }
+                val inline = chatBubbleInline(message.chunks, cleaned, fontUnit, lineUnit)
+                val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) { chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start) }
+                val layout = remember(ink, measureStyle, contentPx) {
+                    textMeasurer.measure(ink.annotated, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
+                }
+                val lineCount = layout.lineCount
+                val lastLinePx = if (lineCount > 0) (layout.getLineRight(lineCount - 1) - layout.getLineLeft(lineCount - 1)) else 0f
+                val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
+                val gapPx = with(dens) { 8.dp.toPx() }
+                val canInline = lineCount == 1 && (lastLinePx + gapPx + timePx <= contentPx)
+                if (canInline) {
+                    Row(
+                        Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Text(ink.annotated, inlineContent = inline, style = measureStyle)
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
                 } else {
-                    ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.fillMaxWidth(), forceColor = neutral, highlight = highlight)
-                    Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.align(Alignment.End).padding(top = 3.dp, end = 2.dp))
+                    val justifyStyle = measureStyle.copy(textAlign = TextAlign.Justify)
+                    Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp)) {
+                        Text(ink.annotated, inlineContent = inline, style = justifyStyle, modifier = Modifier.fillMaxWidth())
+                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
+                    }
                 }
             }
         }
     }
 }
-
-@Composable
-private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Color, fontSize: androidx.compose.ui.unit.TextUnit,
-                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, forceColor: Boolean = false, highlight: String = "", onTextLayout: (TextLayoutResult) -> Unit = {},
-                          trailingTime: String = "", timeColor: Color = Color.Unspecified) {
-    val chunks = message.chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
-    val density = LocalDensity.current
-    val timeFontSize = (fontSize.value - 5f).coerceAtLeast(9f).sp
-    val timeWidthSp = if (trailingTime.isEmpty()) 0.sp else with(density) {
-        val paint = android.text.TextPaint().apply { textSize = timeFontSize.toPx() }
-        (paint.measureText(trailingTime) + density.density * 4f).toSp()
-    }
-    val inline = buildMap<String, InlineTextContent> {
-        chunks.forEachIndexed { index, chunk ->
-            if (chunk.icon != null) put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
-                ChatInlineIcon(chunk.icon)
-            })
-        }
-        if (trailingTime.isNotEmpty()) put("trailing-time", InlineTextContent(Placeholder(timeWidthSp, lineHeight, PlaceholderVerticalAlign.TextBottom)) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
-                Text(trailingTime, color = timeColor, fontSize = timeFontSize, lineHeight = timeFontSize, maxLines = 1)
-            }
-        })
-    }
-    val annotated = buildAnnotatedString {
-        chunks.forEachIndexed { index, chunk ->
-            if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else {
-                val chunkColor = if (forceColor) color else (chunk.foreground?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: color)
-                val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
-                appendHighlighted(decodeChatEntities(chunk.text.orEmpty()), highlight, spanStyle, Color(0x66FFEB3B))
-            }
-        }
-        if (trailingTime.isNotEmpty()) {
-            append(" ")
-            appendInlineContent("trailing-time", trailingTime)
-        }
-    }
-    val style = androidx.compose.ui.text.TextStyle(
-        color = color, fontSize = fontSize, lineHeight = lineHeight,
-        textAlign = TextAlign.Justify,
-        fontStyle = if (message.category == ChatCategory.Emote) FontStyle.Italic else FontStyle.Normal,
-        fontFamily = if (message.category == ChatCategory.System) FontFamily.Monospace else FontFamily.Default,
-        fontWeight = if (message.category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
-    )
-    Text(annotated, inlineContent = inline, style = style, modifier = modifier, onTextLayout = onTextLayout)
-}
-
 private fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
     red = c.red + (target.red - c.red) * fraction,
     green = c.green + (target.green - c.green) * fraction,
@@ -2350,4 +2371,3 @@ private fun activityDuration(seconds: Long): String {
     val minutes = seconds / 60
     return if (minutes >= 60) "${minutes / 60}小时${minutes % 60}分" else "${minutes}分钟"
 }
-
