@@ -1847,34 +1847,30 @@ private class ChatInk(
 )
 
 private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk> {
-    // 插件把道具链接拆成 [图标0xE0BB][名+替换符][][完整名+HQ] 并重复下发。
-    // 这里重建为 [图标0xE0BB][完整道具名][HQ字形]，去掉 �("?")、多余三角和重复名。
+    // 只重建“图标后连续含 PUA/� 的道具链接簇”：拿到完整名 + HQ，其余句子按原顺序保留，避免把长句误当道具名打乱顺序。
     val iconIdx = chunks.indexOfFirst { it.icon == 0xE0BB }
     if (iconIdx < 0) return chunks
     val head = chunks.take(iconIdx)
     val icon = chunks[iconIdx]
     val rest = chunks.drop(iconIdx + 1)
+    fun isLinkPart(t: String) = t.any { it.code in 0xE000..0xF8FF || it.code == 0xFFFD } || t.isBlank()
+    var clusterEnd = 0
+    for (i in rest.indices) { if (isLinkPart(rest[i].text.orEmpty())) clusterEnd = i + 1 else break }
+    val cluster = rest.take(clusterEnd)
+    val tail = rest.drop(clusterEnd)
     fun clean(s: String?) = (s ?: "").filter { it.code !in 0xE000..0xF8FF && it.code != 0xFFFD }
-    fun hqGlyphs(s: String?) = (s ?: "").filter { it.code in 0xE000..0xF8FF && it.code != 0xE0BB }
+    val itemName = cluster.map { clean(it.text) }.maxByOrNull { it.length } ?: ""
     val glyphBuilder = StringBuilder()
-    for (c in rest) if (c.text != null) glyphBuilder.append(hqGlyphs(c.text))
-    val itemName = rest.map { clean(it.text) }.maxByOrNull { it.length } ?: ""
+    for (c in cluster) glyphBuilder.append((c.text.orEmpty()).filter { it.code in 0xE000..0xF8FF && it.code != 0xE0BB })
     val out = ArrayList<GameChatChunk>()
     out.addAll(head)
     out.add(icon)
     if (itemName.isNotEmpty()) {
-        val ref = rest.firstOrNull { it.text != null }
+        val ref = cluster.firstOrNull { it.text != null }
         out.add(GameChatChunk(text = itemName, italic = ref?.italic ?: false, foreground = ref?.foreground))
     }
     if (glyphBuilder.isNotEmpty()) out.add(GameChatChunk(text = glyphBuilder.toString()))
-    for (i in rest.indices) {
-        val c = rest[i]
-        val cl = clean(c.text)
-        if (cl.isBlank()) continue
-        if (cl == itemName) continue
-        if (itemName.startsWith(cl)) continue
-        out.add(c)
-    }
+    out.addAll(tail)
     return out
 }
 
