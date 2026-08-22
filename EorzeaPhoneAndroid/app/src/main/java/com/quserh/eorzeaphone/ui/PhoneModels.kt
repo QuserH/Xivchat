@@ -913,6 +913,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     } } ?: emptyList(),
                     senderName = o.optString("senderName").takeIf { it.isNotBlank() },
                     senderWorld = o.optString("senderWorld").takeIf { it.isNotBlank() },
+                    senderStatusName = o.optString("senderStatusName").takeIf { it.isNotBlank() },
+                    senderStatusIcon = if (o.has("senderStatusIcon")) o.optInt("senderStatusIcon") else null,
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -945,6 +947,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     }) } })
                     if (m.senderName != null) put("senderName", m.senderName)
                     if (m.senderWorld != null) put("senderWorld", m.senderWorld)
+                    if (m.senderStatusName != null) put("senderStatusName", m.senderStatusName)
+                    if (m.senderStatusIcon != null) put("senderStatusIcon", m.senderStatusIcon)
                 })
             }
             prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()

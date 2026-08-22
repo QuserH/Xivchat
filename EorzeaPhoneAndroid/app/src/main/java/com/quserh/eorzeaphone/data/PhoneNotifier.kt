@@ -15,9 +15,12 @@ class PhoneNotifier(private val context: Context) {
 
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(NotificationChannel(CHAT_CHANNEL, "游戏聊天", NotificationManager.IMPORTANCE_HIGH))
-            manager.createNotificationChannel(NotificationChannel(TELL_CHANNEL, "游戏私聊", NotificationManager.IMPORTANCE_HIGH))
-            manager.createNotificationChannel(NotificationChannel(ALARM_CHANNEL, "闹钟", NotificationManager.IMPORTANCE_HIGH))
+            listOf(CHAT_CHANNEL, TELL_CHANNEL, ALARM_CHANNEL).forEach { id ->
+                val ch = NotificationChannel(id, when (id) { TELL_CHANNEL -> "游戏私聊"; ALARM_CHANNEL -> "闹钟"; else -> "游戏聊天" }, NotificationManager.IMPORTANCE_HIGH)
+                ch.enableVibration(true)
+                ch.vibrationPattern = longArrayOf(0, 400)
+                manager.createNotificationChannel(ch)
+            }
         }
     }
 
@@ -63,6 +66,7 @@ class PhoneNotifier(private val context: Context) {
             .setStyle(android.app.Notification.BigTextStyle().bigText(message.text))
             .setContentIntent(pending)
             .setAutoCancel(true)
+            .setVibrate(longArrayOf(0, 400))
             .build()
         try {
             manager.notify(notificationId, notification)
