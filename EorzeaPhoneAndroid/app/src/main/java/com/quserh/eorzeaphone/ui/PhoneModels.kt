@@ -353,15 +353,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 val old = prefs.getStringSet(key, null)
                 if (old != null && !store.contains(key)) { edit.putStringSet(key, old); dirty = true }
             }
-            // 旧版全局聊天游标迁移到当前角色（一次性）
-            if (!store.contains("chatLastSeenTs")) {
-                val oldCursor = connectionPrefs.getLong("chatLastSeenTs", 0L)
-                if (oldCursor > 0L) {
-                    edit.putLong("chatLastSeenTs", oldCursor)
-                    connectionPrefs.edit().remove("chatLastSeenTs").apply()
-                    dirty = true
-                }
-            }
+
             if (dirty) edit.apply()
         }
     }
@@ -2450,6 +2442,17 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 statusMessage = "角色在线"
                 refreshFriends()
                 refreshParty()
+                // 旧版全局聊天游标一次性迁移给真正连接的该角色（避免切号时给错角色）
+                runCatching {
+                    val cursorStore = charPrefs(newCharacterKey)
+                    if (cursorStore.getLong("chatLastSeenTs", 0L) <= 0L) {
+                        val oldCursor = connectionPrefs.getLong("chatLastSeenTs", 0L)
+                        if (oldCursor > 0L) {
+                            cursorStore.edit().putLong("chatLastSeenTs", oldCursor).apply()
+                            connectionPrefs.edit().remove("chatLastSeenTs").apply()
+                        }
+                    }
+                }
                 // 连接锚定角色后按该角色自己的游标补传，修复重启后关机前消息丢失
                 runCatching { connection.requestCatchUp(chatCursorTs(newCharacterKey)) }
                 runCatching {
