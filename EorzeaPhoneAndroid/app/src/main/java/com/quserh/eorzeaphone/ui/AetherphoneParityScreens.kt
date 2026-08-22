@@ -1981,8 +1981,13 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
-                    val titleIcon = senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }
-                    if (titleIcon != null && !self) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size(15.dp).padding(end = 3.dp))
+                    val statIconId = if (!self) message.senderStatusIcon?.takeIf { it > 0 } else null
+                    if (statIconId != null) {
+                        Box(Modifier.size(15.dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, 11.sp, null) }
+                    } else {
+                        val titleIcon = (if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null)
+                        if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size(15.dp).padding(end = 3.dp))
+                    }
                     Text(authorAnnotated, fontSize = 11.sp)
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
                 }

@@ -244,7 +244,7 @@ class ChatConversation(
     val messages = mutableStateListOf<GameChatMessage>()
     var unread by mutableStateOf(0)
     var notify by mutableStateOf(true)
-    private var _lastMessage: GameChatMessage? = null
+    private var _lastMessage by mutableStateOf<GameChatMessage?>(null)
     val lastMessage: GameChatMessage? get() = _lastMessage
     val lastTimestamp: Long? get() = _lastMessage?.timestamp
 
@@ -1570,22 +1570,30 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun markTellFailureFromSystem(text: String) {
-        val failed = Regex("(向.+?发送悄悄话失败|无法向.+?发送悄悄话|无法发送|目标(?:玩家|角色)不存在|该玩家不存在|对方不在线|该玩家不在线|不存在该名称的服务器|不存在名为.+?的玩家)").containsMatchIn(text)
+        val failed = Regex("(发送悄悄话失败|无法向.+?发送悄悄话|无法发送|目标处于限制悄悄话|目标(?:玩家|角色)不存在|该玩家不存在|对方不在线|该玩家不在线|不存在该名称的服务器|不存在名为.+?的玩家)").containsMatchIn(text)
         if (!failed) return
         val target = Regex("向(.+?)发送悄悄话失败|无法向(.+?)发送悄悄话").find(text)
             ?.let { it.groupValues[1].ifBlank { it.groupValues[2] } }?.trim()?.normalizedPlayerName()
+        val tellConvs = conversations.filter { it.category == ChatCategory.Tell }
+        fun markIn(conv: ChatConversation): Boolean {
+            val idx = conv.messages.indexOfLast { it.self && it.sendState != 2 }
+            if (idx < 0) return false
+            val updated = conv.messages[idx].copy(sendState = 2)
+            conv.messages[idx] = updated
+            val fi = chats.indexOfFirst { it.timestamp == updated.timestamp && it.sender == updated.sender && it.text == updated.text }
+            if (fi >= 0) chats[fi] = updated
+            return true
+        }
         var saved = false
-        conversations.filter { it.category == ChatCategory.Tell }.forEach { conv ->
-            val recipientNorm = conv.tellRecipient.normalizedPlayerName()
-            if (target != null && recipientNorm != target && !recipientNorm.startsWith(target) && !target.startsWith(recipientNorm)) return@forEach
-            val idx = conv.messages.indexOfLast { it.self }
-            if (idx >= 0) {
-                val updated = conv.messages[idx].copy(sendState = 2)
-                conv.messages[idx] = updated
-                val fi = chats.indexOfFirst { it.timestamp == updated.timestamp && it.sender == updated.sender && it.text == updated.text }
-                if (fi >= 0) chats[fi] = updated
-                saved = true
+        if (target != null) {
+            for (conv in tellConvs) {
+                val recipientNorm = conv.tellRecipient.normalizedPlayerName()
+                if (recipientNorm != target && !recipientNorm.startsWith(target) && !target.startsWith(recipientNorm)) continue
+                if (markIn(conv)) { saved = true; break }
             }
+        } else {
+            val latest = tellConvs.flatMap { conv -> conv.messages.filter { it.self && it.sendState != 2 }.map { conv to it } }.maxByOrNull { it.second.timestamp }
+            if (latest != null) saved = markIn(latest.first)
         }
         if (saved) saveChats()
     }

@@ -42,7 +42,7 @@ namespace XIVChatCommon.Message.Server {
         public ServerMessage() {
         }
 
-        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null) {
+        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null, int? senderStatusIcon = null) {
             this.Timestamp = timestamp;
             this.Channel = channel;
             this.Sender = sender;

@@ -334,11 +334,14 @@ namespace XIVChatPlugin {
             string? senderName = null;
             string? senderWorld = null;
             string? senderStatus = null;
+            int? senderStatusIcon = null;
             foreach (var payload in message.Sender.Payloads) {
                 if (payload is PlayerPayload playerPayload) {
                     senderName = playerPayload.PlayerName;
                     var worldRow = playerPayload.World;
                     if (worldRow.IsValid) senderWorld = worldRow.Value.Name.ExtractText();
+                } else if (senderStatusIcon == null && payload is IconPayload iconPayload) {
+                    senderStatusIcon = (int) iconPayload.Icon;
                 }
             }
 
@@ -350,7 +353,8 @@ namespace XIVChatPlugin {
                 chunks,
                 senderName,
                 senderWorld,
-                senderStatus
+                senderStatus,
+                senderStatusIcon
             );
 
             this._backlog.AddLast(msg);
