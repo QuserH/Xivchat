@@ -379,20 +379,6 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
                 }
             }
         }
-        SectionLabel("聊天换行")
-        SettingsGroup {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("每行字数（自动换行）", color = PhoneText, modifier = Modifier.weight(1f))
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatWrapChars = (state.chatWrapChars - 1).coerceIn(4, 60) }, contentAlignment = Alignment.Center) {
-                    Text("−", color = PhoneAccent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                }
-                Text("  ${state.chatWrapChars}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatWrapChars = (state.chatWrapChars + 1).coerceIn(4, 60) }, contentAlignment = Alignment.Center) {
-                    Text("＋", color = PhoneAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Text("按中文字数计算：1 个中文 = 2 个字符宽度，字母/数字/图标 = 1", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        }
         SectionLabel("主题")
         SettingsGroup {
             PhoneThemeMode.entries.forEach { mode ->
@@ -620,6 +606,13 @@ fun InventoryScreen(state: PhoneState) {
             } },
             onBack = if (selectedGroup == null) null else ({ selectedGroup = null; selectedRetainerId = null; query = "" }),
             showBack = selectedGroup != null)
+        if (state.inventoryLoading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = PhoneAccent,
+                trackColor = PhoneSurfaceRaised,
+            )
+        }
         if (state.inventory.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 if (state.connected) {

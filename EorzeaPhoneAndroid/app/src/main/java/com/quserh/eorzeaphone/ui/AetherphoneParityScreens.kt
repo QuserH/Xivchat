@@ -31,7 +31,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.horizontalScroll
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -92,6 +94,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -958,6 +962,37 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
 }
 
 @Composable
+private fun LightRefreshIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val stroke = 2.2.dp.toPx()
+        val radius = (size.minDimension - stroke * 2) / 2f
+        val c = center
+        val start = -60f
+        val sweep = 300f
+        drawArc(
+            color = color,
+            startAngle = start,
+            sweepAngle = sweep,
+            useCenter = false,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+            topLeft = Offset(c.x - radius, c.y - radius),
+            size = Size(radius * 2, radius * 2),
+        )
+        val endAngle = Math.toRadians((start + sweep).toDouble())
+        val tip = Offset(c.x + radius * cos(endAngle).toFloat(), c.y + radius * sin(endAngle).toFloat())
+        val back = Math.toRadians((start + sweep - 90).toDouble())
+        val spread = 0.5
+        val len = stroke * 2.6f
+        fun arrow(angle: Double) {
+            val p = Offset(tip.x + cos(angle).toFloat() * len, tip.y + sin(angle).toFloat() * len)
+            drawLine(color, tip, p, strokeWidth = stroke, cap = StrokeCap.Round)
+        }
+        arrow(back + spread)
+        arrow(back - spread)
+    }
+}
+
+@Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun AetherphoneContactsList(state: PhoneState) {
     var query by remember { mutableStateOf("") }
@@ -977,8 +1012,8 @@ private fun AetherphoneContactsList(state: PhoneState) {
     }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
-            Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
-                Text("⟳", color = AetherPurple, fontSize = 21.sp, lineHeight = 21.sp)
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+                LightRefreshIcon(AetherPurple, Modifier.size(20.dp))
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
@@ -1285,6 +1320,8 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
+            Text("全局设置 · 对所有页面生效", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 2.dp))
+            ChatSettingDivider()
             ChatAdjustRow("左右边距", state.contentMargin,
                 onMinus = { state.contentMargin = (state.contentMargin - 2).coerceAtLeast(0) },
                 onPlus = { state.contentMargin = (state.contentMargin + 2).coerceAtMost(60) },
@@ -1294,12 +1331,6 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
             ChatAdjustRow("聊天字号", state.chatFontSize,
                 onMinus = { state.chatFontSize = (state.chatFontSize - 1).coerceAtLeast(10) },
                 onPlus = { state.chatFontSize = (state.chatFontSize + 1).coerceAtMost(26) },
-            )
-            ChatSettingDivider()
-            ChatAdjustRow("每行字数（自动换行）", state.chatWrapChars,
-                onMinus = { state.chatWrapChars = (state.chatWrapChars - 1).coerceIn(4, 60) },
-                onPlus = { state.chatWrapChars = (state.chatWrapChars + 1).coerceIn(4, 60) },
-                hint = "按中文字数计算：1 个中文 = 2 个字符宽度，字母/数字/图标 = 1",
             )
         }
         Text("主题", color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = LocalContentMargin.current.dp + 4.dp, top = 18.dp, bottom = 6.dp))
@@ -1704,7 +1735,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) {
                 val bubbleInk = if (self) Color.White else AetherLightText
-                val tagColor = message.chunks.firstNotNullOfOrNull { it.foreground }?.let(::chatChunkColor) ?: channelDefaultColor(message.channel)
+                val tagColor = (message.chunks.firstNotNullOfOrNull { it.foreground }?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: themeAdjustedChannelColor(channelDefaultColor(message.channel)))
                 val authorAnnotated = buildAnnotatedString {
                     val close = author.indexOf(']')
                     if (author.startsWith('[') && close >= 0) {
@@ -1727,18 +1758,11 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
             ) {
                     val cleaned = cleanChatText(message.text, author)
                     val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
-                    val body = wrapLightText(cleaned, wrapChars)
                     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-                    if (body.contains('\n')) {
-                        ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral, highlight = highlight)
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                            modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
-                    } else {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            ChatChunkText(renderMsg, body, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
-                            Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                                modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
-                        }
+                            modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                     }
                 }
         }
@@ -1759,7 +1783,7 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
     val annotated = buildAnnotatedString {
         chunks.forEachIndexed { index, chunk ->
             if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else {
-                val chunkColor = if (forceColor) color else (chunk.foreground?.let(::chatChunkColor) ?: color)
+                val chunkColor = if (forceColor) color else (chunk.foreground?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: color)
                 val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
                 appendHighlighted(chunk.text.orEmpty(), highlight, spanStyle, Color(0x66FFEB3B))
             }
@@ -1773,6 +1797,19 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
         fontWeight = if (message.category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
     )
     Text(annotated, inlineContent = inline, style = style, modifier = modifier)
+}
+
+private fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
+    red = c.red + (target.red - c.red) * fraction,
+    green = c.green + (target.green - c.green) * fraction,
+    blue = c.blue + (target.blue - c.blue) * fraction,
+    alpha = c.alpha,
+)
+
+@Composable
+private fun themeAdjustedChannelColor(color: Color): Color {
+    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    return if (light) blendColor(color, Color.Black, 0.30f) else blendColor(color, Color.White, 0.28f)
 }
 
 private fun AnnotatedString.Builder.appendHighlighted(text: String, query: String, style: SpanStyle, highlight: Color) {

@@ -467,6 +467,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
     val inventory = mutableStateListOf<GameInventoryItem>()
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
+    var inventoryLoading by mutableStateOf(false)
     val retainers = mutableStateListOf<GameRetainer>()
     var wallet by mutableStateOf<GameWallet?>(null)
     var weather by mutableStateOf<GameWeather?>(null)
@@ -1936,6 +1937,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 connectedCharacterKey = ""
                 awaitingCharacterProfile = true
                 pendingCharacterEvents.clear()
+                inventoryLoading = true
                 sessionStartedAt = System.currentTimeMillis()
                 sessionGilBaseline = wallet?.gil
                 serverLabel = "已连接游戏"
@@ -2085,6 +2087,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 }
             }
             is PhoneEvent.Inventory -> {
+                inventoryLoading = false
                 val activeIds = event.snapshot.retainers.filter { it.active }.mapTo(mutableSetOf()) { it.id }
                 val cachedRetainerItems = inventory.filter { it.retainerId != 0L && it.retainerId !in activeIds && isPhoneInventoryContainer(it.container) }
                 inventory.clear()
