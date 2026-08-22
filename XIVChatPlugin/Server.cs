@@ -340,10 +340,9 @@ namespace XIVChatPlugin {
                     senderName = playerPayload.PlayerName;
                     var worldRow = playerPayload.World;
                     if (worldRow.IsValid) senderWorld = worldRow.Value.Name.ExtractText();
-                } else if (senderStatusIcon == null && payload is IconPayload iconPayload) {
-                    senderStatusIcon = (int) iconPayload.Icon;
                 }
             }
+            senderStatusIcon = GetSenderStatusIcon(message.Sender.Encode());
 
             var msg = new ServerMessage(
                 DateTime.UtcNow,
@@ -2083,6 +2082,27 @@ namespace XIVChatPlugin {
             if (responseMessages.Count > 0) {
                 await SendBacklog();
             }
+        }
+
+        private static int? GetSenderStatusIcon(byte[] sender) {
+            if (sender == null) return null;
+            try {
+                using var reader = new System.IO.BinaryReader(new System.IO.MemoryStream(sender));
+                while (reader.BaseStream.Position < reader.BaseStream.Length) {
+                    var b = reader.ReadByte();
+                    if (b != 0x02) continue;
+                    var kind = reader.ReadByte();
+                    if (reader.BaseStream.Position >= reader.BaseStream.Length) break;
+                    var len = (int) XIVChatCommon.XivString.GetInteger(reader);
+                    if (kind == 0x12) {
+                        var d = new System.IO.BinaryReader(new System.IO.MemoryStream(reader.ReadBytes(len)));
+                        return (int) XIVChatCommon.XivString.GetInteger(d);
+                    }
+                    reader.ReadBytes(len);
+                    if (reader.BaseStream.Position < reader.BaseStream.Length) reader.ReadByte();
+                }
+            } catch { }
+            return null;
         }
 
         private static IEnumerable<Chunk> ToChunks(SeString msg, uint? defaultColour) {

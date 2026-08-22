@@ -1576,7 +1576,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             ?.let { it.groupValues[1].ifBlank { it.groupValues[2] } }?.trim()?.normalizedPlayerName()
         val tellConvs = conversations.filter { it.category == ChatCategory.Tell }
         fun markIn(conv: ChatConversation): Boolean {
-            val idx = conv.messages.indexOfLast { it.self && it.sendState != 2 }
+            val idx = conv.messages.indexOfLast { (it.self || it.isFrom(profile?.name)) && it.sendState != 2 }
             if (idx < 0) return false
             val updated = conv.messages[idx].copy(sendState = 2)
             conv.messages[idx] = updated
@@ -1592,7 +1592,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (markIn(conv)) { saved = true; break }
             }
         } else {
-            val latest = tellConvs.flatMap { conv -> conv.messages.filter { it.self && it.sendState != 2 }.map { conv to it } }.maxByOrNull { it.second.timestamp }
+            val latest = tellConvs.flatMap { conv -> conv.messages.filter { (it.self || it.isFrom(profile?.name)) && it.sendState != 2 }.map { conv to it } }.maxByOrNull { it.second.timestamp }
             if (latest != null) saved = markIn(latest.first)
         }
         if (saved) saveChats()
