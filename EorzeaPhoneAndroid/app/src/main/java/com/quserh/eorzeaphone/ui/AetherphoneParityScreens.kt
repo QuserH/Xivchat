@@ -1102,24 +1102,22 @@ private fun AetherphoneContactsList(state: PhoneState) {
     }
 }
 
-private fun friendStatusText(status: Long): String? {
+private fun friendStatusIcon(status: Long): Int? {
     if (status and (1L shl 47) == 0L) return null
     return when {
-        (status and (1L shl 43)) != 0L -> "任务中"
-        (status and ((1L shl 36) or (1L shl 37) or (1L shl 38) or (1L shl 39))) != 0L -> "组队中"
-        (status and (1L shl 12)) != 0L -> "忙碌"
-        (status and (1L shl 17)) != 0L -> "离开"
-        (status and (1L shl 23)) != 0L -> "寻找队伍"
+        (status and (1L shl 43)) != 0L -> R.drawable.fst_duty           // 任务中
+        (status and ((1L shl 36) or (1L shl 37) or (1L shl 38) or (1L shl 39))) != 0L -> R.drawable.fst_party       // 组队中
+        (status and (1L shl 12)) != 0L -> R.drawable.fst_busy           // 忙碌
+        (status and (1L shl 17)) != 0L -> R.drawable.fst_afk            // 离开
+        (status and (1L shl 23)) != 0L -> R.drawable.fst_lookingforparty // 希望组队
+        (status and (1L shl 26)) != 0L -> R.drawable.fst_recruiting     // 队员招募中
+        (status and (1L shl 30)) != 0L -> R.drawable.fst_pvpmentor      // 对战指导者
+        (status and (1L shl 28)) != 0L -> R.drawable.fst_pvementor      // 战斗指导者
+        (status and (1L shl 29)) != 0L -> R.drawable.fst_tradementor    // 制作采集指导者
+        (status and (1L shl 27)) != 0L -> R.drawable.fst_mentor         // 指导者
+        (status and (1L shl 31)) != 0L -> R.drawable.fst_returner       // 回归玩家
+        (status and (1L shl 32)) != 0L -> R.drawable.fst_new            // 新人
         else -> null
-    }
-}
-
-private fun friendStatusColor(status: Long): Color? {
-    if (status and (1L shl 47) == 0L) return null
-    return when {
-        (status and (1L shl 43)) != 0L -> Color(0xFFFF9F3C)
-        (status and ((1L shl 36) or (1L shl 37) or (1L shl 38) or (1L shl 39))) != 0L -> Color(0xFF8E7BFF)
-        else -> Color(0xFF35C46B)
     }
 }
 
@@ -1137,12 +1135,11 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onCh
                 }
                 Column(Modifier.weight(1f).padding(start = 16.dp)) {
                     Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    val statusText = friendStatusText(friend.status)
-                    Text(listOf(friend.world.ifBlank { "未知服务器" }).plus(statusText?.let { " · $it" }.orEmpty().takeIf { it.isNotEmpty() }).filterNotNull().joinToString(""), color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                    Text(friend.world.ifBlank { "未知服务器" }, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
                 if (friend.online) {
-                    val sc = friendStatusColor(friend.status)
-                    if (sc != null) Box(Modifier.size(10.dp).clip(CircleShape).background(sc)) else Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
+                    val stIcon = friendStatusIcon(friend.status)
+                    if (stIcon != null) Image(painterResource(stIcon), contentDescription = null, modifier = Modifier.size(20.dp)) else Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
                 }
             }
             if (index < friends.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(AetherLightSeparator))
@@ -1526,7 +1523,11 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 if (tag.isNotEmpty()) "[$tag] $base" else base
             }
             Column(Modifier.fillMaxWidth()) {
-                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight)
+                val senderStatus = if (conversation.category != ChatCategory.Tell && !self && message.category != ChatCategory.System) {
+                    val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
+                    state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
+                } else 0L
+                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -1886,7 +1887,7 @@ private fun chatBubbleStyle(color: Color, fontSize: TextUnit, lineHeight: TextUn
     )
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "") {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -1914,6 +1915,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
+                    val titleIcon = senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }
+                    if (titleIcon != null && !self) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size(15.dp).padding(end = 3.dp))
                     Text(authorAnnotated, fontSize = 11.sp)
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
                 }

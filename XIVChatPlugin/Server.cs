@@ -2085,6 +2085,7 @@ namespace XIVChatPlugin {
             var italic = false;
             var foreground = new Stack<uint>();
             var glow = new Stack<uint>();
+            string? lastItemName = null;
 
             void Append(string text) {
                 chunks.Add(new TextChunk(text) {
@@ -2141,7 +2142,9 @@ namespace XIVChatPlugin {
                         chunks.Add(new IconChunk {
                             index = 0xE0BB,
                         });
-                        Append(itemPayload.DisplayName ?? string.Empty);
+                        var itemName = itemPayload.DisplayName ?? string.Empty;
+                        Append(itemName);
+                        lastItemName = itemName;
                         break;
                     case PayloadType.Unknown:
                         var rawPayload = (RawPayload) payload;
@@ -2158,7 +2161,14 @@ namespace XIVChatPlugin {
                         break;
                     default:
                         if (payload is ITextProvider textProvider) {
-                            Append(textProvider.Text);
+                            var rawText = textProvider.Text;
+                            if (lastItemName != null && rawText == lastItemName) {
+                                lastItemName = null;
+                            } else {
+                                Append(rawText);
+                            }
+                        } else {
+                            lastItemName = null;
                         }
 
                         break;
