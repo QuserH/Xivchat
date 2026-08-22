@@ -1833,19 +1833,18 @@ private class ChatInk(
 )
 
 private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk> {
-    // 插件会把 [图标0xE0BB][名字+HQ][HQ字][完整名字] 拆散并重复下发。
-    // 这里重建为 [图标][完整名字][HQ字形]，去掉碎片与重复，避免名字重复、气泡被撑高。
+    // 插件把道具链接拆成 [图标0xE0BB][名+替换符][][完整名+HQ] 并重复下发。
+    // 这里重建为 [图标0xE0BB][完整道具名][HQ字形]，去掉 �("?")、多余三角和重复名。
     val iconIdx = chunks.indexOfFirst { it.icon == 0xE0BB }
     if (iconIdx < 0) return chunks
     val head = chunks.take(iconIdx)
     val icon = chunks[iconIdx]
     val rest = chunks.drop(iconIdx + 1)
-    fun clean(s: String?) = (s ?: "").filter { it.code !in 0xE000..0xF8FF }
-    fun glyphs(s: String?) = (s ?: "").filter { it.code in 0xE000..0xF8FF }
+    fun clean(s: String?) = (s ?: "").filter { it.code !in 0xE000..0xF8FF && it.code != 0xFFFD }
+    fun hqGlyphs(s: String?) = (s ?: "").filter { it.code in 0xE000..0xF8FF && it.code != 0xE0BB }
     val glyphBuilder = StringBuilder()
-    for (c in rest) if (c.text != null) glyphBuilder.append(glyphs(c.text))
-    val cleanTexts = rest.map { clean(it.text) }
-    val itemName = cleanTexts.maxByOrNull { it.length } ?: ""
+    for (c in rest) if (c.text != null) glyphBuilder.append(hqGlyphs(c.text))
+    val itemName = rest.map { clean(it.text) }.maxByOrNull { it.length } ?: ""
     val out = ArrayList<GameChatChunk>()
     out.addAll(head)
     out.add(icon)
@@ -1870,57 +1869,25 @@ private fun chatBubbleInk(
     fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily,
 ): ChatInk {
     val useChunks = cleanItemLinkChunks(chunks).ifEmpty { listOf(GameChatChunk(text = fallback)) }
-    // 商品/道具链接去重：形如 [名字X][图标][名字Y]，若 X 是 Y 的前缀（道具名被插件重复下发），丢弃 X。
-    val skipDup = mutableSetOf<Int>()
-    // 以第一个道具链接图标(0xE0BB)为准，丢弃后续重复的道具链接图标及与其相同/互为前缀的道具名，
-    // 使道具只出现一次（一个三角 + 一个名字），气泡保持单行。
-    val firstIcon = useChunks.indexOfFirst { it.icon == 0xE0BB }
-    if (firstIcon >= 0) {
-        var s = firstIcon + 1
-        while (s < useChunks.size && useChunks[s].icon != null) s++
-        if (s < useChunks.size) {
-            val link = useChunks[s].text.orEmpty().trim()
-            if (link.isNotEmpty()) {
-                for (k in useChunks.indices) {
-                    if (k == s) continue
-                    val tk = useChunks[k].text.orEmpty().trim()
-                    if (tk.isEmpty()) continue
-                    if (tk == link || tk.startsWith(link) || link.startsWith(tk)) skipDup.add(k)
-                }
-                for (k in useChunks.indices) {
-                    if (k == firstIcon || useChunks[k].icon != 0xE0BB) continue
-                    var s2 = k + 1
-                    while (s2 < useChunks.size && useChunks[s2].icon != null) s2++
-                    val t2 = if (s2 < useChunks.size) useChunks[s2].text.orEmpty().trim() else ""
-                    if (t2 == link || t2.startsWith(link) || link.startsWith(t2)) skipDup.add(k)
-                }
-            }
-        }
-    }
     val builder = AnnotatedString.Builder()
     val placeholders = mutableListOf<AnnotatedString.Range<Placeholder>>()
     var len = 0
-    var itemLinkPending = false
     useChunks.forEachIndexed { index, chunk ->
-        if (index in skipDup) return@forEachIndexed
         if (chunk.icon != null) {
-            if (chunk.icon == 0xE0BB) { itemLinkPending = true; return@forEachIndexed }
             val alt = "◆"
             builder.appendInlineContent("icon-$index", alt)
             placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + alt.length))
             len += alt.length
         } else {
-            val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
-            if (text.isEmpty()) return@forEachIndexed
+                        val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
+if (text.isEmpty()) return@forEachIndexed
             val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
-            val baseStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
-            val spanStyle = if (itemLinkPending) baseStyle.copy(color = Color(0xFFFF7E1E), textDecoration = TextDecoration.Underline) else baseStyle
-            itemLinkPending = false
+            val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
             builder.appendPuaAware(text, highlight, spanStyle, Color(0x66FFEB3B), axisFont)
             len += text.length
         }
     }
-    return ChatInk(builder.toAnnotatedString(), placeholders)
+        return ChatInk(builder.toAnnotatedString(), placeholders)
 }
 
 @Composable
