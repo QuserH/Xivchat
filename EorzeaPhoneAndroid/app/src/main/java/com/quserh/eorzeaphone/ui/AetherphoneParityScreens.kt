@@ -240,7 +240,7 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = 4.dp),
+                modifier = Modifier.offset(y = 6.dp),
                 onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
             if (titleIcon != null) {
@@ -1764,7 +1764,8 @@ private fun chatBubbleInk(
             placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + alt.length))
             len += alt.length
         } else {
-            val text = decodeChatEntities(chunk.text.orEmpty())
+            val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
+            if (text.isEmpty()) return@forEachIndexed
             val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
             val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
             builder.appendHighlighted(text, highlight, spanStyle, Color(0x66FFEB3B))
@@ -1840,29 +1841,49 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     textMeasurer.measure(ink.annotated, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
                 }
                 val lineCount = layout.lineCount
-                val lastLinePx = if (lineCount > 0) (layout.getLineRight(lineCount - 1) - layout.getLineLeft(lineCount - 1)) else 0f
+                val lineWidths = (0 until lineCount).map { layout.getLineRight(it) - layout.getLineLeft(it) }
+                val widePx = lineWidths.maxOrNull()?.coerceAtLeast(1f) ?: contentPx
+                val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
-                val canInline = lineCount == 1 && (lastLinePx + gapPx + timePx <= contentPx)
-                if (canInline) {
-                    Row(
-                        Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
-                        verticalAlignment = Alignment.Bottom,
-                    ) {
-                        Text(ink.annotated, inlineContent = inline, style = measureStyle)
-                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                val canInline = lastLinePx + gapPx + timePx <= contentPx
+                val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
+                val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
+                Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
+                    if (lineCount == 0) {
+                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
                     }
-                } else {
-                    val justifyStyle = measureStyle.copy(textAlign = TextAlign.Justify)
-                    Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp)) {
-                        Text(ink.annotated, inlineContent = inline, style = justifyStyle, modifier = Modifier.fillMaxWidth())
-                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
+                    for (i in 0 until lineCount) {
+                        val ls = layout.getLineStart(i)
+                        val le = layout.getLineEnd(i)
+                        if (le <= ls) continue
+                        var slice = ink.annotated.subSequence(ls, le)
+                        val st = slice.text
+                        if (st.endsWith("\n") || st.endsWith("\r")) slice = slice.subSequence(0, slice.length - 1)
+                        if (slice.text.isEmpty()) continue
+                        val isLast = i == lineCount - 1
+                        val lineW = lineWidths[i]
+                        val chars = (le - ls).coerceAtLeast(1)
+                        val extraPx = if (isLast) 0f else (bubbleWidePx - lineW).coerceAtLeast(0f)
+                        val lsSp = if (!isLast && chars > 1 && extraPx > 0f) with(dens) { (extraPx / chars / (dens.density * dens.fontScale)).sp } else 0.sp
+                        if (isLast && canInline) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                                Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.weight(1f, fill = false))
+                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 1.dp))
+                            }
+                        } else {
+                            Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    if (!canInline && lineCount > 0) {
+                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                     }
                 }
             }
         }
     }
 }
+
 private fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
     red = c.red + (target.red - c.red) * fraction,
     green = c.green + (target.green - c.green) * fraction,
