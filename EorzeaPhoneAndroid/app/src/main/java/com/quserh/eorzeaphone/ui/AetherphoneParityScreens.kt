@@ -1556,7 +1556,7 @@ private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversat
         if (messages.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp) }
         } else {
-            ChatMessagesLazyColumn(messages, conversation, state, "", listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp), followLatest = true)
+            ChatMessagesLazyColumn(messages, conversation, state, "", listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp), followLatest = false)
         }
     }
 }
@@ -1798,11 +1798,44 @@ private class ChatInk(
     val placeholders: List<AnnotatedString.Range<Placeholder>>,
 )
 
+private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk> {
+    // 插件会把 [图标0xE0BB][名字+HQ][HQ字][完整名字] 拆散并重复下发。
+    // 这里重建为 [图标][完整名字][HQ字形]，去掉碎片与重复，避免名字重复、气泡被撑高。
+    val iconIdx = chunks.indexOfFirst { it.icon == 0xE0BB }
+    if (iconIdx < 0) return chunks
+    val head = chunks.take(iconIdx)
+    val icon = chunks[iconIdx]
+    val rest = chunks.drop(iconIdx + 1)
+    fun clean(s: String?) = (s ?: "").filter { it.code !in 0xE000..0xF8FF }
+    fun glyphs(s: String?) = (s ?: "").filter { it.code in 0xE000..0xF8FF }
+    val glyphBuilder = StringBuilder()
+    for (c in rest) if (c.text != null) glyphBuilder.append(glyphs(c.text))
+    val cleanTexts = rest.map { clean(it.text) }
+    val itemName = cleanTexts.maxByOrNull { it.length } ?: ""
+    val out = ArrayList<GameChatChunk>()
+    out.addAll(head)
+    out.add(icon)
+    if (itemName.isNotEmpty()) {
+        val ref = rest.firstOrNull { it.text != null }
+        out.add(GameChatChunk(text = itemName, italic = ref?.italic ?: false, foreground = ref?.foreground))
+    }
+    if (glyphBuilder.isNotEmpty()) out.add(GameChatChunk(text = glyphBuilder.toString()))
+    for (i in rest.indices) {
+        val c = rest[i]
+        val cl = clean(c.text)
+        if (cl.isBlank()) continue
+        if (cl == itemName) continue
+        if (itemName.startsWith(cl)) continue
+        out.add(c)
+    }
+    return out
+}
+
 private fun chatBubbleInk(
     chunks: List<GameChatChunk>, fallback: String, color: Color, forceColor: Boolean, highlight: String, light: Boolean,
     fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily,
 ): ChatInk {
-    val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    val useChunks = cleanItemLinkChunks(chunks).ifEmpty { listOf(GameChatChunk(text = fallback)) }
     // 商品/道具链接去重：形如 [名字X][图标][名字Y]，若 X 是 Y 的前缀（道具名被插件重复下发），丢弃 X。
     val skipDup = mutableSetOf<Int>()
     // 以第一个道具链接图标(0xE0BB)为准，丢弃后续重复的道具链接图标及与其相同/互为前缀的道具名，
@@ -1854,7 +1887,7 @@ private fun chatBubbleInk(
 
 @Composable
 private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, fontSize: TextUnit, lineHeight: TextUnit): Map<String, InlineTextContent> {
-    val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    val useChunks = cleanItemLinkChunks(chunks).ifEmpty { listOf(GameChatChunk(text = fallback)) }
     return buildMap {
         useChunks.forEachIndexed { index, chunk ->
             val icon = chunk.icon
