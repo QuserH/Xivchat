@@ -222,6 +222,7 @@ private fun LightHeader(
     val headerMargin = LocalContentMargin.current
     val density = LocalDensity.current
     var titleWidth by remember(title) { mutableStateOf(0.dp) }
+    var titleInkShift by remember(title) { mutableStateOf(0.dp) }
     val sidePad = (headerMargin.coerceAtLeast(2) - 2).dp
     Box(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = sidePad)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
@@ -243,8 +244,19 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = titleOffsetY),
-                onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
+                modifier = Modifier.offset(y = titleOffsetY + titleInkShift),
+                onTextLayout = { layout ->
+                    titleWidth = with(density) { layout.size.width.toDp() }
+                    if (layout.lineCount > 0) {
+                        val top = layout.getLineTop(0)
+                        val bottom = layout.getLineBottom(0)
+                        val baseline = layout.getLineBaseline(0)
+                        val fontPx = with(density) { 20.sp.toPx() }
+                        val inkCenter = baseline - fontPx * 0.45f
+                        val lineCenter = (top + bottom) / 2f
+                        titleInkShift = with(density) { (lineCenter - inkCenter).toDp() }
+                    }
+                },
             )
             if (titleIcon != null) {
                 Box(Modifier.align(Alignment.CenterStart).offset(x = titleWidth + 6.dp)) {
@@ -358,7 +370,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             ChatGroupChip("标签", 0, notify = true, active = tabsExpanded) {
                 state.chatListTab = "tabs"; tabsExpanded = true; messagesExpanded = false
             }
-            ChatGroupChip("消息", sortedRows.sumOf { it.unread }, notify = true, active = messagesExpanded) {
+            ChatGroupChip("消息", sortedRows.filter { it.notify }.sumOf { it.unread }, notify = true, active = messagesExpanded) {
                 state.chatListTab = "messages"; messagesExpanded = true; tabsExpanded = false
             }
         }
@@ -952,7 +964,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                     if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
                     if (conversation.unread > 0) {
                         Box(
-                            Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(Color(0xFFE5485D)),
+                            Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(if (conversation.notify) Color(0xFFE5485D) else Color(0xFF8A93A5)),
                             contentAlignment = Alignment.Center,
                         ) { Text(if (conversation.unread > 99) "99+" else conversation.unread.toString(), color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 5.dp)) }
                     }
@@ -1767,20 +1779,29 @@ private fun chatBubbleInk(
     val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     // 商品/道具链接去重：形如 [名字X][图标][名字Y]，若 X 是 Y 的前缀（道具名被插件重复下发），丢弃 X。
     val skipDup = mutableSetOf<Int>()
-    // 只在“道具链接图标(0xE0BB)”上锚定去重（HQ 等指示图标不参与），
-    // 以避免图标后重复的道具名再次出现。
-    for (i in useChunks.indices) {
-        if (useChunks[i].icon != 0xE0BB) continue
-        var s = i + 1
+    // 以第一个道具链接图标(0xE0BB)为准，丢弃后续重复的道具链接图标及与其相同/互为前缀的道具名，
+    // 使道具只出现一次（一个三角 + 一个名字），气泡保持单行。
+    val firstIcon = useChunks.indexOfFirst { it.icon == 0xE0BB }
+    if (firstIcon >= 0) {
+        var s = firstIcon + 1
         while (s < useChunks.size && useChunks[s].icon != null) s++
-        if (s >= useChunks.size) continue
-        val link = useChunks[s].text.orEmpty().trim()
-        if (link.isEmpty()) continue
-        for (k in useChunks.indices) {
-            if (k == s) continue
-            val tk = useChunks[k].text.orEmpty().trim()
-            if (tk.isEmpty()) continue
-            if (tk == link || tk.startsWith(link) || link.startsWith(tk)) skipDup.add(k)
+        if (s < useChunks.size) {
+            val link = useChunks[s].text.orEmpty().trim()
+            if (link.isNotEmpty()) {
+                for (k in useChunks.indices) {
+                    if (k == s) continue
+                    val tk = useChunks[k].text.orEmpty().trim()
+                    if (tk.isEmpty()) continue
+                    if (tk == link || tk.startsWith(link) || link.startsWith(tk)) skipDup.add(k)
+                }
+                for (k in useChunks.indices) {
+                    if (k == firstIcon || useChunks[k].icon != 0xE0BB) continue
+                    var s2 = k + 1
+                    while (s2 < useChunks.size && useChunks[s2].icon != null) s2++
+                    val t2 = if (s2 < useChunks.size) useChunks[s2].text.orEmpty().trim() else ""
+                    if (t2 == link || t2.startsWith(link) || link.startsWith(t2)) skipDup.add(k)
+                }
+            }
         }
     }
     val builder = AnnotatedString.Builder()
