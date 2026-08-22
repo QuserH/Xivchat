@@ -1374,6 +1374,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             launchPivotY = (origin.center.y / shellHeight).coerceIn(0.05f, 0.95f)
             launchScale = maxOf(origin.width / shellWidth, origin.height / shellHeight).coerceIn(0.10f, 0.24f)
         }
+        appInForeground = true
         selectedApp = app
         screen = app.destination
     }
@@ -1381,6 +1382,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun openApp(id: String) { allApps[id]?.let(::open) }
 
     fun showMessagesTab(contacts: Boolean) {
+        appInForeground = true
         selectedFriend = null
         messagesTab = contacts
         selectedApp = AppCatalog.dock.firstOrNull { it.destination == if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat }
@@ -1389,6 +1391,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun home() {
+        appInForeground = true
         screen = PhoneScreen.Home
         selectedApp = null
     }
@@ -1649,6 +1652,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
     fun openConversation(conv: ChatConversation) {
+        appInForeground = true
         if (hiddenConversations.value.remove(conv.key)) {
             prefs.edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
             hiddenConversations.value = hiddenConversations.value.toMutableSet()

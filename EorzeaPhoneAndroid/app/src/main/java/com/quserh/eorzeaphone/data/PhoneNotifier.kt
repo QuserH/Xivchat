@@ -76,8 +76,8 @@ class PhoneNotifier(private val context: Context) {
     }
 
     private companion object {
-        const val CHAT_CHANNEL = "game-chat-hq"
-        const val TELL_CHANNEL = "game-tell"
+        const val CHAT_CHANNEL = "game-chat-v2"
+        const val TELL_CHANNEL = "game-tell-v2"
         const val ALARM_CHANNEL = "game-alarm"
     }
 }
