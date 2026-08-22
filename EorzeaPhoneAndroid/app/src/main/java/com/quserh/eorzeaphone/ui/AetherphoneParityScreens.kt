@@ -129,6 +129,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.TextUnit
@@ -831,7 +832,11 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 }
             }
             val listState = rememberLazyListState()
-            LaunchedEffect(filter, msgs.size) { if (msgs.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(msgs.lastIndex) }
+            val scrolledLocal = remember(filter) { mutableStateOf(false) }
+            LaunchedEffect(filter, msgs.size) {
+                if (msgs.isEmpty()) return@LaunchedEffect
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+            }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                     Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
@@ -1525,8 +1530,13 @@ private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 3): Boole
 
 @Composable
 private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier, followLatest: Boolean = false) {
+    val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
     LaunchedEffect(messages.size, conversation.key) {
-        if (followLatest && messages.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(messages.lastIndex)
+        if (!followLatest || messages.isEmpty()) return@LaunchedEffect
+        if (!scrolledInitialState.value || nearBottomLazy(listState)) {
+            listState.scrollToItem(messages.lastIndex)
+            scrolledInitialState.value = true
+        }
     }
     SelectionContainer {
         LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -1890,9 +1900,11 @@ private fun chatBubbleInk(
     val builder = AnnotatedString.Builder()
     val placeholders = mutableListOf<AnnotatedString.Range<Placeholder>>()
     var len = 0
+    var itemLinkPending = false
     useChunks.forEachIndexed { index, chunk ->
         if (index in skipDup) return@forEachIndexed
         if (chunk.icon != null) {
+            if (chunk.icon == 0xE0BB) { itemLinkPending = true; return@forEachIndexed }
             val alt = "◆"
             builder.appendInlineContent("icon-$index", alt)
             placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + alt.length))
@@ -1901,7 +1913,9 @@ private fun chatBubbleInk(
             val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
             if (text.isEmpty()) return@forEachIndexed
             val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
-            val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
+            val baseStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
+            val spanStyle = if (itemLinkPending) baseStyle.copy(color = Color(0xFFFF7E1E), textDecoration = TextDecoration.Underline) else baseStyle
+            itemLinkPending = false
             builder.appendPuaAware(text, highlight, spanStyle, Color(0x66FFEB3B), axisFont)
             len += text.length
         }
