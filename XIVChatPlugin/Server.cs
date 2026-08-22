@@ -74,7 +74,8 @@ namespace XIVChatPlugin {
 
         private readonly HashSet<Guid> _waitingForFriendList = [];
 
-        private readonly LinkedList<ServerMessage> _backlog = [];
+        // 每个角色独立的内存历史缓冲（容量 = 历史消息数量），角色间互不挤占
+        private readonly Dictionary<string, LinkedList<ServerMessage>> _backlogByChar = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _backlogLock = new();
         // 只重写“有新消息”的角色文件：避免仅登录角色A时把其它角色文件一并刷新/覆盖
         private readonly HashSet<string> _dirtyBacklogTags = new(StringComparer.OrdinalIgnoreCase);
@@ -365,11 +366,17 @@ namespace XIVChatPlugin {
             if (this._plugin.Config.BacklogEnabled) {
                 msg.CharacterTag = this.CurrentCharacterTag();
                 lock (this._backlogLock) {
-                    this._backlog.AddLast(msg);
-                    while (this._backlog.Count > this._plugin.Config.BacklogCount) {
-                        this._backlog.RemoveFirst();
+                    if (!string.IsNullOrEmpty(msg.CharacterTag)) {
+                        if (!this._backlogByChar.TryGetValue(msg.CharacterTag, out var charBacklog)) {
+                            charBacklog = new LinkedList<ServerMessage>();
+                            this._backlogByChar[msg.CharacterTag] = charBacklog;
+                        }
+                        charBacklog.AddLast(msg);
+                        while (charBacklog.Count > this._plugin.Config.BacklogCount) {
+                            charBacklog.RemoveFirst();
+                        }
+                        this._dirtyBacklogTags.Add(msg.CharacterTag);
                     }
-                    if (!string.IsNullOrEmpty(msg.CharacterTag)) this._dirtyBacklogTags.Add(msg.CharacterTag);
                 }
                 this.MaybePersistBacklog();
             }
@@ -1887,7 +1894,8 @@ namespace XIVChatPlugin {
                     var backlogMessages = new List<ServerMessage>();
 
                     var currentTag = this.CurrentCharacterTag();
-                    var node = this._backlog.Last;
+                    var charBacklog = this.FindBacklogList(currentTag);
+                    var node = charBacklog?.Last;
                     while (node != null) {
                         if (backlogMessages.Count >= backlog.Amount) {
                             break;
@@ -2137,10 +2145,8 @@ namespace XIVChatPlugin {
             var dir = this.GetBacklogDirectory();
             try {
                 Directory.CreateDirectory(dir);
-                List<ServerMessage> snapshot;
                 HashSet<string> dirtyTags;
                 lock (this._backlogLock) {
-                    snapshot = this._backlog.ToList();
                     dirtyTags = new HashSet<string>(this._dirtyBacklogTags, StringComparer.OrdinalIgnoreCase);
                 }
                 if (dirtyTags.Count == 0) return;
@@ -2148,8 +2154,11 @@ namespace XIVChatPlugin {
                 foreach (var tag in dirtyTags) {
                     var path = this.GetBacklogFilePath(tag);
                     if (string.IsNullOrEmpty(path)) continue;
-                    var group = snapshot.Where(m => m.CharacterTag != null && string.Equals(m.CharacterTag, tag, StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (group.Count == 0) continue; // 该角色消息已被淘汰：不要用空文件覆盖旧历史
+                    List<ServerMessage> group;
+                    lock (this._backlogLock) {
+                        if (!this._backlogByChar.TryGetValue(tag, out var charBacklog) || charBacklog.Count == 0) continue;
+                        group = charBacklog.ToList();
+                    }
                     var file = new BacklogFile {
                         CharacterTag = tag,
                         WrittenAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -2214,10 +2223,17 @@ namespace XIVChatPlugin {
                     }
                 }
                 lock (this._backlogLock) {
-                    this._backlog.Clear();
+                    this._backlogByChar.Clear();
                     foreach (var m in loaded.OrderBy(x => x.Timestamp)) {
-                        this._backlog.AddLast(m);
-                        if (this._backlog.Count > this._plugin.Config.BacklogCount) this._backlog.RemoveFirst();
+                        if (string.IsNullOrEmpty(m.CharacterTag)) continue;
+                        if (!this._backlogByChar.TryGetValue(m.CharacterTag, out var charBacklog)) {
+                            charBacklog = new LinkedList<ServerMessage>();
+                            this._backlogByChar[m.CharacterTag] = charBacklog;
+                        }
+                        charBacklog.AddLast(m);
+                        while (charBacklog.Count > this._plugin.Config.BacklogCount) {
+                            charBacklog.RemoveFirst();
+                        }
                     }
                 }
                 Plugin.Log.Info($"Loaded {loaded.Count} backlog messages from '{dir}'");
@@ -2252,6 +2268,14 @@ namespace XIVChatPlugin {
             return false;
         }
 
+        // 定位某角色的内存历史缓冲：优先 名字@服务器，兼容旧格式纯名字
+        private LinkedList<ServerMessage>? FindBacklogList(string? fullTag) {
+            if (string.IsNullOrEmpty(fullTag)) return null;
+            if (this._backlogByChar.TryGetValue(fullTag, out var list)) return list;
+            var at = fullTag.IndexOf('@');
+            if (at > 0 && this._backlogByChar.TryGetValue(fullTag.Substring(0, at), out var legacy)) return legacy;
+            return null;
+        }
         private static int? GetSenderStatusIcon(byte[] sender) {
             if (sender == null) return null;
             try {
@@ -2374,7 +2398,9 @@ namespace XIVChatPlugin {
 
         private IEnumerable<ServerMessage> MessagesAfter(DateTime time) {
             var tag = this.CurrentCharacterTag();
-            return this._backlog.Where(msg => msg.Timestamp > time && MatchesCurrentCharacter(msg, tag)).ToArray();
+            var charBacklog = this.FindBacklogList(tag);
+            if (charBacklog == null) return Array.Empty<ServerMessage>();
+            return charBacklog.Where(msg => msg.Timestamp > time && MatchesCurrentCharacter(msg, tag)).ToArray();
         }
 
         private static IEnumerable<string> Wrap(string input) {

@@ -142,10 +142,10 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
         sendCommand(XivChatCodec.encodeBacklog(100), 4)
     }
 
-    // 按角色游标补传：在确认连接角色后调用，插件只返回该角色在该时间点之后的消息
+    // 按角色游标补传：在确认连接角色后调用，插件只返回该角色在该时间点之后的消息；
+    // 传 0 表示从最早开始拉（首次同步会拉取插件端配置的历史数量）
     fun requestCatchUp(afterMillis: Long) {
-        if (afterMillis <= 0L) return
-        sendCommand(XivChatCodec.encodeCatchUp(afterMillis), 5)
+        sendCommand(XivChatCodec.encodeCatchUp(afterMillis.coerceAtLeast(0L)), 5)
     }
 
     fun sendChatOnChannel(channel: Int?, text: String) {

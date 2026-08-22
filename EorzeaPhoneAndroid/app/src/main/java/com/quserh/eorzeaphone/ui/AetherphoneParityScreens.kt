@@ -1470,6 +1470,12 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
                 onMinus = { state.chatAuthorFontSize = (state.chatAuthorFontSize - 1).coerceAtLeast(9) },
                 onPlus = { state.chatAuthorFontSize = (state.chatAuthorFontSize + 1).coerceAtMost(22) },
             )
+            ChatSettingDivider()
+            ChatAdjustRow("保留消息上限", state.chatRetentionLimit,
+                onMinus = { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) },
+                onPlus = { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) },
+                hint = "每个角色保留最近 N 条，超出自动清理最旧消息；0 = 不限制（永久保留）",
+            )
         }
         Text("主题", color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = LocalContentMargin.current.dp + 4.dp, top = 18.dp, bottom = 6.dp))
         Column(

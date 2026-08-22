@@ -674,6 +674,11 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var contentMargin: Int
         get() = _contentMargin.value
         set(value) { _contentMargin.value = value.coerceIn(0, 60); prefs.edit().putInt("contentMargin", _contentMargin.value).apply() }
+    // 每个角色保留最近 N 条聊天消息，超出自动清理最旧消息，控制 App 体积；0 = 不限制（永久保留）
+    private val _chatRetentionLimit = mutableStateOf(prefs.getInt("chatRetentionLimit", 5000))
+    var chatRetentionLimit: Int
+        get() = _chatRetentionLimit.value
+        set(value) { _chatRetentionLimit.value = value.coerceIn(0, 50000); prefs.edit().putInt("chatRetentionLimit", _chatRetentionLimit.value).apply() }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
     var selectedChatFilterId by mutableStateOf("")
@@ -1036,10 +1041,28 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     getOrCreateConversation(m)?.add(m)
                 }
             }
+            if (pruneChatRetention()) saveChats()
         }
     }
 
+    // 超出保留上限时，从内存与各会话中一并移除最旧消息
+    private fun pruneChatRetention(): Boolean {
+        val limit = chatRetentionLimit
+        if (limit <= 0 || chats.size <= limit) return false
+        val dropCount = chats.size - limit
+        val dropSet = HashSet(chats.take(dropCount))
+        var removed = false
+        for (conv in conversations) {
+            val r = conv.messages.removeAll { it in dropSet }
+            if (r && conv.messages.isEmpty()) conv.clear()
+            removed = removed || r
+        }
+        chats.removeAll { it in dropSet }
+        return true
+    }
+
     private fun saveChats() {
+        pruneChatRetention()
         val snapshot = chats.toList()
         val chatStore = charPrefs()
         scope.launch(Dispatchers.IO) {
@@ -2347,7 +2370,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
                         val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
                         val isTell = event.message.category == ChatCategory.Tell
-                        val allow = !isSelf && chatNotifications && conv.notify && !appInForeground && (if (isTell) tellNotifications else true)
+                        val isRecent = System.currentTimeMillis() - event.message.timestamp < 30_000L
+                        val allow = !isSelf && chatNotifications && conv.notify && !appInForeground && isRecent && (if (isTell) tellNotifications else true)
                         if (allow) {
                             val title = conv.title.ifBlank { if (isTell) event.message.sender else event.message.category.label }
                             notifier.chat(event.message, tellNotifications && isTell, title)
@@ -2455,10 +2479,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         }
                     }
                 }
-                // 连接锚定角色后先拉最近 100 条（覆盖连接时角色尚未就绪导致空返回的情况）
-                runCatching { connection.requestBacklog() }
-                // 再按该角色自己的游标补传，修复重启后关机前消息丢失
-                runCatching { val c = chatCursorTs(newCharacterKey); if (c > 0L) connection.requestCatchUp(c) }
+                // 连接锚定角色后按该角色游标补传（游标为 0 时拉取该角色全部可用历史，数量由插件“历史消息数量”决定）
+                runCatching { connection.requestCatchUp(chatCursorTs(newCharacterKey)) }
                 runCatching {
                     val key = rememberCharacter(event.profile)
                     if (activeCharacterKey.isBlank() || activeCharacterKey == key) loadCharacter(key, persistSelection = true)
