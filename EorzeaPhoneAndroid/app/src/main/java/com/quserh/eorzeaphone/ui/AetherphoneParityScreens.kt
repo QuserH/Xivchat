@@ -2111,6 +2111,13 @@ private fun chatChunkColor(value: Long): Color {
     return Color(red, green, blue, alpha)
 }
 
+private fun statusIconDrawable(index: Int): Int? = when (index) {
+    77 -> R.drawable.fst_new            // 新人
+    78 -> R.drawable.fst_mentor         // 指导者
+    95 -> R.drawable.fst_returner       // 回归者
+    else -> null
+}
+
 @Composable
 private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
     if (index in 0xE000..0xF8FF) {
@@ -2130,6 +2137,10 @@ private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
         if (bmp != null) {
             Image(bmp, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         }
+        return
+    }
+    statusIconDrawable(index)?.let { res ->
+        Image(painterResource(res), contentDescription = null, modifier = Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.Fit)
         return
     }
     val rect = fontIconRect(index) ?: return
