@@ -15,7 +15,7 @@ class PhoneNotifier(private val context: Context) {
 
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(NotificationChannel(CHAT_CHANNEL, "游戏聊天", NotificationManager.IMPORTANCE_DEFAULT))
+            manager.createNotificationChannel(NotificationChannel(CHAT_CHANNEL, "游戏聊天", NotificationManager.IMPORTANCE_HIGH))
             manager.createNotificationChannel(NotificationChannel(TELL_CHANNEL, "游戏私聊", NotificationManager.IMPORTANCE_HIGH))
             manager.createNotificationChannel(NotificationChannel(ALARM_CHANNEL, "闹钟", NotificationManager.IMPORTANCE_HIGH))
         }

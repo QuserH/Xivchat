@@ -296,6 +296,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var screen by mutableStateOf(PhoneScreen.Home)
     var messagesTab by mutableStateOf(false) // false = 聊天, true = 联系人;用于聊天/联系人分页
     var selectedApp by mutableStateOf<PhoneAppItem?>(null)
+    var appInForeground by mutableStateOf(true)
     var openLocalRequest by mutableStateOf(0)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
     var homePage by mutableStateOf(0)
@@ -2170,7 +2171,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
                         val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
                         val isTell = event.message.category == ChatCategory.Tell
-                        val allow = !isSelf && chatNotifications && conv.notify && (if (isTell) tellNotifications else true)
+                        val onChatScreen = screen == PhoneScreen.Chat
+                        val allow = !isSelf && chatNotifications && conv.notify && (!appInForeground || !onChatScreen) && (if (isTell) tellNotifications else true)
                         if (allow) {
                             val title = conv.title.ifBlank { if (isTell) event.message.sender else event.message.category.label }
                             notifier.chat(event.message, tellNotifications && isTell, title)

@@ -129,7 +129,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.TextUnit
@@ -1879,12 +1878,19 @@ private fun chatBubbleInk(
             placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + alt.length))
             len += alt.length
         } else {
-                        val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
-if (text.isEmpty()) return@forEachIndexed
+                                    val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
+            if (text.isEmpty()) return@forEachIndexed
             val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
             val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
-            builder.appendPuaAware(text, highlight, spanStyle, Color(0x66FFEB3B), axisFont)
-            len += text.length
+            if (text.all { it.code in 0xE000..0xF8FF }) {
+                val glyphKey = "glyph-$index"
+                builder.appendInlineContent(glyphKey, " ")
+                placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + 1))
+                len += 1
+            } else {
+                builder.appendPuaAware(text, highlight, spanStyle, Color(0x66FFEB3B), axisFont)
+                len += text.length
+            }
         }
     }
         return ChatInk(builder.toAnnotatedString(), placeholders)
@@ -1911,6 +1917,13 @@ private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, font
                 put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
                     ChatInlineIcon(icon, fontSize, linkColor)
                 })
+            } else {
+                            val gt = chunk.text.orEmpty().trimEnd('\n', '\r', ' ', '\u00A0')
+if (gt.isNotEmpty() && gt.all { it.code in 0xE000..0xF8FF }) {
+                    put("glyph-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
+                        ChatInlineIcon(gt.first().code, fontSize, null)
+                    })
+                }
             }
         }
     }
