@@ -360,14 +360,16 @@ namespace XIVChatPlugin {
                 senderStatusIcon
             );
 
-            msg.CharacterTag = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
-            lock (this._backlogLock) {
-                this._backlog.AddLast(msg);
-                while (this._backlog.Count > this._plugin.Config.BacklogCount) {
-                    this._backlog.RemoveFirst();
+            if (this._plugin.Config.BacklogEnabled) {
+                msg.CharacterTag = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
+                lock (this._backlogLock) {
+                    this._backlog.AddLast(msg);
+                    while (this._backlog.Count > this._plugin.Config.BacklogCount) {
+                        this._backlog.RemoveFirst();
+                    }
                 }
+                this.MaybePersistBacklog();
             }
-            this.MaybePersistBacklog();
 
             foreach (var client in this._clients.Values) {
                 client.Queue.Writer.TryWrite(msg);
@@ -2096,29 +2098,41 @@ namespace XIVChatPlugin {
 
         private string? GetBacklogPath() {
             var p = this._plugin.Config.BacklogPath;
-            if (!string.IsNullOrWhiteSpace(p)) return p;
-            return Path.Combine(XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName, "chat_backlog.bin");
+            if (string.IsNullOrWhiteSpace(p))
+                return Path.Combine(XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName, "chat_backlog.bin");
+            var path = p.Trim();
+            // 若用户填的是目录（或尾部带分隔符），在该目录下补一个默认文件名。
+            if (Directory.Exists(path) || path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))
+                return Path.Combine(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), "chat_backlog.bin");
+            return path;
         }
 
         private void MaybePersistBacklog() {
+            if (!this._plugin.Config.BacklogEnabled) return;
             if ((DateTime.UtcNow - this._lastPersist).TotalSeconds < 2) return;
             this._lastPersist = DateTime.UtcNow;
             System.Threading.Tasks.Task.Run(() => this.PersistBacklog());
         }
 
+        internal void FlushBacklog() => this.PersistBacklog();
+
         private void PersistBacklog() {
             var path = this.GetBacklogPath();
             if (path == null) return;
             try {
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 List<ServerMessage> snapshot;
                 lock (this._backlogLock) { snapshot = this._backlog.ToList(); }
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var bytes = MessagePack.MessagePackSerializer.Serialize(snapshot);
                 File.WriteAllBytes(path, bytes);
-            } catch { }
+            } catch (Exception ex) {
+                Plugin.Log.Error($"Could not persist backlog to '{path}': {ex.Message}");
+            }
         }
 
         private void LoadBacklog() {
+            if (!this._plugin.Config.BacklogEnabled) return;
             var path = this.GetBacklogPath();
             if (path == null || !File.Exists(path)) return;
             try {
@@ -2131,7 +2145,10 @@ namespace XIVChatPlugin {
                         if (this._backlog.Count > this._plugin.Config.BacklogCount) this._backlog.RemoveFirst();
                     }
                 }
-            } catch { }
+                Plugin.Log.Info($"Loaded {list.Count} backlog messages from '{path}'");
+            } catch (Exception ex) {
+                Plugin.Log.Error($"Could not load backlog from '{path}': {ex.Message}");
+            }
         }
 
         private string? CurrentCharacterTag() => XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;

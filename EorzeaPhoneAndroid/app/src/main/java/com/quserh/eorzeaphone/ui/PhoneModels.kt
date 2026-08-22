@@ -297,6 +297,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var messagesTab by mutableStateOf(false) // false = 聊天, true = 联系人;用于聊天/联系人分页
     var selectedApp by mutableStateOf<PhoneAppItem?>(null)
     var appInForeground by mutableStateOf(true)
+    private val _defaultChatListTab = mutableStateOf(prefs.getString("defaultChatListTab", "tabs") ?: "tabs")
+    var defaultChatListTab: String
+        get() = _defaultChatListTab.value
+        set(value) { _defaultChatListTab.value = value; prefs.edit().putString("defaultChatListTab", value).apply() }
     var openLocalRequest by mutableStateOf(0)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
     var homePage by mutableStateOf(0)
@@ -1384,6 +1388,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun showMessagesTab(contacts: Boolean) {
         appInForeground = true
         selectedFriend = null
+        chatListTab = defaultChatListTab
         messagesTab = contacts
         selectedApp = AppCatalog.dock.firstOrNull { it.destination == if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat }
         screen = if (contacts) PhoneScreen.Contacts else PhoneScreen.Chat

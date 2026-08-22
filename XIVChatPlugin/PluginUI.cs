@@ -158,7 +158,10 @@ namespace XIVChatPlugin {
                 if (WithWhiteText(() => ImGui.InputText("历史存储路径", ref backlogPath, 260, ImGuiInputTextFlags.None))) {
                     this.Plugin.Config.BacklogPath = string.IsNullOrWhiteSpace(backlogPath) ? null : backlogPath.Trim();
                     this.Plugin.Config.Save();
+                    this.Plugin.Server.FlushBacklog();
                 }
+                ImGui.SameLine();
+                if (ImGui.Button("立即保存历史")) this.Plugin.Server.FlushBacklog();
                 ImGui.SameLine();
                 HelpMarker("留空则存到插件配置目录 chat_backlog.bin；可填绝对路径（如 D:\\backlog\\chat.bin）");
 
