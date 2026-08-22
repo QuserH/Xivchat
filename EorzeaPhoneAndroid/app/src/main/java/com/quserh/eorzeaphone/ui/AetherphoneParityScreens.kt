@@ -336,7 +336,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
         }
         val myName = state.profile?.name.orEmpty().normalizedPlayerName()
         val rows = state.conversations.filter { c ->
-            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party) &&
+            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party || c.key == "novice") &&
                 !state.isConversationHidden(c) &&
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
@@ -1024,7 +1024,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
     }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.offset(y = (-3).dp).size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
                 LightRefreshIcon(AetherPurple, Modifier.size(26.dp))
             }
         }
@@ -1775,7 +1775,22 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val cleaned = cleanChatText(message.text, author)
                 val renderMsg = message
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-                ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, forceColor = neutral, highlight = highlight, trailingTime = lightClock(message.timestamp), timeColor = timeColor)
+                val timeText = lightClock(message.timestamp)
+                val density = LocalDensity.current
+                val fontPx = with(density) { fontUnit.toPx() }
+                val timeFontPx = with(density) { timeUnit.toPx() }
+                val textPx = remember(cleaned, fontPx) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = fontPx }.measureText(cleaned) }
+                val timePx = remember(timeText, timeFontPx) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = timeFontPx }.measureText(timeText) }
+                val inlineTime = textPx + with(density) { 8.dp.toPx() } + timePx <= with(density) { 288.dp.toPx() } - with(density) { 6.dp.toPx() }
+                if (inlineTime) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
+                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                    }
+                } else {
+                    ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.fillMaxWidth(), forceColor = neutral, highlight = highlight)
+                    Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.align(Alignment.End).padding(top = 3.dp, end = 2.dp))
+                }
             }
         }
     }
