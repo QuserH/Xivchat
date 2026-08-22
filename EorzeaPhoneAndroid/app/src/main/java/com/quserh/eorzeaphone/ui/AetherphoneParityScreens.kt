@@ -857,7 +857,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         } else {
                             msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }
                         }
-                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true)
+                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize)
                     }
                 }
             }
@@ -1426,6 +1426,11 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
                 onMinus = { state.chatFontSize = (state.chatFontSize - 1).coerceAtLeast(10) },
                 onPlus = { state.chatFontSize = (state.chatFontSize + 1).coerceAtMost(26) },
             )
+            ChatSettingDivider()
+            ChatAdjustRow("角色ID字号", state.chatAuthorFontSize,
+                onMinus = { state.chatAuthorFontSize = (state.chatAuthorFontSize - 1).coerceAtLeast(9) },
+                onPlus = { state.chatAuthorFontSize = (state.chatAuthorFontSize + 1).coerceAtMost(22) },
+            )
         }
         Text("主题", color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = LocalContentMargin.current.dp + 4.dp, top = 18.dp, bottom = 6.dp))
         Column(
@@ -1575,7 +1580,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
                     state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
                 } else 0L
-                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus)
+                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -1853,9 +1858,9 @@ private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk
     val head = chunks.take(iconIdx)
     val icon = chunks[iconIdx]
     val rest = chunks.drop(iconIdx + 1)
-    fun isLinkPart(t: String) = t.any { it.code in 0xE000..0xF8FF || it.code == 0xFFFD } || t.isBlank()
+    fun isMarker(t: String) = t.any { it.code in 0xE000..0xF8FF || it.code == 0xFFFD || it.code == 0xE0BB } || t.isBlank()
     var clusterEnd = 0
-    for (i in rest.indices) { if (isLinkPart(rest[i].text.orEmpty())) clusterEnd = i + 1 else break }
+    for (i in rest.indices) { val t = rest[i].text.orEmpty(); if (i == 0 || isMarker(t)) clusterEnd = i + 1 else break }
     val cluster = rest.take(clusterEnd)
     val tail = rest.drop(clusterEnd)
     fun clean(s: String?) = (s ?: "").filter { it.code !in 0xE000..0xF8FF && it.code != 0xFFFD }
@@ -1949,7 +1954,7 @@ private fun chatBubbleStyle(color: Color, fontSize: TextUnit, lineHeight: TextUn
     )
 
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -1979,13 +1984,13 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
                     val statIconId = if (!self) message.senderStatusIcon?.takeIf { it > 0 } else null
                     if (statIconId != null) {
-                        Box(Modifier.size(15.dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, 11.sp, null) }
+                        Box(Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                     } else {
                         val titleIcon = (if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null)
-                        if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size(15.dp).padding(end = 3.dp))
+                        if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp))
                     }
-                    Text(authorAnnotated, fontSize = 11.sp)
-                    if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
+                    Text(authorAnnotated, fontSize = authorFontSizeSp.sp)
+                    if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
             BoxWithConstraints(

@@ -550,6 +550,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var chatWrapChars: Int
         get() = _chatWrapChars.value
         set(value) { _chatWrapChars.value = value; prefs.edit().putInt("chatWrapChars", value).apply() }
+    private val _chatAuthorFontSize = mutableStateOf(prefs.getInt("chatAuthorFontSize", 12))
+    var chatAuthorFontSize: Int
+        get() = _chatAuthorFontSize.value
+        set(value) { _chatAuthorFontSize.value = value.coerceIn(9, 22); prefs.edit().putInt("chatAuthorFontSize", _chatAuthorFontSize.value).apply() }
     private val _chatFontSize = mutableStateOf(prefs.getInt("chatFontSize", 14))
     var chatFontSize: Int
         get() = _chatFontSize.value
