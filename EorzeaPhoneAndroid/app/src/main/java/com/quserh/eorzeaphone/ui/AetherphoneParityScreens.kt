@@ -240,7 +240,7 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = 6.dp),
+                modifier = Modifier.offset(y = 4.dp),
                 onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
             if (titleIcon != null) {
@@ -1846,7 +1846,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
-                val canInline = lastLinePx + gapPx + timePx <= contentPx
+                val canInline = lineCount == 1 && lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
@@ -1864,8 +1864,11 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                         val isLast = i == lineCount - 1
                         val lineW = lineWidths[i]
                         val chars = (le - ls).coerceAtLeast(1)
-                        val extraPx = if (isLast) 0f else (bubbleWidePx - lineW).coerceAtLeast(0f)
-                        val lsSp = if (!isLast && chars > 1 && extraPx > 0f) with(dens) { (extraPx / chars / (dens.density * dens.fontScale)).sp } else 0.sp
+                        val lastCh = if (le > ls) ink.annotated.text[le - 1] else ' '
+                        val hardBreak = !isLast && (lastCh == '\n' || lastCh == '\r')
+                        val isAutoWrap = !isLast && !hardBreak && lineW >= bubbleWidePx * 0.85f
+                        val extraPx = if (!isAutoWrap) 0f else (bubbleWidePx - lineW).coerceAtLeast(0f)
+                        val lsSp = if (isAutoWrap && chars > 1 && extraPx > 0f) with(dens) { (extraPx / chars / (dens.density * dens.fontScale)).sp } else 0.sp
                         if (isLast && canInline) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                                 Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.weight(1f, fill = false))
