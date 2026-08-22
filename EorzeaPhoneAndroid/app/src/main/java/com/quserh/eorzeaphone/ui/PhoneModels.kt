@@ -1379,17 +1379,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         } else {
             trimmed
         }
-        val sendChannel = when (conv.category) {
-            ChatCategory.Linkshell -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)
-            ChatCategory.Party -> 2
-            ChatCategory.FreeCompany -> 6
+        val sendChannel = when {
+            conv.key == "novice" -> 27
+            conv.category == ChatCategory.Linkshell -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)
+            conv.category == ChatCategory.Party -> 2
+            conv.category == ChatCategory.FreeCompany -> 6
             else -> null
         }
         connection.sendChatOnChannel(sendChannel, payload)
         android.util.Log.i("EorzeaPhone", "sendChat payload=" + payload)
         val isTell = conv.category == ChatCategory.Tell
         val selfSender = if (isTell) conv.tellRecipient.ifBlank { profile?.name.orEmpty() } else profile?.name.orEmpty().ifBlank { "我" }
-        val selfMsg = GameChatMessage(System.currentTimeMillis(), selfSender, trimmed, outChannelFor(conv.category), self = true, sendState = if (isTell) 1 else 0)
+        val echoChannel = if (conv.key == "novice") 27 else outChannelFor(conv.category)
+        val selfMsg = GameChatMessage(System.currentTimeMillis(), selfSender, trimmed, echoChannel, self = true, sendState = if (isTell) 1 else 0)
         chats.add(selfMsg)
         conv.add(selfMsg)
         pendingSelfTexts["${conv.key}\u0000$trimmed"] = ""
@@ -1626,8 +1628,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
         // Emotes from a specific player belong inside that player's DM thread.
+        val isNovice = message.channel == 27
         val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
-        val key = if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey()
+        val key = if (isNovice) "novice" else (if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey())
         conversationByKey[key]?.let { existing ->
             if (existing.category == ChatCategory.Tell) linkFriendAvatars(friends)
             return existing
@@ -1647,13 +1650,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         if (message.category == ChatCategory.System) return null
         // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
         // sent message must keep the group conversation visible in the message list.
-        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party
+        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party || isNovice
         if (message.self || message.isFrom(profile?.name)) {
             if (!groupChannel && message.category != ChatCategory.Tell) return null
             val existing = conversationByKey[key]
             if (existing != null) return existing
         }
         val groupTitle = when {
+            isNovice -> "新人频道"
             message.category == ChatCategory.Linkshell -> groupNameForChannel(message.channel) ?: message.conversationTitle()
             message.category == ChatCategory.Party -> "小队"
             message.category == ChatCategory.FreeCompany -> "部队"

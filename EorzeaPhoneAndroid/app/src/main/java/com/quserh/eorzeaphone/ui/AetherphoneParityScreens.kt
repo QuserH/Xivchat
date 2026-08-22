@@ -233,10 +233,12 @@ private fun LightHeader(
                 title,
                 color = AetherLightText,
                 fontSize = 20.sp,
+                lineHeight = 20.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.offset(y = 3.dp),
                 onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
             if (titleIcon != null) {
