@@ -1846,7 +1846,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
-                val canInline = lineCount == 1 && lastLinePx + gapPx + timePx <= contentPx
+                val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
@@ -1871,7 +1871,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                         val lsSp = if (isAutoWrap && chars > 1 && extraPx > 0f) with(dens) { (extraPx / chars / (dens.density * dens.fontScale)).sp } else 0.sp
                         if (isLast && canInline) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                                Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.weight(1f, fill = false))
+                                Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false)
+                                Spacer(Modifier.weight(1f))
                                 Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 1.dp))
                             }
                         } else {
