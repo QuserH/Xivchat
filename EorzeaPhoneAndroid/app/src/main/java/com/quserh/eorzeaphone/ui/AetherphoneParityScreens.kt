@@ -100,6 +100,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -214,6 +215,7 @@ private fun LightFrame(content: @Composable () -> Unit) {
 private fun LightHeader(
     title: String,
     onBack: () -> Unit,
+    titleOffsetY: Dp = 4.dp,
     trailing: @Composable RowScope.() -> Unit = {},
     titleIcon: (@Composable () -> Unit)? = null,
 ) {
@@ -241,7 +243,7 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = 4.dp),
+                modifier = Modifier.offset(y = titleOffsetY),
                 onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
             if (titleIcon != null) {
@@ -1027,7 +1029,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        LightHeader("联系人", state::back) {
+        LightHeader("联系人", state::back, titleOffsetY = 13.dp) {
             Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
                 LightRefreshIcon(AetherPurple, Modifier.size(26.dp))
             }
@@ -1757,22 +1759,19 @@ private fun chatBubbleInk(
     val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     // 商品/道具链接去重：形如 [名字X][图标][名字Y]，若 X 是 Y 的前缀（道具名被插件重复下发），丢弃 X。
     val skipDup = mutableSetOf<Int>()
+    // 以图标后的“链接文本（道具名）”为锚点：任何与其相同、或是其前缀/超集的其他文本块都视为重复，去掉。
     for (i in useChunks.indices) {
-        val c = useChunks[i]
-        if (c.icon == null) continue
-        // [Text X][Icon][Text Y]：X 是 Y 的前缀/相同 → 去掉重复的 X
-        if (i > 0 && useChunks[i - 1].icon == null) {
-            val prev = useChunks[i - 1].text.orEmpty().trim()
-            var j = i + 1
-            while (j < useChunks.size && useChunks[j].icon != null) j++
-            val after = if (j < useChunks.size) useChunks[j].text.orEmpty().trim() else ""
-            if (prev.isNotEmpty() && after.isNotEmpty() && (after == prev || after.startsWith(prev))) skipDup.add(i - 1)
-        }
-        // [Icon][Text X][Text X]：去掉图标后重复的道具名
-        if (i + 2 < useChunks.size && useChunks[i + 1].icon == null && useChunks[i + 2].icon == null) {
-            val t1 = useChunks[i + 1].text.orEmpty().trim()
-            val t2 = useChunks[i + 2].text.orEmpty().trim()
-            if (t1.isNotEmpty() && (t1 == t2 || t2.startsWith(t1))) skipDup.add(i + 2)
+        if (useChunks[i].icon == null) continue
+        var s = i + 1
+        while (s < useChunks.size && useChunks[s].icon != null) s++
+        if (s >= useChunks.size) continue
+        val link = useChunks[s].text.orEmpty().trim()
+        if (link.isEmpty()) continue
+        for (k in useChunks.indices) {
+            if (k == s) continue
+            val tk = useChunks[k].text.orEmpty().trim()
+            if (tk.isEmpty()) continue
+            if (tk == link || tk.startsWith(link) || link.startsWith(tk)) skipDup.add(k)
         }
     }
     val builder = AnnotatedString.Builder()
@@ -1968,11 +1967,12 @@ private fun chatChunkColor(value: Long): Color {
 @Composable
 private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
     if (index in 0xE000..0xF8FF) {
-        val axisFamily = remember(index) { FontFamily(Font(R.font.ffxiv_axis)) }
-        val color = linkColor ?: Color(0xFFFF7E1E)
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(index.toChar().toString(), fontFamily = axisFamily, fontSize = fontSize, color = color, maxLines = 1, softWrap = false)
-        }
+        val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+        val color = Color(0xFFFF7E1E)
+        var bmp by remember(index, color) { mutableStateOf<ImageBitmap?>(null) }
+        LaunchedEffect(index, color) { bmp = renderAxisGlyph(appContext, index, color) }
+        val img = bmp
+        if (img != null) Image(img, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         return
     }
     if (index >= 1000) {
@@ -1990,6 +1990,25 @@ private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
         drawImage(bitmap, srcOffset = androidx.compose.ui.unit.IntOffset(rect[0], rect[1]), srcSize = androidx.compose.ui.unit.IntSize(rect[2], rect[3]))
     }
+}
+
+private fun renderAxisGlyph(context: android.content.Context, code: Int, color: Color): ImageBitmap? {
+    val typeface = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ffxiv_axis) ?: return null
+    val glyph = code.toChar().toString()
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        this.typeface = typeface
+        this.color = color.toArgb()
+        this.textSize = 72f
+    }
+    val bounds = android.graphics.Rect()
+    paint.getTextBounds(glyph, 0, glyph.length, bounds)
+    val pad = 8
+    val w = (bounds.width() + pad * 2).coerceAtLeast(2)
+    val h = (bounds.height() + pad * 2).coerceAtLeast(2)
+    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    canvas.drawText(glyph, (-bounds.left + pad).toFloat(), (-bounds.top + pad).toFloat(), paint)
+    return bmp.asImageBitmap()
 }
 
 private fun fontIconRect(index: Int): IntArray? = when (index) {
