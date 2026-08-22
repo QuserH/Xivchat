@@ -333,6 +333,7 @@ namespace XIVChatPlugin {
 
             string? senderName = null;
             string? senderWorld = null;
+            string? senderStatus = null;
             foreach (var payload in message.Sender.Payloads) {
                 if (payload is PlayerPayload playerPayload) {
                     senderName = playerPayload.PlayerName;
@@ -348,7 +349,8 @@ namespace XIVChatPlugin {
                 message.Message.Encode(),
                 chunks,
                 senderName,
-                senderWorld
+                senderWorld,
+                senderStatus
             );
 
             this._backlog.AddLast(msg);

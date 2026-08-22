@@ -27,6 +27,7 @@ data class GameChatMessage(
     val sendState: Int = 0,
     val senderName: String? = null,
     val senderWorld: String? = null,
+    val senderStatusName: String? = null,
 ) {
     val category: ChatCategory get() = ChatCategory.fromChannel(channel)
 

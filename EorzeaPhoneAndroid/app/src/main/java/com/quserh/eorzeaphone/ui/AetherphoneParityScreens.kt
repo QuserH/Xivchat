@@ -831,7 +831,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 }
             }
             val listState = rememberLazyListState()
-            LaunchedEffect(filter, msgs.size) { if (msgs.isNotEmpty()) listState.scrollToItem(msgs.lastIndex) }
+            LaunchedEffect(filter, msgs.size) { if (msgs.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(msgs.lastIndex) }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                     Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
@@ -1099,6 +1099,21 @@ private fun AetherphoneContactsList(state: PhoneState) {
             },
             confirmButton = {},
         )
+    }
+}
+
+private fun senderStatusNameIcon(name: String?): Int? {
+    val n = name ?: return null
+    return when {
+        n.contains("新人") || n.contains("新手") -> R.drawable.fst_new
+        n.contains("回归") -> R.drawable.fst_returner
+        n.contains("制作采集") || n.contains("制作") -> R.drawable.fst_tradementor
+        n.contains("对战") -> R.drawable.fst_pvpmentor
+        n.contains("战斗") -> R.drawable.fst_pvementor
+        n.contains("指导者") || n.contains("导师") -> R.drawable.fst_mentor
+        n.contains("组队") -> R.drawable.fst_lookingforparty
+        n.contains("招募") -> R.drawable.fst_recruiting
+        else -> null
     }
 }
 
@@ -1499,10 +1514,19 @@ private fun dayKey(timestamp: Long): String {
     return String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
 }
 
+private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 3): Boolean {
+    if (listState.isScrollInProgress) return false
+    val info = listState.layoutInfo
+    if (info.totalItemsCount <= 0) return true
+    val last = info.visibleItemsInfo.lastOrNull() ?: return true
+    // 距离底部的条目数（用户上滑超过 itemMargin 条就不再自动跳转）
+    return (info.totalItemsCount - 1 - last.index) <= itemMargin
+}
+
 @Composable
 private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier, followLatest: Boolean = false) {
     LaunchedEffect(messages.size, conversation.key) {
-        if (followLatest && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+        if (followLatest && messages.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(messages.lastIndex)
     }
     SelectionContainer {
         LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -1686,11 +1710,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search) {
-                    if (search.isBlank() && visible.isNotEmpty()) listState.scrollToItem(visible.lastIndex)
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex)
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) listState.scrollToItem(visible.lastIndex)
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex)
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {
@@ -1948,7 +1972,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
-                    val titleIcon = senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }
+                    val titleIcon = senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }
                     if (titleIcon != null && !self) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size(15.dp).padding(end = 3.dp))
                     Text(authorAnnotated, fontSize = 11.sp)
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))

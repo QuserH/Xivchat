@@ -39,7 +39,10 @@ namespace XIVChatCommon.Message.Server {
         [IgnoreMember]
         protected override byte Code => (byte) ServerOperation.Message;
 
-        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null) {
+        public ServerMessage() {
+        }
+
+        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null) {
             this.Timestamp = timestamp;
             this.Channel = channel;
             this.Sender = sender;
