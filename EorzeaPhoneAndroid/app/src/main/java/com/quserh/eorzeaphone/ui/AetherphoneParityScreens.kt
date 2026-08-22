@@ -114,6 +114,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
@@ -1759,10 +1760,17 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     val cleaned = cleanChatText(message.text, author)
                     val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
                     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
+                    var multiline by remember(cleaned, fontSizeSp) { mutableStateOf(false) }
                     Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
+                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight, onTextLayout = { multiline = it.lineCount > 1 })
+                        if (!multiline) {
+                            Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
+                                modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                        }
+                    }
+                    if (multiline) {
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                            modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+                            modifier = Modifier.align(Alignment.End).padding(top = 3.dp, end = 2.dp))
                     }
                 }
         }
@@ -1771,7 +1779,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
 
 @Composable
 private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Color, fontSize: androidx.compose.ui.unit.TextUnit,
-                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, forceColor: Boolean = false, highlight: String = "") {
+                          lineHeight: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, forceColor: Boolean = false, highlight: String = "", onTextLayout: (TextLayoutResult) -> Unit = {}) {
     val chunks = message.chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     val inline = buildMap<String, InlineTextContent> {
         chunks.forEachIndexed { index, chunk ->
@@ -1796,7 +1804,7 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
         fontFamily = if (message.category == ChatCategory.System) FontFamily.Monospace else FontFamily.Default,
         fontWeight = if (message.category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
     )
-    Text(annotated, inlineContent = inline, style = style, modifier = modifier)
+    Text(annotated, inlineContent = inline, style = style, modifier = modifier, onTextLayout = onTextLayout)
 }
 
 private fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
