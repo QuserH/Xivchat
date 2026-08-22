@@ -215,7 +215,7 @@ private fun LightFrame(content: @Composable () -> Unit) {
 private fun LightHeader(
     title: String,
     onBack: () -> Unit,
-    titleOffsetY: Dp = 4.dp,
+    titleOffsetY: Dp = 0.dp,
     trailing: @Composable RowScope.() -> Unit = {},
     titleIcon: (@Composable () -> Unit)? = null,
 ) {
@@ -407,8 +407,10 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).padding(start = 4.dp)) {
                                     last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1, softWrap = false) }
-                                    ChatTabNotificationIcon(filter.alertPolicy != ChatAlertPolicy.Off) {
-                                        state.toggleChatFilterNotifications(filter)
+                                    if (filter.alertPolicy == ChatAlertPolicy.Off) {
+                                        Box(Modifier.size(25.dp).clickable { state.toggleChatFilterNotifications(filter) }, contentAlignment = Alignment.Center) {
+                                            ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(16.dp))
+                                        }
                                     }
                                 }
                             }
@@ -416,6 +418,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                             DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
                                 DropdownMenuItem(text = { Text("更换图标") }, onClick = { iconKeyTarget = filter.id; longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
+                                DropdownMenuItem(text = { Text(if (filter.alertPolicy == ChatAlertPolicy.Off) "取消消息免打扰" else "消息免打扰") }, onClick = { state.toggleChatFilterNotifications(filter); longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("删除标签页", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
                             }
                             }
@@ -669,6 +672,7 @@ private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
                 val label = when (cat) {
                     "all" -> "全部"
                     "avatar" -> "头像"
+                    "status" -> "状态"
                     else -> cat
                 }
                 Text(label, color = if (libraryTab == cat) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
@@ -693,7 +697,7 @@ private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
 }
 @Composable
 private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor: Color = Color.White) {
-    val builtin = builtinConversationIcons.firstOrNull { it.id == icon }
+    val builtin = (builtinConversationIcons + defaultConversationIcons).firstOrNull { it.id == icon }
     when {
         builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         icon.startsWith("/") -> {
@@ -714,7 +718,7 @@ private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor:
 @Composable
 private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneState, fallback: String) {
     val icon = state.conversationIcon(conversation.key, conversation.category)
-    val builtin = builtinConversationIcons.firstOrNull { it.id == icon }
+    val builtin = (builtinConversationIcons + defaultConversationIcons).firstOrNull { it.id == icon }
     when {
         builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         icon.startsWith("/") -> {
@@ -945,7 +949,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                     Text(preview, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (!conversation.notify) ImageGlyph(R.drawable.app_notifications, AetherLightMuted.copy(alpha = .62f), Modifier.size(14.dp).padding(start = 2.dp))
+                    if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
                     if (conversation.unread > 0) {
                         Box(
                             Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(Color(0xFFE5485D)),
@@ -967,6 +971,10 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             })
             DropdownMenuItem(text = { Text("重命名") }, onClick = {
                 onRename(conversation)
+                menuOpen = false
+            })
+            DropdownMenuItem(text = { Text(if (conversation.notify) "消息免打扰" else "取消消息免打扰") }, onClick = {
+                state.toggleConversationNotify(conversation)
                 menuOpen = false
             })
             DropdownMenuItem(text = { Text("移出列表") }, onClick = {
@@ -1029,9 +1037,9 @@ private fun AetherphoneContactsList(state: PhoneState) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        LightHeader("联系人", state::back, titleOffsetY = 13.dp) {
+        LightHeader("联系人", state::back) {
             Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
-                LightRefreshIcon(AetherPurple, Modifier.size(26.dp))
+                LightRefreshIcon(AetherPurple, Modifier.size(19.dp))
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
@@ -1754,14 +1762,15 @@ private class ChatInk(
 
 private fun chatBubbleInk(
     chunks: List<GameChatChunk>, fallback: String, color: Color, forceColor: Boolean, highlight: String, light: Boolean,
-    fontSize: TextUnit, lineHeight: TextUnit,
+    fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily,
 ): ChatInk {
     val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     // 商品/道具链接去重：形如 [名字X][图标][名字Y]，若 X 是 Y 的前缀（道具名被插件重复下发），丢弃 X。
     val skipDup = mutableSetOf<Int>()
-    // 以图标后的“链接文本（道具名）”为锚点：任何与其相同、或是其前缀/超集的其他文本块都视为重复，去掉。
+    // 只在“道具链接图标(0xE0BB)”上锚定去重（HQ 等指示图标不参与），
+    // 以避免图标后重复的道具名再次出现。
     for (i in useChunks.indices) {
-        if (useChunks[i].icon == null) continue
+        if (useChunks[i].icon != 0xE0BB) continue
         var s = i + 1
         while (s < useChunks.size && useChunks[s].icon != null) s++
         if (s >= useChunks.size) continue
@@ -1789,7 +1798,7 @@ private fun chatBubbleInk(
             if (text.isEmpty()) return@forEachIndexed
             val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
             val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
-            builder.appendHighlighted(text, highlight, spanStyle, Color(0x66FFEB3B))
+            builder.appendPuaAware(text, highlight, spanStyle, Color(0x66FFEB3B), axisFont)
             len += text.length
         }
     }
@@ -1840,6 +1849,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val textMeasurer = rememberTextMeasurer()
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val cleaned = cleanChatText(message.text, author).ifBlank { " " }
+    val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val timeText = lightClock(message.timestamp)
     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
     val baseColor = if (self) Color.White else AetherLightText
@@ -1868,7 +1878,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
                 val ink = remember(message, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
-                    chatBubbleInk(message.chunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit)
+                    chatBubbleInk(message.chunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont)
                 }
                 val inline = chatBubbleInline(message.chunks, cleaned, fontUnit, lineUnit)
                 val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) { chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start) }
@@ -1953,6 +1963,23 @@ private fun AnnotatedString.Builder.appendHighlighted(text: String, query: Strin
         if (index > from) withStyle(style) { append(text.substring(from, index)) }
         withStyle(style.merge(SpanStyle(background = highlight))) { append(text.substring(index, index + q.length)) }
         from = index + q.length
+    }
+}
+
+private fun AnnotatedString.Builder.appendPuaAware(text: String, query: String, style: SpanStyle, highlight: Color, axisFont: FontFamily) {
+    // 把 0xE000..0xF8FF 的轴字形（如 HQ / e03c、链接符号）用 FFXIV 轴字体渲染，其余走默认字体 + 高亮。
+    var i = 0
+    while (i < text.length) {
+        if (text[i].code in 0xE000..0xF8FF) {
+            withStyle(SpanStyle(fontFamily = axisFont, color = style.color, fontStyle = style.fontStyle)) {
+                append(text[i].toString())
+            }
+            i++
+        } else {
+            val start = i
+            while (i < text.length && text[i].code !in 0xE000..0xF8FF) i++
+            appendHighlighted(text.substring(start, i), query, style, highlight)
+        }
     }
 }
 

@@ -89,8 +89,7 @@ data class PhoneAppItem(
 data class BuiltinConversationIcon(val id: String, val label: String, @DrawableRes val res: Int, val category: String = "")
 
 val builtinConversationIcons = listOf(
-    BuiltinConversationIcon("party", "小队", R.drawable.msg_party, "system"),
-    BuiltinConversationIcon("fc", "部队", R.drawable.msg_fc, "system"),    BuiltinConversationIcon("gpose_01", "贴纸1", R.drawable.gpose_01, "avatar"),
+    BuiltinConversationIcon("gpose_01", "贴纸1", R.drawable.gpose_01, "avatar"),
     BuiltinConversationIcon("gpose_02", "贴纸2", R.drawable.gpose_02, "avatar"),
     BuiltinConversationIcon("gpose_03", "贴纸3", R.drawable.gpose_03, "avatar"),
     BuiltinConversationIcon("gpose_04", "贴纸4", R.drawable.gpose_04, "avatar"),
@@ -120,7 +119,64 @@ val builtinConversationIcons = listOf(
     BuiltinConversationIcon("gpose_28", "贴纸28", R.drawable.gpose_28, "avatar"),
     BuiltinConversationIcon("gpose_29", "贴纸29", R.drawable.gpose_29, "avatar"),
     BuiltinConversationIcon("gpose_30", "贴纸30", R.drawable.gpose_30, "avatar"),
-    BuiltinConversationIcon("gpose_31", "贴纸31", R.drawable.gpose_31, "avatar"),)
+    BuiltinConversationIcon("gpose_31", "贴纸31", R.drawable.gpose_31, "avatar"),
+    BuiltinConversationIcon("status_01", "状态1", R.drawable.ic_status_01, "status"),
+    BuiltinConversationIcon("status_02", "状态2", R.drawable.ic_status_02, "status"),
+    BuiltinConversationIcon("status_03", "状态3", R.drawable.ic_status_03, "status"),
+    BuiltinConversationIcon("status_04", "状态4", R.drawable.ic_status_04, "status"),
+    BuiltinConversationIcon("status_05", "状态5", R.drawable.ic_status_05, "status"),
+    BuiltinConversationIcon("status_06", "状态6", R.drawable.ic_status_06, "status"),
+    BuiltinConversationIcon("status_07", "状态7", R.drawable.ic_status_07, "status"),
+    BuiltinConversationIcon("status_08", "状态8", R.drawable.ic_status_08, "status"),
+    BuiltinConversationIcon("status_09", "状态9", R.drawable.ic_status_09, "status"),
+    BuiltinConversationIcon("status_10", "状态10", R.drawable.ic_status_10, "status"),
+    BuiltinConversationIcon("status_11", "状态11", R.drawable.ic_status_11, "status"),
+    BuiltinConversationIcon("status_12", "状态12", R.drawable.ic_status_12, "status"),
+    BuiltinConversationIcon("status_13", "状态13", R.drawable.ic_status_13, "status"),
+    BuiltinConversationIcon("status_14", "状态14", R.drawable.ic_status_14, "status"),
+    BuiltinConversationIcon("status_15", "状态15", R.drawable.ic_status_15, "status"),
+    BuiltinConversationIcon("status_16", "状态16", R.drawable.ic_status_16, "status"),
+    BuiltinConversationIcon("status_17", "状态17", R.drawable.ic_status_17, "status"),
+    BuiltinConversationIcon("status_18", "状态18", R.drawable.ic_status_18, "status"),
+    BuiltinConversationIcon("status_19", "状态19", R.drawable.ic_status_19, "status"),
+    BuiltinConversationIcon("status_20", "状态20", R.drawable.ic_status_20, "status"),
+    BuiltinConversationIcon("status_21", "状态21", R.drawable.ic_status_21, "status"),
+    BuiltinConversationIcon("status_22", "状态22", R.drawable.ic_status_22, "status"),
+    BuiltinConversationIcon("status_23", "状态23", R.drawable.ic_status_23, "status"),
+    BuiltinConversationIcon("status_24", "状态24", R.drawable.ic_status_24, "status"),
+    BuiltinConversationIcon("status_25", "状态25", R.drawable.ic_status_25, "status"),
+    BuiltinConversationIcon("status_26", "状态26", R.drawable.ic_status_26, "status"),
+    BuiltinConversationIcon("status_27", "状态27", R.drawable.ic_status_27, "status"),
+    BuiltinConversationIcon("status_28", "状态28", R.drawable.ic_status_28, "status"),
+    BuiltinConversationIcon("status_29", "状态29", R.drawable.ic_status_29, "status"),
+    BuiltinConversationIcon("status_30", "状态30", R.drawable.ic_status_30, "status"),
+    BuiltinConversationIcon("status_31", "状态31", R.drawable.ic_status_31, "status"),
+    BuiltinConversationIcon("status_32", "状态32", R.drawable.ic_status_32, "status"),
+    BuiltinConversationIcon("status_33", "状态33", R.drawable.ic_status_33, "status"),
+    BuiltinConversationIcon("status_34", "状态34", R.drawable.ic_status_34, "status"),
+    BuiltinConversationIcon("status_35", "状态35", R.drawable.ic_status_35, "status"),
+    BuiltinConversationIcon("status_36", "状态36", R.drawable.ic_status_36, "status"),
+    BuiltinConversationIcon("status_37", "状态37", R.drawable.ic_status_37, "status"),
+    BuiltinConversationIcon("status_38", "状态38", R.drawable.ic_status_38, "status"),
+    BuiltinConversationIcon("status_39", "状态39", R.drawable.ic_status_39, "status"),
+    BuiltinConversationIcon("status_40", "状态40", R.drawable.ic_status_40, "status"),
+    BuiltinConversationIcon("status_41", "状态41", R.drawable.ic_status_41, "status"),
+    BuiltinConversationIcon("status_42", "状态42", R.drawable.ic_status_42, "status"),
+    BuiltinConversationIcon("status_43", "状态43", R.drawable.ic_status_43, "status"),
+    BuiltinConversationIcon("status_44", "状态44", R.drawable.ic_status_44, "status"),
+    BuiltinConversationIcon("status_45", "状态45", R.drawable.ic_status_45, "status"),
+    BuiltinConversationIcon("status_46", "状态46", R.drawable.ic_status_46, "status"),
+    BuiltinConversationIcon("status_47", "状态47", R.drawable.ic_status_47, "status"),
+    BuiltinConversationIcon("status_48", "状态48", R.drawable.ic_status_48, "status"),
+    BuiltinConversationIcon("status_49", "状态49", R.drawable.ic_status_49, "status"),
+    BuiltinConversationIcon("status_50", "状态50", R.drawable.ic_status_50, "status"),
+    BuiltinConversationIcon("status_51", "状态51", R.drawable.ic_status_51, "status"),
+)
+
+val defaultConversationIcons = listOf(
+    BuiltinConversationIcon("party", "小队", R.drawable.msg_party, ""),
+    BuiltinConversationIcon("fc", "部队", R.drawable.msg_fc, ""),
+)
 
 data class PhoneFriend(
     val name: String,
@@ -2113,18 +2169,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
                         val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
                         val isTell = event.message.category == ChatCategory.Tell
-                        val allow = !isSelf && when {
-                            isTell -> chatNotifications && tellNotifications && conv.notify
-                            matchedTab != null -> when (matchedTab.alertPolicy) {
-                                ChatAlertPolicy.All -> true
-                                ChatAlertPolicy.Mentions -> mentioned
-                                ChatAlertPolicy.Off -> false
-                            }
-                            else -> false
+                        val allow = !isSelf && chatNotifications && conv.notify && when {
+                            isTell -> tellNotifications
+                            matchedTab != null -> matchedTab.alertPolicy != ChatAlertPolicy.Off
+                            else -> true
                         }
                         if (allow) {
-                            val title = if (isTell) conv.title.ifBlank { event.message.sender } else matchedTab?.label ?: event.message.category.label
-                            notifier.chat(event.message, tellNotifications && event.message.category == ChatCategory.Tell, title)
+                            val title = if (isTell) conv.title.ifBlank { event.message.sender } else (matchedTab?.label ?: conv.title.ifBlank { event.message.category.label })
+                            notifier.chat(event.message, tellNotifications && isTell, title)
                         }
                         saveChats()
                     }
