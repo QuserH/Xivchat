@@ -190,6 +190,7 @@ data class PhoneFriend(
     val currentWorldId: Int = 0,
     val homeWorldId: Int = 0,
     val classJobId: Int = 0,
+    val status: Long = 0,
 )
 
 data class ChatFilter(
@@ -812,7 +813,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         for (index in friends.indices) {
             val friend = friends[index]
             if (friend.online || friend.location.isNotBlank() || friend.job.isNotBlank()) {
-                friends[index] = friend.copy(online = false, location = "", job = "")
+                friends[index] = friend.copy(online = false, location = "", job = "", status = 0)
                 changed = true
             }
         }
@@ -2093,7 +2094,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Error -> statusMessage = event.message
             is PhoneEvent.FriendList -> {
                 friends.clear()
-                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
+                friends.addAll(event.friends.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId, it.status) })
                 linkFriendAvatars(friends)
                 ensureFriendAvatars(friends)
                 saveFriends()
@@ -2101,7 +2102,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             is PhoneEvent.PartyList -> {
                 party.clear()
-                party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId) })
+                party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId, it.status) })
             }
             is PhoneEvent.Chat -> {
                 cacheChannelColor(event.message)

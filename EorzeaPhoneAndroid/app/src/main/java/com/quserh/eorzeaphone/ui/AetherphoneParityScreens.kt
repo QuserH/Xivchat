@@ -1102,6 +1102,27 @@ private fun AetherphoneContactsList(state: PhoneState) {
     }
 }
 
+private fun friendStatusText(status: Long): String? {
+    if (status and (1L shl 47) == 0L) return null
+    return when {
+        (status and (1L shl 43)) != 0L -> "任务中"
+        (status and ((1L shl 36) or (1L shl 37) or (1L shl 38) or (1L shl 39))) != 0L -> "组队中"
+        (status and (1L shl 12)) != 0L -> "忙碌"
+        (status and (1L shl 17)) != 0L -> "离开"
+        (status and (1L shl 23)) != 0L -> "寻找队伍"
+        else -> null
+    }
+}
+
+private fun friendStatusColor(status: Long): Color? {
+    if (status and (1L shl 47) == 0L) return null
+    return when {
+        (status and (1L shl 43)) != 0L -> Color(0xFFFF9F3C)
+        (status and ((1L shl 36) or (1L shl 37) or (1L shl 38) or (1L shl 39))) != 0L -> Color(0xFF8E7BFF)
+        else -> Color(0xFF35C46B)
+    }
+}
+
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onChangeAvatar: (PhoneFriend) -> Unit = {}) {
@@ -1116,9 +1137,13 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onCh
                 }
                 Column(Modifier.weight(1f).padding(start = 16.dp)) {
                     Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(friend.world.ifBlank { "未知服务器" }, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                    val statusText = friendStatusText(friend.status)
+                    Text(listOf(friend.world.ifBlank { "未知服务器" }).plus(statusText?.let { " · $it" }.orEmpty().takeIf { it.isNotEmpty() }).filterNotNull().joinToString(""), color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
-                if (friend.online) Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
+                if (friend.online) {
+                    val sc = friendStatusColor(friend.status)
+                    if (sc != null) Box(Modifier.size(10.dp).clip(CircleShape).background(sc)) else Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
+                }
             }
             if (index < friends.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(AetherLightSeparator))
         }
