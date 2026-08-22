@@ -51,6 +51,8 @@ internal object XivChatCodec {
     }
 
     fun encodeBacklog(amount: Int): ByteArray = pack { packArrayHeader(1); packShort(amount.toShort()) }
+
+    fun encodeCatchUp(afterMillis: Long): ByteArray = pack { packArrayHeader(1); packLong(afterMillis) }
     fun encodePlayerList(type: Int = 2): ByteArray = pack { packArrayHeader(1); packByte(type.toByte()) }
     fun encodePing(): ByteArray = byteArrayOf(1)
     fun encodeShutdown(): ByteArray = byteArrayOf(3)

@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class XivChatConnection(context: Context, private val scope: CoroutineScope, private val onEvent: (PhoneEvent) -> Unit, private val onSendFailure: () -> Unit = {}) {
     private val prefs = context.getSharedPreferences("eorzea_phone_connection", Context.MODE_PRIVATE)
+    private var maxSeenChatTs = prefs.getLong("chatLastSeenTs", 0L)
     private val sodium = LazySodiumAndroid(SodiumAndroid())
     private var socket: Socket? = null
     @Volatile private var sessionOutput: DataOutputStream? = null
@@ -72,7 +73,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
             connected.set(true)
             onEvent(PhoneEvent.Connected)
             send(output, tx, 8, XivChatCodec.encodePreferences())
-            send(output, tx, 4, XivChatCodec.encodeBacklog(100))
+            if (maxSeenChatTs > 0L) send(output, tx, 5, XivChatCodec.encodeCatchUp(maxSeenChatTs)) else send(output, tx, 4, XivChatCodec.encodeBacklog(100))
             send(output, tx, 6, XivChatCodec.encodePlayerList())
             send(output, tx, 6, XivChatCodec.encodePlayerList(1))
 
@@ -86,7 +87,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                     try {
                         when (code) {
                             1 -> Unit
-                            2 -> onEvent(PhoneEvent.Chat(XivChatCodec.readMessage(unpacker)))
+                            2 -> { val m = XivChatCodec.readMessage(unpacker); if (m.timestamp > maxSeenChatTs) { maxSeenChatTs = m.timestamp; prefs.edit().putLong("chatLastSeenTs", maxSeenChatTs).apply() }; onEvent(PhoneEvent.Chat(m)) }
                             3 -> return
                             4 -> if (payload.isEmpty()) {
                                 onEvent(PhoneEvent.GameAvailability(false))
@@ -95,7 +96,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             }
                             5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
                             6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
-                            7 -> XivChatCodec.readBacklog(unpacker).forEach { onEvent(PhoneEvent.Chat(it)) }
+                            7 -> XivChatCodec.readBacklog(unpacker).forEach { m -> if (m.timestamp > maxSeenChatTs) { maxSeenChatTs = m.timestamp; prefs.edit().putLong("chatLastSeenTs", maxSeenChatTs).apply() }; onEvent(PhoneEvent.Chat(m)) }
                             8 -> XivChatCodec.readPlayerList(unpacker).let { (type, players) ->
                                 if (type == 1) onEvent(PhoneEvent.PartyList(players)) else onEvent(PhoneEvent.FriendList(players))
                             }

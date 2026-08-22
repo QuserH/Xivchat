@@ -12,7 +12,8 @@ namespace XIVChatPlugin {
         public ushort Port { get; set; } = 14777;
 
         public bool BacklogEnabled { get; set; } = true;
-        public ushort BacklogCount { get; set; } = 100;
+        public ushort BacklogCount { get; set; } = 500;
+        public string? BacklogPath { get; set; }
 
         public bool SendBattle { get; set; } = true;
 

@@ -1,6 +1,7 @@
 using MessagePack;
 using Sodium;
 using System;
+using System.IO;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -74,6 +75,8 @@ namespace XIVChatPlugin {
         private readonly HashSet<Guid> _waitingForFriendList = [];
 
         private readonly LinkedList<ServerMessage> _backlog = [];
+        private readonly object _backlogLock = new();
+        private DateTime _lastPersist = DateTime.MinValue;
 
         private TcpListener? _listener;
 
@@ -288,6 +291,7 @@ namespace XIVChatPlugin {
         }
 
         internal void Spawn() {
+            this.LoadBacklog();
             var port = this._plugin.Config.Port;
 
             Task.Run(async () => {
@@ -356,10 +360,14 @@ namespace XIVChatPlugin {
                 senderStatusIcon
             );
 
-            this._backlog.AddLast(msg);
-            while (this._backlog.Count > this._plugin.Config.BacklogCount) {
-                this._backlog.RemoveFirst();
+            msg.CharacterTag = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
+            lock (this._backlogLock) {
+                this._backlog.AddLast(msg);
+                while (this._backlog.Count > this._plugin.Config.BacklogCount) {
+                    this._backlog.RemoveFirst();
+                }
             }
+            this.MaybePersistBacklog();
 
             foreach (var client in this._clients.Values) {
                 client.Queue.Writer.TryWrite(msg);
@@ -1873,13 +1881,15 @@ namespace XIVChatPlugin {
 
                     var backlogMessages = new List<ServerMessage>();
 
+                    var currentTag = this.CurrentCharacterTag();
                     var node = this._backlog.Last;
                     while (node != null) {
                         if (backlogMessages.Count >= backlog.Amount) {
                             break;
                         }
 
-                        backlogMessages.Add(node.Value);
+                        var m = node.Value;
+                        if (currentTag == null || m.CharacterTag == null || m.CharacterTag == currentTag) backlogMessages.Add(m);
                         node = node.Previous;
                     }
 
@@ -2084,6 +2094,48 @@ namespace XIVChatPlugin {
             }
         }
 
+        private string? GetBacklogPath() {
+            var p = this._plugin.Config.BacklogPath;
+            if (!string.IsNullOrWhiteSpace(p)) return p;
+            return Path.Combine(XIVChatPlugin.Plugin.Interface.ConfigDirectory.FullName, "chat_backlog.bin");
+        }
+
+        private void MaybePersistBacklog() {
+            if ((DateTime.UtcNow - this._lastPersist).TotalSeconds < 2) return;
+            this._lastPersist = DateTime.UtcNow;
+            System.Threading.Tasks.Task.Run(() => this.PersistBacklog());
+        }
+
+        private void PersistBacklog() {
+            var path = this.GetBacklogPath();
+            if (path == null) return;
+            try {
+                List<ServerMessage> snapshot;
+                lock (this._backlogLock) { snapshot = this._backlog.ToList(); }
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var bytes = MessagePack.MessagePackSerializer.Serialize(snapshot);
+                File.WriteAllBytes(path, bytes);
+            } catch { }
+        }
+
+        private void LoadBacklog() {
+            var path = this.GetBacklogPath();
+            if (path == null || !File.Exists(path)) return;
+            try {
+                var bytes = File.ReadAllBytes(path);
+                var list = MessagePack.MessagePackSerializer.Deserialize<List<ServerMessage>>(bytes);
+                lock (this._backlogLock) {
+                    this._backlog.Clear();
+                    foreach (var m in list) {
+                        this._backlog.AddLast(m);
+                        if (this._backlog.Count > this._plugin.Config.BacklogCount) this._backlog.RemoveFirst();
+                    }
+                }
+            } catch { }
+        }
+
+        private string? CurrentCharacterTag() => XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
+
         private static int? GetSenderStatusIcon(byte[] sender) {
             if (sender == null) return null;
             try {
@@ -2204,7 +2256,10 @@ namespace XIVChatPlugin {
             return chunks;
         }
 
-        private IEnumerable<ServerMessage> MessagesAfter(DateTime time) => this._backlog.Where(msg => msg.Timestamp > time).ToArray();
+        private IEnumerable<ServerMessage> MessagesAfter(DateTime time) {
+            var tag = this.CurrentCharacterTag();
+            return this._backlog.Where(msg => msg.Timestamp > time && (tag == null || msg.CharacterTag == null || msg.CharacterTag == tag)).ToArray();
+        }
 
         private static IEnumerable<string> Wrap(string input) {
             if (input.Length <= MaxMessageLength) {
@@ -2403,6 +2458,7 @@ namespace XIVChatPlugin {
             }
 
             this._plugin.Functions.ReceiveFriendList -= this.OnReceiveFriendList;
+            this.PersistBacklog();
         }
     }
 
