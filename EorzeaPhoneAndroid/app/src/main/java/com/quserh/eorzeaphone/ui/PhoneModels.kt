@@ -507,6 +507,20 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     val chatFilters = mutableStateListOf<ChatFilter>().apply {
         addAll(loadCustomFilters())
     }
+    // 每个筛选器记录的“清空时间点”：清空只是让该筛选器不再显示这些消息，
+    // 其它窗口/筛选器仍引用时保留，直到没有任何引用才真正从本地删除。
+    private val clearedFilters = mutableStateMapOf<String, Long>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("clearedChatFilters", "{}"))
+            o.keys().forEach { k -> put(k, o.getLong(k)) }
+        }
+    }
+    fun clearedUntil(filterId: String): Long = clearedFilters[filterId] ?: 0L
+    private fun persistClearedFilters() {
+        val o = JSONObject()
+        clearedFilters.forEach { (k, v) -> o.put(k, v) }
+        prefs.edit().putString("clearedChatFilters", o.toString()).apply()
+    }
     val conversations = mutableStateListOf<ChatConversation>()
     private val conversationByKey = mutableMapOf<String, ChatConversation>()
     var openConversationKey by mutableStateOf<String?>(null)
@@ -1581,10 +1595,33 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun clearConversation(conv: ChatConversation) {
+        if (conv.key.startsWith("tab:")) {
+            // 筛选器清空：只让该筛选器不再显示这些消息，不清共享数据；无引用后再删除
+            clearedFilters[conv.key.removePrefix("tab:")] = System.currentTimeMillis()
+            persistClearedFilters()
+            conv.clear()
+            pruneOrphanedChats()
+            return
+        }
         val removed = conv.messages.toSet()
         chats.removeAll(removed)
         conv.clear()
         saveChats()
+    }
+
+    private fun pruneOrphanedChats() {
+        val referenced = HashSet<GameChatMessage>()
+        conversations.forEach { referenced.addAll(it.messages) }
+        chatFilters.forEach { f ->
+            val until = clearedFilters[f.id] ?: 0L
+            chats.forEach { m -> if (f.matches(m) && m.timestamp > until) referenced.add(m) }
+        }
+        val kept = chats.filter { it in referenced }
+        if (kept.size != chats.size) {
+            chats.clear()
+            chats.addAll(kept)
+            saveChats()
+        }
     }
 
     fun toggleConversationPin(conv: ChatConversation) {

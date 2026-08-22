@@ -233,12 +233,10 @@ private fun LightHeader(
                 title,
                 color = AetherLightText,
                 fontSize = 20.sp,
-                lineHeight = 20.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = 3.dp),
                 onTextLayout = { titleWidth = with(density) { it.size.width.toDp() } },
             )
             if (titleIcon != null) {
@@ -1025,7 +1023,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
     }
     Column(Modifier.fillMaxSize()) {
         LightHeader("联系人", state::back) {
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.offset(y = (-2).dp).size(40.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
                 LightRefreshIcon(AetherPurple, Modifier.size(26.dp))
             }
         }
@@ -1732,10 +1730,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
 
 @Composable
 private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatFilter) {
-    val conversation = remember(filter.id, state.chats.size) {
+    val clearedUntil = state.clearedUntil(filter.id)
+    val conversation = remember(filter.id, state.chats.size, clearedUntil) {
         val category = filter.categories.firstOrNull() ?: ChatCategory.Public
         ChatConversation("tab:${filter.id}", category, filter.label).also { chat ->
-            state.chats.filter(filter::matches).forEach(chat::add)
+            state.chats.filter { filter.matches(it) && it.timestamp > clearedUntil }.forEach(chat::add)
         }
     }
     AetherphoneConversationScreen(state, conversation)
@@ -1768,18 +1767,15 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
             }
-            Column(
+            Box(
                 Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
                     .padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
             ) {
                 val cleaned = cleanChatText(message.text, author)
-                val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
+                val renderMsg = message
                 val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-                Row(verticalAlignment = Alignment.Bottom) {
-                    ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
-                    Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                        modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
-                }
+                ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.align(Alignment.TopStart).widthIn(max = 288.dp).padding(end = 10.dp, bottom = 3.dp), forceColor = neutral, highlight = highlight)
+                Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, modifier = Modifier.align(Alignment.BottomEnd).padding(start = 8.dp))
             }
         }
     }
