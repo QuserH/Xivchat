@@ -2191,8 +2191,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
                         val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
                         val isTell = event.message.category == ChatCategory.Tell
-                        val onChatScreen = screen == PhoneScreen.Chat
-                        val allow = !isSelf && chatNotifications && conv.notify && (!appInForeground || !onChatScreen) && (if (isTell) tellNotifications else true)
+                        val allow = !isSelf && chatNotifications && conv.notify && !appInForeground && (if (isTell) tellNotifications else true)
                         if (allow) {
                             val title = conv.title.ifBlank { if (isTell) event.message.sender else event.message.category.label }
                             notifier.chat(event.message, tellNotifications && isTell, title)
