@@ -868,7 +868,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             LaunchedEffect(filter, msgs.size) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); listState.animateScrollBy(Float.MAX_VALUE); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.animateScrollBy(Float.MAX_VALUE); scrolledLocal.value = true }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1588,7 +1588,6 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            listState.scrollToItem(messages.lastIndex)
             listState.animateScrollBy(Float.MAX_VALUE)
             scrolledInitialState.value = true
         }
@@ -1774,11 +1773,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex); listState.animateScrollBy(Float.MAX_VALUE) }
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.animateScrollBy(Float.MAX_VALUE) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.scrollToItem(visible.lastIndex); listState.animateScrollBy(Float.MAX_VALUE) }
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.animateScrollBy(Float.MAX_VALUE) }
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {

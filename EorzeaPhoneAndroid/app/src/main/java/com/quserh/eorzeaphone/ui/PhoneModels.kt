@@ -596,6 +596,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         (prefs.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet()).toMutableSet()
     private val hiddenConversations = mutableStateOf((prefs.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
     private val pendingSelfTexts = mutableMapOf<String, String>()
+    private val pendingSends = mutableListOf<GameChatMessage>()
     private val friendAvatars = mutableStateMapOf<String, String>().apply {
         runCatching {
             val o = JSONObject(prefs.getString("friendAvatars", "{}").orEmpty())
@@ -1483,6 +1484,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val selfMsg = GameChatMessage(System.currentTimeMillis(), selfSender, trimmed, echoChannel, self = true, sendState = if (isTell) 1 else 0)
         chats.add(selfMsg)
         conv.add(selfMsg)
+        pendingSends.add(selfMsg)
         pendingSelfTexts["${conv.key}\u0000$trimmed"] = ""
         saveChats()
         chatDraft = ""
@@ -1549,6 +1551,26 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         conversations.forEach { conv -> mark(conv.messages) }
         pendingSelfTexts.clear()
         saveChats()
+    }
+
+    private fun consumeSelfEcho(text: String): Boolean {
+        val idx = pendingSends.indexOfFirst { it.text == text }
+        if (idx < 0) return false
+        val target = pendingSends.removeAt(idx)
+        val existingIdx = chats.indexOfLast { it === target }
+        if (existingIdx >= 0) {
+            val existing = chats[existingIdx]
+            val updated = existing.copy(sendState = 0)
+            chats[existingIdx] = updated
+            val ownerConv = conversations.firstOrNull { it.messages.any { m -> m === existing } }
+            if (ownerConv != null) {
+                val cidx = ownerConv.messages.indexOfFirst { m -> m === existing }
+                if (cidx >= 0) ownerConv.messages[cidx] = updated
+            }
+        }
+        val textKey = pendingSelfTexts.keys.firstOrNull { it.endsWith("\u0000$text") }
+        if (textKey != null) pendingSelfTexts.remove(textKey)
+        return true
     }
 
     fun markPendingSendsDelivered() {
@@ -2135,6 +2157,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 cacheChannelColor(event.message)
                 val convKey = event.message.conversationKey()
                 if (event.message.channel == 12) {
+                    if (consumeSelfEcho(event.message.text)) { saveChats(); return }
                     val echoConv = getOrCreateConversation(event.message)
                     if (echoConv != null) {
                         if (echoConv.category == ChatCategory.Tell) {
@@ -2158,19 +2181,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
                     return
                 }
-                val selfFlag = event.message.isFrom(profile?.name)
-                val selfIdx = if (selfFlag) chats.indexOfLast { it.self && it.text == event.message.text && kotlin.math.abs(it.timestamp - event.message.timestamp) < 60_000L } else -1
-                if (selfIdx >= 0) {
-                    val existing = chats[selfIdx]
-                    val updated = existing.copy(sendState = 0)
-                    chats[selfIdx] = updated
-                    val ownerConv = conversations.firstOrNull { it.messages.any { m -> m === existing } }
-                    if (ownerConv != null) {
-                        val cidx = ownerConv.messages.indexOfFirst { m -> m === existing }
-                        if (cidx >= 0) ownerConv.messages[cidx] = updated
-                    }
-                    pendingSelfTexts.remove(pendingSelfTexts.keys.firstOrNull { it.endsWith("\u0000${event.message.text}") } ?: "")
-                    markPendingSendsDelivered()
+                if (event.message.isFrom(profile?.name) && consumeSelfEcho(event.message.text)) {
                     saveChats()
                 } else if (chats.none { kotlin.math.abs(it.timestamp - event.message.timestamp) < 50L && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
                     if (event.message.category == ChatCategory.System) {
