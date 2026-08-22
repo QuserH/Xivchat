@@ -38,9 +38,10 @@ data class GameChatMessage(
         return sender.normalizedPlayerName() == playerName.normalizedPlayerName()
     }
 
-    fun conversationKey(): String = when (category) {
-        ChatCategory.Tell -> "tell:${sender.normalizedPlayerName()}"
-        ChatCategory.Linkshell -> "linkshell:$channel"
+    fun conversationKey(): String = when {
+        channel == 27 || channel == 75 || channel == 94 -> "novice"
+        category == ChatCategory.Tell -> "tell:${sender.normalizedPlayerName()}"
+        category == ChatCategory.Linkshell -> "linkshell:$channel"
         else -> category.name
     }
 

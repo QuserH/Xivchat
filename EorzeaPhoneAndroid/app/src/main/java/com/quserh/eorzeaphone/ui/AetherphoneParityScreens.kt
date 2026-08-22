@@ -183,7 +183,7 @@ private fun LightSearchField(
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
-        textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
+        textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
         modifier = modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp))
             .background(AetherLightControl),
         decorationBox = { field ->
@@ -866,7 +866,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             LaunchedEffect(filter, msgs.size) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex, Int.MAX_VALUE); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); listState.animateScrollBy(Float.MAX_VALUE); scrolledLocal.value = true }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -920,7 +920,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     onValueChange = { state.chatDraft = it },
                     enabled = state.activeCharacterOnline,
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
                     modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp))
@@ -1586,7 +1586,8 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            listState.scrollToItem(messages.lastIndex, Int.MAX_VALUE)
+            listState.scrollToItem(messages.lastIndex)
+            listState.animateScrollBy(Float.MAX_VALUE)
             scrolledInitialState.value = true
         }
     }
@@ -1770,11 +1771,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex, Int.MAX_VALUE)
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex); listState.animateScrollBy(Float.MAX_VALUE) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex, Int.MAX_VALUE)
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex); listState.animateScrollBy(Float.MAX_VALUE) }
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {
@@ -1836,7 +1837,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     onValueChange = { state.chatDraft = it },
                     enabled = state.activeCharacterOnline,
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
                     modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp))
