@@ -114,6 +114,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.TextToolbarStatus
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Font
@@ -1583,7 +1588,17 @@ private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 3): Boole
 
 @Composable
 private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier, followLatest: Boolean = false) {
-   val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
+    var selectionActive by remember { mutableStateOf(false) }
+    var selectionEpoch by remember { mutableIntStateOf(0) }
+    val defaultToolbar = LocalTextToolbar.current
+    val toolbar = remember(defaultToolbar) {
+        TrackingTextToolbar(
+            delegate = defaultToolbar,
+            onShown = { selectionActive = true },
+            onHidden = { selectionActive = false; selectionEpoch++ },
+        )
+    }
+    val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
@@ -1591,7 +1606,9 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             scrolledInitialState.value = true
         }
     }
-    LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    CompositionLocalProvider(LocalTextToolbar provides toolbar) {
+        val dismissMod = if (selectionActive) Modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionActive = false; selectionEpoch++ }, onLongPress = {}) } else Modifier
+        LazyColumn(state = listState, modifier = modifier.then(dismissMod), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(messages, key = { index, message -> "$index-${message.timestamp}-${message.channel}-${message.sender}" }) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
@@ -1613,7 +1630,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
                     state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
                 } else 0L
-                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize)
+                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -1626,6 +1643,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             }
         }
         }
+    }
 }
 
 @Composable
@@ -1986,6 +2004,29 @@ private fun chatBubbleStyle(color: Color, fontSize: TextUnit, lineHeight: TextUn
         fontWeight = if (category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
     )
 
+private class TrackingTextToolbar(
+    private val delegate: TextToolbar,
+    private val onShown: () -> Unit,
+    private val onHidden: () -> Unit,
+) : TextToolbar {
+    override val status: TextToolbarStatus
+        get() = delegate.status
+    override fun showMenu(
+        rect: Rect,
+        onCopyRequested: (() -> Unit)?,
+        onPasteRequested: (() -> Unit)?,
+        onCutRequested: (() -> Unit)?,
+        onSelectAllRequested: (() -> Unit)?,
+    ) {
+        onShown()
+        delegate.showMenu(rect, onCopyRequested, onPasteRequested, onCutRequested, onSelectAllRequested)
+    }
+    override fun hide() {
+        onHidden()
+        delegate.hide()
+    }
+}
+
 @Composable
 private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
@@ -2048,6 +2089,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
+                key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
                     if (lineCount == 0) {
@@ -2082,6 +2124,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (!canInline && lineCount > 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                     }
+                }
                 }
                 }
             }

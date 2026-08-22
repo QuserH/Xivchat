@@ -934,6 +934,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun saveChats() {
         val snapshot = chats.toList()
+        val scopedKey = scoped("chatCache")
         scope.launch(Dispatchers.IO) {
             val arr = JSONArray()
             snapshot.forEach { m ->
@@ -956,7 +957,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (m.senderStatusIcon != null) put("senderStatusIcon", m.senderStatusIcon)
                 })
             }
-            prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()
+            prefs.edit().putString(scopedKey, arr.toString()).apply()
         }
     }
 
@@ -2128,11 +2129,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         // fallback is waiting.  Never revive that session as online.
                         if (gameAvailability && availabilityEpoch == eventEpoch && !connectedCharacterConfirmed) {
                             gameOnline = true
-                            connectedCharacterConfirmed = true
-                            connectedCharacterKey = activeCharacterKey
-                            awaitingCharacterProfile = false
-                            serverLabel = "已连接游戏"
-                            statusMessage = ""
+                            // Never guess the connected character from the UI's activeCharacterKey:
+                            // the plugin always pushes the real profile (PlayerData) on connect.
+                            // Guessing here would route another character's chat into the displayed profile.
+                            connectedCharacterConfirmed = false
+                            connectedCharacterKey = ""
+                            awaitingCharacterProfile = true
+                            serverLabel = "已连接游戏，正在确认角色"
+                            statusMessage = "正在读取角色资料"
                             val pending = pendingCharacterEvents.toList()
                             pendingCharacterEvents.clear()
                             pending.forEach(::handle)
