@@ -668,8 +668,8 @@ private fun TooltipIcon(icon: Int, name: String, size: Dp = 46.dp, fallback: Str
 
 @Composable
 private fun TooltipBubble(text: String) {
-    val container = MaterialTheme.colorScheme.inverseSurface
-    val content = MaterialTheme.colorScheme.inverseOnSurface
+    val container = MaterialTheme.colorScheme.surfaceVariant
+    val content = MaterialTheme.colorScheme.onSurfaceVariant
     Box(Modifier.clip(RoundedCornerShape(10.dp)).background(container).padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(text, color = content, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }

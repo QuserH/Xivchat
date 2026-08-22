@@ -976,7 +976,11 @@ private fun AetherphoneContactsList(state: PhoneState) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        LightHeader("联系人", state::back) {}
+        LightHeader("联系人", state::back) {
+            Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+                Text("⟳", color = AetherPurple, fontSize = 21.sp, lineHeight = 21.sp)
+            }
+        }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             item("search") {
                 LightSearchField(query, { query = it }, "搜索")
@@ -1125,8 +1129,10 @@ private fun LightInfoRow(label: String, value: String, last: Boolean = false) {
 private sealed interface ChatSub {
     data object Main : ChatSub
     data object Settings : ChatSub
-    data object SearchHistory : ChatSub
-    data object SearchInput : ChatSub
+    data object TabSettings : ChatSub
+    data object Appearance : ChatSub
+    data class SearchHistory(val showAvatar: Boolean = true) : ChatSub
+    data class SearchInput(val showAvatar: Boolean = true) : ChatSub
     data object Calendar : ChatSub
     data class MessageView(val anchorTimestamp: Long) : ChatSub
 }
@@ -1137,14 +1143,31 @@ private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub
         ChatSub.Settings -> ChatSettingsScreen(
             state, conversation,
             onBack = onPop,
-            onSearchHistory = { onPush(ChatSub.SearchHistory) },
+            onSearchHistory = { onPush(ChatSub.SearchHistory()) },
+            onAppearance = { onPush(ChatSub.Appearance) },
             onDeleteConversation = {
                 state.hideConversation(conversation)
                 state.closeConversation()
             },
         )
-        ChatSub.SearchHistory -> ChatSearchHistoryScreen(onBack = onPop, onOpenInput = { onPush(ChatSub.SearchInput) }, onOpenCalendar = { onPush(ChatSub.Calendar) })
-        ChatSub.SearchInput -> ChatSearchInputScreen(state, conversation, onBack = onPop, onOpenMessage = { timestamp -> onPush(ChatSub.MessageView(timestamp)) })
+        ChatSub.TabSettings -> ChatTabSettingsScreen(
+            state, conversation,
+            onBack = onPop,
+            onHistory = { onPush(ChatSub.SearchHistory(showAvatar = false)) },
+            onEditFilter = {
+                state.editingChatFilterId = state.openChatFilterId
+                state.editChatTabs = true
+                state.closeConversation()
+            },
+            onAppearance = { onPush(ChatSub.Appearance) },
+            onDeleteConversation = {
+                state.hideConversation(conversation)
+                state.closeConversation()
+            },
+        )
+        ChatSub.Appearance -> ChatAppearanceScreen(state, onBack = onPop)
+        is ChatSub.SearchHistory -> ChatSearchHistoryScreen(onBack = onPop, onOpenInput = { onPush(ChatSub.SearchInput(sub.showAvatar)) }, onOpenCalendar = { onPush(ChatSub.Calendar) })
+        is ChatSub.SearchInput -> ChatSearchInputScreen(state, conversation, showAvatar = sub.showAvatar, onBack = onPop, onOpenMessage = { timestamp -> onPush(ChatSub.MessageView(timestamp)) })
         is ChatSub.MessageView -> ChatMessageViewScreen(state, conversation, sub.anchorTimestamp, onBack = onPop)
         ChatSub.Calendar -> ChatCalendarScreen(conversation, onBack = onPop, onOpenDay = { firstTs -> onPush(ChatSub.MessageView(firstTs)) })
         ChatSub.Main -> Unit
@@ -1168,7 +1191,8 @@ private fun ChatSettingDivider() {
 }
 
 @Composable
-private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation, onBack: () -> Unit, onSearchHistory: () -> Unit, onDeleteConversation: () -> Unit) {
+private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation, onBack: () -> Unit, onSearchHistory: () -> Unit, onAppearance: () -> Unit, onDeleteConversation: () -> Unit) {
+    var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天设置", onBack) {}
         Column(
@@ -1177,13 +1201,119 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
         ) {
             ChatSettingRow("查找聊天记录", onClick = onSearchHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
             ChatSettingDivider()
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingDivider()
             ChatSettingRow("设为置顶", trailing = { Switch(checked = state.isConversationPinned(conversation), onCheckedChange = { state.toggleConversationPin(conversation) }) })
             ChatSettingDivider()
             ChatSettingRow("消息免打扰", trailing = { Switch(checked = !conversation.notify, onCheckedChange = { state.toggleConversationNotify(conversation) }) })
             ChatSettingDivider()
             ChatSettingRow("删除会话", color = Color(0xFFD64555), onClick = onDeleteConversation)
             ChatSettingDivider()
-            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { state.clearConversation(conversation) })
+            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
+        }
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("删除聊天记录") },
+            text = { Text("确定删除该会话的全部聊天记录吗？此操作不可恢复。") },
+            confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversation, onBack: () -> Unit, onHistory: () -> Unit, onEditFilter: () -> Unit, onAppearance: () -> Unit, onDeleteConversation: () -> Unit) {
+    var confirmClear by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        LightHeader("标签设置", onBack) {}
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
+                .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
+        ) {
+            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingDivider()
+            ChatSettingRow("编辑标签页", onClick = onEditFilter, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingDivider()
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingDivider()
+            ChatSettingRow("设为置顶", trailing = { Switch(checked = state.isConversationPinned(conversation), onCheckedChange = { state.toggleConversationPin(conversation) }) })
+            ChatSettingDivider()
+            ChatSettingRow("消息免打扰", trailing = { Switch(checked = !conversation.notify, onCheckedChange = { state.toggleConversationNotify(conversation) }) })
+            ChatSettingDivider()
+            ChatSettingRow("删除会话", color = Color(0xFFD64555), onClick = onDeleteConversation)
+            ChatSettingDivider()
+            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
+        }
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("删除聊天记录") },
+            text = { Text("确定删除该标签页的全部聊天记录吗？此操作不可恢复。") },
+            confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun ChatAdjustRow(label: String, value: Int, onMinus: () -> Unit, onPlus: () -> Unit, hint: String? = null) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onMinus), contentAlignment = Alignment.Center) {
+                Text("−", color = AetherPurple, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            }
+            Text("  $value  ", color = AetherLightText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onPlus), contentAlignment = Alignment.Center) {
+                Text("＋", color = AetherPurple, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (hint != null) {
+            Text(hint, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp))
+        }
+    }
+}
+
+@Composable
+private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        LightHeader("外观设置", onBack) {}
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
+                .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
+        ) {
+            ChatAdjustRow("左右边距", state.contentMargin,
+                onMinus = { state.contentMargin = (state.contentMargin - 2).coerceAtLeast(0) },
+                onPlus = { state.contentMargin = (state.contentMargin + 2).coerceAtMost(60) },
+                hint = "左右都向内收缩·数值越小越贴近屏幕边缘",
+            )
+            ChatSettingDivider()
+            ChatAdjustRow("聊天字号", state.chatFontSize,
+                onMinus = { state.chatFontSize = (state.chatFontSize - 1).coerceAtLeast(10) },
+                onPlus = { state.chatFontSize = (state.chatFontSize + 1).coerceAtMost(26) },
+            )
+            ChatSettingDivider()
+            ChatAdjustRow("每行字数（自动换行）", state.chatWrapChars,
+                onMinus = { state.chatWrapChars = (state.chatWrapChars - 1).coerceIn(4, 60) },
+                onPlus = { state.chatWrapChars = (state.chatWrapChars + 1).coerceIn(4, 60) },
+                hint = "按中文字数计算：1 个中文 = 2 个字符宽度，字母/数字/图标 = 1",
+            )
+        }
+        Text("主题", color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = LocalContentMargin.current.dp + 4.dp, top = 18.dp, bottom = 6.dp))
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp)
+                .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
+        ) {
+            PhoneThemeMode.entries.forEachIndexed { index, mode ->
+                Row(Modifier.fillMaxWidth().clickable { state.themeMode = mode }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(mode.label, color = AetherLightText, modifier = Modifier.weight(1f))
+                    Text(if (state.themeMode == mode) "●" else "○", color = if (state.themeMode == mode) AetherPurple else AetherLightMuted, fontSize = 20.sp)
+                }
+                if (index < PhoneThemeMode.entries.lastIndex) ChatSettingDivider()
+            }
         }
     }
 }
@@ -1215,7 +1345,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
 }
 
 @Composable
-private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversation, onBack: () -> Unit, onOpenMessage: (Long) -> Unit) {
+private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversation, showAvatar: Boolean, onBack: () -> Unit, onOpenMessage: (Long) -> Unit) {
     var query by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -1232,7 +1362,7 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
         }
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(results, key = { index, message -> "${message.timestamp}-$index" }) { _, message ->
-                SearchResultRow(state, conversation, message, query) { onOpenMessage(message.timestamp) }
+                SearchResultRow(state, conversation, message, query, showAvatar) { onOpenMessage(message.timestamp) }
             }
             if (query.isNotBlank() && results.isEmpty()) item {
                 Text("未找到匹配的聊天记录", color = AetherLightMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(30.dp))
@@ -1242,7 +1372,7 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
 }
 
 @Composable
-private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, message: GameChatMessage, query: String, onClick: () -> Unit) {
+private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, message: GameChatMessage, query: String, showAvatar: Boolean = true, onClick: () -> Unit) {
     val self = message.self || (state.profile?.name != null && message.isFrom(state.profile?.name))
     val author = if (self) state.profile?.name?.takeIf { it.isNotBlank() } ?: "我" else message.displaySender().ifBlank { conversation.title }
     val cleaned = cleanChatText(message.text, author)
@@ -1250,10 +1380,12 @@ private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, m
         verticalAlignment = Alignment.Top,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(AetherLightSurface).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Box(Modifier.size(38.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-            SmallConversationIcon(state.conversationIcon(conversation.key, conversation.category), author.take(1), AetherPurple)
+        if (showAvatar) {
+            Box(Modifier.size(38.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
+                SmallConversationIcon(state.conversationIcon(conversation.key, conversation.category), author.take(1), AetherPurple)
+            }
         }
-        Column(Modifier.weight(1f).padding(start = 11.dp)) {
+        Column(Modifier.weight(1f).padding(start = if (showAvatar) 11.dp else 0.dp)) {
             Text(author, color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             HighlightText(cleaned, query, AetherLightMuted, 13.sp, 3, Modifier.padding(top = 3.dp))
         }
@@ -1436,37 +1568,9 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 },
                 trailing = {
-                    if (conversation.key.startsWith("tab:")) {
-                        Box {
-                            Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { overflowOpen = true }.padding(horizontal = 10.dp))
-                            DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                                DropdownMenuItem(text = { Text("标记为已读") }, onClick = {
-                                    conversation.unread = 0
-                                    overflowOpen = false
-                                })
-                                DropdownMenuItem(text = { Text("编辑标签页") }, onClick = {
-                                    state.editingChatFilterId = state.openChatFilterId
-                                    state.editChatTabs = true
-                                    state.closeConversation()
-                                    overflowOpen = false
-                                })
-                                DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
-                                    state.toggleConversationPin(conversation)
-                                    overflowOpen = false
-                                })
-                                DropdownMenuItem(text = { Text(if (conversation.notify) "关闭消息提醒" else "开启消息提醒") }, onClick = {
-                                    state.toggleConversationNotify(conversation)
-                                    overflowOpen = false
-                                })
-                                DropdownMenuItem(text = { Text("清除记录", color = Color(0xFFD64555)) }, onClick = {
-                                    state.clearConversation(conversation)
-                                    overflowOpen = false
-                                })
-                            }
-                        }
-                    } else {
-                        Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.Settings) }.padding(horizontal = 10.dp))
-                    }
+                    Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable {
+                        if (conversation.key.startsWith("tab:")) pushChatSub(ChatSub.TabSettings) else pushChatSub(ChatSub.Settings)
+                    }.padding(horizontal = 10.dp))
                 },
             )
             Box(Modifier.weight(1f).fillMaxWidth()) {

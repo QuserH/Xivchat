@@ -45,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -341,19 +342,6 @@ private fun GeneralSettingsScreen(state: PhoneState) {
                 OutlinedTextField(value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) }, label = { Text("端口") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         }
-        SectionLabel("聊天")
-        SettingsGroup {
-            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = state.chatWrapChars.toString(),
-                    onValueChange = { state.chatWrapChars = it.filter(Char::isDigit).toIntOrNull()?.coerceIn(4, 60) ?: state.chatWrapChars },
-                    label = { Text("每行最多字数（自动换行）") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
     }
 }
 @Composable
@@ -390,6 +378,20 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
                     Text("＋", color = PhoneAccent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+        SectionLabel("聊天换行")
+        SettingsGroup {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("每行字数（自动换行）", color = PhoneText, modifier = Modifier.weight(1f))
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatWrapChars = (state.chatWrapChars - 1).coerceIn(4, 60) }, contentAlignment = Alignment.Center) {
+                    Text("−", color = PhoneAccent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("  ${state.chatWrapChars}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatWrapChars = (state.chatWrapChars + 1).coerceIn(4, 60) }, contentAlignment = Alignment.Center) {
+                    Text("＋", color = PhoneAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("按中文字数计算：1 个中文 = 2 个字符宽度，字母/数字/图标 = 1", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
         SectionLabel("主题")
         SettingsGroup {
@@ -620,8 +622,14 @@ fun InventoryScreen(state: PhoneState) {
             showBack = selectedGroup != null)
         if (state.inventory.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text(if (state.connected) "等待背包快照…" else "请先连接游戏插件", color = PhoneMuted)
-                Text("背包数据通过加密端口同步", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                if (state.connected) {
+                    CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(34.dp), strokeWidth = 3.dp)
+                    Text("正在读取背包数据…", color = PhoneMuted, modifier = Modifier.padding(top = 14.dp))
+                    Text("背包数据通过加密端口同步", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                } else {
+                    Text("请先连接游戏插件", color = PhoneMuted)
+                    Text("背包数据通过加密端口同步", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                }
             }
         } else if (selectedGroup == null && query.isBlank()) {
             InventoryHub(state, open = { selectedGroup = it }, openRetainer = { id -> selectedRetainerId = id; selectedGroup = "retainers" })

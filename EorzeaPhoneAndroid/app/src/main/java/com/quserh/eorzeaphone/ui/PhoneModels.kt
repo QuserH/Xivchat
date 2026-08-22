@@ -849,26 +849,29 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun saveChats() {
-        val arr = JSONArray()
-        chats.forEach { m ->
-            arr.put(JSONObject().apply {
-                put("timestamp", m.timestamp)
-                put("sender", m.sender)
-                put("text", m.text)
-                put("channel", m.channel)
-                put("self", m.self)
-                put("sendState", m.sendState)
-                put("chunks", JSONArray().apply { m.chunks.forEach { c -> put(JSONObject().apply {
-                    if (c.text != null) put("text", c.text)
-                    if (c.icon != null) put("icon", c.icon)
-                    put("italic", c.italic)
-                    if (c.foreground != null) put("foreground", c.foreground)
-                }) } })
-                if (m.senderName != null) put("senderName", m.senderName)
-                if (m.senderWorld != null) put("senderWorld", m.senderWorld)
-            })
+        val snapshot = chats.toList()
+        scope.launch(Dispatchers.IO) {
+            val arr = JSONArray()
+            snapshot.forEach { m ->
+                arr.put(JSONObject().apply {
+                    put("timestamp", m.timestamp)
+                    put("sender", m.sender)
+                    put("text", m.text)
+                    put("channel", m.channel)
+                    put("self", m.self)
+                    put("sendState", m.sendState)
+                    put("chunks", JSONArray().apply { m.chunks.forEach { c -> put(JSONObject().apply {
+                        if (c.text != null) put("text", c.text)
+                        if (c.icon != null) put("icon", c.icon)
+                        put("italic", c.italic)
+                        if (c.foreground != null) put("foreground", c.foreground)
+                    }) } })
+                    if (m.senderName != null) put("senderName", m.senderName)
+                    if (m.senderWorld != null) put("senderWorld", m.senderWorld)
+                })
+            }
+            prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()
         }
-        prefs.edit().putString(scoped("chatCache"), arr.toString()).apply()
     }
 
     private fun loadSavedInventory() {
@@ -2159,6 +2162,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 awaitingCharacterProfile = false
                 serverLabel = "${event.profile.name} · 在线"
                 statusMessage = "角色在线"
+                refreshFriends()
+                refreshParty()
                 runCatching {
                     val key = rememberCharacter(event.profile)
                     if (activeCharacterKey.isBlank() || activeCharacterKey == key) loadCharacter(key, persistSelection = true)
