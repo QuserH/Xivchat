@@ -76,6 +76,8 @@ namespace XIVChatPlugin {
 
         private readonly LinkedList<ServerMessage> _backlog = [];
         private readonly object _backlogLock = new();
+        // 只重写“有新消息”的角色文件：避免仅登录角色A时把其它角色文件一并刷新/覆盖
+        private readonly HashSet<string> _dirtyBacklogTags = new(StringComparer.OrdinalIgnoreCase);
         private DateTime _lastPersist = DateTime.MinValue;
 
         private TcpListener? _listener;
@@ -367,6 +369,7 @@ namespace XIVChatPlugin {
                     while (this._backlog.Count > this._plugin.Config.BacklogCount) {
                         this._backlog.RemoveFirst();
                     }
+                    if (!string.IsNullOrEmpty(msg.CharacterTag)) this._dirtyBacklogTags.Add(msg.CharacterTag);
                 }
                 this.MaybePersistBacklog();
             }
@@ -2135,17 +2138,27 @@ namespace XIVChatPlugin {
             try {
                 Directory.CreateDirectory(dir);
                 List<ServerMessage> snapshot;
-                lock (this._backlogLock) { snapshot = this._backlog.ToList(); }
-                // 按角色分组，每个角色一个文件；文件头部带角色标识，读取时校验。
-                foreach (var group in snapshot.Where(m => !string.IsNullOrEmpty(m.CharacterTag)).GroupBy(m => m.CharacterTag!)) {
-                    var path = this.GetBacklogFilePath(group.Key);
+                HashSet<string> dirtyTags;
+                lock (this._backlogLock) {
+                    snapshot = this._backlog.ToList();
+                    dirtyTags = new HashSet<string>(this._dirtyBacklogTags, StringComparer.OrdinalIgnoreCase);
+                }
+                if (dirtyTags.Count == 0) return;
+                // 只重写“有新消息”的角色文件；文件头部带角色标识，读取时校验。
+                foreach (var tag in dirtyTags) {
+                    var path = this.GetBacklogFilePath(tag);
                     if (string.IsNullOrEmpty(path)) continue;
+                    var group = snapshot.Where(m => m.CharacterTag != null && string.Equals(m.CharacterTag, tag, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (group.Count == 0) continue; // 该角色消息已被淘汰：不要用空文件覆盖旧历史
                     var file = new BacklogFile {
-                        CharacterTag = group.Key,
+                        CharacterTag = tag,
                         WrittenAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        Messages = group.ToList(),
+                        Messages = group,
                     };
                     File.WriteAllBytes(path, MessagePack.MessagePackSerializer.Serialize(file));
+                }
+                lock (this._backlogLock) {
+                    foreach (var tag in dirtyTags) this._dirtyBacklogTags.Remove(tag);
                 }
             } catch (Exception ex) {
                 Plugin.Log.Error($"Could not persist backlog to '{dir}': {ex.Message}");
@@ -2231,9 +2244,11 @@ namespace XIVChatPlugin {
         private static bool MatchesCurrentCharacter(ServerMessage m, string? fullTag) {
             if (string.IsNullOrEmpty(fullTag)) return false;
             if (string.IsNullOrEmpty(m.CharacterTag)) return false; // 归属不明，丢弃防串号
-            if (m.CharacterTag == fullTag) return true;
-            var at = fullTag.IndexOf('@');
-            if (at > 0 && m.CharacterTag == fullTag.Substring(0, at)) return true;
+            var mTag = m.CharacterTag.ToLowerInvariant();
+            var full = fullTag.ToLowerInvariant();
+            if (mTag == full) return true;
+            var at = full.IndexOf('@');
+            if (at > 0 && mTag == full.Substring(0, at)) return true;
             return false;
         }
 

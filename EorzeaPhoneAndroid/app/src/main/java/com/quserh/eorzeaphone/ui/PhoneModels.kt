@@ -2271,8 +2271,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 if (connectedCharacterKey.isNotBlank()) {
                     val tag = event.message.characterTag
                     if (tag != null && tag.isNotBlank()) {
-                        val expectedName = connectedCharacterKey.substringBefore('@')
-                        val match = tag == connectedCharacterKey || (!tag.contains('@') && tag == expectedName)
+                        val expectedKey = connectedCharacterKey.lowercase()
+                        val expectedName = connectedCharacterKey.substringBefore('@').lowercase()
+                        val tagLower = tag.lowercase()
+                        val match = tagLower == expectedKey || (!tag.contains('@') && tagLower == expectedName)
                         if (!match) {
                             android.util.Log.w("EorzeaPhone", "丢弃归属不符的消息 tag=$tag expected=$connectedCharacterKey")
                             return
@@ -2453,8 +2455,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         }
                     }
                 }
-                // 连接锚定角色后按该角色自己的游标补传，修复重启后关机前消息丢失
-                runCatching { connection.requestCatchUp(chatCursorTs(newCharacterKey)) }
+                // 连接锚定角色后先拉最近 100 条（覆盖连接时角色尚未就绪导致空返回的情况）
+                runCatching { connection.requestBacklog() }
+                // 再按该角色自己的游标补传，修复重启后关机前消息丢失
+                runCatching { val c = chatCursorTs(newCharacterKey); if (c > 0L) connection.requestCatchUp(c) }
                 runCatching {
                     val key = rememberCharacter(event.profile)
                     if (activeCharacterKey.isBlank() || activeCharacterKey == key) loadCharacter(key, persistSelection = true)

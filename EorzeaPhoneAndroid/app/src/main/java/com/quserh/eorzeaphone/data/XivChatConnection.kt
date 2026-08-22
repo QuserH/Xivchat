@@ -72,8 +72,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
             connected.set(true)
             onEvent(PhoneEvent.Connected)
             send(output, tx, 8, XivChatCodec.encodePreferences())
-            // 角色资料到达后再按该角色游标补传；这里先拉最近 100 条（插件按当前角色过滤）
-            send(output, tx, 4, XivChatCodec.encodeBacklog(100))
+            // 历史消息在角色资料确认后再拉取（requestBacklog / requestCatchUp），避免连接瞬间角色未就绪返回空
             send(output, tx, 6, XivChatCodec.encodePlayerList())
             send(output, tx, 6, XivChatCodec.encodePlayerList(1))
 
@@ -137,6 +136,11 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     fun sendChat(text: String) = sendCommand(XivChatCodec.encodeMessage(text), 2)
 
     fun changeChannel(channel: Int) = sendCommand(XivChatCodec.encodeChannel(channel), 9)
+
+    // 按角色拉取最近 100 条：在确认连接角色后调用，插件只返回该角色的消息
+    fun requestBacklog() {
+        sendCommand(XivChatCodec.encodeBacklog(100), 4)
+    }
 
     // 按角色游标补传：在确认连接角色后调用，插件只返回该角色在该时间点之后的消息
     fun requestCatchUp(afterMillis: Long) {
