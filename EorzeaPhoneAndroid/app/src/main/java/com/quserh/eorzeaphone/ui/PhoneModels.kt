@@ -1381,6 +1381,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         appInForeground = true
         selectedApp = app
         screen = app.destination
+        if (app.destination == PhoneScreen.Chat || app.destination == PhoneScreen.Contacts) chatListTab = defaultChatListTab
     }
 
     fun openApp(id: String) { allApps[id]?.let(::open) }
@@ -1411,7 +1412,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 selectedFriend = null
             }
             screen == PhoneScreen.Chat || screen == PhoneScreen.Contacts -> {
-                chatListTab = "tabs"
+                chatListTab = defaultChatListTab
                 home()
             }
             else -> home()
@@ -1468,7 +1469,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             trimmed
         }
         val sendChannel = when {
-            conv.key == "novice" -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 27)
+            conv.key == "novice" -> 8  // InputChannel.NoviceNetwork = 8
             conv.category == ChatCategory.Linkshell -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)
             conv.category == ChatCategory.Party -> 2
             conv.category == ChatCategory.FreeCompany -> 6

@@ -346,16 +346,16 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             if (path != null) state.setConversationIcon(target, path)
         }
     }
-    var messagesExpanded by remember { mutableStateOf(state.chatListTab == "messages") }
-    var tabsExpanded by remember { mutableStateOf(state.chatListTab != "messages") }
+    val messagesExpanded = state.chatListTab == "messages"
+    val tabsExpanded = state.chatListTab != "messages"
+    var showDefaultTabDialog by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back, trailing = {
             Box {
                 Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.padding(horizontal = 8.dp).clickable { overflowOpen = true })
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                    DropdownMenuItem(text = { Text("新建标签页") }, onClick = { overflowOpen = false; editTab() })
-                    DropdownMenuItem(text = { Text("默认打开：标签筛选器") }, trailingIcon = { if (state.defaultChatListTab == "tabs") Text("●", color = AetherPurple) }, onClick = { state.defaultChatListTab = "tabs"; overflowOpen = false })
-                    DropdownMenuItem(text = { Text("默认打开：消息标签") }, trailingIcon = { if (state.defaultChatListTab == "messages") Text("●", color = AetherPurple) }, onClick = { state.defaultChatListTab = "messages"; overflowOpen = false })
+                    DropdownMenuItem(text = { Text("新建筛选器") }, onClick = { overflowOpen = false; editTab() })
+                    DropdownMenuItem(text = { Text("默认打开的标签") }, onClick = { overflowOpen = false; showDefaultTabDialog = true })
                 }
             }
         })
@@ -377,11 +377,14 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 .padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ChatGroupChip("标签", 0, notify = true, active = tabsExpanded) {
-                state.chatListTab = "tabs"; tabsExpanded = true; messagesExpanded = false
-            }
-            ChatGroupChip("消息", sortedRows.filter { it.notify }.sumOf { it.unread }, notify = true, active = messagesExpanded) {
-                state.chatListTab = "messages"; messagesExpanded = true; tabsExpanded = false
+            val messagesFirst = state.defaultChatListTab == "messages"
+            val chips = if (messagesFirst) listOf("messages" to "消息", "tabs" to "筛选器") else listOf("tabs" to "筛选器", "messages" to "消息")
+            chips.forEach { (key, label) ->
+                val active = if (key == "messages") messagesExpanded else tabsExpanded
+                val unread = if (key == "messages") sortedRows.filter { it.notify }.sumOf { it.unread } else 0
+                ChatGroupChip(label, unread, notify = true, active = active) {
+                    state.chatListTab = key
+                }
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
@@ -403,7 +406,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             } else {
                 if (state.chatFilters.isEmpty()) {
                     item("empty-tabs") {
-                        Text("还没有标签页，点右上角新建", color = AetherLightMuted, fontSize = 14.sp,
+                        Text("还没有筛选器，点右上角新建", color = AetherLightMuted, fontSize = 14.sp,
                             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
                     }
                 } else {
@@ -441,7 +444,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 DropdownMenuItem(text = { Text("更换图标") }, onClick = { iconKeyTarget = filter.id; longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
                                 DropdownMenuItem(text = { Text(if (filter.alertPolicy == ChatAlertPolicy.Off) "取消消息免打扰" else "消息免打扰") }, onClick = { state.toggleChatFilterNotifications(filter); longPressedTabId = null })
-                                DropdownMenuItem(text = { Text("删除标签页", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
+                                DropdownMenuItem(text = { Text("删除筛选器", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
                             }
                             }
                         }
@@ -486,6 +489,25 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             confirmButton = {},
         )
     }
+    if (showDefaultTabDialog) {
+        AlertDialog(
+            onDismissRequest = { showDefaultTabDialog = false },
+            title = { Text("默认打开的标签") },
+            text = {
+                Column {
+                    listOf("messages" to "消息", "tabs" to "筛选器").forEach { (key, label) ->
+                        val selected = state.defaultChatListTab == key
+                        Row(Modifier.fillMaxWidth().clickable { state.defaultChatListTab = key; state.chatListTab = key; showDefaultTabDialog = false }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, color = AetherLightText, modifier = Modifier.weight(1f))
+                            Text(if (selected) "●" else "○", color = if (selected) AetherPurple else AetherLightMuted, fontSize = 20.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showDefaultTabDialog = false }) { Text("关闭") } },
+        )
+    }
 }
 
 @Composable
@@ -502,7 +524,7 @@ private fun ChatTabNotificationIcon(enabled: Boolean, modifier: Modifier = Modif
 @Composable
 private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     val existing = state.chatFilters.firstOrNull { it.id == state.editingChatFilterId }
-    var name by remember(existing?.id) { mutableStateOf(existing?.label ?: "新建标签页") }
+    var name by remember(existing?.id) { mutableStateOf(existing?.label ?: "新建筛选器") }
     var tint by remember(existing?.id) { mutableStateOf(existing?.tintIndex ?: 0) }
     var saved by remember { mutableStateOf(false) }
     var sendChannel by remember(existing?.id) { mutableStateOf(existing?.sendChannel) }
@@ -591,7 +613,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     val colors = listOf(Color(0xFF58ACA4), Color(0xFF86A844), Color(0xFF3E82B9), Color(0xFFB45B7C), Color(0xFFC37136), Color(0xFF796AA2), Color(0xFFBC9438), Color(0xFF45979A))
     LightFrame {
         Column(Modifier.fillMaxSize()) {
-            LightHeader("编辑标签页", ::finish)
+            LightHeader("编辑筛选器", ::finish)
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 38.dp)) {
                 item("name-label") { Text("名称", color = AetherLightText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)) }
                 item("name") {
@@ -625,7 +647,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                     }
                 }
                 item("settings") {
-                    Text("标签页设置", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+                    Text("筛选器设置", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
                     val settings = listOf(
                         "回复发送到" to (sendChannel?.let { id -> outputChannels.firstOrNull { it.id == id }?.label } ?: "当前频道"),
                         "布局" to if (layout == ChatLayout.Bubbles) "气泡" else "紧凑",
@@ -637,7 +659,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                     Text("记录仅保存在这台手机上。", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, bottom = 30.dp))
                 }
                 if (existing?.removable == true) item("delete-tab") {
-                    Text("删除标签页", color = Color(0xFFD64555), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    Text("删除筛选器", color = Color(0xFFD64555), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.fillMaxWidth().clickable {
                             state.removeChatFilter(existing)
                             state.openChatFilterId = null
@@ -844,7 +866,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             LaunchedEffect(filter, msgs.size) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex, Int.MAX_VALUE); scrolledLocal.value = true }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1366,14 +1388,14 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
 private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversation, onBack: () -> Unit, onHistory: () -> Unit, onEditFilter: () -> Unit, onAppearance: () -> Unit, onDeleteConversation: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        LightHeader("标签设置", onBack) {}
+        LightHeader("筛选器设置", onBack) {}
         Column(
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
             ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
             ChatSettingDivider()
-            ChatSettingRow("编辑标签页", onClick = onEditFilter, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("编辑筛选器", onClick = onEditFilter, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
             ChatSettingDivider()
             ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
             ChatSettingDivider()
@@ -1390,7 +1412,7 @@ private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversat
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("删除聊天记录") },
-            text = { Text("确定删除该标签页的全部聊天记录吗？此操作不可恢复。") },
+            text = { Text("确定删除该筛选器的全部聊天记录吗？此操作不可恢复。") },
             confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
         )
@@ -1564,7 +1586,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            listState.scrollToItem(messages.lastIndex)
+            listState.scrollToItem(messages.lastIndex, Int.MAX_VALUE)
             scrolledInitialState.value = true
         }
     }
@@ -1748,11 +1770,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex)
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex, Int.MAX_VALUE)
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex)
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) listState.scrollToItem(visible.lastIndex, Int.MAX_VALUE)
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {
