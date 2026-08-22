@@ -1754,10 +1754,23 @@ private fun chatBubbleInk(
     fontSize: TextUnit, lineHeight: TextUnit,
 ): ChatInk {
     val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    // 商品/道具链接去重：形如 [名字X][图标][名字Y]，若 X 是 Y 的前缀（道具名被插件重复下发），丢弃 X。
+    val skipDup = mutableSetOf<Int>()
+    for (i in useChunks.indices) {
+        val c = useChunks[i]
+        if (c.icon != null && i > 0 && useChunks[i - 1].icon == null) {
+            val prev = useChunks[i - 1].text.orEmpty().trim()
+            var j = i + 1
+            while (j < useChunks.size && useChunks[j].icon != null) j++
+            val after = if (j < useChunks.size) useChunks[j].text.orEmpty().trim() else ""
+            if (prev.isNotEmpty() && after.isNotEmpty() && after.startsWith(prev)) skipDup.add(i - 1)
+        }
+    }
     val builder = AnnotatedString.Builder()
     val placeholders = mutableListOf<AnnotatedString.Range<Placeholder>>()
     var len = 0
     useChunks.forEachIndexed { index, chunk ->
+        if (index in skipDup) return@forEachIndexed
         if (chunk.icon != null) {
             val alt = "◆"
             builder.appendInlineContent("icon-$index", alt)
