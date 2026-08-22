@@ -868,7 +868,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             LaunchedEffect(filter, msgs.size) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { if (!scrolledLocal.value) listState.scrollToItem(msgs.lastIndex) else listState.animateScrollBy(Float.MAX_VALUE); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1583,16 +1583,15 @@ private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 3): Boole
 
 @Composable
 private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier, followLatest: Boolean = false) {
-    var selectionEpoch by remember { mutableIntStateOf(0) }
-    val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
+   val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            if (!scrolledInitialState.value) listState.scrollToItem(messages.lastIndex) else listState.animateScrollBy(Float.MAX_VALUE)
+            listState.scrollToItem(messages.lastIndex)
             scrolledInitialState.value = true
         }
     }
-    LazyColumn(state = listState, modifier = modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionEpoch++ }, onLongPress = {}) }, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(messages, key = { index, message -> "$index-${message.timestamp}-${message.channel}-${message.sender}" }) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
@@ -1614,7 +1613,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
                     state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
                 } else 0L
-                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch)
+                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -1773,11 +1772,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.animateScrollBy(Float.MAX_VALUE) }
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.animateScrollBy(Float.MAX_VALUE) }
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.scrollToItem(visible.lastIndex) }
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {
@@ -2049,7 +2048,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
-                key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
                     if (lineCount == 0) {
@@ -2084,7 +2082,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (!canInline && lineCount > 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                     }
-                }
                 }
                 }
             }
