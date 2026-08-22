@@ -868,7 +868,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             LaunchedEffect(filter, msgs.size) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.animateScrollBy(Float.MAX_VALUE); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { if (!scrolledLocal.value) listState.scrollToItem(msgs.lastIndex) else listState.animateScrollBy(Float.MAX_VALUE); scrolledLocal.value = true }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1588,7 +1588,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            listState.animateScrollBy(Float.MAX_VALUE)
+            if (!scrolledInitialState.value) listState.scrollToItem(messages.lastIndex) else listState.animateScrollBy(Float.MAX_VALUE)
             scrolledInitialState.value = true
         }
     }
