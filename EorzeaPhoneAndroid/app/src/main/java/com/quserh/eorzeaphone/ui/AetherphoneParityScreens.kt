@@ -1760,15 +1760,20 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     val cleaned = cleanChatText(message.text, author)
                     val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
                     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-                    var multiline by remember(cleaned, fontSizeSp) { mutableStateOf(false) }
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight, onTextLayout = { multiline = it.lineCount > 1 })
-                        if (!multiline) {
+                    val density = LocalDensity.current
+                    val fontPx = with(density) { fontUnit.toPx() }
+                    val singleLine = remember(cleaned, fontPx) {
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = fontPx }
+                        paint.measureText(cleaned) <= with(density) { 240.dp.toPx() }
+                    }
+                    if (singleLine) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
                             Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                                 modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                         }
-                    }
-                    if (multiline) {
+                    } else {
+                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.fillMaxWidth(), forceColor = neutral, highlight = highlight)
                         Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
                             modifier = Modifier.align(Alignment.End).padding(top = 3.dp, end = 2.dp))
                     }
