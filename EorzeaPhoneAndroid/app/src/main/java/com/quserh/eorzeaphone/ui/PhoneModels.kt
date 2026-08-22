@@ -1938,6 +1938,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 awaitingCharacterProfile = true
                 pendingCharacterEvents.clear()
                 inventoryLoading = true
+                inventory.clear()
+                inventoryContainers.clear()
+                retainers.clear()
                 sessionStartedAt = System.currentTimeMillis()
                 sessionGilBaseline = wallet?.gil
                 serverLabel = "已连接游戏"
@@ -2159,7 +2162,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             is PhoneEvent.Profile -> {
                 // Set the online core state first so a data-load failure can never
                 // brick the session (which used to leave the app "connecting" forever).
-                connectedCharacterKey = characterKey(event.profile)
+                val newCharacterKey = characterKey(event.profile)
+                if (connectedCharacterKey.isNotBlank() && connectedCharacterKey != newCharacterKey) {
+                    // 角色切换：清空上一角色的物品/雇员缓存，防止串号
+                    inventory.clear()
+                    inventoryContainers.clear()
+                    retainers.clear()
+                }
+                connectedCharacterKey = newCharacterKey
                 gameOnline = true
                 connectedCharacterConfirmed = true
                 awaitingCharacterProfile = false
