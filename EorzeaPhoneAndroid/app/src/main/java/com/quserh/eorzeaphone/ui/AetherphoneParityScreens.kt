@@ -757,15 +757,17 @@ private fun channelTag(channel: Int): String = when (channel) {
 
 // Local / group chat lines carry a "[频道]<名字>" or "名字：" prefix baked into the
 // text. The app already shows the author separately, so strip it before rendering.
+private fun decodeChatEntities(value: String): String = value
+    .replace("&#x20;", " ")
+    .replace("&nbsp;", " ")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&#39;", "'")
+    .replace("&amp;", "&")
+
 private fun cleanChatText(raw: String, author: String): String {
-    var t = raw.trim()
-        .replace("&#x20;", " ")
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&amp;", "&")
+    var t = decodeChatEntities(raw.trim())
     t = t.replaceFirst(Regex("^\\[[^\\]]*\\]"), "").trim()
     val lt = t.indexOf('<')
     val gt = t.indexOf('>', lt.coerceAtLeast(0))
@@ -1748,9 +1750,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
             val timeText = lightClock(message.timestamp)
             val density = LocalDensity.current
             val fontPx = with(density) { fontUnit.toPx() }
+            val timeFontPx = with(density) { timeUnit.toPx() }
             val paint = remember(cleaned, fontPx) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = fontPx } }
             val textPx = remember(cleaned, fontPx) { paint.measureText(cleaned) }
-            val timePx = remember(timeText, fontPx) { paint.measureText(timeText) }
+            val timePx = remember(timeText, timeFontPx) {
+                android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = timeFontPx }.measureText(timeText)
+            }
             val availablePx = with(density) { (maxWidth - 22.dp).toPx() }
             val inlineTime = textPx + with(density) { 10.dp.toPx() } + timePx <= availablePx
             Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start) {
@@ -1810,7 +1815,7 @@ private fun ChatChunkText(message: GameChatMessage, fallback: String, color: Col
             if (chunk.icon != null) appendInlineContent("icon-$index", "◆") else {
                 val chunkColor = if (forceColor) color else (chunk.foreground?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: color)
                 val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
-                appendHighlighted(chunk.text.orEmpty(), highlight, spanStyle, Color(0x66FFEB3B))
+                appendHighlighted(decodeChatEntities(chunk.text.orEmpty()), highlight, spanStyle, Color(0x66FFEB3B))
             }
         }
     }
