@@ -4,7 +4,7 @@
         <AssemblyName>EorzeaPhone</AssemblyName>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <Version>0.7.9</Version>
+        <Version>0.7.10</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

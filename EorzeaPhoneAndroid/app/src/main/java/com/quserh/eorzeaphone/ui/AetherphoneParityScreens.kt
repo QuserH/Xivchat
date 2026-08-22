@@ -113,6 +113,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
@@ -1758,12 +1759,20 @@ private fun chatBubbleInk(
     val skipDup = mutableSetOf<Int>()
     for (i in useChunks.indices) {
         val c = useChunks[i]
-        if (c.icon != null && i > 0 && useChunks[i - 1].icon == null) {
+        if (c.icon == null) continue
+        // [Text X][Icon][Text Y]：X 是 Y 的前缀/相同 → 去掉重复的 X
+        if (i > 0 && useChunks[i - 1].icon == null) {
             val prev = useChunks[i - 1].text.orEmpty().trim()
             var j = i + 1
             while (j < useChunks.size && useChunks[j].icon != null) j++
             val after = if (j < useChunks.size) useChunks[j].text.orEmpty().trim() else ""
-            if (prev.isNotEmpty() && after.isNotEmpty() && after.startsWith(prev)) skipDup.add(i - 1)
+            if (prev.isNotEmpty() && after.isNotEmpty() && (after == prev || after.startsWith(prev))) skipDup.add(i - 1)
+        }
+        // [Icon][Text X][Text X]：去掉图标后重复的道具名
+        if (i + 2 < useChunks.size && useChunks[i + 1].icon == null && useChunks[i + 2].icon == null) {
+            val t1 = useChunks[i + 1].text.orEmpty().trim()
+            val t2 = useChunks[i + 2].text.orEmpty().trim()
+            if (t1.isNotEmpty() && (t1 == t2 || t2.startsWith(t1))) skipDup.add(i + 2)
         }
     }
     val builder = AnnotatedString.Builder()
@@ -1793,9 +1802,23 @@ private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, font
     val useChunks = chunks.ifEmpty { listOf(GameChatChunk(text = fallback)) }
     return buildMap {
         useChunks.forEachIndexed { index, chunk ->
-            if (chunk.icon != null) put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
-                ChatInlineIcon(chunk.icon)
-            })
+            val icon = chunk.icon
+            if (icon != null) {
+                val linkColor = if (icon in 0xE000..0xF8FF) {
+                    var prevFg: Long? = null
+                    var p = index - 1
+                    while (p >= 0 && useChunks[p].icon != null) p--
+                    if (p >= 0) prevFg = useChunks[p].foreground
+                    var nextFg: Long? = null
+                    var q = index + 1
+                    while (q < useChunks.size && useChunks[q].icon != null) q++
+                    if (q < useChunks.size) nextFg = useChunks[q].foreground
+                    (nextFg ?: prevFg)?.let { chatChunkColor(it) }
+                } else null
+                put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
+                    ChatInlineIcon(icon, fontSize, linkColor)
+                })
+            }
         }
     }
 }
@@ -1943,7 +1966,15 @@ private fun chatChunkColor(value: Long): Color {
 }
 
 @Composable
-private fun ChatInlineIcon(index: Int) {
+private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
+    if (index in 0xE000..0xF8FF) {
+        val axisFamily = remember(index) { FontFamily(Font(R.font.ffxiv_axis)) }
+        val color = linkColor ?: Color(0xFFFF7E1E)
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(index.toChar().toString(), fontFamily = axisFamily, fontSize = fontSize, color = color, maxLines = 1, softWrap = false)
+        }
+        return
+    }
     if (index >= 1000) {
         val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
         var bitmap by remember(index) { mutableStateOf<ImageBitmap?>(null) }

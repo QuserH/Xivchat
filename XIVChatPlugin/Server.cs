@@ -2139,7 +2139,7 @@ namespace XIVChatPlugin {
                         var itemPayload = (ItemPayload) payload;
                         var itemRow = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>().GetRowOrDefault(itemPayload.RawItemId);
                         chunks.Add(new IconChunk {
-                            index = itemRow?.Icon ?? 0,
+                            index = 0xE0BB,
                         });
                         Append(itemPayload.DisplayName ?? string.Empty);
                         break;
