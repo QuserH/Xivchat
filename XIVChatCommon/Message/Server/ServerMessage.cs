@@ -30,6 +30,12 @@ namespace XIVChatCommon.Message.Server {
         [Key(6)]
         public string? SenderWorld { get; set; }
 
+        [Key(7)]
+        public string? SenderStatus { get; set; }
+
+        [Key(8)]
+        public int? SenderStatusIcon { get; set; }
+
         [IgnoreMember]
         public string ContentText => XivString.GetText(this.Content);
 
@@ -50,6 +56,8 @@ namespace XIVChatCommon.Message.Server {
             this.Chunks = chunks;
             this.SenderName = senderName;
             this.SenderWorld = senderWorld;
+            this.SenderStatus = senderStatus;
+            this.SenderStatusIcon = senderStatusIcon;
         }
 
         public static ServerMessage Decode(byte[] bytes) {
