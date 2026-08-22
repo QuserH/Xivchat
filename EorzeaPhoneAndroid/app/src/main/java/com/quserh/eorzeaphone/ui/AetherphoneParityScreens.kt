@@ -1451,7 +1451,10 @@ private fun dayKey(timestamp: Long): String {
 }
 
 @Composable
-private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier) {
+private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation: ChatConversation, state: PhoneState, highlight: String, listState: LazyListState, modifier: Modifier, followLatest: Boolean = false) {
+    LaunchedEffect(messages.size, conversation.key) {
+        if (followLatest && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    }
     SelectionContainer {
         LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(messages, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
@@ -1500,7 +1503,7 @@ private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversat
         if (messages.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp) }
         } else {
-            ChatMessagesLazyColumn(messages, conversation, state, "", listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp))
+            ChatMessagesLazyColumn(messages, conversation, state, "", listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp), followLatest = true)
         }
     }
 }
@@ -1654,7 +1657,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         Text("暂无消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
                     }
                 } else {
-                    ChatMessagesLazyColumn(visible, conversation, state, search, listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp))
+                    ChatMessagesLazyColumn(visible, conversation, state, search, listState, Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp), followLatest = search.isBlank())
                 }
                 androidx.compose.animation.AnimatedVisibility(
                     visible = searching,
@@ -1743,56 +1746,37 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val lineUnit = (fontSp + 5).sp
     val timeUnit = (fontSp - 5).coerceAtLeast(9).sp
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
-        BoxWithConstraints(Modifier.widthIn(max = 310.dp)) {
-            val cleaned = cleanChatText(message.text, author)
-            val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
-            val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-            val timeText = lightClock(message.timestamp)
-            val density = LocalDensity.current
-            val fontPx = with(density) { fontUnit.toPx() }
-            val timeFontPx = with(density) { timeUnit.toPx() }
-            val paint = remember(cleaned, fontPx) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = fontPx } }
-            val textPx = remember(cleaned, fontPx) { paint.measureText(cleaned) }
-            val timePx = remember(timeText, timeFontPx) {
-                android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = timeFontPx }.measureText(timeText)
-            }
-            val availablePx = with(density) { (maxWidth - 22.dp).toPx() }
-            val inlineTime = textPx + with(density) { 8.dp.toPx() } + timePx <= availablePx - with(density) { 16.dp.toPx() }
-            Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start) {
-                if (showSender) {
-                    val bubbleInk = if (self) Color.White else AetherLightText
-                    val tagColor = (message.chunks.firstNotNullOfOrNull { it.foreground }?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: themeAdjustedChannelColor(channelDefaultColor(message.channel)))
-                    val authorAnnotated = buildAnnotatedString {
-                        val close = author.indexOf(']')
-                        if (author.startsWith('[') && close >= 0) {
-                            withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) { append(author.substring(0, close + 1)) }
-                            withStyle(SpanStyle(color = AetherLightMuted)) { append(" " + author.substring(close + 1).trimStart()) }
-                        } else {
-                            withStyle(SpanStyle(color = AetherLightMuted)) { append(author) }
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
-                        Text(authorAnnotated, fontSize = 11.sp)
-                        if (jobIconId > 0) {
-                            RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
-                        }
+        Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
+            if (showSender) {
+                val bubbleInk = if (self) Color.White else AetherLightText
+                val tagColor = (message.chunks.firstNotNullOfOrNull { it.foreground }?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: themeAdjustedChannelColor(channelDefaultColor(message.channel)))
+                val authorAnnotated = buildAnnotatedString {
+                    val close = author.indexOf(']')
+                    if (author.startsWith('[') && close >= 0) {
+                        withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) { append(author.substring(0, close + 1)) }
+                        withStyle(SpanStyle(color = AetherLightMuted)) { append(" " + author.substring(close + 1).trimStart()) }
+                    } else {
+                        withStyle(SpanStyle(color = AetherLightMuted)) { append(author) }
                     }
                 }
-                Column(
-                    Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
-                        .padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
-                ) {
-                    if (inlineTime) {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
-                            Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                                modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
-                        }
-                    } else {
-                        ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.fillMaxWidth(), forceColor = neutral, highlight = highlight)
-                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
-                            modifier = Modifier.align(Alignment.End).padding(top = 3.dp, end = 2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
+                    Text(authorAnnotated, fontSize = 11.sp)
+                    if (jobIconId > 0) {
+                        RemoteGameIcon(jobIconId, "?", Modifier.size(13.dp).padding(start = 3.dp))
                     }
+                }
+            }
+            Column(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(if (self) AetherPurple else AetherLightSurface)
+                    .padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 5.dp),
+            ) {
+                val cleaned = cleanChatText(message.text, author)
+                val renderMsg = if (cleaned != message.text) message.copy(text = cleaned, chunks = emptyList()) else message
+                val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
+                Row(verticalAlignment = Alignment.Bottom) {
+                    ChatChunkText(renderMsg, cleaned, if (self) Color.White else AetherLightText, fontSize = fontUnit, lineHeight = lineUnit, modifier = Modifier.weight(1f, fill = false), forceColor = neutral, highlight = highlight)
+                    Text(lightClock(message.timestamp), color = timeColor, fontSize = timeUnit, lineHeight = timeUnit,
+                        modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
                 }
             }
         }
@@ -1878,7 +1862,7 @@ private fun ChatInlineIcon(index: Int) {
         LaunchedEffect(index) { bitmap = ItemIconLoader.load(appContext, index)?.asImageBitmap() }
         val bmp = bitmap
         if (bmp != null) {
-            Image(bmp, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            Image(bmp, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         }
         return
     }
