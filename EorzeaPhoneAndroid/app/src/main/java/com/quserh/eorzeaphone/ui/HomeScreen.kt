@@ -26,6 +26,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -469,6 +473,17 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
                     colorFilter = ColorFilter.tint(Color.White),
                     modifier = Modifier.size(36.dp),
                 )
+                if (app.destination == PhoneScreen.Chat) {
+                    val unread = state.conversations.filter { it.notify }.sumOf { it.unread }
+                    if (unread > 0) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Color(0xFFE5485D)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                        }
+                    }
+                }
             }
         }
     }
