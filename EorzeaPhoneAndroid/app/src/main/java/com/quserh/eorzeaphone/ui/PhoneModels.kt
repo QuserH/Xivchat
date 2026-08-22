@@ -1394,7 +1394,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             trimmed
         }
         val sendChannel = when {
-            conv.key == "novice" -> 27
+            conv.key == "novice" -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 27)
             conv.category == ChatCategory.Linkshell -> inputChannelFor(conv.messages.firstOrNull()?.channel ?: 0)
             conv.category == ChatCategory.Party -> 2
             conv.category == ChatCategory.FreeCompany -> 6
@@ -1404,7 +1404,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         android.util.Log.i("EorzeaPhone", "sendChat payload=" + payload)
         val isTell = conv.category == ChatCategory.Tell
         val selfSender = if (isTell) conv.tellRecipient.ifBlank { profile?.name.orEmpty() } else profile?.name.orEmpty().ifBlank { "我" }
-        val echoChannel = if (conv.key == "novice") 27 else outChannelFor(conv.category)
+        val echoChannel = if (conv.key == "novice") (conv.messages.firstOrNull()?.channel ?: 27) else outChannelFor(conv.category)
         val selfMsg = GameChatMessage(System.currentTimeMillis(), selfSender, trimmed, echoChannel, self = true, sendState = if (isTell) 1 else 0)
         chats.add(selfMsg)
         conv.add(selfMsg)
@@ -1665,7 +1665,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
         // Emotes from a specific player belong inside that player's DM thread.
-        val isNovice = message.channel == 27
+        val isNovice = message.channel == 27 || message.channel == 75 || message.channel == 94
         val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
         val key = if (isNovice) "novice" else (if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey())
         conversationByKey[key]?.let { existing ->
