@@ -1757,7 +1757,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = timeFontPx }.measureText(timeText)
             }
             val availablePx = with(density) { (maxWidth - 22.dp).toPx() }
-            val inlineTime = textPx + with(density) { 10.dp.toPx() } + timePx <= availablePx
+            val inlineTime = textPx + with(density) { 8.dp.toPx() } + timePx <= availablePx - with(density) { 16.dp.toPx() }
             Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start) {
                 if (showSender) {
                     val bubbleInk = if (self) Color.White else AetherLightText
