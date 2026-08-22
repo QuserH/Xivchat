@@ -107,6 +107,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -844,6 +845,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var filter by remember { mutableIntStateOf(0) }
     var sendChannel by remember { mutableStateOf(1) }
     var channelMenu by remember { mutableStateOf(false) }
+    var inputFocused by remember { mutableStateOf(false) }
     val labels = listOf("全部", "说话", "喊话", "呼喊")
     val msgs = state.chats.filter {
         when {
@@ -923,7 +925,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp))
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
                         .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
                         Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -931,7 +933,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                                 if (!state.activeCharacterOnline) {
                                     Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted.copy(alpha = .72f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 } else {
-                                    if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
+                                    if (state.chatDraft.isBlank() && !inputFocused) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
                                     field()
                                 }
                             }
@@ -1736,6 +1738,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
             focus.clearFocus()
         }
     }
+    var inputFocused by remember { mutableStateOf(false) }
     LightFrame {
         if (chatStack.last() != ChatSub.Main) {
             ChatSubScreen(state, conversation, chatStack.last(), onPop = popChatSub, onPush = pushChatSub)
@@ -1775,7 +1778,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex); listState.animateScrollBy(Float.MAX_VALUE) }
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.scrollToItem(visible.lastIndex); listState.animateScrollBy(Float.MAX_VALUE) }
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {
@@ -1840,7 +1843,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp))
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
                         .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
                         Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1848,7 +1851,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                                 if (!state.activeCharacterOnline) {
                                     Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted.copy(alpha = .72f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 } else {
-                                    if (state.chatDraft.isBlank()) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
+                                    if (state.chatDraft.isBlank() && !inputFocused) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
                                     field()
                                 }
                             }

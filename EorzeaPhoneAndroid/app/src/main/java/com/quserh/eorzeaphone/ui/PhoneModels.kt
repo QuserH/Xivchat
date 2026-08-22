@@ -2158,9 +2158,20 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
                     return
                 }
-                val selfEcho = pendingSelfTexts.remove("${convKey}\u0000${event.message.text}")
-                if (selfEcho != null) {
+                val selfFlag = event.message.isFrom(profile?.name)
+                val selfIdx = if (selfFlag) chats.indexOfLast { it.self && it.text == event.message.text && kotlin.math.abs(it.timestamp - event.message.timestamp) < 60_000L } else -1
+                if (selfIdx >= 0) {
+                    val existing = chats[selfIdx]
+                    val updated = existing.copy(sendState = 0)
+                    chats[selfIdx] = updated
+                    val ownerConv = conversations.firstOrNull { it.messages.any { m -> m === existing } }
+                    if (ownerConv != null) {
+                        val cidx = ownerConv.messages.indexOfFirst { m -> m === existing }
+                        if (cidx >= 0) ownerConv.messages[cidx] = updated
+                    }
+                    pendingSelfTexts.remove(pendingSelfTexts.keys.firstOrNull { it.endsWith("\u0000${event.message.text}") } ?: "")
                     markPendingSendsDelivered()
+                    saveChats()
                 } else if (chats.none { kotlin.math.abs(it.timestamp - event.message.timestamp) < 50L && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
                     if (event.message.category == ChatCategory.System) {
                         markTellFailureFromSystem(event.message.text)
