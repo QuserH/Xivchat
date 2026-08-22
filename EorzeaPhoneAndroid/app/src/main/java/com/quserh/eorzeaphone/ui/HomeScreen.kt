@@ -482,7 +482,7 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
                             Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Color(0xFFE5485D)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                            Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 10.sp, lineHeight = 18.sp, textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.align(Alignment.Center).padding(horizontal = 2.dp))
                         }
                     }
                 }

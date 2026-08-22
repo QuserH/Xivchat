@@ -1557,8 +1557,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             scrolledInitialState.value = true
         }
     }
-    SelectionContainer {
-        LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    LazyColumn(state = listState, modifier = modifier, verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(messages, key = { index, message -> "$index-${message.timestamp}-${message.sender}-${message.text}" }) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
@@ -1593,7 +1592,6 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             }
         }
         }
-    }
 }
 
 @Composable
@@ -2015,6 +2013,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
+                SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
                     if (lineCount == 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
@@ -2048,6 +2047,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (!canInline && lineCount > 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                     }
+                }
                 }
             }
         }

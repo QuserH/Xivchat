@@ -154,6 +154,14 @@ namespace XIVChatPlugin {
                     this.Plugin.Config.Save();
                 }
 
+                var backlogPath = this.Plugin.Config.BacklogPath ?? "";
+                if (WithWhiteText(() => ImGui.InputText("历史存储路径", ref backlogPath, 260, ImGuiInputTextFlags.None))) {
+                    this.Plugin.Config.BacklogPath = string.IsNullOrWhiteSpace(backlogPath) ? null : backlogPath.Trim();
+                    this.Plugin.Config.Save();
+                }
+                ImGui.SameLine();
+                HelpMarker("留空则存到插件配置目录 chat_backlog.bin；可填绝对路径（如 D:\\backlog\\chat.bin）");
+
                 ImGui.Spacing();
 
                 var sendBattle = this.Plugin.Config.SendBattle;
