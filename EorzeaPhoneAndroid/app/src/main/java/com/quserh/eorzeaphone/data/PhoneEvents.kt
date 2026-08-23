@@ -55,8 +55,12 @@ data class GameChatMessage(
 
     fun displaySender(): String {
         val n = senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
-        val w = senderWorld?.takeIf { it.isNotBlank() }
-        if (!n.isNullOrBlank()) return if (w.isNullOrBlank() || n.contains('@')) n else "$n@$w"
+        val w = senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
+        if (!n.isNullOrBlank()) {
+            if (w.isNullOrBlank()) return n
+            val marker = sender.firstOrNull { it.code in 0xE000..0xF8FF || it in PlayerNameFlowers } ?: '\uE05D'
+            return "$n$marker$w"
+        }
         return sender.displayPlayerName()
     }
 
@@ -141,6 +145,14 @@ internal fun String.normalizedPlayerName(): String = this
     .lowercase()
 
 internal fun String.displayPlayerName(): String = stripPlayerDecorations().ifBlank { "对方" }
+
+// 彻底移除玩家名里所有花/装饰/PUA 符号（不止首尾），避免出现 “❀角色名” 这种前置花
+internal fun String.cleanPlayerName(): String = buildString {
+    for (ch in this) {
+        if (ch.code in PlayerNamePuaRange || ch in PlayerNameFlowers || ch in PlayerNameDecorations) continue
+        append(ch)
+    }
+}.trim()
 internal fun String.tellNamePart(): String = substringBefore('@').stripPlayerDecorations().trim().lowercase()
 internal fun GameChatMessage.tellNamePart(): String =
     senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()?.lowercase()

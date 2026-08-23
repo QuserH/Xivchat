@@ -49,6 +49,7 @@ import com.quserh.eorzeaphone.data.ResetReminderReceiver
 import com.quserh.eorzeaphone.data.normalizedPlayerName
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.stripPlayerDecorations
+import com.quserh.eorzeaphone.data.cleanPlayerName
 import com.quserh.eorzeaphone.data.tellNamePart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1869,14 +1870,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         .filter { it.notify }
         .sumOf { it.unread }
 
-    // 玩家名显示：本地服务器只显示名字；跨服显示 名字\u2740服务器（用小花朵分隔，不再用 @）
+    // 玩家名显示：本地服务器只显示名字；跨服显示 名字<跨服标记>服务器（用游戏真实跨服标记字符，不再用 @ / 前置花）
     fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
-        val n = msg.senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
+        var n = (msg.senderName ?: msg.sender).cleanPlayerName()
         val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
-        if (n.isNullOrBlank()) return msg.sender.stripPlayerDecorations().ifBlank { "对方" }
+        if (n.isBlank()) return "对方"
+        if (w != null && n.endsWith(w)) n = n.removeSuffix(w).trim()
         val myWorld = profile?.currentWorld?.takeIf { it.isNotBlank() } ?: profile?.homeWorld.orEmpty()
         if (w.isNullOrBlank() || w.equals(myWorld, true)) return n
-        return "$n\u2740$w"
+        val marker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" } ?: '\uE05D'
+        return "$n$marker$w"
     }
 
     fun toggleConversationNotify(conv: ChatConversation) {
