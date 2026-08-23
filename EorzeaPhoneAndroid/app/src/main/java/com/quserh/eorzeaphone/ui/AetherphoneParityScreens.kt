@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
@@ -934,22 +935,19 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },
                     enabled = state.activeCharacterOnline,
-                    singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).heightIn(min = 42.dp, max = 120.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
                         .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
-                        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
                                 if (!state.activeCharacterOnline) {
                                     Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted.copy(alpha = .72f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 } else {
                                     if (state.chatDraft.isBlank() && !inputFocused) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
                                     field()
                                 }
-                            }
                         }
                     },
                 )
@@ -1892,22 +1890,19 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },
                     enabled = state.activeCharacterOnline,
-                    singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).height(42.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).heightIn(min = 42.dp, max = 120.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
                         .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
-                        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
                                 if (!state.activeCharacterOnline) {
                                     Text("当前无法使用聊天：角色未登录游戏", color = AetherLightMuted.copy(alpha = .72f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 } else {
                                     if (state.chatDraft.isBlank() && !inputFocused) Text("消息内容", color = AetherLightMuted, fontSize = 13.sp)
                                     field()
                                 }
-                            }
                         }
                     },
                 )
@@ -2214,8 +2209,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
-                // 时间只在单行且能容纳时内联；多行一律放气泡右下角，避免时间丢失
-                val canInline = lineCount == 1 && (lastLinePx + gapPx + timePx <= contentPx)
+                // 时间在最后一行能容纳时内联在行尾；一行放不下才另起一行放气泡右下角
+                val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
                 key(selectionEpoch) {
@@ -2229,8 +2224,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                             Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
                             if (canInline) {
                                 // 最后一行能容纳时，用覆盖定位把时间嵌在行尾
-                                val tOff = with(dens) { (bubbleWidePx - (lastLinePx + gapPx + timePx)).coerceAtLeast(0f).toDp() }
-                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).offset(x = tOff).padding(bottom = 1.dp))
+                                val tOff = with(dens) { (lastLinePx + gapPx).toDp() }
+                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomStart).offset(x = tOff).padding(bottom = 1.dp))
                             }
                         }
                         // 塞不进时间&非空消息：时间另起一行右下
