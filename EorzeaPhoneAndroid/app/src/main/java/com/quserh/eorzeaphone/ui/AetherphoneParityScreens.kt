@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -841,6 +842,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var sendChannel by remember { mutableStateOf(1) }
     var channelMenu by remember { mutableStateOf(false) }
     var inputFocused by remember { mutableStateOf(false) }
+    var inputHeightPx by remember { mutableIntStateOf(0) }
     var chatStack by remember { mutableStateOf(listOf<ChatSub>(ChatSub.Main)) }
     val pushChatSub: (ChatSub) -> Unit = { chatStack = chatStack + it }
     val popChatSub: () -> Unit = { if (chatStack.size > 1) chatStack = chatStack.dropLast(1) }
@@ -880,7 +882,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             }
             val listState = rememberLazyListState()
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
-            LaunchedEffect(filter, msgs.size) {
+            LaunchedEffect(filter, msgs.size, inputHeightPx) {
                 if (msgs.isEmpty()) return@LaunchedEffect
                 if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
@@ -938,7 +940,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).heightIn(min = 42.dp, max = 120.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).heightIn(min = 42.dp, max = 120.dp).clip(RoundedCornerShape(11.dp)).onSizeChanged { inputHeightPx = it.height }.onFocusChanged { inputFocused = it.isFocused }
                         .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
                         Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
@@ -1790,6 +1792,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
         }
     }
     var inputFocused by remember { mutableStateOf(false) }
+    var inputHeightPx by remember { mutableIntStateOf(0) }
     LightFrame {
         if (chatStack.last() != ChatSub.Main) {
             ChatSubScreen(state, conversation, chatStack.last(), onPop = popChatSub, onPush = pushChatSub)
@@ -1824,7 +1827,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         scrollScope.launch { listState.animateScrollToItem(matchIndices[matchIndex]) }
                     }
                 }
-                LaunchedEffect(conversation.key, visible.size, search) {
+                LaunchedEffect(conversation.key, visible.size, search, inputHeightPx) {
                     if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
@@ -1893,7 +1896,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     textStyle = androidx.compose.ui.text.TextStyle(color = AetherLightText, fontSize = 14.sp, lineHeight = 20.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    modifier = Modifier.weight(1f).padding(start = 8.dp).heightIn(min = 42.dp, max = 120.dp).clip(RoundedCornerShape(11.dp)).onFocusChanged { inputFocused = it.isFocused }
+                    modifier = Modifier.weight(1f).padding(start = 8.dp).heightIn(min = 42.dp, max = 120.dp).clip(RoundedCornerShape(11.dp)).onSizeChanged { inputHeightPx = it.height }.onFocusChanged { inputFocused = it.isFocused }
                         .background(if (state.activeCharacterOnline) AetherLightSurface else AetherLightControl),
                     decorationBox = { field ->
                         Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
@@ -2223,9 +2226,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                         Box(Modifier.fillMaxWidth()) {
                             Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
                             if (canInline) {
-                                // 最后一行能容纳时，用覆盖定位把时间嵌在行尾
-                                val tOff = with(dens) { (lastLinePx + gapPx).toDp() }
-                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomStart).offset(x = tOff).padding(bottom = 1.dp))
+                                // 最后一行能容纳时，时间右对齐到气泡右下角（内联在末行）
+                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 1.dp))
                             }
                         }
                         // 塞不进时间&非空消息：时间另起一行右下
