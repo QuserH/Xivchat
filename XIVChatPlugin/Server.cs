@@ -354,6 +354,23 @@ namespace XIVChatPlugin {
             }
             senderStatusIcon = GetSenderStatusIcon(message.Sender.Encode());
 
+            // 诊断：所有情感动作都打印，确认自用动作是否到达插件
+            if (message.LogKind == XivChatType.StandardEmote || message.LogKind == XivChatType.CustomEmote) {
+                Plugin.Log.Info($"EMOTE {message.LogKind} handled={message.IsHandled} sender={senderName ?? "(empty)"} text={message.Message.TextValue}");
+            }
+            // 自用动作补全：部分自用动作游戏不填发送者，用“内容以本角色名开头”判断并补全，App 才能识别为“我发的”
+            var localPlayerName = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
+            var senderBytes = message.Sender.Encode();
+            if ((message.LogKind == XivChatType.StandardEmote || message.LogKind == XivChatType.CustomEmote) && !string.IsNullOrEmpty(localPlayerName) &&
+                (message.Message.TextValue ?? string.Empty).StartsWith(localPlayerName, StringComparison.Ordinal) && string.IsNullOrEmpty(senderName)) {
+                senderName = localPlayerName;
+                try {
+                    var lw = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.HomeWorld.Value.Name.ExtractText();
+                    if (!string.IsNullOrWhiteSpace(lw)) senderWorld = lw;
+                } catch { }
+                senderBytes = new SeStringBuilder().AddText(localPlayerName).Build().Encode();
+            }
+
             // 情感动作：从内容里提取“目标角色”，App 据此把“我对他人的动作”路由到对方的会话
             string? targetName = null;
             string? targetWorld = null;
@@ -382,6 +399,21 @@ namespace XIVChatPlugin {
                             } catch { }
                         }
                     }
+                    // 再扫描周围玩家：对某人做动作时对方就在附近，名字出现在文本里即可认定
+                    if (targetName == null) {
+                        foreach (var obj in XIVChatPlugin.Plugin.ObjectTable) {
+                            if (obj is IPlayerCharacter nearby && !string.IsNullOrEmpty(nearby.Name.TextValue) && nearby.Name.TextValue != localPlayerName) {
+                                if (contentText.Contains(nearby.Name.TextValue, StringComparison.OrdinalIgnoreCase)) {
+                                    targetName = nearby.Name.TextValue;
+                                    try {
+                                        var nw = nearby.HomeWorld.Value.Name.ExtractText();
+                                        if (!string.IsNullOrWhiteSpace(nw)) targetWorld = nw;
+                                    } catch { }
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     // 再兜底好友名单匹配
                     if (targetName == null) {
                         foreach (var friend in this._lastFriends) {
@@ -400,7 +432,7 @@ namespace XIVChatPlugin {
             var msg = new ServerMessage(
                 DateTime.UtcNow,
                 (ushort) message.LogKind,
-                message.Sender.Encode(),
+                senderBytes,
                 message.Message.Encode(),
                 chunks,
                 senderName,
