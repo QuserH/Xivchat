@@ -2202,23 +2202,28 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val layout = remember(ink, measureStyle, contentPx) {
                     textMeasurer.measure(ink.annotated, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
                 }
-                val lineCount = layout.lineCount
-                val lineWidths = (0 until lineCount).map { layout.getLineRight(it) - layout.getLineLeft(it) }
+                // 先把两端对齐字距烘焙进文本，再按烘焙后的文本量取宽度，保证气泡尺寸与内容一致（避免右侧留空）
+                val baseWidePx = (0 until layout.lineCount).map { layout.getLineRight(it) - layout.getLineLeft(it) }.maxOrNull()?.coerceAtLeast(1f) ?: contentPx
+                val justified = remember(ink, layout, baseWidePx) { justifyText(ink.annotated, layout, baseWidePx, dens) }
+                val jLayout = remember(ink, justified, measureStyle, contentPx) {
+                    textMeasurer.measure(justified, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
+                }
+                val lineCount = jLayout.lineCount
+                val lineWidths = (0 until lineCount).map { jLayout.getLineRight(it) - jLayout.getLineLeft(it) }
                 val widePx = lineWidths.maxOrNull()?.coerceAtLeast(1f) ?: contentPx
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
-                val canInline = lastLinePx + gapPx + timePx <= contentPx
+                // 时间只在单行且能容纳时内联；多行一律放气泡右下角，避免时间丢失
+                val canInline = lineCount == 1 && (lastLinePx + gapPx + timePx <= contentPx)
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
                 key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
-                    // 单节点渲染：把两端对齐字距烘焙进文本，整条消息一个文本节点，滚动更流畅
-                    val justified = remember(ink, layout, bubbleWidePx) { justifyText(ink.annotated, layout, bubbleWidePx, dens) }
                     if (lineCount == 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
-                    } else if (canInline && lineCount == 1) {
+                    } else if (canInline) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                             Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline, maxLines = 1, softWrap = false)
                             Spacer(Modifier.weight(1f))
