@@ -985,8 +985,9 @@ private fun LightMessagePreview(message: GameChatMessage?, color: Color, fontSiz
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val fallback = cleanChatText(message.text, "").replace('\n', ' ').trim().ifBlank { " " }
-    val ink = remember(message, color, fontSize, lineH) { chatBubbleInk(message.chunks, fallback, color, true, "", light, fontSize, lineH, axisFont) }
-    val inline = chatBubbleInline(message.chunks, fallback, fontSize, lineH)
+    val inkChunks = if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks
+    val ink = remember(message, color, fontSize, lineH) { chatBubbleInk(inkChunks, fallback, color, true, "", light, fontSize, lineH, axisFont) }
+    val inline = chatBubbleInline(inkChunks, fallback, fontSize, lineH)
     Text(ink.annotated, color = color, fontSize = fontSize, lineHeight = lineH, inlineContent = inline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
@@ -2060,6 +2061,42 @@ private class TrackingTextToolbar(
     }
 }
 
+// 与气泡一体的尾巴形状：自己发的尾巴在右下、对方发的在左下（融入圆角轮廓）
+private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density,
+    ): androidx.compose.ui.graphics.Outline {
+        val r = with(density) { 12.dp.toPx() }
+        val t = with(density) { 8.dp.toPx() }
+        val w = size.width
+        val h = size.height
+        val path = androidx.compose.ui.graphics.Path().apply {
+            if (self) {
+                moveTo(0f, r)
+                quadraticBezierTo(0f, 0f, r, 0f)
+                lineTo(w - r, 0f)
+                quadraticBezierTo(w, 0f, w, r)
+                lineTo(w, (h - t).coerceAtLeast(1f))
+                lineTo((w - t).coerceAtLeast(1f), h)
+                lineTo(r, h)
+                quadraticBezierTo(0f, h, 0f, h - r)
+            } else {
+                moveTo(0f, r)
+                quadraticBezierTo(0f, 0f, r, 0f)
+                lineTo(w - r, 0f)
+                quadraticBezierTo(w, 0f, w, r)
+                lineTo(w, h - r)
+                quadraticBezierTo(w, h, w - r, h)
+                lineTo(t, h)
+                lineTo(0f, (h - t).coerceAtLeast(1f))
+            }
+            close()
+        }
+        return androidx.compose.ui.graphics.Outline.Generic(path)
+    }
+}
 @Composable
 private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
@@ -2112,16 +2149,17 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
-            Box {
             BoxWithConstraints(
-                Modifier.clip(RoundedCornerShape(12.dp)).background(bubbleBg),
+                Modifier.clip(remember(self) { BubbleTailShape(self) }).background(bubbleBg),
             ) {
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
+                // 情感动作文字保持正体（不随消息的斜体标记走），颜色不变
+                val inkChunks = if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks
                 val ink = remember(message, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
-                    chatBubbleInk(message.chunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont)
+                    chatBubbleInk(inkChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont)
                 }
-                val inline = chatBubbleInline(message.chunks, cleaned, fontUnit, lineUnit)
+                val inline = chatBubbleInline(inkChunks, cleaned, fontUnit, lineUnit)
                 val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) { chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start) }
                 val layout = remember(ink, measureStyle, contentPx) {
                     textMeasurer.measure(ink.annotated, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
@@ -2173,27 +2211,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
                 }
                 }
-            }
-            // 气泡小尾巴：自己发的在右下、对方发的在左下，指向外侧
-            Canvas(
-                Modifier.align(if (self) Alignment.BottomEnd else Alignment.BottomStart)
-                    .offset(x = if (self) 6.dp else (-6).dp)
-                    .size(8.dp, 8.dp),
-            ) {
-                val path = androidx.compose.ui.graphics.Path().apply {
-                    if (self) {
-                        moveTo(0f, 0f)
-                        lineTo(0f, size.height)
-                        lineTo(size.width, size.height / 2f)
-                    } else {
-                        moveTo(size.width, 0f)
-                        lineTo(size.width, size.height)
-                        lineTo(0f, size.height / 2f)
-                    }
-                    close()
-                }
-                drawPath(path, bubbleBg)
-            }
             }
         }
     }
