@@ -1040,6 +1040,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     senderWorld = o.optString("senderWorld").takeIf { it.isNotBlank() },
                     senderStatusName = o.optString("senderStatusName").takeIf { it.isNotBlank() },
                     senderStatusIcon = if (o.has("senderStatusIcon")) o.optInt("senderStatusIcon") else null,
+                    senderWorldIcon = if (o.has("senderWorldIcon")) o.optInt("senderWorldIcon") else null,
                     characterTag = o.optString("characterTag").takeIf { it.isNotBlank() },
                     targetName = o.optString("targetName").takeIf { it.isNotBlank() },
                     targetWorld = o.optString("targetWorld").takeIf { it.isNotBlank() },
@@ -1097,6 +1098,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (m.senderWorld != null) put("senderWorld", m.senderWorld)
                     if (m.senderStatusName != null) put("senderStatusName", m.senderStatusName)
                     if (m.senderStatusIcon != null) put("senderStatusIcon", m.senderStatusIcon)
+                    if (m.senderWorldIcon != null) put("senderWorldIcon", m.senderWorldIcon)
                     if (m.characterTag != null) put("characterTag", m.characterTag)
                     if (m.targetName != null) put("targetName", m.targetName)
                     if (m.targetWorld != null) put("targetWorld", m.targetWorld)

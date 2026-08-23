@@ -371,6 +371,7 @@ namespace XIVChatPlugin {
                 }
             }
             senderStatusIcon = GetSenderStatusIcon(message.Sender.Encode());
+            int? senderWorldIcon = GetSenderWorldIcon(message.Sender.Encode(), senderWorld);
 
 
             // 自用动作补全：部分自用动作游戏不填发送者，用“内容以本角色名开头”判断并补全，App 才能识别为“我发的”
@@ -459,7 +460,8 @@ namespace XIVChatPlugin {
                 characterTag: null,
                 targetName: targetName,
                 targetWorld: targetWorld,
-                selfFlag: selfFlag
+                selfFlag: selfFlag,
+                senderWorldIcon: senderWorldIcon
             );
 
             if (this._plugin.Config.BacklogEnabled) {
@@ -2377,6 +2379,31 @@ namespace XIVChatPlugin {
             if (this._backlogByChar.TryGetValue(fullTag, out var list)) return list;
             var at = fullTag.IndexOf('@');
             if (at > 0 && this._backlogByChar.TryGetValue(fullTag.Substring(0, at), out var legacy)) return legacy;
+            return null;
+        }
+        private static int? GetSenderWorldIcon(byte[] sender, string? world) {
+            if (sender == null || string.IsNullOrEmpty(world)) return null;
+            try {
+                using var reader = new System.IO.BinaryReader(new System.IO.MemoryStream(sender));
+                while (reader.BaseStream.Position < reader.BaseStream.Length) {
+                    var b = reader.ReadByte();
+                    if (b != 0x02) continue;
+                    if (reader.BaseStream.Position >= reader.BaseStream.Length) break;
+                    var kind = reader.ReadByte();
+                    if (reader.BaseStream.Position >= reader.BaseStream.Length) break;
+                    var len = (int) XIVChatCommon.XivString.GetInteger(reader);
+                    if (kind == 0x12) {
+                        var d = new System.IO.BinaryReader(new System.IO.MemoryStream(reader.ReadBytes(len)));
+                        var icon = (int) XIVChatCommon.XivString.GetInteger(d);
+                        var rest = reader.ReadBytes((int)(reader.BaseStream.Length - reader.BaseStream.Position));
+                        var restText = XivString.GetText(rest);
+                        if (restText.StartsWith(world, StringComparison.Ordinal)) return icon;
+                    } else {
+                        reader.ReadBytes(len);
+                    }
+                    if (reader.BaseStream.Position < reader.BaseStream.Length) reader.ReadByte();
+                }
+            } catch { }
             return null;
         }
         private static int? GetSenderStatusIcon(byte[] sender) {

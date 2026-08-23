@@ -112,7 +112,8 @@ internal object XivChatCodec {
         val targetName = if (fields > 10) nullableString(unpacker) else null
         val targetWorld = if (fields > 11) nullableString(unpacker) else null
         val selfFlag = if (fields > 12) unpacker.unpackBoolean() else false
-        return GameChatMessage(time, sender, text, channel, chunks = chunks, senderName = senderName, senderWorld = senderWorld, senderStatusName = senderStatus, senderStatusIcon = senderIcon, characterTag = characterTag, targetName = targetName, targetWorld = targetWorld, selfFlag = selfFlag)
+        val senderWorldIcon = if (fields > 13) unpacker.tryUnpackNil().let { if (it) null else unpacker.unpackInt() } else null
+        return GameChatMessage(time, sender, text, channel, chunks = chunks, senderName = senderName, senderWorld = senderWorld, senderStatusName = senderStatus, senderStatusIcon = senderIcon, characterTag = characterTag, targetName = targetName, targetWorld = targetWorld, selfFlag = selfFlag, senderWorldIcon = senderWorldIcon)
     }
     // The chat line text can embed "[频道]<名字> content" / "<名字> content" / "名字：content".
     // Keep only the actual content; the app shows sender/channel separately.

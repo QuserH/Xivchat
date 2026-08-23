@@ -29,6 +29,7 @@ data class GameChatMessage(
     val senderWorld: String? = null,
     val senderStatusName: String? = null,
     val senderStatusIcon: Int? = null,
+    val senderWorldIcon: Int? = null,
     val characterTag: String? = null,
     val targetName: String? = null,
     val targetWorld: String? = null,

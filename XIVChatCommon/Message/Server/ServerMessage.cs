@@ -36,6 +36,9 @@ namespace XIVChatCommon.Message.Server {
         [Key(8)]
         public int? SenderStatusIcon { get; set; }
 
+        [Key(13)]
+        public int? SenderWorldIcon { get; set; }
+
         [Key(9)]
         public string? CharacterTag { get; set; }
 
@@ -60,7 +63,7 @@ namespace XIVChatCommon.Message.Server {
         public ServerMessage() {
         }
 
-        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null, int? senderStatusIcon = null, string? characterTag = null, string? targetName = null, string? targetWorld = null, bool selfFlag = false) {
+        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null, int? senderStatusIcon = null, string? characterTag = null, string? targetName = null, string? targetWorld = null, bool selfFlag = false, int? senderWorldIcon = null) {
             this.Timestamp = timestamp;
             this.Channel = channel;
             this.Sender = sender;
@@ -70,6 +73,7 @@ namespace XIVChatCommon.Message.Server {
             this.SenderWorld = senderWorld;
             this.SenderStatus = senderStatus;
             this.SenderStatusIcon = senderStatusIcon;
+            this.SenderWorldIcon = senderWorldIcon;
             this.CharacterTag = characterTag;
             this.TargetName = targetName;
             this.TargetWorld = targetWorld;

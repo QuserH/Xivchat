@@ -919,7 +919,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                             state.displayNameFor(msg)
                         }
                         val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
-                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name), senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderStatusIcon ?: 0 else 0)
+                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name), senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
                     }
                 }
             }
@@ -1668,7 +1668,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 val showAuthor = conversation.category != ChatCategory.Tell && groupStart
                 // 私聊界面所有气泡统一带尾巴，不区分首条/合并；其它频道仍按“组首条带尾巴”
                 val showTail = conversation.category == ChatCategory.Tell || groupStart
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (state.isCrossWorld(message)) message.senderStatusIcon ?: 0 else 0)
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -2181,8 +2181,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
-                    val worldIcon = senderWorldIconId.takeIf { it > 0 }
-                    val statIconId = if (!self && worldIcon == null) message.senderStatusIcon?.takeIf { it > 0 } else null
+                    val worldIcon = (message.senderWorldIcon ?: senderWorldIconId.takeIf { it > 0 })?.takeIf { it > 0 }
+                    val statIconId = if (!self && message.senderStatusIcon != null && message.senderStatusIcon != worldIcon) message.senderStatusIcon?.takeIf { it > 0 } else null
                     val titleIcon = if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null
                     val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
                     if (tagEnd >= 0) {
