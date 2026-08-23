@@ -381,6 +381,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             pinnedConversations.clear()
             pinnedConversations.addAll(store.getStringSet("pinnedChatConvs", emptySet()) ?: emptySet())
             hiddenConversations.value = (store.getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet()
+            _clearedLocalTs.value = store.getLong("clearedLocalTs", 0L)
             conversationIconOverrides.clear()
             val ci = JSONObject(store.getString("convIcons", "{}").orEmpty())
             val it2 = ci.keys()
@@ -1871,6 +1872,33 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    // 本地列表的置顶/隐藏/清空（与筛选器设置保持一致，但本地不是筛选器，无编辑筛选器）
+    private val _clearedLocalTs = mutableStateOf(charPrefs().getLong("clearedLocalTs", 0L))
+    val localClearedUntil: Long get() = _clearedLocalTs.value
+    fun clearLocalMessages() { _clearedLocalTs.value = System.currentTimeMillis(); charPrefs().edit().putLong("clearedLocalTs", _clearedLocalTs.value).apply() }
+    fun localPinned(): Boolean = "local" in pinnedConversations
+    fun toggleLocalPinned() {
+        if (!pinnedConversations.remove("local")) pinnedConversations.add("local")
+        charPrefs().edit().putStringSet("pinnedChatConvs", pinnedConversations).apply()
+    }
+    val localHidden: Boolean get() = "local" in hiddenConversations.value
+    fun localNotify(): Boolean = "local" !in mutedConversations
+    fun toggleLocalNotify() {
+        if (!mutedConversations.remove("local")) mutedConversations.add("local")
+        charPrefs().edit().putStringSet("mutedChatConvs", mutedConversations).apply()
+    }
+    fun toggleLocalHidden() {
+        if (!hiddenConversations.value.add("local")) hiddenConversations.value.remove("local")
+        charPrefs().edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+        hiddenConversations.value = hiddenConversations.value.toMutableSet()
+    }
+    fun unhideLocal() {
+        if (hiddenConversations.value.remove("local")) {
+            charPrefs().edit().putStringSet("hiddenChatConvs", hiddenConversations.value).apply()
+            hiddenConversations.value = hiddenConversations.value.toMutableSet()
+        }
+    }
+
     fun toggleConversationPin(conv: ChatConversation) {
         if (!pinnedConversations.remove(conv.key)) pinnedConversations.add(conv.key)
         charPrefs().edit().putStringSet("pinnedChatConvs", pinnedConversations).apply()
@@ -1916,16 +1944,30 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         return myName.isNotBlank() && message.text.contains(myName, ignoreCase = true)
     }
 
+    // 我的情感动作目标：插件没解析出 targetName 时，从文本里匹配好友名作为兜底
+    private fun emoteTargetFromFriends(message: GameChatMessage): PhoneFriend? {
+        val myName = profile?.name?.substringBefore('@')?.trim()
+        return friends.firstOrNull { f ->
+            val n = f.name.trim()
+            n.isNotBlank() && (myName == null || !n.normalizedPlayerName().contains(myName.normalizedPlayerName())) &&
+                message.text.contains(n, ignoreCase = true)
+        }
+    }
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
         // 情感动作路由：别人对我 → 对方会话；我对别人 → 目标角色会话（插件下发 targetName）；第三人动作 → 只进本地列表（不进会话）
         val isNovice = message.channel == 27 || message.channel == 75 || message.channel == 94
         val isSelfEmote = message.category == ChatCategory.Emote && message.isFrom(profile?.name)
         val incomingEmoteToMe = message.category == ChatCategory.Emote && !message.isFrom(profile?.name) && emoteTextTargetsMe(message)
-        val outgoingEmoteWithTarget = isSelfEmote && !message.targetName.isNullOrBlank()
+        val friendTarget = if (isSelfEmote && message.targetName.isNullOrBlank()) emoteTargetFromFriends(message) else null
+        val outgoingEmoteWithTarget = isSelfEmote && (!message.targetName.isNullOrBlank() || friendTarget != null)
         val routeToTell = incomingEmoteToMe || outgoingEmoteWithTarget
         val emoteTellRecipient = when {
             incomingEmoteToMe -> message.tellTarget().ifBlank { message.sender }
-            outgoingEmoteWithTarget -> message.targetName!!.let { if (message.targetWorld.isNullOrBlank()) it else "$it@${message.targetWorld}" }
+            outgoingEmoteWithTarget -> {
+                val n = message.targetName ?: friendTarget?.name ?: ""
+                val w = if (message.targetName != null) message.targetWorld else friendTarget?.world
+                if (w.isNullOrBlank()) n else "$n@$w"
+            }
             else -> ""
         }
         if (message.category == ChatCategory.Emote && !routeToTell) return null
@@ -2363,6 +2405,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         markTellFailureFromSystem(event.message.text)
                     }
                     chats.add(event.message)
+                    if (event.message.category == ChatCategory.Public || event.message.category == ChatCategory.Emote) unhideLocal()
                     val conv = getOrCreateConversation(event.message)
                     if (conv == null) {
                         saveChats()

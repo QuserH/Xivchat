@@ -395,11 +395,12 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
-            if (messagesExpanded) {
+            if (messagesExpanded && !state.localHidden) {
                 item("local-entry") {
                     Row(Modifier.fillMaxWidth().clickable { onOpenLocal() }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
                         Text("本地", color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                        if (state.localPinned()) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
                         Text("说话/喊话/呼喊/情感动作 ›", color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -852,8 +853,21 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var sendChannel by remember { mutableStateOf(1) }
     var channelMenu by remember { mutableStateOf(false) }
     var inputFocused by remember { mutableStateOf(false) }
+    var chatStack by remember { mutableStateOf(listOf<ChatSub>(ChatSub.Main)) }
+    val pushChatSub: (ChatSub) -> Unit = { chatStack = chatStack + it }
+    val popChatSub: () -> Unit = { if (chatStack.size > 1) chatStack = chatStack.dropLast(1) }
+    BackHandler(enabled = chatStack.size > 1) { popChatSub() }
+    val localConv = remember(state.chats.size, state.localClearedUntil) {
+        ChatConversation("local", ChatCategory.Public, "本地").also { conv ->
+            conv.messages.clear()
+            conv.messages.addAll(
+                state.chats.filter { (it.category == ChatCategory.Public || it.category == ChatCategory.Emote) && it.channel != 27 && it.channel != 75 && it.channel != 94 && it.timestamp > state.localClearedUntil }.sortedBy { it.timestamp }
+            )
+        }
+    }
     val labels = listOf("全部", "说话", "喊话", "呼喊")
     val msgs = state.chats.filter {
+        it.timestamp > state.localClearedUntil &&
         when {
             filter == 1 -> it.channel == 10
             filter == 2 -> it.channel == 11
@@ -862,8 +876,14 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
         }
     }.sortedBy { it.timestamp }
     LightFrame {
+        if (chatStack.last() != ChatSub.Main) {
+            ChatSubScreen(state, localConv, chatStack.last(), onPop = popChatSub, onPush = pushChatSub)
+            return@LightFrame
+        }
         Column(Modifier.fillMaxSize()) {
-            LightHeader("本地", onBack)
+            LightHeader("本地", onBack) {
+                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.LocalSettings) }.padding(horizontal = 10.dp))
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 labels.forEachIndexed { i, l ->
                     Text(l, color = if (filter == i) Color.White else AetherLightMuted, fontSize = 12.sp,
@@ -990,9 +1010,12 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     var pressOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val last = conversation.lastMessage
     val rowTitle = conversation.title
+    val previewMsg = if (last != null && last.category == ChatCategory.Emote && last.isFrom(state.profile?.name)) {
+        last.copy(text = last.displaySender().ifBlank { last.sender } + last.text)
+    } else last
     val preview = when {
-        last == null -> "暂无消息"
-        else -> last.text
+        previewMsg == null -> "暂无消息"
+        else -> previewMsg.text
     }.replace('\n', ' ')
     Box {
         Row(
@@ -1019,7 +1042,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                     conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    LightMessagePreview(last, if (last?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 13.sp, Modifier.weight(1f))
+                    LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 13.sp, Modifier.weight(1f))
                     if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
                     if (conversation.unread > 0) {
                         Box(
@@ -1299,6 +1322,7 @@ private sealed interface ChatSub {
     data object Main : ChatSub
     data object Settings : ChatSub
     data object TabSettings : ChatSub
+    data object LocalSettings : ChatSub
     data object Appearance : ChatSub
     data class SearchHistory(val showAvatar: Boolean = true) : ChatSub
     data class SearchInput(val showAvatar: Boolean = true) : ChatSub
@@ -1318,6 +1342,13 @@ private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub
                 state.hideConversation(conversation)
                 state.closeConversation()
             },
+        )
+        ChatSub.LocalSettings -> LocalSettingsScreen(
+            state,
+            onBack = onPop,
+            onHistory = { onPush(ChatSub.SearchHistory(showAvatar = false)) },
+            onAppearance = { onPush(ChatSub.Appearance) },
+            onDeleteConversation = { state.toggleLocalHidden(); onPop() },
         )
         ChatSub.TabSettings -> ChatTabSettingsScreen(
             state, conversation,
@@ -1392,6 +1423,38 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
     }
 }
 
+@Composable
+private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory: () -> Unit, onAppearance: () -> Unit, onDeleteConversation: () -> Unit) {
+    var confirmClear by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        LightHeader("本地设置", onBack) {}
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
+                .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
+        ) {
+            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingDivider()
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingDivider()
+            ChatSettingRow("设为置顶", trailing = { Switch(checked = state.localPinned(), onCheckedChange = { state.toggleLocalPinned() }) })
+            ChatSettingDivider()
+            ChatSettingRow("消息免打扰", trailing = { Switch(checked = state.localNotify(), onCheckedChange = { state.toggleLocalNotify() }) })
+            ChatSettingDivider()
+            ChatSettingRow("删除会话", color = Color(0xFFD64555), onClick = onDeleteConversation)
+            ChatSettingDivider()
+            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
+        }
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("删除聊天记录") },
+            text = { Text("确定删除本地聊天记录吗？此操作不可恢复。") },
+            confirmButton = { TextButton(onClick = { state.clearLocalMessages(); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+        )
+    }
+}
 @Composable
 private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversation, onBack: () -> Unit, onHistory: () -> Unit, onEditFilter: () -> Unit, onAppearance: () -> Unit, onDeleteConversation: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -2038,7 +2101,9 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val dens = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    val cleaned = remember(message.text, author) { cleanChatText(message.text, author).ifBlank { " " } }
+    val selfEmoteFull = self && message.category == ChatCategory.Emote && author.isNotBlank() && !message.text.startsWith(author)
+    val rawText = if (selfEmoteFull) author + message.text else message.text
+    val cleaned = remember(rawText, author) { cleanChatText(rawText, if (selfEmoteFull) "" else author).ifBlank { " " } }
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val timeText = lightClock(message.timestamp)
     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
@@ -2063,13 +2128,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
                     val statIconId = if (!self) message.senderStatusIcon?.takeIf { it > 0 } else null
-                    if (statIconId != null) {
-                        Box(Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
+                    val titleIcon = if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null
+                    val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
+                    if (tagEnd >= 0) {
+                        // [频道] 标签在前，状态图标放在标签与角色名之间（如 [新人频道][导芽]名字）
+                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold)
+                        if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
+                        else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp))
+                        Text(author.substring(tagEnd + 1).trimStart(), color = AetherLightMuted, fontSize = authorFontSizeSp.sp, modifier = Modifier.padding(start = 2.dp))
                     } else {
-                        val titleIcon = (if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null)
-                        if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp))
+                        if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
+                        else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp))
+                        Text(authorAnnotated, fontSize = authorFontSizeSp.sp)
                     }
-                    Text(authorAnnotated, fontSize = authorFontSizeSp.sp)
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
