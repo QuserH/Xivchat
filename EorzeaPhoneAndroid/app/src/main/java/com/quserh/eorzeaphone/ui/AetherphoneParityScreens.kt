@@ -904,7 +904,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         } else {
                             msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }
                         }
-                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize)
+                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name))
                     }
                 }
             }
@@ -1662,9 +1662,10 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
                     state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
                 } else 0L
-                // 私聊会话不显示消息上方的角色 ID，只保留气泡（与微信一致）；其它频道照旧
-                val showAuthor = conversation.category != ChatCategory.Tell && shouldShowLightSender(messages, index, state.profile?.name)
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch)
+                // 私聊会话不显示消息上方的角色 ID（气泡区分自己/对方），但组首条仍有尾巴；其它频道照旧
+                val groupStart = shouldShowLightSender(messages, index, state.profile?.name)
+                val showAuthor = conversation.category != ChatCategory.Tell && groupStart
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = groupStart)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -2105,7 +2106,7 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
     }
 }
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -2156,11 +2157,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
+            val bubbleShape = if (showTail) remember(self) { BubbleTailShape(self) } else RoundedCornerShape(14.dp)
             BoxWithConstraints(
                 Modifier
-                    .clip(remember(self) { BubbleTailShape(self) })
+                    .clip(bubbleShape)
                     .background(bubbleBg)
-                    .padding(start = if (self) 0.dp else 10.dp, end = if (self) 10.dp else 0.dp),
+                    .padding(start = if (showTail && !self) 10.dp else 0.dp, end = if (showTail && self) 10.dp else 0.dp),
             ) {
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
@@ -2368,15 +2370,10 @@ private fun fontIconRect(index: Int): IntArray? = when (index) {
 }
 
 private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, selfName: String?): Boolean {
+    // 连续同一个人（未被其它人打断）的消息合并为一组：只要上一条是不同发送者，本消息即为新组首条
     if (index == 0) return true
     fun key(message: GameChatMessage) = if (message.self || message.isFrom(selfName)) "self:${message.channel}" else "${message.channel}:${message.sender.trim()}"
-    val currentKey = key(messages[index])
-    if (key(messages[index - 1]) != currentKey) return true
-    var groupStart = index - 1
-    while (groupStart > 0 && key(messages[groupStart - 1]) == currentKey && messages[groupStart].timestamp - messages[groupStart - 1].timestamp <= 60_000L) {
-        groupStart--
-    }
-    return messages[index].timestamp - messages[groupStart].timestamp > 60_000L
+    return key(messages[index]) != key(messages[index - 1])
 }
 
 private fun wrapLightText(value: String, limit: Int): String {
