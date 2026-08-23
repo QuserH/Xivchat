@@ -1619,7 +1619,7 @@ private fun dayKey(timestamp: Long): String {
     return String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
 }
 
-private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 0): Boolean {
+private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 2): Boolean {
     if (listState.isScrollInProgress) return false
     val info = listState.layoutInfo
     if (info.totalItemsCount <= 0) return true
@@ -1640,21 +1640,17 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             onHidden = { selectionActive = false; selectionEpoch++ },
         )
     }
-    val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
     val listLaidOut = remember(conversation.key) { mutableStateOf(false) }
-    // 进入会话：等列表完成首次布局(onGloballyPositioned)后无条件贴底
+    // 进入会话：等列表完成首次布局(onGloballyPositioned)后贴底
     LaunchedEffect(listLaidOut.value, messages.size) {
-        if (listLaidOut.value && followLatest && messages.isNotEmpty() && !scrolledInitialState.value) {
+        if (listLaidOut.value && followLatest && messages.isNotEmpty()) {
             listState.requestScrollToItem(messages.lastIndex)
-            scrolledInitialState.value = true
         }
     }
+    // 新消息到达且仍贴近底部时自动跟到底部
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
-        if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            listState.requestScrollToItem(messages.lastIndex)
-            scrolledInitialState.value = true
-        }
+        if (nearBottomLazy(listState)) { listState.requestScrollToItem(messages.lastIndex) }
     }
     CompositionLocalProvider(LocalTextToolbar provides toolbar) {
         val dismissMod = if (selectionActive) Modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionActive = false; selectionEpoch++ }, onLongPress = {}) } else Modifier
