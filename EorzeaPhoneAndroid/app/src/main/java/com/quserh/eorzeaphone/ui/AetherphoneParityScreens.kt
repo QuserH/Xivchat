@@ -895,15 +895,15 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val listLaidOut = remember(filter) { mutableStateOf(false) }
             // 进入本地列：等列表首次布局(onGloballyPositioned)后贴底
             LaunchedEffect(listLaidOut.value, msgs.size) {
-                if (listLaidOut.value && msgs.isNotEmpty() && !scrolledLocal.value) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+                if (listLaidOut.value && msgs.isNotEmpty() && !scrolledLocal.value) { listState.requestScrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
             LaunchedEffect(filter, msgs.size, inputHeightPx) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.requestScrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
             val imeVisible = WindowInsets.isImeVisible
             LaunchedEffect(imeVisible, msgs.size) {
-                if (imeVisible && msgs.isNotEmpty()) { listState.scrollToItem(msgs.lastIndex) }
+                if (imeVisible && msgs.isNotEmpty()) { listState.requestScrollToItem(msgs.lastIndex) }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1645,14 +1645,14 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     // 进入会话：等列表完成首次布局(onGloballyPositioned)后无条件贴底
     LaunchedEffect(listLaidOut.value, messages.size) {
         if (listLaidOut.value && followLatest && messages.isNotEmpty() && !scrolledInitialState.value) {
-            listState.scrollToItem(messages.lastIndex)
+            listState.requestScrollToItem(messages.lastIndex)
             scrolledInitialState.value = true
         }
     }
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            listState.scrollToItem(messages.lastIndex)
+            listState.requestScrollToItem(messages.lastIndex)
             scrolledInitialState.value = true
         }
     }
@@ -1708,7 +1708,7 @@ private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversat
     val listState = rememberLazyListState()
     val anchorIndex = remember(messages.size, anchorTimestamp) { messages.indexOfFirst { it.timestamp == anchorTimestamp }.coerceAtLeast(0) }
     LaunchedEffect(anchorIndex, messages.size) {
-        if (messages.isNotEmpty()) listState.scrollToItem(anchorIndex)
+        if (messages.isNotEmpty()) listState.requestScrollToItem(anchorIndex)
     }
     Column(Modifier.fillMaxSize()) {
         LightHeader(conversation.title, onBack) {}
@@ -1847,11 +1847,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search, inputHeightPx) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex) }
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.requestScrollToItem(visible.lastIndex) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
-                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.scrollToItem(visible.lastIndex) }
+                    if (imeVisible && search.isBlank() && visible.isNotEmpty()) { listState.requestScrollToItem(visible.lastIndex) }
                 }
                 val failureTick = visible.takeLast(3).joinToString("|") { "${it.timestamp}:${it.sendState}" }
                 LaunchedEffect(failureTick) {
