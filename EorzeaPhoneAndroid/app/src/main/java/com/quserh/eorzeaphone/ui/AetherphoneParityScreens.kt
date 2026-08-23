@@ -2162,7 +2162,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 Modifier
                     .clip(bubbleShape)
                     .background(bubbleBg)
-                    .padding(start = if (showTail && !self) 10.dp else 0.dp, end = if (showTail && self) 10.dp else 0.dp),
+                    .padding(start = if (self) 0.dp else 10.dp, end = if (self) 10.dp else 0.dp),
             ) {
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
