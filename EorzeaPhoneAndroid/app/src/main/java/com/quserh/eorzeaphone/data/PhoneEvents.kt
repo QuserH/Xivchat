@@ -47,7 +47,8 @@ data class GameChatMessage(
 
     fun conversationKey(): String = when {
         channel == 27 || channel == 75 || channel == 94 -> "novice"
-        category == ChatCategory.Tell -> "tell:${sender.normalizedPlayerName()}"
+        // 统一用 sendName@世界 构造 key，避免私聊与情感动作生成不同 key 导致重命名只对其中一处生效
+        category == ChatCategory.Tell -> "tell:${tellTarget().normalizedPlayerName()}"
         category == ChatCategory.Linkshell -> "linkshell:$channel"
         else -> category.name
     }
