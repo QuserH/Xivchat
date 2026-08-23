@@ -228,38 +228,34 @@ private fun LightHeader(
     titleIcon: (@Composable () -> Unit)? = null,
 ) {
     val headerMargin = LocalContentMargin.current
-    val density = LocalDensity.current
-    var titleWidth by remember(title) { mutableStateOf(0.dp) }
     val sidePad = (headerMargin.coerceAtLeast(2) - 2).dp
-    // 标题垂直位置与 ScreenHeader（捕鱼等窗口）保持一致：内容高度 + 上下 12dp 内边距，标题居中
+    // 标题垂直位置与 ScreenHeader（捕鱼等窗口）保持一致：内容高度 + 上下 12dp，返回键尺寸一致
     Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
             Text(
                 "‹",
                 color = AetherPurple,
-                fontSize = 40.sp,
-                lineHeight = 32.sp,
+                fontSize = 38.sp,
+                lineHeight = 30.sp,
                 fontWeight = FontWeight.Light,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 8.dp),
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 6.dp),
             )
         }
-        Box(Modifier.align(Alignment.Center)) {
-            Text(
-                title,
-                color = AetherLightText,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = titleOffsetY).padding(horizontal = 50.dp),
-                onTextLayout = { layout ->
-                    titleWidth = with(density) { layout.size.width.toDp() }
-                },
-            )
-            if (titleIcon != null) {
-                Box(Modifier.align(Alignment.CenterStart).offset(x = titleWidth + 6.dp)) {
-                    titleIcon()
+        // 标题限定在返回键与右侧按钮之间，避免窄屏/大边距时与右侧按钮重叠
+        Box(Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 54.dp), contentAlignment = Alignment.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    color = AetherLightText,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.offset(y = titleOffsetY),
+                )
+                if (titleIcon != null) {
+                    Box(Modifier.padding(start = 6.dp)) { titleIcon() }
                 }
             }
         }
