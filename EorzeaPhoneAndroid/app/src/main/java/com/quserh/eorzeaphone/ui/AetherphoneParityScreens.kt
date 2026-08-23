@@ -2157,7 +2157,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
-            val bubbleShape = if (showTail) remember(self) { BubbleTailShape(self) } else RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomEnd = 8.dp, bottomStart = 8.dp)
+            val bubbleShape = if (showTail) remember(self) { BubbleTailShape(self) } else if (self) RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp, topEnd = 8.dp, bottomEnd = 8.dp) else RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 14.dp, bottomEnd = 14.dp)
             val horizPad = if (self) Modifier.padding(end = 10.dp) else Modifier.padding(start = 10.dp)
             BoxWithConstraints(
                 // 有尾巴：背景覆盖尾巴+本体，padding 缩内容；无尾巴：padding 在外层，本体从第 10dp 处开始，与带尾巴的首条主体对齐
