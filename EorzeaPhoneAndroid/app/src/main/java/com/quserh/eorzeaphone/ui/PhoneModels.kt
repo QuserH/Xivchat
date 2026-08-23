@@ -1944,10 +1944,11 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         return myName.isNotBlank() && message.text.contains(myName, ignoreCase = true)
     }
 
-    // 我的情感动作目标：插件没解析出 targetName 时，从文本里匹配好友名作为兜底
+    // 我的情感动作目标：插件没解析出 targetName 时，从文本里匹配好友/小队成员名作为兜底
     private fun emoteTargetFromFriends(message: GameChatMessage): PhoneFriend? {
         val myName = profile?.name?.substringBefore('@')?.trim()
-        return friends.firstOrNull { f ->
+        val candidates = (party + friends).distinctBy { it.name.normalizedPlayerName() }
+        return candidates.firstOrNull { f ->
             val n = f.name.trim()
             n.isNotBlank() && (myName == null || !n.normalizedPlayerName().contains(myName.normalizedPlayerName())) &&
                 message.text.contains(n, ignoreCase = true)
