@@ -1661,7 +1661,9 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
                     state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
                 } else 0L
-                LightChatBubble(author, message, self, shouldShowLightSender(messages, index, state.profile?.name), state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch)
+                // 私聊会话不显示消息上方的角色 ID，只保留气泡（与微信一致）；其它频道照旧
+                val showAuthor = conversation.category != ChatCategory.Tell && shouldShowLightSender(messages, index, state.profile?.name)
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",

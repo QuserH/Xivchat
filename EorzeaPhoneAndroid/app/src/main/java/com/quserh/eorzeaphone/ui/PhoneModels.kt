@@ -906,12 +906,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         if (clean.isEmpty()) groupTitleOverrides.remove(key) else groupTitleOverrides[key] = clean
         charPrefs().edit().putString("groupTitleOverrides", JSONObject(groupTitleOverrides).toString()).apply()
         val renamed = groupTitleOverride(key)
-        conversations.filter { it.key == key }.forEach { conversation ->
-            conversation.title = renamed ?: (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
+        fun applyTitle(conversation: ChatConversation) {
+            val def = when {
+                conversation.category == ChatCategory.Tell -> conversation.tellRecipient.displayPlayerName()
+                conversation.key == "novice" -> "新人频道"
+                conversation.category == ChatCategory.Party -> "小队"
+                conversation.category == ChatCategory.FreeCompany -> "部队"
+                conversation.category == ChatCategory.Linkshell -> (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
+                else -> conversation.title
+            }
+            conversation.title = renamed ?: def
         }
-        conversationByKey[key]?.let { conversation ->
-            conversation.title = renamed ?: (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
-        }
+        conversations.filter { it.key == key }.forEach(::applyTitle)
+        conversationByKey[key]?.let(::applyTitle)
     }
     var teleportTarget by mutableStateOf<String?>(null)
     var teleportStatus by mutableStateOf(TeleportStatus.Idle)
