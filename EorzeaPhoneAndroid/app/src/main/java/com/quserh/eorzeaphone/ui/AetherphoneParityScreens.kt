@@ -2064,7 +2064,7 @@ private class TrackingTextToolbar(
     }
 }
 
-// 与气泡一体的尾巴形状：尾巴向外凸出，自己发的在右下、对方发的在左下
+// 与气泡一体的尾巴形状：尾巴在顶部（镜像），对方=左上、自己=右上；尾巴侧底角 8dp，其余角 14dp
 private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.graphics.Shape {
     override fun createOutline(
         size: androidx.compose.ui.geometry.Size,
@@ -2072,6 +2072,7 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
         density: androidx.compose.ui.unit.Density,
     ): androidx.compose.ui.graphics.Outline {
         val r = with(density) { 14.dp.toPx() }
+        val tb = with(density) { 8.dp.toPx() }
         val tailPad = with(density) { 8.dp.toPx() }
         val tail = with(density) { 6.dp.toPx() }
         val w = size.width
@@ -2079,28 +2080,26 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
         val path = androidx.compose.ui.graphics.Path().apply {
             if (self) {
                 val right = w - tailPad
-                moveTo(r, 0f)
-                lineTo((right - r).coerceAtLeast(1f), 0f)
-                quadraticBezierTo(right, 0f, right, r)
-                lineTo(right, (h - tail).coerceAtLeast(1f))
-                quadraticBezierTo(right + tail * 0.5f, h - tail * 0.3f, w - tailPad * 0.3f, h)
-                quadraticBezierTo(w - tailPad * 0.5f, h - tail * 0.25f, (right - tail).coerceAtLeast(r), h)
-                lineTo(r, h)
+                moveTo(r, h)
                 quadraticBezierTo(0f, h, 0f, h - r)
                 lineTo(0f, r)
                 quadraticBezierTo(0f, 0f, r, 0f)
+                lineTo((right - tail).coerceAtLeast(1f), 0f)
+                quadraticBezierTo(w - tailPad * 0.6f, tail * 0.4f, w - tailPad * 0.3f, 0f)
+                quadraticBezierTo(w - tailPad * 0.6f, tail * 0.7f, right, tail)
+                lineTo(right, (h - tb).coerceAtLeast(1f))
+                quadraticBezierTo(right, h, right - tb, h)
             } else {
                 val left = tailPad
-                moveTo(left + r, 0f)
+                moveTo(left + tb, h)
+                quadraticBezierTo(left, h, left, h - tb)
+                lineTo(left, tail)
+                quadraticBezierTo(left - tail * 0.4f, tail * 0.7f, left * 0.3f, 0f)
+                quadraticBezierTo(left * 0.6f, tail * 0.4f, left + tail, 0f)
                 lineTo(w - r, 0f)
                 quadraticBezierTo(w, 0f, w, r)
                 lineTo(w, h - r)
                 quadraticBezierTo(w, h, w - r, h)
-                lineTo((left + tail).coerceAtMost(w - r), h)
-                quadraticBezierTo(left * 0.5f, h - tail * 0.3f, left * 0.3f, h)
-                quadraticBezierTo(left - tail * 0.6f, h - tail * 0.4f, left, (h - tail).coerceAtLeast(1f))
-                lineTo(left, r)
-                quadraticBezierTo(left, 0f, left + r, 0f)
             }
             close()
         }
