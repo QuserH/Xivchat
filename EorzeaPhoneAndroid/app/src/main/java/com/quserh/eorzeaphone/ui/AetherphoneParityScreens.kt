@@ -1348,7 +1348,6 @@ private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub
             onBack = onPop,
             onHistory = { onPush(ChatSub.SearchHistory(showAvatar = false)) },
             onAppearance = { onPush(ChatSub.Appearance) },
-            onDeleteConversation = { state.toggleLocalHidden(); onPop() },
         )
         ChatSub.TabSettings -> ChatTabSettingsScreen(
             state, conversation,
@@ -1424,7 +1423,7 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
 }
 
 @Composable
-private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory: () -> Unit, onAppearance: () -> Unit, onDeleteConversation: () -> Unit) {
+private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory: () -> Unit, onAppearance: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("本地设置", onBack) {}
@@ -1435,12 +1434,6 @@ private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory
             ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
             ChatSettingDivider()
             ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
-            ChatSettingDivider()
-            ChatSettingRow("设为置顶", trailing = { Switch(checked = state.localPinned(), onCheckedChange = { state.toggleLocalPinned() }) })
-            ChatSettingDivider()
-            ChatSettingRow("消息免打扰", trailing = { Switch(checked = state.localNotify(), onCheckedChange = { state.toggleLocalNotify() }) })
-            ChatSettingDivider()
-            ChatSettingRow("删除会话", color = Color(0xFFD64555), onClick = onDeleteConversation)
             ChatSettingDivider()
             ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
         }
@@ -2108,8 +2101,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val timeText = lightClock(message.timestamp)
     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
     val baseColor = when {
-        self -> Color.White
         message.category == ChatCategory.Emote -> themeAdjustedChannelColor(EmoteChatColor)
+        self -> Color.White
         else -> AetherLightText
     }
     val bubbleBg = if (self) AetherPurple else AetherLightSurface

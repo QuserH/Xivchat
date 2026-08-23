@@ -25,6 +25,7 @@ using XIVChatCommon.Message;
 using XIVChatCommon.Message.Client;
 using XIVChatCommon.Message.Server;
 using Dalamud.Game.Chat;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Group;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
@@ -79,6 +80,7 @@ namespace XIVChatPlugin {
         private readonly object _backlogLock = new();
         // 只重写“有新消息”的角色文件：避免仅登录角色A时把其它角色文件一并刷新/覆盖
         private readonly HashSet<string> _dirtyBacklogTags = new(StringComparer.OrdinalIgnoreCase);
+        private List<Player> _lastFriends = [];
         private DateTime _lastPersist = DateTime.MinValue;
 
         private TcpListener? _listener;
@@ -280,6 +282,7 @@ namespace XIVChatPlugin {
         }
 
         private async void OnReceiveFriendList(List<Player> friends) {
+            this._lastFriends = friends;
             var msg = new ServerPlayerList(PlayerListType.Friend, friends.ToArray());
 
             foreach (var id in this._waitingForFriendList) {
@@ -363,6 +366,33 @@ namespace XIVChatPlugin {
                         if (targetWorldRow.IsValid) targetWorld = targetWorldRow.Value.Name.ExtractText();
                         break;
                     }
+                }
+                // 兜底：部分状态类动作（如“在X边上打了个盹”）不把目标嵌成可点击链接，
+                // 用自己的情感动作文本去好友名单里匹配目标
+                if (targetName == null && senderName != null && XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue == senderName) {
+                    var contentText = message.Message.TextValue ?? string.Empty;
+                    // 先看当前目标对象：对某人做动作时目标通常就是对方，非好友也能识别
+                    if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.TargetObject is IPlayerCharacter targetChara && !string.IsNullOrEmpty(targetChara.Name.TextValue)) {
+                        if (contentText.Contains(targetChara.Name.TextValue, StringComparison.OrdinalIgnoreCase)) {
+                            targetName = targetChara.Name.TextValue;
+                            try {
+                                var tw = targetChara.HomeWorld.Value.Name.ExtractText();
+                                if (!string.IsNullOrWhiteSpace(tw)) targetWorld = tw;
+                            } catch { }
+                        }
+                    }
+                    // 再兜底好友名单匹配
+                    if (targetName == null) {
+                        foreach (var friend in this._lastFriends) {
+                            if (string.IsNullOrEmpty(friend.Name)) continue;
+                            if (contentText.Contains(friend.Name, StringComparison.OrdinalIgnoreCase)) {
+                                targetName = friend.Name;
+                                targetWorld = string.IsNullOrEmpty(friend.HomeWorldName) ? friend.CurrentWorldName : friend.HomeWorldName;
+                                break;
+                            }
+                        }
+                    }
+                    Plugin.Log.Info($"Emote target for {senderName}: {targetName ?? "(none)"} from {contentText}");
                 }
             }
 

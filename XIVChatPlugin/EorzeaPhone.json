@@ -2,7 +2,7 @@
   "Author": "Anna / QuserH",
   "Name": "艾欧泽亚终端",
   "InternalName": "EorzeaPhone",
-  "AssemblyVersion": "0.7.20",
+  "AssemblyVersion": "0.7.21",
   "Description": "通过 XIVChat 加密端口连接艾欧泽亚终端 Android 客户端。包含聊天频道和筛选、好友操作、物品栏、钱包、天气、职业、房屋位置及本地工具。\n\n本插件与 XIVChat 使用相同的默认端口，请勿同时启用。",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/QuserH/Xivchat",
