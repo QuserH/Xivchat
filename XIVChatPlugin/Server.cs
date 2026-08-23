@@ -351,6 +351,21 @@ namespace XIVChatPlugin {
             }
             senderStatusIcon = GetSenderStatusIcon(message.Sender.Encode());
 
+            // 情感动作：从内容里提取“目标角色”，App 据此把“我对他人的动作”路由到对方的会话
+            string? targetName = null;
+            string? targetWorld = null;
+            if (message.LogKind == XivChatType.StandardEmote || message.LogKind == XivChatType.CustomEmote) {
+                foreach (var payload in message.Message.Payloads) {
+                    if (payload is PlayerPayload targetPayload) {
+                        if (senderName != null && targetPayload.PlayerName == senderName) continue;
+                        targetName = targetPayload.PlayerName;
+                        var targetWorldRow = targetPayload.World;
+                        if (targetWorldRow.IsValid) targetWorld = targetWorldRow.Value.Name.ExtractText();
+                        break;
+                    }
+                }
+            }
+
             var msg = new ServerMessage(
                 DateTime.UtcNow,
                 (ushort) message.LogKind,
@@ -360,7 +375,10 @@ namespace XIVChatPlugin {
                 senderName,
                 senderWorld,
                 senderStatus,
-                senderStatusIcon
+                senderStatusIcon,
+                characterTag: null,
+                targetName: targetName,
+                targetWorld: targetWorld
             );
 
             if (this._plugin.Config.BacklogEnabled) {
@@ -395,6 +413,10 @@ namespace XIVChatPlugin {
                 if (!gameAvailable) {
                     this._sendPlayerData = false;
                     this.BroadcastMessage(EmptyPlayerData.Instance);
+                } else {
+                    // 传送/过图黑屏时角色短暂不可见会触发离线广播；重新可见时强制重发角色资料，
+                    // 避免 App 停留在“正在读取角色资料”直到手动重连
+                    this._sendPlayerData = true;
                 }
             }
             if (gameAvailable && this._sendPlayerData) {

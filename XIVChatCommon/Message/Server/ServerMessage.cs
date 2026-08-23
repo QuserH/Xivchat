@@ -39,6 +39,12 @@ namespace XIVChatCommon.Message.Server {
         [Key(9)]
         public string? CharacterTag { get; set; }
 
+        [Key(10)]
+        public string? TargetName { get; set; }
+
+        [Key(11)]
+        public string? TargetWorld { get; set; }
+
         [IgnoreMember]
         public string ContentText => XivString.GetText(this.Content);
 
@@ -51,7 +57,7 @@ namespace XIVChatCommon.Message.Server {
         public ServerMessage() {
         }
 
-        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null, int? senderStatusIcon = null, string? characterTag = null) {
+        public ServerMessage(DateTime timestamp, ushort channel, byte[] sender, byte[] content, List<Chunk> chunks, string? senderName = null, string? senderWorld = null, string? senderStatus = null, int? senderStatusIcon = null, string? characterTag = null, string? targetName = null, string? targetWorld = null) {
             this.Timestamp = timestamp;
             this.Channel = channel;
             this.Sender = sender;
@@ -62,6 +68,8 @@ namespace XIVChatCommon.Message.Server {
             this.SenderStatus = senderStatus;
             this.SenderStatusIcon = senderStatusIcon;
             this.CharacterTag = characterTag;
+            this.TargetName = targetName;
+            this.TargetWorld = targetWorld;
         }
 
         public static ServerMessage Decode(byte[] bytes) {

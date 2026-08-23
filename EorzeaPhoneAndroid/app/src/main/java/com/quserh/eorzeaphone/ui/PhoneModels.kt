@@ -1032,6 +1032,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     senderStatusName = o.optString("senderStatusName").takeIf { it.isNotBlank() },
                     senderStatusIcon = if (o.has("senderStatusIcon")) o.optInt("senderStatusIcon") else null,
                     characterTag = o.optString("characterTag").takeIf { it.isNotBlank() },
+                    targetName = o.optString("targetName").takeIf { it.isNotBlank() },
+                    targetWorld = o.optString("targetWorld").takeIf { it.isNotBlank() },
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -1086,6 +1088,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (m.senderStatusName != null) put("senderStatusName", m.senderStatusName)
                     if (m.senderStatusIcon != null) put("senderStatusIcon", m.senderStatusIcon)
                     if (m.characterTag != null) put("characterTag", m.characterTag)
+                    if (m.targetName != null) put("targetName", m.targetName)
+                    if (m.targetWorld != null) put("targetWorld", m.targetWorld)
                 })
             }
             chatStore.edit().putString("chatCache", arr.toString()).apply()
@@ -1906,17 +1910,32 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    // 情感动作文本里是否出现本角色名（对方对我使用的判定依据）
+    private fun emoteTextTargetsMe(message: GameChatMessage): Boolean {
+        val myName = profile?.name?.substringBefore('@')?.trim() ?: return false
+        return myName.isNotBlank() && message.text.contains(myName, ignoreCase = true)
+    }
+
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
-        // Emotes from a specific player belong inside that player's DM thread.
+        // 情感动作路由：别人对我 → 对方会话；我对别人 → 目标角色会话（插件下发 targetName）；第三人动作 → 只进本地列表（不进会话）
         val isNovice = message.channel == 27 || message.channel == 75 || message.channel == 94
-        val routeToTell = message.category == ChatCategory.Emote && !message.self && !message.isFrom(profile?.name)
-        val key = if (isNovice) "novice" else (if (routeToTell) "tell:${message.sender.normalizedPlayerName()}" else message.conversationKey())
+        val isSelfEmote = message.category == ChatCategory.Emote && message.isFrom(profile?.name)
+        val incomingEmoteToMe = message.category == ChatCategory.Emote && !message.isFrom(profile?.name) && emoteTextTargetsMe(message)
+        val outgoingEmoteWithTarget = isSelfEmote && !message.targetName.isNullOrBlank()
+        val routeToTell = incomingEmoteToMe || outgoingEmoteWithTarget
+        val emoteTellRecipient = when {
+            incomingEmoteToMe -> message.tellTarget().ifBlank { message.sender }
+            outgoingEmoteWithTarget -> message.targetName!!.let { if (message.targetWorld.isNullOrBlank()) it else "$it@${message.targetWorld}" }
+            else -> ""
+        }
+        if (message.category == ChatCategory.Emote && !routeToTell) return null
+        val key = if (isNovice) "novice" else (if (routeToTell) "tell:${emoteTellRecipient.normalizedPlayerName()}" else message.conversationKey())
         conversationByKey[key]?.let { existing ->
             if (existing.category == ChatCategory.Tell) linkFriendAvatars(friends)
             return existing
         }
         if (message.category == ChatCategory.Tell || routeToTell) {
-            val msgName = message.tellNamePart()
+            val msgName = if (routeToTell) emoteTellRecipient.tellNamePart() else message.tellNamePart()
             val existing = conversations.firstOrNull { conv ->
                 conv.category == ChatCategory.Tell && conv.tellRecipient.isNotBlank() && msgName.isNotBlank() &&
                     conv.tellRecipient.tellNamePart() == msgName
@@ -1946,8 +1965,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val conv = ChatConversation(
             key,
             if (routeToTell) ChatCategory.Tell else message.category,
-            if (routeToTell) message.displaySender() else (groupTitleOverride(key) ?: groupTitle),
-            if (routeToTell) message.tellTarget() else message.tellRecipient(),
+            if (routeToTell) emoteTellRecipient.displayPlayerName() else (groupTitleOverride(key) ?: groupTitle),
+            if (routeToTell) emoteTellRecipient else message.tellRecipient(),
         )
         conv.notify = key !in mutedConversations
         conversations.add(0, conv)
@@ -2308,11 +2327,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         }
                     }
                 }
-                // 情感动作：只有“别的玩家对本角色使用”（文本含本角色名）才进入消息列表/会话，其余一律忽略
-                if (event.message.category == ChatCategory.Emote && !event.message.self && !event.message.isFrom(profile?.name)) {
-                    val myName = profile?.name?.substringBefore('@')?.trim().orEmpty()
-                    if (myName.isBlank() || !event.message.text.contains(myName, ignoreCase = true)) return
-                }
+
                 updateChatCursorTs(event.message.timestamp)
                 cacheChannelColor(event.message)
                 val convKey = event.message.conversationKey()
