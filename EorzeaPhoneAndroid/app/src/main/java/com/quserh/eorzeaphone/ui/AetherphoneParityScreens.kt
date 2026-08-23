@@ -1097,14 +1097,11 @@ private fun AetherphoneContactsList(state: PhoneState) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        LightHeader(
-            "联系人", state::back,
-            titleIcon = {
-                Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
-                    LightRefreshIcon(AetherPurple, Modifier.size(16.dp))
-                }
-            },
-        )
+        LightHeader("联系人", state::back) {
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+                LightRefreshIcon(AetherPurple, Modifier.size(17.dp))
+            }
+        }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             item("search") {
                 LightSearchField(query, { query = it }, "搜索")
