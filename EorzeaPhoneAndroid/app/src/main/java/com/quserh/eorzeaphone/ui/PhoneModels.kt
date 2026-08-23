@@ -2408,6 +2408,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     chats.add(event.message)
                     if (event.message.category == ChatCategory.Public || event.message.category == ChatCategory.Emote) unhideLocal()
                     val conv = getOrCreateConversation(event.message)
+                    if (event.message.category == ChatCategory.Emote) {
+                        android.util.Log.w("EorzeaPhone", "emoteRoute: ch=" + event.message.channel + " sender=" + event.message.sender + " target=" + (event.message.targetName ?: "none") + " self=" + event.message.isFrom(profile?.name) + " conv=" + (conv?.key ?: "null"))
+                        statusMessage = "情感动作诊断: 目标=" + (event.message.targetName ?: "无") + " " + (if (conv != null) "已建会话" else "未建会话")
+                    }
                     if (conv == null) {
                         saveChats()
                     } else {
