@@ -93,6 +93,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -109,6 +110,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -890,13 +892,18 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             }
             val listState = rememberLazyListState()
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
+            val listLaidOut = remember(filter) { mutableStateOf(false) }
+            // 进入本地列：等列表首次布局(onGloballyPositioned)后贴底
+            LaunchedEffect(listLaidOut, msgs.size) {
+                if (listLaidOut.value && msgs.isNotEmpty() && !scrolledLocal.value) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+            }
             LaunchedEffect(filter, msgs.size, inputHeightPx) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { withFrameNanos { }; listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
             val imeVisible = WindowInsets.isImeVisible
             LaunchedEffect(imeVisible, msgs.size) {
-                if (imeVisible && msgs.isNotEmpty()) { withFrameNanos { }; listState.scrollToItem(msgs.lastIndex) }
+                if (imeVisible && msgs.isNotEmpty()) { listState.scrollToItem(msgs.lastIndex) }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -905,7 +912,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true },
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     itemsIndexed(msgs, key = { _, msg -> "${msg.timestamp}-${msg.channel}-${msg.sender}-${msg.text.hashCode()}" }) { index, msg ->
@@ -1634,18 +1641,24 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
         )
     }
     val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
+    val listLaidOut = remember(conversation.key) { mutableStateOf(false) }
+    // 进入会话：等列表完成首次布局(onGloballyPositioned)后无条件贴底
+    LaunchedEffect(listLaidOut, messages.size) {
+        if (listLaidOut.value && followLatest && messages.isNotEmpty() && !scrolledInitialState.value) {
+            listState.scrollToItem(messages.lastIndex)
+            scrolledInitialState.value = true
+        }
+    }
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
-            // 进入会话时等列表布局出条目后再贴底（首帧未布局会导致 scrollToItem 无效）
-            withFrameNanos { }
             listState.scrollToItem(messages.lastIndex)
             scrolledInitialState.value = true
         }
     }
     CompositionLocalProvider(LocalTextToolbar provides toolbar) {
         val dismissMod = if (selectionActive) Modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionActive = false; selectionEpoch++ }, onLongPress = {}) } else Modifier
-        LazyColumn(state = listState, modifier = modifier.then(dismissMod), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        LazyColumn(state = listState, modifier = modifier.then(dismissMod).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true }, verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(messages, key = { _, message -> "${message.timestamp}-${message.channel}-${message.sender}-${message.text.hashCode()}" }) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
@@ -1834,7 +1847,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search, inputHeightPx) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { withFrameNanos { }; listState.scrollToItem(visible.lastIndex) }
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
