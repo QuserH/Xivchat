@@ -2371,6 +2371,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     }
                 }
 
+                if (event.message.category == ChatCategory.Emote) {
+                    statusMessage = "情感动作: 目标=" + (event.message.targetName ?: "无") + " 发送者=" + event.message.sender.ifBlank { "(空)" }
+                    android.util.Log.w("EorzeaPhone", "emoteIn: ch=" + event.message.channel + " sender=" + event.message.sender + " target=" + (event.message.targetName ?: "none"))
+                }
                 updateChatCursorTs(event.message.timestamp)
                 cacheChannelColor(event.message)
                 val convKey = event.message.conversationKey()

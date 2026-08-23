@@ -246,7 +246,12 @@ fun SettingsScreen(state: PhoneState) {
                 val connHint = buildString {
                     val online = state.onlineCharacterName
                     if (online.isNotBlank()) append("已连接 · ").append(online).append(" 在线")
-                    else if (state.statusMessage.isNotBlank()) append(state.statusMessage)
+                    if (state.statusMessage.isNotBlank() && !state.statusMessage.startsWith("角色在线") && !state.statusMessage.startsWith("连接成功")) {
+                        if (isNotEmpty()) append(" · ")
+                        append(state.statusMessage)
+                    } else if (online.isBlank() && state.statusMessage.isNotBlank()) {
+                        append(state.statusMessage)
+                    }
                 }
                 if (connHint.isNotBlank()) Text(connHint, color = if (state.connected) PhoneGreen else PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
             }
