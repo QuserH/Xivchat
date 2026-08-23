@@ -893,7 +893,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    itemsIndexed(msgs, key = { index, msg -> "$index-${msg.timestamp}-${msg.channel}-${msg.text}" }) { index, msg ->
+                    itemsIndexed(msgs, key = { _, msg -> "${msg.timestamp}-${msg.channel}-${msg.sender}-${msg.text.hashCode()}" }) { index, msg ->
                         val showDate = index == 0 || chatDay(msg.timestamp) != chatDay(msgs[index - 1].timestamp)
                         if (showDate) {
                             Text(chatDayLabel(msg.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
@@ -985,10 +985,10 @@ private fun LightMessagePreview(message: GameChatMessage?, color: Color, fontSiz
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val fallback = cleanChatText(message.text, "").replace('\n', ' ').trim().ifBlank { " " }
-    val inkChunks = if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks
+    val inkChunks = remember(message) { if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks }
     val ink = remember(message, color, fontSize, lineH) { chatBubbleInk(inkChunks, fallback, color, true, "", light, fontSize, lineH, axisFont) }
     val inline = chatBubbleInline(inkChunks, fallback, fontSize, lineH)
-    Text(ink.annotated, color = color, fontSize = fontSize, lineHeight = lineH, inlineContent = inline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
+    Text(ink.annotated, color = color, fontSize = fontSize, lineHeight = lineH, inlineContent = if (inline.isEmpty()) emptyMap() else inline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1640,7 +1640,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     CompositionLocalProvider(LocalTextToolbar provides toolbar) {
         val dismissMod = if (selectionActive) Modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionActive = false; selectionEpoch++ }, onLongPress = {}) } else Modifier
         LazyColumn(state = listState, modifier = modifier.then(dismissMod), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        itemsIndexed(messages, key = { index, message -> "$index-${message.timestamp}-${message.channel}-${message.sender}" }) { index, message ->
+        itemsIndexed(messages, key = { _, message -> "${message.timestamp}-${message.channel}-${message.sender}-${message.text.hashCode()}" }) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
                 Text(chatDayLabel(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
@@ -2166,8 +2166,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
             ) {
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
-                // 情感动作文字保持正体（不随消息的斜体标记走），颜色不变
-                val inkChunks = if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks
+                // 情感动作文字保持正体（不随消息的斜体标记走），颜色不变；缓存 chunks 避免滚动时反复分配
+                val inkChunks = remember(message) { if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks }
                 val ink = remember(message, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
                     chatBubbleInk(inkChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont)
                 }
@@ -2209,12 +2209,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                         val lsSp = if (isAutoWrap && chars > 1 && extraPx > 0f) with(dens) { (extraPx / chars / (dens.density * dens.fontScale)).sp } else 0.sp
                         if (isLast && canInline) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                                Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false)
+                                Text(slice, inlineContent = if (inline.isEmpty()) emptyMap() else inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false)
                                 Spacer(Modifier.weight(1f))
                                 Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 1.dp))
                             }
                         } else {
-                            Text(slice, inlineContent = inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.fillMaxWidth())
+                            Text(slice, inlineContent = if (inline.isEmpty()) emptyMap() else inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.fillMaxWidth())
                         }
                     }
                     if (!canInline && lineCount > 0) {
