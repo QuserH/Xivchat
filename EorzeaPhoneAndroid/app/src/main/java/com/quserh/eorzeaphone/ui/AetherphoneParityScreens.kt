@@ -919,7 +919,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                             state.displayNameFor(msg)
                         }
                         val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
-                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name))
+                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name), senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderStatusIcon ?: 0 else 0)
                     }
                 }
             }
@@ -1587,7 +1587,7 @@ private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, m
             }
         }
         Column(Modifier.weight(1f).padding(start = if (showAvatar) 11.dp else 0.dp)) {
-            Text(author, color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(author.replace('\uE05D', ' '), color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             HighlightText(cleaned, query, AetherLightMuted, 13.sp, 3, Modifier.padding(top = 3.dp))
         }
         Text(chatRecordTime(message.timestamp), color = AetherLightMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp))
@@ -1668,7 +1668,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 val showAuthor = conversation.category != ChatCategory.Tell && groupStart
                 // 私聊界面所有气泡统一带尾巴，不区分首条/合并；其它频道仍按“组首条带尾巴”
                 val showTail = conversation.category == ChatCategory.Tell || groupStart
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail)
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (state.isCrossWorld(message)) message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -2131,8 +2131,23 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
         return androidx.compose.ui.graphics.Outline.Generic(path)
     }
 }
+// 发送者名：跨服时用真实图标渲染 名字<花>服务器，其余普通文本
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true) {
+private fun LightSenderName(part: String, muted: Color, fontSizeSp: Int, worldIcon: Int, modifier: Modifier = Modifier) {
+    val sep = '\uE05D'
+    val idx = if (worldIcon > 0) part.indexOf(sep) else -1
+    if (idx >= 0) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+            Text(part.substring(0, idx), color = muted, fontSize = fontSizeSp.sp)
+            Box(Modifier.size((fontSizeSp + 3).dp).padding(horizontal = 1.dp)) { ChatInlineIcon(worldIcon, fontSizeSp.sp, null) }
+            Text(part.substring(idx + 1).trim(), color = muted, fontSize = fontSizeSp.sp)
+        }
+    } else {
+        Text(part, color = muted, fontSize = fontSizeSp.sp, modifier = modifier)
+    }
+}
+@Composable
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true, senderWorldIconId: Int = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
@@ -2166,19 +2181,20 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
-                    val statIconId = null  // 跨服世界标记不再作前置状态图标，改由 displayNameFor 的 <花>服务器 表达
+                    val worldIcon = senderWorldIconId.takeIf { it > 0 }
+                    val statIconId = if (!self && worldIcon == null) message.senderStatusIcon?.takeIf { it > 0 } else null
                     val titleIcon = if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null
                     val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
                     if (tagEnd >= 0) {
                         // [频道] 标签在前，状态图标放在标签与角色名之间（如 [新人频道][导芽]名字）
-                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold, fontFamily = axisFont)
+                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold)
                         if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                         else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp))
-                        Text(author.substring(tagEnd + 1).trimStart(), color = AetherLightMuted, fontSize = authorFontSizeSp.sp, fontFamily = axisFont, modifier = Modifier.padding(start = 2.dp))
+                        LightSenderName(author.substring(tagEnd + 1).trimStart(), AetherLightMuted, authorFontSizeSp, worldIcon ?: 0, Modifier.padding(start = 2.dp))
                     } else {
                         if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                         else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp))
-                        Text(authorAnnotated, fontSize = authorFontSizeSp.sp, fontFamily = axisFont)
+                        LightSenderName(author, AetherLightMuted, authorFontSizeSp, worldIcon ?: 0, Modifier)
                     }
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }

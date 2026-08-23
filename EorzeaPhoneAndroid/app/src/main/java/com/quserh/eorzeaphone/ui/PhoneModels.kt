@@ -1871,6 +1871,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         .sumOf { it.unread }
 
     // 玩家名显示：本地服务器只显示名字；跨服显示 名字<跨服标记>服务器（用游戏真实跨服标记字符，不再用 @ / 前置花）
+    // 是否为跨服发送者（senderWorld 非空且与本角色世界不同）
+    fun isCrossWorld(msg: com.quserh.eorzeaphone.data.GameChatMessage): Boolean {
+        val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
+        if (w.isNullOrBlank()) return false
+        val myWorld = profile?.currentWorld?.takeIf { it.isNotBlank() } ?: profile?.homeWorld.orEmpty()
+        return !w.equals(myWorld, true)
+    }
+
     fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
         var n = (msg.senderName ?: msg.sender).cleanPlayerName()
         val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
