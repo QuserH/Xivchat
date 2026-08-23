@@ -2112,6 +2112,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
+            Box {
             BoxWithConstraints(
                 Modifier.clip(RoundedCornerShape(12.dp)).background(bubbleBg),
             ) {
@@ -2172,6 +2173,27 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
                 }
                 }
+            }
+            // 气泡小尾巴：自己发的在右下、对方发的在左下，指向外侧
+            Canvas(
+                Modifier.align(if (self) Alignment.BottomEnd else Alignment.BottomStart)
+                    .offset(x = if (self) 6.dp else (-6).dp)
+                    .size(8.dp, 8.dp),
+            ) {
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    if (self) {
+                        moveTo(0f, 0f)
+                        lineTo(0f, size.height)
+                        lineTo(size.width, size.height / 2f)
+                    } else {
+                        moveTo(size.width, 0f)
+                        lineTo(size.width, size.height)
+                        lineTo(0f, size.height / 2f)
+                    }
+                    close()
+                }
+                drawPath(path, bubbleBg)
+            }
             }
         }
     }
