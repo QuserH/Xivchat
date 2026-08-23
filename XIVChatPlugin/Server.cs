@@ -367,11 +367,12 @@ namespace XIVChatPlugin {
                         break;
                     }
                 }
-                // 兜底：部分状态类动作（如“在X边上打了个盹”）不把目标嵌成可点击链接，
-                // 用自己的情感动作文本去好友名单里匹配目标
-                if (targetName == null && senderName != null && XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue == senderName) {
-                    var contentText = message.Message.TextValue ?? string.Empty;
-                    // 先看当前目标对象：对某人做动作时目标通常就是对方，非好友也能识别
+            }
+            // 自用消息日志（任何类型）：排查自用情感动作是否到达插件、目标解析结果
+            if (senderName != null && XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue == senderName) {
+                var contentText = message.Message.TextValue ?? string.Empty;
+                if ((message.LogKind == XivChatType.StandardEmote || message.LogKind == XivChatType.CustomEmote) && targetName == null) {
+                    // 先看当前选中目标对象：对某人做动作时目标通常就是对方，非好友也能识别
                     if (XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.TargetObject is IPlayerCharacter targetChara && !string.IsNullOrEmpty(targetChara.Name.TextValue)) {
                         if (contentText.Contains(targetChara.Name.TextValue, StringComparison.OrdinalIgnoreCase)) {
                             targetName = targetChara.Name.TextValue;
@@ -392,8 +393,8 @@ namespace XIVChatPlugin {
                             }
                         }
                     }
-                    Plugin.Log.Info($"Emote target for {senderName}: {targetName ?? "(none)"} from {contentText}");
                 }
+                Plugin.Log.Info($"Self msg {message.LogKind}: sender={senderName} target={targetName ?? "(none)"} world={targetWorld ?? "-"} text={contentText}");
             }
 
             var msg = new ServerMessage(
