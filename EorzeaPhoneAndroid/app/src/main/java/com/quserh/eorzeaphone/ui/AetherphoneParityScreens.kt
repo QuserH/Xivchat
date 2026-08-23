@@ -2068,9 +2068,9 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
         layoutDirection: androidx.compose.ui.unit.LayoutDirection,
         density: androidx.compose.ui.unit.Density,
     ): androidx.compose.ui.graphics.Outline {
-        val r = with(density) { 12.dp.toPx() }
-        val tailPad = with(density) { 10.dp.toPx() }
-        val tail = with(density) { 8.dp.toPx() }
+        val r = with(density) { 14.dp.toPx() }
+        val tailPad = with(density) { 8.dp.toPx() }
+        val tail = with(density) { 6.dp.toPx() }
         val w = size.width
         val h = size.height
         val path = androidx.compose.ui.graphics.Path().apply {
@@ -2080,7 +2080,7 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
                 lineTo((right - r).coerceAtLeast(1f), 0f)
                 quadraticBezierTo(right, 0f, right, r)
                 lineTo(right, (h - tail).coerceAtLeast(1f))
-                quadraticBezierTo(right + tail * 0.6f, h - tail * 0.4f, w - tailPad * 0.25f, h)
+                quadraticBezierTo(right + tail * 0.5f, h - tail * 0.3f, w - tailPad * 0.3f, h)
                 quadraticBezierTo(w - tailPad * 0.5f, h - tail * 0.25f, (right - tail).coerceAtLeast(r), h)
                 lineTo(r, h)
                 quadraticBezierTo(0f, h, 0f, h - r)
@@ -2094,7 +2094,7 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
                 lineTo(w, h - r)
                 quadraticBezierTo(w, h, w - r, h)
                 lineTo((left + tail).coerceAtMost(w - r), h)
-                quadraticBezierTo(left * 0.55f, h - tail * 0.25f, left * 0.25f, h)
+                quadraticBezierTo(left * 0.5f, h - tail * 0.3f, left * 0.3f, h)
                 quadraticBezierTo(left - tail * 0.6f, h - tail * 0.4f, left, (h - tail).coerceAtLeast(1f))
                 lineTo(left, r)
                 quadraticBezierTo(left, 0f, left + r, 0f)
