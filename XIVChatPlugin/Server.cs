@@ -354,10 +354,7 @@ namespace XIVChatPlugin {
             }
             senderStatusIcon = GetSenderStatusIcon(message.Sender.Encode());
 
-            // 诊断：所有情感动作都打印，确认自用动作是否到达插件
-            if (message.LogKind == XivChatType.StandardEmote || message.LogKind == XivChatType.CustomEmote) {
-                Plugin.Log.Info($"EMOTE {message.LogKind} handled={message.IsHandled} sender={senderName ?? "(empty)"} text={message.Message.TextValue}");
-            }
+
             // 自用动作补全：部分自用动作游戏不填发送者，用“内容以本角色名开头”判断并补全，App 才能识别为“我发的”
             var localPlayerName = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
             var senderBytes = message.Sender.Encode();
@@ -428,7 +425,7 @@ namespace XIVChatPlugin {
                         }
                     }
                 }
-                Plugin.Log.Info($"Self msg {message.LogKind}: sender={senderName} target={targetName ?? "(none)"} world={targetWorld ?? "-"} text={contentText}");
+
             }
 
             var msg = new ServerMessage(

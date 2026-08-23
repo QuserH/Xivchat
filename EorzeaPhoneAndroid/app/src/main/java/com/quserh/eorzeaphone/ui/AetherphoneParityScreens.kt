@@ -168,7 +168,7 @@ private val AetherLightMuted: Color @Composable get() = MaterialTheme.colorSchem
 private val AetherLightSeparator: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
 private val AetherLightControl: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 private val AetherPurple = Color(0xFF8669F2)
-private val EmoteChatColor = Color(0xFFADEADD) // 情感动作文字颜色（游戏内 173,234,221）
+private val EmoteChatColor = Color(0xFFBEFFF1) // 情感动作文字颜色（游戏内 190,255,241）
 private val AetherPink = Color(0xFFF46DAA)
 private val AetherNavyTop = Color(0xFF12335E)
 private val AetherNavyBottom = Color(0xFF061423)
@@ -882,7 +882,9 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
         }
         Column(Modifier.fillMaxSize()) {
             LightHeader("本地", onBack) {
-                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.LocalSettings) }.padding(horizontal = 10.dp))
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { pushChatSub(ChatSub.LocalSettings) }, contentAlignment = Alignment.Center) {
+                    Text("⋯", color = AetherLightText, fontSize = 20.sp)
+                }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 labels.forEachIndexed { i, l ->
@@ -1083,33 +1085,12 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
 
 @Composable
 private fun LightRefreshIcon(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val stroke = 2.2.dp.toPx()
-        val radius = (size.minDimension - stroke * 2) / 2f
-        val c = center
-        val start = -60f
-        val sweep = 300f
-        drawArc(
-            color = color,
-            startAngle = start,
-            sweepAngle = sweep,
-            useCenter = false,
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-            topLeft = Offset(c.x - radius, c.y - radius),
-            size = Size(radius * 2, radius * 2),
-        )
-        val endAngle = Math.toRadians((start + sweep).toDouble())
-        val tip = Offset(c.x + radius * cos(endAngle).toFloat(), c.y + radius * sin(endAngle).toFloat())
-        val back = Math.toRadians((start + sweep - 90).toDouble())
-        val spread = 0.5
-        val len = stroke * 2.6f
-        fun arrow(angle: Double) {
-            val p = Offset(tip.x + cos(angle).toFloat() * len, tip.y + sin(angle).toFloat() * len)
-            drawLine(color, tip, p, strokeWidth = stroke, cap = StrokeCap.Round)
-        }
-        arrow(back + spread)
-        arrow(back - spread)
-    }
+    Image(
+        painter = painterResource(R.drawable.ic_refresh_cycle),
+        contentDescription = null,
+        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(color),
+        modifier = modifier,
+    )
 }
 
 @Composable
