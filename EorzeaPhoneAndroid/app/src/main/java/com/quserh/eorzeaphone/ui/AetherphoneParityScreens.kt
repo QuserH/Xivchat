@@ -894,7 +894,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             val listLaidOut = remember(filter) { mutableStateOf(false) }
             // 进入本地列：等列表首次布局(onGloballyPositioned)后贴底
-            LaunchedEffect(listLaidOut, msgs.size) {
+            LaunchedEffect(listLaidOut.value, msgs.size) {
                 if (listLaidOut.value && msgs.isNotEmpty() && !scrolledLocal.value) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
             LaunchedEffect(filter, msgs.size, inputHeightPx) {
@@ -1643,7 +1643,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     val scrolledInitialState = remember(conversation.key) { mutableStateOf(false) }
     val listLaidOut = remember(conversation.key) { mutableStateOf(false) }
     // 进入会话：等列表完成首次布局(onGloballyPositioned)后无条件贴底
-    LaunchedEffect(listLaidOut, messages.size) {
+    LaunchedEffect(listLaidOut.value, messages.size) {
         if (listLaidOut.value && followLatest && messages.isNotEmpty() && !scrolledInitialState.value) {
             listState.scrollToItem(messages.lastIndex)
             scrolledInitialState.value = true
