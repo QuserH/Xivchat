@@ -1996,7 +1996,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         // sent message must keep the group conversation visible in the message list.
         val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party || isNovice
         if (message.self || message.isSelfMessage(profile?.name)) {
-            if (!groupChannel && message.category != ChatCategory.Tell) return null
+            // 自用情感动作已按 routeToTell 路由成私聊，不再被“自己消息不建会话”的规则拦下
+            if (!groupChannel && !routeToTell && message.category != ChatCategory.Tell) return null
             val existing = conversationByKey[key]
             if (existing != null) return existing
         }
