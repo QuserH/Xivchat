@@ -146,13 +146,16 @@ internal fun String.normalizedPlayerName(): String = this
 
 internal fun String.displayPlayerName(): String = stripPlayerDecorations().ifBlank { "对方" }
 
-// 彻底移除玩家名里所有花/装饰/PUA 符号（不止首尾），避免出现 “❀角色名” 这种前置花
-internal fun String.cleanPlayerName(): String = buildString {
-    for (ch in this) {
-        if (ch.code in PlayerNamePuaRange || ch in PlayerNameFlowers || ch in PlayerNameDecorations) continue
-        append(ch)
-    }
-}.trim()
+// 彻底移除玩家名里所有花/PUA 符号（不止首尾），避免出现 “❀角色名” 这种前置花；保留空格与普通字符
+internal fun String.cleanPlayerName(): String {
+    val src = this
+    return buildString {
+        for (ch in src) {
+            if (ch.code in PlayerNamePuaRange || ch in PlayerNameFlowers) continue
+            append(ch)
+        }
+    }.trim()
+}
 internal fun String.tellNamePart(): String = substringBefore('@').stripPlayerDecorations().trim().lowercase()
 internal fun GameChatMessage.tellNamePart(): String =
     senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()?.lowercase()
