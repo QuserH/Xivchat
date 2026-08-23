@@ -1665,7 +1665,9 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 // 私聊会话不显示消息上方的角色 ID（气泡区分自己/对方），但组首条仍有尾巴；其它频道照旧
                 val groupStart = shouldShowLightSender(messages, index, state.profile?.name)
                 val showAuthor = conversation.category != ChatCategory.Tell && groupStart
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = groupStart)
+                // 私聊界面所有气泡统一带尾巴，不区分首条/合并；其它频道仍按“组首条带尾巴”
+                val showTail = conversation.category == ChatCategory.Tell || groupStart
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
