@@ -2033,7 +2033,7 @@ if (gt.isNotEmpty() && gt.all { it.code in 0xE000..0xF8FF }) {
 private fun chatBubbleStyle(color: Color, fontSize: TextUnit, lineHeight: TextUnit, category: ChatCategory, align: TextAlign): androidx.compose.ui.text.TextStyle =
     androidx.compose.ui.text.TextStyle(
         color = color, fontSize = fontSize, lineHeight = lineHeight, textAlign = align,
-        fontStyle = if (category == ChatCategory.Emote) FontStyle.Italic else FontStyle.Normal,
+        fontStyle = FontStyle.Normal,
         fontFamily = if (category == ChatCategory.System) FontFamily.Monospace else FontFamily.Default,
         fontWeight = if (category == ChatCategory.Tell) FontWeight.Medium else FontWeight.Normal,
     )
@@ -2061,7 +2061,7 @@ private class TrackingTextToolbar(
     }
 }
 
-// 与气泡一体的尾巴形状：自己发的尾巴在右下、对方发的在左下（融入圆角轮廓）
+// 与气泡一体的尾巴形状：尾巴向外凸出，自己发的在右下、对方发的在左下
 private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.graphics.Shape {
     override fun createOutline(
         size: androidx.compose.ui.geometry.Size,
@@ -2069,28 +2069,35 @@ private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.g
         density: androidx.compose.ui.unit.Density,
     ): androidx.compose.ui.graphics.Outline {
         val r = with(density) { 12.dp.toPx() }
-        val t = with(density) { 8.dp.toPx() }
+        val tailPad = with(density) { 10.dp.toPx() }
+        val tail = with(density) { 8.dp.toPx() }
         val w = size.width
         val h = size.height
         val path = androidx.compose.ui.graphics.Path().apply {
             if (self) {
-                moveTo(0f, r)
-                quadraticBezierTo(0f, 0f, r, 0f)
-                lineTo(w - r, 0f)
-                quadraticBezierTo(w, 0f, w, r)
-                lineTo(w, (h - t).coerceAtLeast(1f))
-                lineTo((w - t).coerceAtLeast(1f), h)
+                val right = w - tailPad
+                moveTo(r, 0f)
+                lineTo((right - r).coerceAtLeast(1f), 0f)
+                quadraticBezierTo(right, 0f, right, r)
+                lineTo(right, (h - tail).coerceAtLeast(1f))
+                lineTo(w, h)
+                lineTo((right - tail).coerceAtLeast(r), h)
                 lineTo(r, h)
                 quadraticBezierTo(0f, h, 0f, h - r)
-            } else {
-                moveTo(0f, r)
+                lineTo(0f, r)
                 quadraticBezierTo(0f, 0f, r, 0f)
+            } else {
+                val left = tailPad
+                moveTo(left + r, 0f)
                 lineTo(w - r, 0f)
                 quadraticBezierTo(w, 0f, w, r)
                 lineTo(w, h - r)
                 quadraticBezierTo(w, h, w - r, h)
-                lineTo(t, h)
-                lineTo(0f, (h - t).coerceAtLeast(1f))
+                lineTo((left + tail).coerceAtMost(w - r), h)
+                lineTo(0f, h)
+                lineTo(left, (h - tail).coerceAtLeast(1f))
+                lineTo(left, r)
+                quadraticBezierTo(left, 0f, left + r, 0f)
             }
             close()
         }
@@ -2150,7 +2157,10 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
             }
             BoxWithConstraints(
-                Modifier.clip(remember(self) { BubbleTailShape(self) }).background(bubbleBg),
+                Modifier
+                    .clip(remember(self) { BubbleTailShape(self) })
+                    .background(bubbleBg)
+                    .padding(start = if (self) 0.dp else 10.dp, end = if (self) 10.dp else 0.dp),
             ) {
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
