@@ -2221,18 +2221,21 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
-                    Box(Modifier.fillMaxWidth()) {
-                        if (lineCount == 0) {
-                            Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd))
-                        } else {
-                            // 单文本主体（两端对齐已烘焙），时间用覆盖定位嵌在最后一行末尾，能容纳就内联、否则右下
+                    if (lineCount == 0) {
+                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
+                    } else {
+                        // 单文本主体（两端对齐已烘焙）
+                        Box(Modifier.fillMaxWidth()) {
                             Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
                             if (canInline) {
+                                // 最后一行能容纳时，用覆盖定位把时间嵌在行尾
                                 val tOff = with(dens) { (bubbleWidePx - (lastLinePx + gapPx + timePx)).coerceAtLeast(0f).toDp() }
                                 Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).offset(x = tOff).padding(bottom = 1.dp))
-                            } else {
-                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).padding(top = 3.dp))
                             }
+                        }
+                        // 塞不进时间&非空消息：时间另起一行右下
+                        if (!canInline) {
+                            Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                         }
                     }
                 }
