@@ -93,6 +93,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -889,11 +891,11 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             LaunchedEffect(filter, msgs.size, inputHeightPx) {
                 if (msgs.isEmpty()) return@LaunchedEffect
-                if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
+                if (!scrolledLocal.value || nearBottomLazy(listState)) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }; listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
             val imeVisible = WindowInsets.isImeVisible
             LaunchedEffect(imeVisible, msgs.size) {
-                if (imeVisible && msgs.isNotEmpty()) listState.scrollToItem(msgs.lastIndex)
+                if (imeVisible && msgs.isNotEmpty()) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }; listState.scrollToItem(msgs.lastIndex) }
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -1634,6 +1636,8 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     LaunchedEffect(messages.size, conversation.key) {
         if (!followLatest || messages.isEmpty()) return@LaunchedEffect
         if (!scrolledInitialState.value || nearBottomLazy(listState)) {
+            // 进入会话时等列表布局出条目后再贴底（首帧未布局会导致 scrollToItem 无效）
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
             listState.scrollToItem(messages.lastIndex)
             scrolledInitialState.value = true
         }
@@ -1829,7 +1833,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 }
                 LaunchedEffect(conversation.key, visible.size, search, inputHeightPx) {
-                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { listState.scrollToItem(visible.lastIndex) }
+                    if (search.isBlank() && visible.isNotEmpty() && nearBottomLazy(listState)) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }; listState.scrollToItem(visible.lastIndex) }
                 }
                 val imeVisible = WindowInsets.isImeVisible
                 LaunchedEffect(imeVisible, visible.size) {
