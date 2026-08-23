@@ -2221,17 +2221,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
-                    if (lineCount == 0) {
-                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
-                    } else if (canInline) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                            Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline, maxLines = 1, softWrap = false)
-                            Spacer(Modifier.weight(1f))
-                            Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 1.dp))
+                    Box(Modifier.fillMaxWidth()) {
+                        if (lineCount == 0) {
+                            Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd))
+                        } else {
+                            // 单文本主体（两端对齐已烘焙），时间用覆盖定位嵌在最后一行末尾，能容纳就内联、否则右下
+                            Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
+                            if (canInline) {
+                                val tOff = with(dens) { (bubbleWidePx - (lastLinePx + gapPx + timePx)).coerceAtLeast(0f).toDp() }
+                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).offset(x = tOff).padding(bottom = 1.dp))
+                            } else {
+                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).padding(top = 3.dp))
+                            }
                         }
-                    } else {
-                        Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
-                        if (!canInline) Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                     }
                 }
                 }
