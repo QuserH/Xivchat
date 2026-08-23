@@ -476,7 +476,7 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
                     )
                 }
                 if (app.destination == PhoneScreen.Chat) {
-                    val unread = state.conversations.filter { it.notify }.sumOf { it.unread }
+                    val unread = state.badgeUnread()
                     if (unread > 0) {
                         Box(
                             Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Color(0xFFE5485D)),

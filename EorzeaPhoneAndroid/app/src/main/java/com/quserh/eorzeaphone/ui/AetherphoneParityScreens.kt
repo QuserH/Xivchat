@@ -276,13 +276,16 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
     LaunchedEffect(state.openLocalRequest) {
         if (state.openLocalRequest > 0) showLocalScreen = true
     }
+    LaunchedEffect(state.openConversationKey) {
+        if (state.openConversationKey != null) showLocalScreen = false
+    }
     LaunchedEffect(pager.currentPage) { state.messagesTab = pager.currentPage == 1 }
     val route = when {
-        showLocalScreen -> "local"
         editingTab -> "new-tab"
         state.editChatTabs -> "edit-tab"
-        openFilter != null -> "filter:${openFilter.id}"
         conversation != null -> "chat:${conversation.key}"
+        openFilter != null -> "filter:${openFilter.id}"
+        showLocalScreen -> "local"
         else -> "list"
     }
     AnimatedContent(
@@ -377,7 +380,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             val chips = if (messagesFirst) listOf("messages" to "消息", "tabs" to "筛选器") else listOf("tabs" to "筛选器", "messages" to "消息")
             chips.forEach { (key, label) ->
                 val active = if (key == "messages") messagesExpanded else tabsExpanded
-                val unread = if (key == "messages") sortedRows.filter { it.notify }.sumOf { it.unread } else 0
+                val unread = if (key == "messages") state.badgeUnread() else 0
                 ChatGroupChip(label, unread, notify = true, active = active) {
                     state.chatListTab = key
                 }
@@ -847,6 +850,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     val pushChatSub: (ChatSub) -> Unit = { chatStack = chatStack + it }
     val popChatSub: () -> Unit = { if (chatStack.size > 1) chatStack = chatStack.dropLast(1) }
     BackHandler(enabled = chatStack.size > 1) { popChatSub() }
+    BackHandler(enabled = chatStack.size == 1) { onBack() }
     val localConv = remember(state.chats.size, state.localClearedUntil) {
         ChatConversation("local", ChatCategory.Public, "本地").also { conv ->
             conv.messages.clear()
@@ -859,9 +863,9 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     val msgs = state.chats.filter {
         it.timestamp > state.localClearedUntil &&
         when {
-            filter == 1 -> it.channel == 10
-            filter == 2 -> it.channel == 11
-            filter == 3 -> it.channel == 30
+            filter == 1 -> it.channel == 10 || it.channel == 81 || it.category == ChatCategory.Emote
+            filter == 2 -> it.channel == 11 || it.channel == 82
+            filter == 3 -> it.channel == 30 || it.channel == 83
             else -> (it.category == ChatCategory.Public || it.category == ChatCategory.Emote) && it.channel != 27 && it.channel != 75 && it.channel != 94
         }
     }.sortedBy { it.timestamp }
@@ -870,14 +874,14 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             ChatSubScreen(state, localConv, chatStack.last(), onPop = popChatSub, onPush = pushChatSub)
             return@LightFrame
         }
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().imePadding()) {
             LightHeader("本地", onBack) {
                 Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.LocalSettings) }.padding(horizontal = 10.dp))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 labels.forEachIndexed { i, l ->
                     Text(l, color = if (filter == i) Color.White else AetherLightMuted, fontSize = 12.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (filter == i) AetherPurple else AetherLightControl).clickable { filter = i }.padding(horizontal = 12.dp, vertical = 6.dp))
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (filter == i) AetherPurple else AetherLightControl).clickable { filter = i; sendChannel = listOf(1, 1, 4, 5)[i] }.padding(horizontal = 12.dp, vertical = 6.dp))
                 }
             }
             val listState = rememberLazyListState()
@@ -902,11 +906,14 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                             Text(chatDayLabel(msg.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
                         }
                         val self = msg.self || msg.isFrom(state.profile?.name)
-                        val author = if (self) {
+                        val showTag = filter == 0 || msg.category == ChatCategory.Emote
+                        val tag = if (showTag) channelTag(msg.channel) else ""
+                        val baseName = if (self) {
                             state.profile?.name.orEmpty().ifBlank { "我" }
                         } else {
                             msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }
                         }
+                        val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
                         LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name))
                     }
                 }
@@ -922,17 +929,6 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Box {
-                    Box(
-                        modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
-                            .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
-                    ) { Text(outputChannels.firstOrNull { it.id == sendChannel }?.label ?: "说话", color = AetherPink, fontSize = 11.sp, maxLines = 1) }
-                    DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
-                        listOf(1, 4, 5).forEach { id ->
-                            DropdownMenuItem(text = { Text(outputChannels.first { it.id == id }.label) }, onClick = { sendChannel = id; channelMenu = false })
-                        }
-                    }
-                }
                 BasicTextField(
                     value = state.chatDraft,
                     onValueChange = { state.chatDraft = it },
@@ -2170,7 +2166,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
                     if (tagEnd >= 0) {
                         // [频道] 标签在前，状态图标放在标签与角色名之间（如 [新人频道][导芽]名字）
-                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold)
+                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold, fontStyle = if (author.substring(0, tagEnd + 1).contains("情感动作")) FontStyle.Italic else FontStyle.Normal)
                         if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                         else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp))
                         Text(author.substring(tagEnd + 1).trimStart(), color = AetherLightMuted, fontSize = authorFontSizeSp.sp, modifier = Modifier.padding(start = 2.dp))

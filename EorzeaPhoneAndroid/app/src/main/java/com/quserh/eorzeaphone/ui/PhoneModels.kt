@@ -1859,6 +1859,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         openConversationKey = null
     }
 
+    // 未读角标：只统计会显示在消息列表里的会话（排除隐藏会话，以及以自己名字命名的会话），首页聊天图标角标与消息标签共用
+    fun badgeUnread(): Int = conversations
+        .filter { c ->
+            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party || c.key == "novice") &&
+                !isConversationHidden(c) &&
+                (profile?.name.orEmpty().isBlank() || c.title.normalizedPlayerName() != profile?.name?.normalizedPlayerName())
+        }
+        .filter { it.notify }
+        .sumOf { it.unread }
+
     fun toggleConversationNotify(conv: ChatConversation) {
         conv.notify = !conv.notify
         if (conv.notify) mutedConversations.remove(conv.key) else mutedConversations.add(conv.key)
@@ -2423,6 +2433,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (consumeSelfEcho(event.message.text)) { saveChats(); return }
                     val echoConv = getOrCreateConversation(event.message)
                     if (echoConv != null) {
+                        echoConv.unread = 0
                         if (echoConv.category == ChatCategory.Tell) {
                             val liveTarget = event.message.tellTarget()
                             if (liveTarget.isNotBlank() && echoConv.tellRecipient != liveTarget) echoConv.tellRecipient = liveTarget
