@@ -1978,7 +1978,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val friendTarget = if (isSelfEmote && message.targetName.isNullOrBlank()) emoteTargetFromFriends(message) else null
         val outgoingEmoteWithTarget = isSelfEmote && (!message.targetName.isNullOrBlank() || friendTarget != null)
         val emoteTellRecipient = when {
-            incomingEmoteToMe -> message.tellTarget().ifBlank { message.sender }
+            incomingEmoteToMe -> {
+                var t = message.tellTarget()
+                if (!t.contains('@')) {
+                    // 兜底：情感动作的发送者可能缺世界名，从好友/小队补上，保证跨服会话 key 一致
+                    val fr = (friends + party).firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }
+                    if (fr != null) {
+                        // 用老家世界（与私聊一致），避免跨服访问时生成不同 key
+                        val fw = fr.homeWorld.ifBlank { fr.world }
+                        if (fw.isNotBlank()) t = "${fr.name}@$fw"
+                    }
+                }
+                t.ifBlank { message.sender }
+            }
             outgoingEmoteWithTarget -> {
                 val n = message.targetName ?: friendTarget?.name ?: ""
                 val w = if (message.targetName != null) message.targetWorld else friendTarget?.world

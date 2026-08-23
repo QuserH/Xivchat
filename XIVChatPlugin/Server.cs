@@ -352,6 +352,23 @@ namespace XIVChatPlugin {
                     if (worldRow.IsValid) senderWorld = worldRow.Value.Name.ExtractText();
                 }
             }
+            // 情感动作等消息的发送者 payload 可能缺世界名：从好友名单/周围玩家补上老家世界，保证跨服会话 key 一致
+            if (senderWorld == null && senderName != null) {
+                var friend = this._lastFriends.FirstOrDefault(f => f.Name == senderName);
+                if (friend != null) {
+                    senderWorld = string.IsNullOrEmpty(friend.HomeWorldName) ? friend.CurrentWorldName : friend.HomeWorldName;
+                } else {
+                    foreach (var obj in XIVChatPlugin.Plugin.ObjectTable) {
+                        if (obj is IPlayerCharacter nearbySender && nearbySender.Name.TextValue == senderName) {
+                            try {
+                                var hw = nearbySender.HomeWorld.Value.Name.ExtractText();
+                                if (!string.IsNullOrWhiteSpace(hw)) senderWorld = hw;
+                            } catch { }
+                            break;
+                        }
+                    }
+                }
+            }
             senderStatusIcon = GetSenderStatusIcon(message.Sender.Encode());
 
 
