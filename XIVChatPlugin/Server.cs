@@ -361,6 +361,7 @@ namespace XIVChatPlugin {
             // 自用动作补全：部分自用动作游戏不填发送者，用“内容以本角色名开头”判断并补全，App 才能识别为“我发的”
             var localPlayerName = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.Name.TextValue;
             var senderBytes = message.Sender.Encode();
+            var selfFlag = false;
             if ((message.LogKind == XivChatType.StandardEmote || message.LogKind == XivChatType.CustomEmote) && !string.IsNullOrEmpty(localPlayerName) &&
                 (message.Message.TextValue ?? string.Empty).StartsWith(localPlayerName, StringComparison.Ordinal) && string.IsNullOrEmpty(senderName)) {
                 senderName = localPlayerName;
@@ -370,6 +371,7 @@ namespace XIVChatPlugin {
                 } catch { }
                 senderBytes = new SeStringBuilder().AddText(localPlayerName).Build().Encode();
             }
+            selfFlag = !string.IsNullOrEmpty(senderName) && senderName == localPlayerName;
 
             // 情感动作：从内容里提取“目标角色”，App 据此把“我对他人的动作”路由到对方的会话
             string? targetName = null;
@@ -441,7 +443,8 @@ namespace XIVChatPlugin {
                 senderStatusIcon,
                 characterTag: null,
                 targetName: targetName,
-                targetWorld: targetWorld
+                targetWorld: targetWorld,
+                selfFlag: selfFlag
             );
 
             if (this._plugin.Config.BacklogEnabled) {

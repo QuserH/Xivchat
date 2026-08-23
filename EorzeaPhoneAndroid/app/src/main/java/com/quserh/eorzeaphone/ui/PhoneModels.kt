@@ -1035,6 +1035,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     characterTag = o.optString("characterTag").takeIf { it.isNotBlank() },
                     targetName = o.optString("targetName").takeIf { it.isNotBlank() },
                     targetWorld = o.optString("targetWorld").takeIf { it.isNotBlank() },
+                    selfFlag = o.optBoolean("selfFlag"),
                 )
             }
             msgs.sortBy { it.timestamp }
@@ -1091,6 +1092,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (m.characterTag != null) put("characterTag", m.characterTag)
                     if (m.targetName != null) put("targetName", m.targetName)
                     if (m.targetWorld != null) put("targetWorld", m.targetWorld)
+                    if (m.selfFlag) put("selfFlag", true)
                 })
             }
             chatStore.edit().putString("chatCache", arr.toString()).apply()
@@ -1957,8 +1959,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private fun getOrCreateConversation(message: GameChatMessage): ChatConversation? {
         // 情感动作路由：别人对我 → 对方会话；我对别人 → 目标角色会话（插件下发 targetName）；第三人动作 → 只进本地列表（不进会话）
         val isNovice = message.channel == 27 || message.channel == 75 || message.channel == 94
-        val isSelfEmote = message.category == ChatCategory.Emote && message.isFrom(profile?.name)
-        val incomingEmoteToMe = message.category == ChatCategory.Emote && !message.isFrom(profile?.name) && emoteTextTargetsMe(message)
+        val isSelfEmote = message.category == ChatCategory.Emote && message.isSelfMessage(profile?.name)
+        val incomingEmoteToMe = message.category == ChatCategory.Emote && !message.isSelfMessage(profile?.name) && emoteTextTargetsMe(message)
         val friendTarget = if (isSelfEmote && message.targetName.isNullOrBlank()) emoteTargetFromFriends(message) else null
         val outgoingEmoteWithTarget = isSelfEmote && (!message.targetName.isNullOrBlank() || friendTarget != null)
         val routeToTell = incomingEmoteToMe || outgoingEmoteWithTarget
@@ -1993,7 +1995,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
         // sent message must keep the group conversation visible in the message list.
         val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party || isNovice
-        if (message.self || message.isFrom(profile?.name)) {
+        if (message.self || message.isSelfMessage(profile?.name)) {
             if (!groupChannel && message.category != ChatCategory.Tell) return null
             val existing = conversationByKey[key]
             if (existing != null) return existing
@@ -2403,7 +2405,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (pendingSelfTexts.isEmpty()) markPendingSendsDelivered()
                     return
                 }
-                if (event.message.isFrom(profile?.name) && consumeSelfEcho(event.message.text)) {
+                if (event.message.isSelfMessage(profile?.name) && consumeSelfEcho(event.message.text)) {
                     saveChats()
                 } else if (chats.none { kotlin.math.abs(it.timestamp - event.message.timestamp) < 50L && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
                     if (event.message.category == ChatCategory.System) {
@@ -2436,7 +2438,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             conversations.removeAt(index)
                             conversations.add(target.coerceAtMost(conversations.size), conv)
                         }
-                        val isSelf = event.message.isFrom(profile?.name)
+                        val isSelf = event.message.isSelfMessage(profile?.name)
                         val isOpen = openConversationKey == conv.key
                         if (!isSelf && !isOpen) {
                             conv.unread = (conv.unread + 1).coerceAtMost(99)

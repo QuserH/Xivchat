@@ -32,8 +32,12 @@ data class GameChatMessage(
     val characterTag: String? = null,
     val targetName: String? = null,
     val targetWorld: String? = null,
+    val selfFlag: Boolean = false,
 ) {
     val category: ChatCategory get() = ChatCategory.fromChannel(channel)
+
+    // 插件明确下发“这是自己发的”标志（自用情感动作等场景 sender 可能匹配不上）
+    fun isSelfMessage(playerName: String?): Boolean = selfFlag || isFrom(playerName)
 
     fun isFrom(playerName: String?): Boolean {
         if (channel == 12) return true
