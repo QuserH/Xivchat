@@ -1501,6 +1501,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     val activeCharacterOnline: Boolean
         get() = connected && gameOnline && activeCharacterKey.isNotBlank() && activeCharacterKey == connectedCharacterKey
 
+    // 当前真正在线（连接中）的角色名，供设置页连接提示使用
+    val onlineCharacterName: String
+        get() = if (gameOnline && connectedCharacterKey.isNotBlank()) connectedCharacterKey.substringBefore('@') else ""
+
     fun updateShellSize(width: Int, height: Int) {
         shellWidth = width.coerceAtLeast(1).toFloat()
         shellHeight = height.coerceAtLeast(1).toFloat()
@@ -2303,6 +2307,11 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                             return
                         }
                     }
+                }
+                // 情感动作：只有“别的玩家对本角色使用”（文本含本角色名）才进入消息列表/会话，其余一律忽略
+                if (event.message.category == ChatCategory.Emote && !event.message.self && !event.message.isFrom(profile?.name)) {
+                    val myName = profile?.name?.substringBefore('@')?.trim().orEmpty()
+                    if (myName.isBlank() || !event.message.text.contains(myName, ignoreCase = true)) return
                 }
                 updateChatCursorTs(event.message.timestamp)
                 cacheChannelColor(event.message)

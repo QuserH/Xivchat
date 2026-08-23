@@ -243,7 +243,12 @@ fun SettingsScreen(state: PhoneState) {
                     OutlinedTextField(value = state.host, onValueChange = { state.host = it }, label = { Text("游戏电脑 IP") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) }, label = { Text("端口") }, singleLine = true, modifier = Modifier.width(110.dp))
                 }
-                if (state.statusMessage.isNotBlank()) Text(state.statusMessage, color = if (state.connected) PhoneGreen else PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                val connHint = buildString {
+                    val online = state.onlineCharacterName
+                    if (online.isNotBlank()) append("已连接 · ").append(online).append(" 在线")
+                    else if (state.statusMessage.isNotBlank()) append(state.statusMessage)
+                }
+                if (connHint.isNotBlank()) Text(connHint, color = if (state.connected) PhoneGreen else PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
             }
             item {
                 SettingsGroup {
@@ -335,6 +340,20 @@ private fun GeneralSettingsScreen(state: PhoneState) {
             ToggleRow("集体动作时显示", state.showEmotes, R.drawable.app_camera) { state.showEmotes = it }
             ToggleRow("锁定位置", state.lockPosition, R.drawable.app_settings) { state.lockPosition = it }
         }
+        SectionLabel("聊天记录")
+        SettingsGroup {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("保留消息上限", color = PhoneText, modifier = Modifier.weight(1f))
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) }, contentAlignment = Alignment.Center) {
+                    Text("−", color = PhoneAccent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("  ${state.chatRetentionLimit}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) }, contentAlignment = Alignment.Center) {
+                    Text("＋", color = PhoneAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("每个角色保留最近 N 条，超出自动清理最旧消息；0 = 不限制（永久保留）", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        }
         SectionLabel("连接")
         SettingsGroup {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -366,19 +385,7 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
             }
             Text("左右都向内收缩·数值越小越贴近屏幕边缘", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
-        SectionLabel("聊天字号")
-        SettingsGroup {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("消息文字大小", color = PhoneText, modifier = Modifier.weight(1f))
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatFontSize -= 1 }, contentAlignment = Alignment.Center) {
-                    Text("−", color = PhoneAccent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
-                Text("  ${state.chatFontSize}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatFontSize += 1 }, contentAlignment = Alignment.Center) {
-                    Text("＋", color = PhoneAccent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+
         SectionLabel("主题")
         SettingsGroup {
             PhoneThemeMode.entries.forEach { mode ->

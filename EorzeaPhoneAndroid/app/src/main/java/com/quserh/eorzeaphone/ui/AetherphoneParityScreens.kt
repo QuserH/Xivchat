@@ -168,6 +168,7 @@ private val AetherLightMuted: Color @Composable get() = MaterialTheme.colorSchem
 private val AetherLightSeparator: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
 private val AetherLightControl: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 private val AetherPurple = Color(0xFF8669F2)
+private val EmoteChatColor = Color(0xFFADEADD) // 情感动作文字颜色（游戏内 173,234,221）
 private val AetherPink = Color(0xFFF46DAA)
 private val AetherNavyTop = Color(0xFF12335E)
 private val AetherNavyBottom = Color(0xFF061423)
@@ -1018,7 +1019,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                     conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    LightMessagePreview(last, AetherLightMuted, 13.sp, Modifier.weight(1f))
+                    LightMessagePreview(last, if (last?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 13.sp, Modifier.weight(1f))
                     if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
                     if (conversation.unread > 0) {
                         Box(
@@ -1470,12 +1471,7 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
                 onMinus = { state.chatAuthorFontSize = (state.chatAuthorFontSize - 1).coerceAtLeast(9) },
                 onPlus = { state.chatAuthorFontSize = (state.chatAuthorFontSize + 1).coerceAtMost(22) },
             )
-            ChatSettingDivider()
-            ChatAdjustRow("保留消息上限", state.chatRetentionLimit,
-                onMinus = { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) },
-                onPlus = { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) },
-                hint = "每个角色保留最近 N 条，超出自动清理最旧消息；0 = 不限制（永久保留）",
-            )
+
         }
         Text("主题", color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = LocalContentMargin.current.dp + 4.dp, top = 18.dp, bottom = 6.dp))
         Column(
@@ -2046,7 +2042,11 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val timeText = lightClock(message.timestamp)
     val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
-    val baseColor = if (self) Color.White else AetherLightText
+    val baseColor = when {
+        self -> Color.White
+        message.category == ChatCategory.Emote -> themeAdjustedChannelColor(EmoteChatColor)
+        else -> AetherLightText
+    }
     val bubbleBg = if (self) AetherPurple else AetherLightSurface
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
