@@ -1967,6 +1967,32 @@ private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk
     return out
 }
 
+// 把“自动换行的非末尾行”的两端对齐字距烘焙进字符 span：整条消息只需一个文本节点即可两端对齐
+private fun justifyText(original: androidx.compose.ui.text.AnnotatedString, layout: androidx.compose.ui.text.TextLayoutResult, bubbleWidePx: Float, density: androidx.compose.ui.unit.Density): androidx.compose.ui.text.AnnotatedString {
+    val builder = androidx.compose.ui.text.AnnotatedString.Builder()
+    for (i in 0 until layout.lineCount) {
+        val ls = layout.getLineStart(i)
+        val le = layout.getLineEnd(i)
+        if (le <= ls) continue
+        var slice = original.subSequence(ls, le)
+        if (slice.text.endsWith("\n") || slice.text.endsWith("\r")) slice = slice.subSequence(0, slice.length - 1)
+        if (slice.isEmpty()) continue
+        val isLast = i == layout.lineCount - 1
+        val lineW = layout.getLineRight(i) - layout.getLineLeft(i)
+        val chars = (le - ls).coerceAtLeast(1)
+        val lastCh = if (le > ls) original.text[le - 1] else ' '
+        val hardBreak = !isLast && (lastCh == '\n' || lastCh == '\r')
+        val isAutoWrap = !isLast && !hardBreak && lineW >= bubbleWidePx * 0.85f
+        val extraPx = if (!isAutoWrap) 0f else (bubbleWidePx - lineW).coerceAtLeast(0f)
+        val lsSp = if (isAutoWrap && chars > 1 && extraPx > 0f) with(density) { (extraPx / chars / (density.density * density.fontScale)).sp } else 0.sp
+        if (lsSp.value > 0f) {
+            builder.withStyle(androidx.compose.ui.text.SpanStyle(letterSpacing = lsSp)) { builder.append(slice) }
+        } else {
+            builder.append(slice)
+        }
+    }
+    return builder.toAnnotatedString()
+}
 private fun chatBubbleInk(
     chunks: List<GameChatChunk>, fallback: String, color: Color, forceColor: Boolean, highlight: String, light: Boolean,
     fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily,
@@ -2188,37 +2214,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
+                    // 单节点渲染：把两端对齐字距烘焙进文本，整条消息一个文本节点，滚动更流畅
+                    val justified = remember(ink, layout, bubbleWidePx) { justifyText(ink.annotated, layout, bubbleWidePx, dens) }
                     if (lineCount == 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
-                    }
-                    for (i in 0 until lineCount) {
-                        val ls = layout.getLineStart(i)
-                        val le = layout.getLineEnd(i)
-                        if (le <= ls) continue
-                        var slice = ink.annotated.subSequence(ls, le)
-                        val st = slice.text
-                        if (st.endsWith("\n") || st.endsWith("\r")) slice = slice.subSequence(0, slice.length - 1)
-                        if (slice.text.isEmpty()) continue
-                        val isLast = i == lineCount - 1
-                        val lineW = lineWidths[i]
-                        val chars = (le - ls).coerceAtLeast(1)
-                        val lastCh = if (le > ls) ink.annotated.text[le - 1] else ' '
-                        val hardBreak = !isLast && (lastCh == '\n' || lastCh == '\r')
-                        val isAutoWrap = !isLast && !hardBreak && lineW >= bubbleWidePx * 0.85f
-                        val extraPx = if (!isAutoWrap) 0f else (bubbleWidePx - lineW).coerceAtLeast(0f)
-                        val lsSp = if (isAutoWrap && chars > 1 && extraPx > 0f) with(dens) { (extraPx / chars / (dens.density * dens.fontScale)).sp } else 0.sp
-                        if (isLast && canInline) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                                Text(slice, inlineContent = if (inline.isEmpty()) emptyMap() else inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false)
-                                Spacer(Modifier.weight(1f))
-                                Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 1.dp))
-                            }
-                        } else {
-                            Text(slice, inlineContent = if (inline.isEmpty()) emptyMap() else inline, style = measureStyle.copy(letterSpacing = lsSp), maxLines = 1, softWrap = false, modifier = Modifier.fillMaxWidth())
+                    } else if (canInline && lineCount == 1) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                            Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline, maxLines = 1, softWrap = false)
+                            Spacer(Modifier.weight(1f))
+                            Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 6.dp, bottom = 1.dp))
                         }
-                    }
-                    if (!canInline && lineCount > 0) {
-                        Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
+                    } else {
+                        Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
+                        if (!canInline) Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                     }
                 }
                 }
