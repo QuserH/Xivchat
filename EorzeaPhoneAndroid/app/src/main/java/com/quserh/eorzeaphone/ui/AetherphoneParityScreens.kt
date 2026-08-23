@@ -2166,19 +2166,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
-                    val statIconId = if (!self) message.senderStatusIcon?.takeIf { it > 0 } else null
+                    val statIconId = null  // 跨服世界标记不再作前置状态图标，改由 displayNameFor 的 <花>服务器 表达
                     val titleIcon = if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null
                     val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
                     if (tagEnd >= 0) {
                         // [频道] 标签在前，状态图标放在标签与角色名之间（如 [新人频道][导芽]名字）
-                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold)
+                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold, fontFamily = axisFont)
                         if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                         else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp))
-                        Text(author.substring(tagEnd + 1).trimStart(), color = AetherLightMuted, fontSize = authorFontSizeSp.sp, modifier = Modifier.padding(start = 2.dp))
+                        Text(author.substring(tagEnd + 1).trimStart(), color = AetherLightMuted, fontSize = authorFontSizeSp.sp, fontFamily = axisFont, modifier = Modifier.padding(start = 2.dp))
                     } else {
                         if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                         else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(end = 3.dp))
-                        Text(authorAnnotated, fontSize = authorFontSizeSp.sp)
+                        Text(authorAnnotated, fontSize = authorFontSizeSp.sp, fontFamily = axisFont)
                     }
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
