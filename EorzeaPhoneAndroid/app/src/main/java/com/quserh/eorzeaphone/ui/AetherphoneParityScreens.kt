@@ -230,9 +230,9 @@ private fun LightHeader(
     val headerMargin = LocalContentMargin.current
     val density = LocalDensity.current
     var titleWidth by remember(title) { mutableStateOf(0.dp) }
-    var titleInkShift by remember(title) { mutableStateOf(0.dp) }
     val sidePad = (headerMargin.coerceAtLeast(2) - 2).dp
-    Box(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = sidePad)) {
+    // 标题垂直位置与 ScreenHeader（捕鱼等窗口）保持一致：内容高度 + 上下 12dp 内边距，标题居中
+    Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
             Text(
                 "‹",
@@ -252,18 +252,9 @@ private fun LightHeader(
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.offset(y = titleOffsetY + titleInkShift),
+                modifier = Modifier.offset(y = titleOffsetY).padding(horizontal = 50.dp),
                 onTextLayout = { layout ->
                     titleWidth = with(density) { layout.size.width.toDp() }
-                    if (layout.lineCount > 0) {
-                        val top = layout.getLineTop(0)
-                        val bottom = layout.getLineBottom(0)
-                        val baseline = layout.getLineBaseline(0)
-                        val fontPx = with(density) { 20.sp.toPx() }
-                        val inkCenter = baseline - fontPx * 0.45f
-                        val lineCenter = (top + bottom) / 2f
-                        titleInkShift = with(density) { (lineCenter - inkCenter).toDp() }
-                    }
                 },
             )
             if (titleIcon != null) {
@@ -882,9 +873,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
         }
         Column(Modifier.fillMaxSize()) {
             LightHeader("本地", onBack) {
-                Box(Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { pushChatSub(ChatSub.LocalSettings) }, contentAlignment = Alignment.Center) {
-                    Text("⋯", color = AetherLightText, fontSize = 20.sp)
-                }
+                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.LocalSettings) }.padding(horizontal = 10.dp))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 labels.forEachIndexed { i, l ->

@@ -1649,6 +1649,20 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun repairTellRecipients() {
         var changed = false
+        // 清理历史版本 bug 留下的“收件人是我自己”的私聊会话（自用情感动作曾误判为对方对我使用）
+        val myName = profile?.name?.normalizedPlayerName()
+        if (!myName.isNullOrBlank()) {
+            val bogus = conversations.filter {
+                it.category == ChatCategory.Tell && it.tellRecipient.tellNamePart() == myName
+            }
+            if (bogus.isNotEmpty()) {
+                val bogusMessages = bogus.flatMap { it.messages.toList() }.toSet()
+                conversations.removeAll(bogus)
+                bogus.forEach { conversationByKey.remove(it.key) }
+                chats.removeAll(bogusMessages)
+                changed = true
+            }
+        }
         val byName = mutableMapOf<String, ChatConversation>()
         val toRemove = mutableListOf<ChatConversation>()
         for (conv in conversations) {
@@ -1963,7 +1977,6 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val incomingEmoteToMe = message.category == ChatCategory.Emote && !message.isSelfMessage(profile?.name) && emoteTextTargetsMe(message)
         val friendTarget = if (isSelfEmote && message.targetName.isNullOrBlank()) emoteTargetFromFriends(message) else null
         val outgoingEmoteWithTarget = isSelfEmote && (!message.targetName.isNullOrBlank() || friendTarget != null)
-        val routeToTell = incomingEmoteToMe || outgoingEmoteWithTarget
         val emoteTellRecipient = when {
             incomingEmoteToMe -> message.tellTarget().ifBlank { message.sender }
             outgoingEmoteWithTarget -> {
@@ -1973,6 +1986,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             else -> ""
         }
+        // 防止自用动作被误判成“对方对我用”而建出“我自己”的会话
+        val myNamePart = profile?.name?.normalizedPlayerName().orEmpty()
+        val selfRecipient = myNamePart.isNotBlank() && emoteTellRecipient.tellNamePart() == myNamePart
+        val routeToTell = (incomingEmoteToMe || outgoingEmoteWithTarget) && !selfRecipient
         if (message.category == ChatCategory.Emote && !routeToTell) return null
         val key = if (isNovice) "novice" else (if (routeToTell) "tell:${emoteTellRecipient.normalizedPlayerName()}" else message.conversationKey())
         conversationByKey[key]?.let { existing ->
@@ -2011,7 +2028,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val conv = ChatConversation(
             key,
             if (routeToTell) ChatCategory.Tell else message.category,
-            if (routeToTell) emoteTellRecipient.displayPlayerName() else (groupTitleOverride(key) ?: groupTitle),
+            if (routeToTell) (groupTitleOverride(key) ?: emoteTellRecipient.displayPlayerName()) else (groupTitleOverride(key) ?: groupTitle),
             if (routeToTell) emoteTellRecipient else message.tellRecipient(),
         )
         conv.notify = key !in mutedConversations
