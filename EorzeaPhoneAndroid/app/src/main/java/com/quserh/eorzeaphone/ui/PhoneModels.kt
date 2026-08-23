@@ -1877,7 +1877,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun isCrossWorld(msg: com.quserh.eorzeaphone.data.GameChatMessage): Boolean {
         val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
         if (w.isNullOrBlank()) return false
-        val myWorld = profile?.currentWorld?.takeIf { it.isNotBlank() } ?: profile?.homeWorld.orEmpty()
+        val myWorld = profile?.homeWorld?.takeIf { it.isNotBlank() } ?: profile?.currentWorld.orEmpty()
         return !w.equals(myWorld, true)
     }
 
@@ -1886,7 +1886,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
         if (n.isBlank()) return "对方"
         if (w != null && n.endsWith(w)) n = n.removeSuffix(w).trim()
-        val myWorld = profile?.currentWorld?.takeIf { it.isNotBlank() } ?: profile?.homeWorld.orEmpty()
+        val myWorld = profile?.homeWorld?.takeIf { it.isNotBlank() } ?: profile?.currentWorld.orEmpty()
         if (w.isNullOrBlank() || w.equals(myWorld, true)) return n
         val marker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" } ?: '\uE05D'
         return "$n$marker$w"
