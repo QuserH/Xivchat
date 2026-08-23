@@ -1646,7 +1646,8 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             } else if (message.category == ChatCategory.System || message.sender.isBlank() || message.channel == 75 || message.channel == 56) {
                 "系统"
             } else {
-                val base = message.displaySender().ifBlank { conversation.title }
+                // 私聊会话里对方的 ID 优先显示会话重命名的昵称，未重命名则显示 角色名@服务器
+                val base = if (conversation.category == ChatCategory.Tell) (state.groupTitleOverride(conversation.key) ?: message.displaySender().ifBlank { conversation.title }) else message.displaySender().ifBlank { conversation.title }
                 if (tag.isNotEmpty()) "[$tag] $base" else base
             }
             Column(Modifier.fillMaxWidth()) {

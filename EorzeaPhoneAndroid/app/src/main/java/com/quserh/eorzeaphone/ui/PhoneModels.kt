@@ -1981,12 +1981,18 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             incomingEmoteToMe -> {
                 var t = message.tellTarget()
                 if (!t.contains('@')) {
-                    // 兜底：情感动作的发送者可能缺世界名，从好友/小队补上，保证跨服会话 key 一致
-                    val fr = (friends + party).firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }
-                    if (fr != null) {
-                        // 用老家世界（与私聊一致），避免跨服访问时生成不同 key
-                        val fw = fr.homeWorld.ifBlank { fr.world }
-                        if (fw.isNotBlank()) t = "${fr.name}@$fw"
+                    // 先按名字找已有私聊会话，直接用它的收件人（带世界名），保证动作与私聊合并为同一会话
+                    val namePart = message.sender.tellNamePart()
+                    val existingTell = conversations.firstOrNull { it.category == ChatCategory.Tell && it.tellRecipient.tellNamePart() == namePart }
+                    if (existingTell != null) {
+                        t = existingTell.tellRecipient
+                    } else {
+                        // 再兜底：从好友/小队补世界名
+                        val fr = (friends + party).firstOrNull { it.name.normalizedPlayerName() == message.sender.normalizedPlayerName() }
+                        if (fr != null) {
+                            val fw = fr.homeWorld.ifBlank { fr.world }
+                            if (fw.isNotBlank()) t = "${fr.name}@$fw"
+                        }
                     }
                 }
                 t.ifBlank { message.sender }
