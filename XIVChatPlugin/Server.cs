@@ -297,7 +297,8 @@ namespace XIVChatPlugin {
         }
 
         internal void Spawn() {
-            this.LoadBacklog();
+            // 异步加载历史，避免插件启动时同步读大量 backlog 导致登录/选人界面卡顿
+            System.Threading.Tasks.Task.Run(() => this.LoadBacklog());
             var port = this._plugin.Config.Port;
 
             Task.Run(async () => {

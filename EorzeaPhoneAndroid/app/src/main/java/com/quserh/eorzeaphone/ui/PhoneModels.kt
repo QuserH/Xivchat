@@ -2452,7 +2452,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                         conv.add(event.message)
                         if (conv.category == ChatCategory.Tell) {
                             val liveTitle = event.message.displaySender()
-                            if (conv.title != liveTitle && groupTitleOverride(conv.key) == null) conv.title = liveTitle
+                            // 自己发的消息永不改会话标题（避免我的昵称@服务器覆盖重命名）
+                            if (!event.message.isSelfMessage(profile?.name) && conv.title != liveTitle && groupTitleOverride(conv.key) == null) conv.title = liveTitle
                             val liveTarget = event.message.tellTarget()
                             if (liveTarget.isNotBlank() && conv.tellRecipient != liveTarget) conv.tellRecipient = liveTarget
                         }

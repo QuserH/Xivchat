@@ -1054,6 +1054,12 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 onRename(conversation)
                 menuOpen = false
             })
+            if (state.groupTitleOverride(conversation.key) != null) {
+                DropdownMenuItem(text = { Text("恢复默认昵称") }, onClick = {
+                    state.renameGroup(conversation.key, "")
+                    menuOpen = false
+                })
+            }
             DropdownMenuItem(text = { Text(if (conversation.notify) "消息免打扰" else "取消消息免打扰") }, onClick = {
                 state.toggleConversationNotify(conversation)
                 menuOpen = false

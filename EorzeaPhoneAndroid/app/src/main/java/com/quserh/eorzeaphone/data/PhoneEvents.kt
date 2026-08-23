@@ -109,16 +109,23 @@ internal fun linkshellChannelName(channel: Int): String = when (channel) {
 }
 
 private val PlayerNameDecorations = charArrayOf(
-    '★', '☆', '♡', '♥', '✿', '❀', '⚜', '＊', '*', ' ', '>', '<',
+    '★', '☆', '♡', '♥', '✿', '❀', '❁', '❃', '❈', '❉', '✽', '❊', '⚜', '＊', '*', ' ', '>', '<',
     '\ue090', '\ue091', '\ue092', '\ue093', '\ue094', '\ue095', '\ue096', '\ue097',
 )
 
-private val PlayerNameSeparatorRegex = Regex("[\uE000-\uF8FF\u200B\u2060\u00AD\uFEFF\u273F\u2740\u2741]+")
+// 游戏里名字与服务器之间的分隔“小花”等符号，统一视为分隔符
+private val PlayerNameSeparatorRegex = Regex("[\uE000-\uF8FF\u200B\u2060\u00AD\uFEFF\u273F-\u2741\u2743\u2744\u2764\u2765\u2766\u2767\u269C]+")
+
+private val PlayerNamePuaRange = 0xE000..0xF8FF
+private val PlayerNameFlowers = "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*"
 
 internal fun String.stripPlayerDecorations(): String {
     var s = this.trim()
+    // 去掉开头/结尾的装饰（含 PUA 符号与小花），避免出现 “❀角色名@服务器” 这类带前缀花的显示
     s = s.trimStart(*PlayerNameDecorations)
     s = s.trim()
+    s = s.trimStart { it.code in PlayerNamePuaRange || it in PlayerNameFlowers }
+    s = s.trimEnd { it.code in PlayerNamePuaRange || it in PlayerNameFlowers }
     s = s.replace(PlayerNameSeparatorRegex, "@")
     val at = s.indexOf('@')
     if (at > 0) {
