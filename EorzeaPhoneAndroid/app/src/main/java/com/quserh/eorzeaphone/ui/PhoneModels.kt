@@ -1869,6 +1869,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         .filter { it.notify }
         .sumOf { it.unread }
 
+    // 玩家名显示：本地服务器只显示名字；跨服显示 名字\u2740服务器（用小花朵分隔，不再用 @）
+    fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
+        val n = msg.senderName?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
+        val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
+        if (n.isNullOrBlank()) return msg.sender.stripPlayerDecorations().ifBlank { "对方" }
+        val myWorld = profile?.currentWorld?.takeIf { it.isNotBlank() } ?: profile?.homeWorld.orEmpty()
+        if (w.isNullOrBlank() || w.equals(myWorld, true)) return n
+        return "$n\u2740$w"
+    }
+
     fun toggleConversationNotify(conv: ChatConversation) {
         conv.notify = !conv.notify
         if (conv.notify) mutedConversations.remove(conv.key) else mutedConversations.add(conv.key)

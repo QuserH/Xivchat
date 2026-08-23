@@ -840,6 +840,7 @@ private fun cleanChatText(raw: String, author: String): String {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var filter by remember { mutableIntStateOf(0) }
     var sendChannel by remember { mutableStateOf(1) }
@@ -890,6 +891,10 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 if (msgs.isEmpty()) return@LaunchedEffect
                 if (!scrolledLocal.value || nearBottomLazy(listState)) { listState.scrollToItem(msgs.lastIndex); scrolledLocal.value = true }
             }
+            val imeVisible = WindowInsets.isImeVisible
+            LaunchedEffect(imeVisible, msgs.size) {
+                if (imeVisible && msgs.isNotEmpty()) listState.scrollToItem(msgs.lastIndex)
+            }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                     Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
@@ -911,7 +916,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         val baseName = if (self) {
                             state.profile?.name.orEmpty().ifBlank { "我" }
                         } else {
-                            msg.sender.ifBlank { if (msg.category == ChatCategory.Emote) "情感动作" else "本地" }
+                            state.displayNameFor(msg)
                         }
                         val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
                         LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name))
@@ -995,7 +1000,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     val last = conversation.lastMessage
     val rowTitle = conversation.title
     val previewMsg = if (last != null && last.category == ChatCategory.Emote && last.isFrom(state.profile?.name)) {
-        last.copy(text = last.displaySender().ifBlank { last.sender } + last.text)
+        last.copy(text = state.displayNameFor(last) + last.text)
     } else last
     val preview = when {
         previewMsg == null -> "暂无消息"
@@ -1570,7 +1575,7 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
 @Composable
 private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, message: GameChatMessage, query: String, showAvatar: Boolean = true, onClick: () -> Unit) {
     val self = message.self || (state.profile?.name != null && message.isFrom(state.profile?.name))
-    val author = if (self) state.profile?.name?.takeIf { it.isNotBlank() } ?: "我" else message.displaySender().ifBlank { conversation.title }
+    val author = if (self) state.profile?.name?.takeIf { it.isNotBlank() } ?: "我" else state.displayNameFor(message).takeIf { it != "对方" } ?: conversation.title
     val cleaned = cleanChatText(message.text, author)
     Row(
         verticalAlignment = Alignment.Top,
@@ -1604,7 +1609,7 @@ private fun dayKey(timestamp: Long): String {
     return String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
 }
 
-private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 3): Boolean {
+private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 0): Boolean {
     if (listState.isScrollInProgress) return false
     val info = listState.layoutInfo
     if (info.totalItemsCount <= 0) return true
@@ -1650,7 +1655,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 "系统"
             } else {
                 // 私聊会话里对方的 ID 优先显示会话重命名的昵称，未重命名则显示 角色名@服务器
-                val base = if (conversation.category == ChatCategory.Tell) (state.groupTitleOverride(conversation.key) ?: message.displaySender().ifBlank { conversation.title }) else message.displaySender().ifBlank { conversation.title }
+                val base = if (conversation.category == ChatCategory.Tell) (state.groupTitleOverride(conversation.key) ?: state.displayNameFor(message)) else state.displayNameFor(message)
                 if (tag.isNotEmpty()) "[$tag] $base" else base
             }
             Column(Modifier.fillMaxWidth()) {
@@ -2166,7 +2171,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
                     if (tagEnd >= 0) {
                         // [频道] 标签在前，状态图标放在标签与角色名之间（如 [新人频道][导芽]名字）
-                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold, fontStyle = if (author.substring(0, tagEnd + 1).contains("情感动作")) FontStyle.Italic else FontStyle.Normal)
+                        Text(author.substring(0, tagEnd + 1), color = tagColor, fontSize = authorFontSizeSp.sp, fontWeight = FontWeight.SemiBold)
                         if (statIconId != null) Box(Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp)) { ChatInlineIcon(statIconId, authorFontSizeSp.sp, null) }
                         else if (titleIcon != null) Image(painterResource(titleIcon), contentDescription = null, modifier = Modifier.size((authorFontSizeSp + 3).dp).padding(horizontal = 3.dp))
                         Text(author.substring(tagEnd + 1).trimStart(), color = AetherLightMuted, fontSize = authorFontSizeSp.sp, modifier = Modifier.padding(start = 2.dp))
