@@ -29,6 +29,7 @@ object AppCatalog {
         PhoneAppItem("venues", "场馆", R.drawable.app_venues, purple),
         PhoneAppItem("games", "游戏", R.drawable.app_games, coral),
         PhoneAppItem("market", "市场", R.drawable.app_market, gold),
+        PhoneAppItem("shizhijia", "石之家", R.drawable.app_news, blue),
         PhoneAppItem("appstore", "App Store", R.drawable.app_appstore, cyan),
     )
 
