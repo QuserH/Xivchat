@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -779,6 +781,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
         else -> "帖子"
     }
     var hotWords by remember { mutableStateOf(listOf<String>()) }
+    var history by remember { mutableStateOf(ShizhijiaSession.searchHistory(context)) }
     var postResults by remember { mutableStateOf<List<ShizhijiaPostCard>?>(null) }
     var userResults by remember { mutableStateOf<List<ShizhijiaSearchUser>?>(null) }
     var glamourResults by remember { mutableStateOf<List<ShizhijiaSearchGlamour>?>(null) }
@@ -788,6 +791,8 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
     fun doSearch() {
         val q = query.trim()
         if (q.isEmpty()) return
+        ShizhijiaSession.addSearchHistory(context, q, searchType)
+        history = ShizhijiaSession.searchHistory(context)
         scope.launch {
             searching = true
             postResults = null; userResults = null; glamourResults = null
@@ -834,6 +839,8 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                         onValueChange = { query = it },
                         singleLine = true,
                         textStyle = TextStyle(color = PhoneText, fontSize = 15.sp),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { doSearch() }),
                         decorationBox = { inner ->
                             Box {
                                 if (query.isEmpty()) Text("搜索$typeLabel", color = PhoneMuted, fontSize = 15.sp)
@@ -842,10 +849,54 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                         },
                         modifier = Modifier.weight(1f).padding(vertical = 12.dp),
                     )
+                    Text("搜索", color = PhoneAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { doSearch() }.padding(horizontal = 6.dp, vertical = 4.dp))
                 }
             }
             if (postResults == null && userResults == null && glamourResults == null && !searching) {
-                Spacer(Modifier.height(18.dp))
+                if (history.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("搜索记录", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        Text("清空", color = PhoneMuted, fontSize = 11.sp,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                                history.forEach { ShizhijiaSession.removeSearchHistory(context, it.first, it.second) }
+                                history = emptyList()
+                            }.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // History chips: tap = quick search, long-press = remove entry.
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        history.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { (q, t) ->
+                                    val typeLabel2 = when (t) {
+                                        ShizhijiaApi.SEARCH_TYPE_STRAT -> "攻略"
+                                        ShizhijiaApi.SEARCH_TYPE_USER -> "用户"
+                                        ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> "幻化"
+                                        else -> "帖子"
+                                    }
+                                    Text("$typeLabel2·$q", fontSize = 12.sp, color = PhoneText,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(Color(0xFFF0EDE6))
+                                            .pointerInput(q, t) {
+                                                detectTapGestures(
+                                                    onTap = { query = q; searchType = t; doSearch() },
+                                                    onLongPress = {
+                                                        ShizhijiaSession.removeSearchHistory(context, q, t)
+                                                        history = ShizhijiaSession.searchHistory(context)
+                                                    },
+                                                )
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp))
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                }
                 Text("热门搜索", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -861,7 +912,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                         if (userResults.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关用户", color = PhoneMuted) }
                         else LazyColumn(Modifier.fillMaxSize()) {
                             items(userResults.orEmpty(), key = { it.uuid }) { u ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { nav(SzjRoute.UserProfile(u.uuid)) }, verticalAlignment = Alignment.CenterVertically) {
                                     SzjAvatar(u.name, u.avatar, u.uuid, 44)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
@@ -1417,14 +1468,25 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
             }
             item {
                 if (d.images.isNotEmpty()) {
-                    LazyRow(Modifier.fillMaxWidth()) {
-                        items(d.images.size) { i ->
-                            ShizhijiaRemoteImage(
-                                url = d.images[i],
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
-                                fitByAspect = true,
-                                onClick = { url -> SzjViewer.url = url },
-                            )
+                    // Swipeable full-aspect pager: each page shows the complete
+                    // picture, no cropping and no need to tap for full view.
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState { d.images.size }
+                    androidx.compose.foundation.pager.HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { page ->
+                        ShizhijiaRemoteImage(
+                            url = d.images[page],
+                            modifier = Modifier.fillMaxWidth(),
+                            contentScale = ContentScale.FillWidth,
+                            showPlaceholder = true,
+                            onClick = { url -> SzjViewer.url = url },
+                        )
+                    }
+                    if (d.images.size > 1) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            Text("${pagerState.currentPage + 1} / ${d.images.size}", color = PhoneMuted, fontSize = 11.sp)
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -1575,54 +1637,72 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = PhoneMuted) }
             return@Column
         }
-        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(items.size) { i ->
-                val card = items[i]
-                Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
-                    ShizhijiaRemoteImage(
-                        url = card.mainImage,
-                        modifier = Modifier.fillMaxWidth().height(170.dp),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Column(Modifier.padding(8.dp)) {
-                        Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                            if (card.groupName.isNotBlank()) {
-                                Spacer(Modifier.width(3.dp))
-                                Text("📍" + card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                        Spacer(Modifier.height(3.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Text("★ ${card.favorites}", color = PhoneMuted, fontSize = 11.sp)
-                            Spacer(Modifier.width(10.dp))
-                            Text("👍 ${card.likes}", color = PhoneMuted, fontSize = 11.sp)
-                        }
-                    }
+        // Two-column waterfall: full-width-of-column images keep their own
+        // aspect ratio (no cropping), alternating items between the columns.
+        val leftState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val rightState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val leftItems = items.filterIndexed { i, _ -> i % 2 == 0 }
+        val rightItems = items.filterIndexed { i, _ -> i % 2 == 1 }
+        val nearEnd by remember { derivedStateOf {
+            val l = leftState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val r = rightState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            items.isNotEmpty() && maxOf(l, r) >= maxOf(leftItems.size, rightItems.size) - 1
+        } }
+        LaunchedEffect(nearEnd) { if (nearEnd && !ended && !loading) load(reset = false) }
+
+        if (items.isEmpty() && !loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无内容", color = PhoneMuted) }
+        } else {
+            Row(Modifier.fillMaxSize()) {
+                fun columnContent() {}
+                androidx.compose.foundation.lazy.LazyColumn(
+                    state = leftState,
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(6.dp),
+                ) {
+                    items(leftItems, key = { it.id }) { card -> SzjGlamourCardItem(card, nav) }
                 }
-                // Load more when reaching the end of the list.
-                if (i == items.size - 1 && !ended) {
-                    LaunchedEffect(items.size, tab, sort) { load(reset = false) }
+                androidx.compose.foundation.lazy.LazyColumn(
+                    state = rightState,
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(6.dp),
+                ) {
+                    items(rightItems, key = { it.id }) { card -> SzjGlamourCardItem(card, nav) }
                 }
             }
             if (loading) {
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                    Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(22.dp))
-                    }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
                 }
-            } else if (items.isEmpty()) {
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                    Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) { Text("暂无内容", color = PhoneMuted) }
+            }
+        }
+    }
+}
+
+/** 幻化瀑布流卡片：完整比例封面 + 标题 + 作者/服务器 + 收藏/点赞。 */
+@Composable
+private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Unit) {
+    Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
+        ShizhijiaRemoteImage(
+            url = card.mainImage,
+            modifier = Modifier.fillMaxWidth(),
+            contentScale = ContentScale.FillWidth,
+        )
+        Column(Modifier.padding(8.dp)) {
+            Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (card.groupName.isNotBlank()) {
+                    Spacer(Modifier.width(3.dp))
+                    Text("📍" + card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            Spacer(Modifier.height(3.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Text("★ ${card.favorites}", color = PhoneMuted, fontSize = 11.sp)
+                Spacer(Modifier.width(10.dp))
+                Text("👍 ${card.likes}", color = PhoneMuted, fontSize = 11.sp)
             }
         }
     }

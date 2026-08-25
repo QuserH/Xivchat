@@ -18,6 +18,40 @@ object ShizhijiaSession {
     private const val KEY_TIME = "login_time"
     private const val KEY_SIGN = "last_sign_date"
     private const val KEY_USER = "cached_login_user"
+    private const val KEY_SEARCH_HISTORY = "search_history"
+
+    /** Search history entries (keyword + channel type), newest first, capped at 10. */
+    fun searchHistory(context: Context): List<Pair<String, Int>> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_SEARCH_HISTORY, null) ?: return emptyList()
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    add(o.optString("q") to o.optInt("t"))
+                }
+            }
+        }.getOrDefault(emptyList()).filter { it.first.isNotBlank() }
+    }
+
+    fun addSearchHistory(context: Context, keyword: String, type: Int) {
+        if (keyword.isBlank()) return
+        val rest = searchHistory(context).filterNot { it.first == keyword && it.second == type }
+        val next = (listOf(keyword to type) + rest).take(10)
+        val arr = org.json.JSONArray()
+        next.forEach { (q, t) -> arr.put(org.json.JSONObject().put("q", q).put("t", t)) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_SEARCH_HISTORY, arr.toString()).apply()
+    }
+
+    fun removeSearchHistory(context: Context, keyword: String, type: Int) {
+        val next = searchHistory(context).filterNot { it.first == keyword && it.second == type }
+        val arr = org.json.JSONArray()
+        next.forEach { (q, t) -> arr.put(org.json.JSONObject().put("q", q).put("t", t)) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_SEARCH_HISTORY, arr.toString()).apply()
+    }
 
     private const val COOKIE_HOST = "https://apiff14risingstones.web.sdo.com"
     const val LOGIN_COOKIE_NAME = "ff14risingstones"
