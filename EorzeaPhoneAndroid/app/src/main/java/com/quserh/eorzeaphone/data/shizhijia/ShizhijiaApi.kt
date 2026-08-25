@@ -250,6 +250,49 @@ object ShizhijiaApi {
 
     // ---- Login-gated feed endpoints ---------------------------------------
 
+    /** Another player's full profile (userInfo/getUserInfo?uuid=). */
+    suspend fun getUserProfile(context: Context, uuid: String): ShizhijiaUserProfile? {
+        if (uuid.isBlank()) return null
+        val d = data(context, HOME_BASE, "userInfo/getUserInfo", mapOf("uuid" to uuid)) ?: return null
+        val p = ShizhijiaUserProfile.fromJson(d)
+        if (p.name.isBlank()) return null
+        return p
+    }
+
+    /** A player's posts (userInfo/getUserPosts?uuid=&type=1). */
+    suspend fun getUserPosts(context: Context, uuid: String, page: Int = 1, limit: Int = 15): ShizhijiaPage<ShizhijiaPostCard> {
+        if (uuid.isBlank()) return ShizhijiaPage(emptyList(), "")
+        val d = data(context, HOME_BASE, "userInfo/getUserPosts", mapOf("uuid" to uuid, "type" to "1", "page" to page.toString(), "limit" to limit.toString()))
+            ?: return ShizhijiaPage(emptyList(), "")
+        val rows = d.optJSONArray("rows")
+        return ShizhijiaPage(rows = rows?.let { ShizhijiaPostCard.fromArray(it) } ?: emptyList(), pageTime = "")
+    }
+
+    /** Full glamour post (glamour/glamourDetail?id=). */
+    suspend fun getGlamourDetail(context: Context, id: String): ShizhijiaGlamourDetail? {
+        val d = data(context, HOME_BASE, "glamour/glamourDetail", mapOf("id" to id)) ?: return null
+        return ShizhijiaGlamourDetail.fromJson(d)
+    }
+
+    /**
+     * Glamour feed (glamour/glamoursList). order="" = 推荐 (hot_score),
+     * "time" = 最新. Requires login.
+     */
+    suspend fun getGlamours(context: Context, page: Int = 1, limit: Int = 10, order: String = ""): List<ShizhijiaGlamourCard> {
+        val d = data(context, HOME_BASE, "glamour/glamoursList", mapOf("page" to page.toString(), "limit" to limit.toString(), "order" to order))
+            ?: return emptyList()
+        val rows = d.optJSONArray("rows") ?: return emptyList()
+        return ShizhijiaGlamourCard.fromArray(rows)
+    }
+
+    /** Glamour feed of followed creators (glamour/glamoursFollowList). */
+    suspend fun getFollowGlamours(context: Context, page: Int = 1, limit: Int = 10): List<ShizhijiaGlamourCard> {
+        val d = data(context, HOME_BASE, "glamour/glamoursFollowList", mapOf("page" to page.toString(), "limit" to limit.toString()))
+            ?: return emptyList()
+        val rows = d.optJSONArray("rows") ?: return emptyList()
+        return ShizhijiaGlamourCard.fromArray(rows)
+    }
+
     /** Following dynamics feed; requires an authenticated session cookie. */
     suspend fun getFollowDynamicList(context: Context, page: Int = 1): ShizhijiaPage<ShizhijiaDynamic> {
         val d = data(context, HOME_BASE, "dynamic/getFollowDynamicList", mapOf("page" to page.toString())) ?: return ShizhijiaPage(emptyList(), "")

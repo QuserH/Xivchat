@@ -263,6 +263,36 @@ data class ShizhijiaSignLog(
     val days: List<String>,
 )
 
+/** Glamour feed card (glamour/glamoursList | glamoursFollowList). */
+data class ShizhijiaGlamourCard(
+    val id: String,
+    val title: String,
+    val mainImage: String,
+    val likes: Int,
+    val favorites: Int,
+    val uuid: String,
+    val characterName: String,
+    val areaName: String,
+    val groupName: String,
+) {
+    companion object {
+        fun fromJson(o: JSONObject): ShizhijiaGlamourCard = ShizhijiaGlamourCard(
+            id = o.optString("id"),
+            title = o.optString("title"),
+            mainImage = cleanAvatar(o.optString("main_image")),
+            likes = o.optInt("likes"),
+            favorites = o.optInt("favorites"),
+            uuid = o.optString("uuid"),
+            characterName = o.optString("character_name"),
+            areaName = o.optString("area_name"),
+            groupName = o.optString("group_name"),
+        )
+
+        fun fromArray(arr: JSONArray): List<ShizhijiaGlamourCard> =
+            buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(fromJson(it)) } }
+    }
+}
+
 /** User search hit (common/search type=6). */
 data class ShizhijiaSearchUser(
     val uuid: String,
@@ -313,5 +343,203 @@ data class ShizhijiaSearchGlamour(
             areaName = o.optString("area_name"),
             groupName = o.optString("group_name"),
         )
+    }
+}
+
+/** One job row of a player's career list (userInfo/getUserInfo -> careerLevel[]). */
+data class ShizhijiaCareer(
+    val name: String,
+    val level: Int,
+    val type: String,
+)
+
+/**
+ * Another player's profile (userInfo/getUserInfo?uuid=). Defensive parse:
+ * characterDetail is an array; avatar may be null -> race portrait fallback
+ * is resolved by the caller via ShizhijiaApi.
+ */
+data class ShizhijiaUserProfile(
+    val uuid: String,
+    val name: String,
+    val areaName: String,
+    val groupName: String,
+    val avatar: String,
+    val profile: String,
+    val fansNum: Int,
+    val followNum: Int,
+    val likedNum: Int,
+    val race: Int,
+    val tribe: Int,
+    val gender: Int,
+    val createTime: String,
+    val playTime: String,
+    val lastLoginTime: String,
+    val guildName: String,
+    val guildTag: String,
+    val houseInfo: String,
+    val washingNum: Int,
+    val killTimes: Int,
+    val crystalRank: String,
+    val fishTimes: Int,
+    val treasureTimes: Int,
+    val newrank: Int,
+    val careers: List<ShizhijiaCareer>,
+) {
+    companion object {
+        fun fromJson(o: JSONObject): ShizhijiaUserProfile {
+            val det = o.optJSONArray("characterDetail")?.optJSONObject(0)
+                ?: o.optJSONObject("characterDetail")
+                ?: JSONObject()
+            val fans = o.optJSONObject("followFansiNum")
+            fun txt(v: String?): String = v?.takeUnless { it.isBlank() || it == "null" }?.trim().orEmpty()
+            val careers = mutableListOf<ShizhijiaCareer>()
+            o.optJSONArray("careerLevel")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val c = arr.optJSONObject(i) ?: continue
+                    careers.add(
+                        ShizhijiaCareer(
+                            name = c.optString("career"),
+                            level = c.optInt("character_level"),
+                            type = c.optString("career_type"),
+                        ),
+                    )
+                }
+            }
+            return ShizhijiaUserProfile(
+                uuid = o.optString("uuid"),
+                name = o.optString("character_name"),
+                areaName = o.optString("area_name"),
+                groupName = o.optString("group_name"),
+                avatar = cleanAvatar(o.optString("avatar")),
+                profile = txt(o.optString("profile")),
+                fansNum = fans?.optInt("fansNum") ?: 0,
+                followNum = fans?.optInt("followNum") ?: 0,
+                likedNum = o.optInt("beLikedNum"),
+                race = det.optInt("race"),
+                tribe = det.optInt("tribe"),
+                gender = det.optInt("gender", -1),
+                createTime = txt(det.optString("create_time")),
+                playTime = txt(det.optString("play_time")),
+                lastLoginTime = txt(det.optString("last_login_time")),
+                guildName = txt(det.optString("guild_name")),
+                guildTag = txt(det.optString("guild_tag")),
+                houseInfo = txt(det.optString("house_info")),
+                washingNum = det.optInt("washing_num"),
+                killTimes = det.optInt("kill_times"),
+                crystalRank = txt(det.optString("crystal_rank")),
+                fishTimes = det.optInt("fish_times"),
+                treasureTimes = det.optInt("treasure_times"),
+                newrank = det.optInt("newrank"),
+                careers = careers,
+            )
+        }
+    }
+}
+
+/** One equipment slot of a glamour outfit (glamour/glamourDetail -> equipments[]). */
+data class ShizhijiaGlamourEquip(
+    val slot: String,
+    val name: String,
+    val dyes: List<String>,
+    val iconUrl: String,
+) {
+    companion object {
+        // Item icons live on the EO CDN, sharded: {base}/{floor(id/1000)}000
+        // zero-padded to 6 / {id} zero-padded to 6 + "_hr1.png" (mirrors the
+        // web ItemIcon component).
+        private const val ICON_BASE = "https://ff14-eo.web.sdo.com/ffstones/item/icon/dcsvv4fowz2m"
+
+        fun iconUrlFor(iconId: String): String {
+            val id = iconId.toIntOrNull() ?: return ""
+            if (id <= 0) return ""
+            val folder = (id / 1000).toString() + "000"
+            return "$ICON_BASE/${folder.padStart(6, '0')}/${id.toString().padStart(6, '0')}_hr1.png"
+        }
+    }
+}
+
+/** Full glamour post (glamour/glamourDetail). */
+data class ShizhijiaGlamourDetail(
+    val id: String,
+    val title: String,
+    val desc: String,
+    val images: List<String>,
+    val likes: Int,
+    val favorites: Int,
+    val createdAt: String,
+    val jobs: List<String>,
+    val races: List<String>,
+    val gender: Int,
+    val authorName: String,
+    val authorUuid: String,
+    val authorAvatar: String,
+    val areaName: String,
+    val groupName: String,
+    val equips: List<ShizhijiaGlamourEquip>,
+    val glassesName: String,
+    val glassesIconUrl: String,
+    val ornamentName: String,
+    val ornamentIconUrl: String,
+) {
+    companion object {
+        fun fromJson(o: JSONObject): ShizhijiaGlamourDetail {
+            val pics = mutableListOf<String>()
+            cleanAvatar(o.optString("main_image")).takeIf { it.isNotBlank() }?.let { pics.add(it) }
+            pics.addAll(splitPictures(o.optString("images")))
+            val jobs = mutableListOf<String>()
+            o.optJSONArray("job_ids")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optString("name")?.takeIf { it.isNotBlank() }?.let { jobs.add(it) } }
+            val races = mutableListOf<String>()
+            o.optJSONArray("race_ids")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optString("name")?.takeIf { it.isNotBlank() }?.let { races.add(it) } }
+            val equips = mutableListOf<ShizhijiaGlamourEquip>()
+            o.optJSONArray("equipments")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val e = arr.optJSONObject(i) ?: continue
+                    val name = e.optString("name")
+                    if (name.isBlank() || name == "null") continue
+                    val dyes = mutableListOf<String>()
+                    e.optJSONArray("dyes")?.let { da ->
+                        for (k in 0 until da.length()) {
+                            val d = da.optJSONObject(k) ?: continue
+                            d.optString("name").takeIf { it.isNotBlank() }?.let { dyes.add(it) }
+                        }
+                    }
+                    equips.add(
+                        ShizhijiaGlamourEquip(
+                            slot = e.optString("slot"),
+                            name = name,
+                            dyes = dyes,
+                            iconUrl = ShizhijiaGlamourEquip.iconUrlFor(e.optString("icon_id")),
+                        ),
+                    )
+                }
+            }
+            val author = o.optJSONObject("userInfo")
+            val ort = o.optJSONObject("ortInfo")
+            val glassesIcon = ort?.optString("glasses_icon").orEmpty()
+            val ornamentIcon = ort?.optString("ornament_icon").orEmpty()
+            fun cleanField(v: String?): String = v?.takeUnless { it.isBlank() || it == "null" }.orEmpty()
+            return ShizhijiaGlamourDetail(
+                id = o.optString("id"),
+                title = o.optString("title"),
+                desc = o.optString("desc"),
+                images = pics,
+                likes = o.optInt("likes"),
+                favorites = o.optInt("favorites"),
+                createdAt = o.optString("created_at"),
+                jobs = jobs,
+                races = races,
+                gender = o.optJSONArray("gender_ids")?.optInt(0, 0) ?: 0,
+                authorName = author?.optString("character_name").orEmpty().ifBlank { o.optString("character_name") },
+                authorUuid = author?.optString("uuid").orEmpty().ifBlank { o.optString("uuid") },
+                authorAvatar = cleanAvatar(author?.optString("avatar").orEmpty()),
+                areaName = o.optString("area_name"),
+                groupName = o.optString("group_name"),
+                equips = equips,
+                glassesName = cleanField(ort?.optString("glasses_name")),
+                glassesIconUrl = ShizhijiaGlamourEquip.iconUrlFor(glassesIcon),
+                ornamentName = cleanField(ort?.optString("ornament_name")),
+                ornamentIconUrl = ShizhijiaGlamourEquip.iconUrlFor(ornamentIcon),
+            )
+        }
     }
 }

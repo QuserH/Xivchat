@@ -70,6 +70,9 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSignLog
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSignReward
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSearchUser
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSearchGlamour
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaUserProfile
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourDetail
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourCard
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
@@ -95,6 +98,8 @@ private sealed interface SzjRoute {
     data object Search : SzjRoute
     data object Login : SzjRoute
     data object SignCalendar : SzjRoute
+    data class UserProfile(val uuid: String) : SzjRoute
+    data class GlamourDetail(val glamourId: String) : SzjRoute
 }
 
 /** App-wide full-screen image viewer state; any thumbnail sets its URL here. */
@@ -162,6 +167,8 @@ fun ShizhijiaScreen(state: PhoneState) {
             SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav)
             SzjRoute.Login -> ShizhijiaLoginScreen(state, pop)
             SzjRoute.SignCalendar -> ShizhijiaSignCalendarScreen(state, pop)
+            is SzjRoute.UserProfile -> ShizhijiaUserProfileScreen(state, route.uuid, pop, nav)
+            is SzjRoute.GlamourDetail -> ShizhijiaGlamourDetailScreen(state, route.glamourId, pop, nav)
         }
         SzjViewer.url?.let { url ->
             // Full-screen overlay for viewing a tapped image at size.
@@ -266,7 +273,7 @@ private fun ShizhijiaHomeScreen(state: PhoneState, nav: (SzjRoute) -> Unit, post
                         }
                     }
                     MAIN_RECRUIT -> SzjSectionPlaceholder("招募")
-                    MAIN_GLAMOUR -> SzjSectionPlaceholder("幻化")
+                    MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn)
                     else -> ShizhijiaMeTab(state, nav, loggedIn)
                 }
             }
@@ -1184,6 +1191,439 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                 }
             }
             item { Spacer(Modifier.height(20.dp)) }
+        }
+    }
+}
+
+/** 种族/部族中文名（id 与官方一致）。 */
+private fun szjRaceName(id: Int) = when (id) {
+    1 -> "人族"; 2 -> "精灵族"; 3 -> "拉拉菲尔族"; 4 -> "猫魅族"
+    5 -> "鲁加族"; 6 -> "敖龙族"; 7 -> "硌狮族"; 8 -> "维埃拉族"; else -> ""
+}
+
+private fun szjTribeName(id: Int) = when (id) {
+    1 -> "中原之民"; 2 -> "高地之民"; 3 -> "森林之民"; 4 -> "黑影之民"
+    5 -> "平原之民"; 6 -> "丘陵之民"; 7 -> "逐日之民"; 8 -> "追月之民"
+    9 -> "海洋之民"; 10 -> "红血之民"; 11 -> "晨曦之民"; 12 -> "月影之民"
+    13 -> "日耀之民"; 14 -> "流浪之民"; 15 -> "拉维之民"; 16 -> "维娜之民"; else -> ""
+}
+
+/** 玩家主页：资料卡(头像/UID/粉丝获赞) + 信息(职业/种族/部队/游戏数据) + TA的帖子。 */
+@Composable
+private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var profile by remember { mutableStateOf<ShizhijiaUserProfile?>(null) }
+    var avatarUrl by remember { mutableStateOf("") }
+    var tab by remember { mutableStateOf(0) } // 0=信息 1=帖子
+    var posts by remember { mutableStateOf(listOf<ShizhijiaPostCard>()) }
+    var postLoading by remember { mutableStateOf(false) }
+    var postPage by remember { mutableStateOf(1) }
+    var postEnded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uuid) {
+        profile = ShizhijiaApi.getUserProfile(context, uuid)
+        val p = profile
+        avatarUrl = when {
+            p == null -> ""
+            p.avatar.isNotBlank() -> p.avatar
+            p.race > 0 && p.tribe > 0 && p.gender >= 0 ->
+                "https://static.web.sdo.com/jijiamobile/pic/ff14/2023ffstone/${p.race}-${p.tribe}-${p.gender}.jpg"
+            else -> ""
+        }
+    }
+    LaunchedEffect(uuid, tab) {
+        if (tab == 1 && posts.isEmpty() && !postEnded) {
+            postLoading = true
+            val next = ShizhijiaApi.getUserPosts(context, uuid, postPage)
+            posts = posts + next.rows
+            if (next.rows.isEmpty()) postEnded = true else postPage += 1
+            postLoading = false
+        }
+    }
+
+    ScreenFrame {
+        ScreenHeader("玩家主页", state, onBack = pop)
+        val p = profile
+        if (p == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
+            return@ScreenFrame
+        }
+        LazyColumn(Modifier.fillMaxSize()) {
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SzjAvatar(p.name, avatarUrl, p.uuid, 64)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name, color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            val line = listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" · ")
+                            Text(line, color = PhoneMuted, fontSize = 12.sp)
+                            Text("UID $uuid", color = PhoneMuted, fontSize = 11.sp)
+                        }
+                    }
+                    if (p.profile.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(p.profile, color = PhoneText, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        listOf("关注" to p.followNum, "粉丝" to p.fansNum, "获赞" to p.likedNum).forEach { (label, num) ->
+                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("$num", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text(label, color = PhoneMuted, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            // Tabs: 信息 / 帖子
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    listOf("信息" to 0, "帖子" to 1).forEach { (label, id) ->
+                        Text(label, fontSize = 14.sp,
+                            color = if (tab == id) PhoneAccent else PhoneMuted,
+                            fontWeight = if (tab == id) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier.clickable { tab = id }.padding(vertical = 4.dp))
+                    }
+                }
+            }
+            if (tab == 0) {
+                // ---- 信息 tab ----
+                item {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        val battle = p.careers.filter { it.type !in listOf("能工巧匠", "大地使者") }.sortedByDescending { it.level }
+                        val craft = p.careers.filter { it.type in listOf("能工巧匠", "大地使者") }.sortedByDescending { it.level }
+                        if (battle.isNotEmpty()) {
+                            Text("战斗精英 & 魔法导师", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(5.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                battle.chunked(4).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        row.forEach { c ->
+                                            Text("${c.name} ${c.level}", fontSize = 11.sp, color = PhoneText,
+                                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFF0EDE6)).padding(horizontal = 8.dp, vertical = 4.dp))
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (craft.isNotEmpty()) {
+                            Text("能工巧匠 & 大地使者", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(5.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                craft.chunked(4).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        row.forEach { c ->
+                                            Text("${c.name} ${c.level}", fontSize = 11.sp, color = PhoneText,
+                                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFF0EDE6)).padding(horizontal = 8.dp, vertical = 4.dp))
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        val genderText = when (p.gender) { 0 -> "男"; 1 -> "女"; else -> "" }
+                        listOf(
+                            "种族性别" to listOfNotNull(szjRaceName(p.race).ifBlank { null }, szjTribeName(p.tribe).ifBlank { null }, genderText.takeIf { it.isNotBlank() }).joinToString(""),
+                            "部队名称" to listOfNotNull(p.guildName.takeIf { it.isNotBlank() }, p.guildTag.takeIf { it.isNotBlank() }?.let { "<$it>" }).joinToString(" "),
+                            "创作时间" to p.createTime,
+                            "最近登录时间" to p.lastLoginTime,
+                            "累计游戏时长" to p.playTime,
+                            "房屋信息" to p.houseInfo,
+                            "幻理模板使用次数" to if (p.washingNum > 0) p.washingNum.toString() else "",
+                            "伪零挑战击败数" to if (p.killTimes > 0) p.killTimes.toString() else "",
+                            "水晶沙竞技场段位" to p.crystalRank,
+                            "钓鱼抛竿次数" to if (p.fishTimes > 0) p.fishTimes.toString() else "",
+                            "称号宝物击败数" to if (p.treasureTimes > 0) p.treasureTimes.toString() else "",
+                            "无人岛开拓等级" to if (p.newrank > 0) p.newrank.toString() else "",
+                        ).forEach { (label, value) ->
+                            if (value.isNotBlank()) {
+                                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                    Text(label + "：", color = PhoneMuted, fontSize = 12.sp)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(value, color = PhoneText, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // ---- 帖子 tab ----
+                if (posts.isEmpty() && !postLoading) {
+                    item { Text("暂无帖子", color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
+                } else {
+                    items(posts, key = { it.postsId }) { post ->
+                        SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) })
+                    }
+                    if (!postEnded) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
+                            }
+                            LaunchedEffect(posts.size) {
+                                if (posts.isNotEmpty()) {
+                                    postLoading = true
+                                    val next = ShizhijiaApi.getUserPosts(context, uuid, postPage)
+                                    posts = posts + next.rows
+                                    if (next.rows.isEmpty()) postEnded = true else postPage += 1
+                                    postLoading = false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 幻化详情：作者条 + 图片轮播 + 标题/种族性别/日期 + 双列装备表（仿官方布局）。 */
+@Composable
+private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
+    val context = LocalContext.current
+    var g by remember { mutableStateOf<ShizhijiaGlamourDetail?>(null) }
+    LaunchedEffect(glamourId) { g = ShizhijiaApi.getGlamourDetail(context, glamourId) }
+
+    val slotLabels = mapOf(
+        "MAIN_HAND" to "主手", "OFF_HAND" to "副手", "HEAD" to "头部", "EARS" to "耳坠",
+        "BODY" to "上衣", "NECK" to "项链", "GLOVES" to "手部", "WRISTS" to "手镯",
+        "LEGS" to "腿部", "FINGER_LEFT" to "戒指", "FEET" to "脚部", "FINGER_RIGHT" to "戒指",
+    )
+    val leftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET")
+    val rightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT")
+
+    ScreenFrame {
+        ScreenHeader("幻化详情", state, onBack = pop)
+        val d = g
+        if (d == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
+            return@ScreenFrame
+        }
+        LazyColumn(Modifier.fillMaxSize()) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable { if (d.authorUuid.isNotBlank()) nav(SzjRoute.UserProfile(d.authorUuid)) }, verticalAlignment = Alignment.CenterVertically) {
+                    SzjAvatar(d.authorName, d.authorAvatar, d.authorUuid, 32)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(d.authorName, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        val line = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" · ")
+                        if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 11.sp)
+                    }
+                }
+            }
+            item {
+                if (d.images.isNotEmpty()) {
+                    LazyRow(Modifier.fillMaxWidth()) {
+                        items(d.images.size) { i ->
+                            ShizhijiaRemoteImage(
+                                url = d.images[i],
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                                fitByAspect = true,
+                                onClick = { url -> SzjViewer.url = url },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text(d.title, color = PhoneText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val genderText = when (d.gender) { 1 -> "男性"; 2 -> "女性"; else -> "" }
+                        val rg = (d.races + listOfNotNull(genderText.takeIf { it.isNotBlank() })).joinToString(" / ")
+                        if (rg.isNotBlank()) Text(rg, color = PhoneAccent, fontSize = 13.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(d.createdAt.take(10), color = PhoneMuted, fontSize = 12.sp)
+                    }
+                    if (d.desc.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(d.desc, color = PhoneText, fontSize = 13.sp)
+                    }
+                    if (d.jobs.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("适用职业: ${d.jobs.joinToString("、")}", color = PhoneMuted, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+            val rowsCount = maxOf(leftSlots.size, rightSlots.size)
+            items(rowsCount) { row ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf(leftSlots.getOrNull(row), rightSlots.getOrNull(row)).forEach { slot ->
+                        Box(Modifier.weight(1f)) {
+                            if (slot == null) {
+                                Spacer(Modifier.height(1.dp))
+                            } else {
+                                val label = slotLabels[slot] ?: slot
+                                val equip = d.equips.firstOrNull { it.slot == slot }
+                                val extraName = when (slot) { "GLASSES" -> d.glassesName; "ORNAMENT" -> d.ornamentName; else -> "" }
+                                val extraIcon = when (slot) { "GLASSES" -> d.glassesIconUrl; "ORNAMENT" -> d.ornamentIconUrl; else -> "" }
+                                Column {
+                                    Text(label, color = PhoneMuted, fontSize = 12.sp)
+                                    Spacer(Modifier.height(4.dp))
+                                    if (equip == null && extraName.isBlank()) {
+                                        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFFEDEBF3)))
+                                    } else {
+                                        val eName = equip?.name ?: extraName
+                                        val eIcon = equip?.iconUrl ?: extraIcon
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (eIcon.isNotBlank()) {
+                                                ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)))
+                                                Spacer(Modifier.width(8.dp))
+                                            }
+                                            Column {
+                                                Text(eName, color = PhoneText, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(2.dp))
+                                                val dyes = equip?.dyes ?: emptyList()
+                                                if (dyes.isNotEmpty()) {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                        dyes.forEach { dy ->
+                                                            Text(dy, color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
+                                                        }
+                                                    }
+                                                } else Text("无染色", color = PhoneMuted, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.padding(horizontal = 16.dp)) {
+                    Text("♥ ${d.likes}", color = PhoneMuted, fontSize = 13.sp)
+                    Spacer(Modifier.width(14.dp))
+                    Text("★ ${d.favorites}", color = PhoneMuted, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+    }
+}
+
+
+/** 底栏「幻化」：关注/全部 + 推荐/最新 + 双列卡片流（仿官方布局）。 */
+@Composable
+private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var tab by remember { mutableStateOf(0) }        // 0=全部 1=关注
+    var sort by remember { mutableStateOf(0) }       // 0=推荐 1=最新
+    var items by remember { mutableStateOf(listOf<ShizhijiaGlamourCard>()) }
+    var loading by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(1) }
+    var ended by remember { mutableStateOf(false) }
+
+    fun load(reset: Boolean) {
+        if (loading) return
+        if (reset) { page = 1; ended = false; items = emptyList() }
+        loading = true
+        scope.launch {
+            val next = if (tab == 1) ShizhijiaApi.getFollowGlamours(context, page)
+            else ShizhijiaApi.getGlamours(context, page, order = if (sort == 1) "time" else "")
+            items = items + next
+            if (next.isEmpty()) ended = true else page += 1
+            loading = false
+        }
+    }
+    LaunchedEffect(tab, sort) { load(reset = true) }
+
+    Column(Modifier.fillMaxSize()) {
+        // 关注 / 全部 + 筛选占位
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
+                Text("关注", fontSize = 15.sp,
+                    color = if (tab == 1) PhoneAccent else PhoneMuted,
+                    fontWeight = if (tab == 1) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier.clickable { tab = 1 }.padding(horizontal = 12.dp, vertical = 6.dp))
+                Spacer(Modifier.width(18.dp))
+                Text("全部", fontSize = 15.sp,
+                    color = if (tab == 0) PhoneAccent else PhoneMuted,
+                    fontWeight = if (tab == 0) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier.clickable { tab = 0 }.padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+            Text("筛选", fontSize = 13.sp, color = PhoneMuted,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                    android.widget.Toast.makeText(context, "筛选开发中", android.widget.Toast.LENGTH_SHORT).show()
+                }.padding(horizontal = 8.dp, vertical = 6.dp))
+        }
+        // 推荐 / 最新 pills (仅全部 tab 有意义)
+        if (tab == 0) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+                Row(Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFFEDEBF3))) {
+                    listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
+                        Text(label, fontSize = 12.sp,
+                            color = if (sort == id) PhoneOnAccentContainer else PhoneMuted,
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                                .background(if (sort == id) PhoneAccentContainer else Color.Transparent)
+                                .clickable { if (sort != id) { sort = id } }
+                                .padding(horizontal = 14.dp, vertical = 5.dp))
+                    }
+                }
+            }
+        }
+        if (tab == 1 && !loggedIn) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = PhoneMuted) }
+            return@Column
+        }
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(items.size) { i ->
+                val card = items[i]
+                Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
+                    ShizhijiaRemoteImage(
+                        url = card.mainImage,
+                        modifier = Modifier.fillMaxWidth().height(170.dp),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Column(Modifier.padding(8.dp)) {
+                        Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            if (card.groupName.isNotBlank()) {
+                                Spacer(Modifier.width(3.dp))
+                                Text("📍" + card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            Text("★ ${card.favorites}", color = PhoneMuted, fontSize = 11.sp)
+                            Spacer(Modifier.width(10.dp))
+                            Text("👍 ${card.likes}", color = PhoneMuted, fontSize = 11.sp)
+                        }
+                    }
+                }
+                // Load more when reaching the end of the list.
+                if (i == items.size - 1 && !ended) {
+                    LaunchedEffect(items.size, tab, sort) { load(reset = false) }
+                }
+            }
+            if (loading) {
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                    Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(22.dp))
+                    }
+                }
+            } else if (items.isEmpty()) {
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                    Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) { Text("暂无内容", color = PhoneMuted) }
+                }
+            }
         }
     }
 }
