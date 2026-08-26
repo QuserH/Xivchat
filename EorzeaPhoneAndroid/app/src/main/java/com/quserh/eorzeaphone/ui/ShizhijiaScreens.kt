@@ -80,6 +80,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
+import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import kotlinx.coroutines.launch
 
@@ -123,7 +124,7 @@ private fun SzjAvatar(name: String, avatar: String, uuid: String, sizeDp: Int) {
             url = ShizhijiaApi.resolveAvatar(context, uuid)
         }
     }
-    Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(Color(0xFFF0EDE6)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
         if (url.isNotBlank()) {
             ShizhijiaRemoteImage(
                 url = url,
@@ -211,7 +212,7 @@ private const val SUB_GUIDE = 2
 
 /** Tinted backdrop for the comment area, distinct from the article body so the
  *  two regions are obvious while scrolling. */
-private val CommentAreaBg = Color(0xFFEDEBF3)
+private val CommentAreaBg: Color @Composable get() = PhoneSurfaceRaised
 
 @Composable
 private fun ShizhijiaHomeScreen(state: PhoneState, nav: (SzjRoute) -> Unit, postsState: SzjPostsState) {
@@ -288,7 +289,7 @@ private fun ShizhijiaHomeScreen(state: PhoneState, nav: (SzjRoute) -> Unit, post
 @Composable
 private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, loginUser: ShizhijiaLoginUser?, onSignIn: () -> Unit, signedToday: Boolean) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFF0EDE6)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
             val ava = loginUser?.avatar
             // Default portraits arrive as inline data:image URIs; decode them
             // here so we can fall back to the first character on any failure.
@@ -314,7 +315,7 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
             color = if (signedToday) PhoneMuted else PhoneOnAccentContainer,
             fontSize = 13.sp,
             modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                .background(if (signedToday) Color(0xFFE2E0E8) else PhoneAccentContainer)
+                .background(if (signedToday) PhoneSurfaceRaised else PhoneAccentContainer)
                 .clickable {
                     if (signedToday) nav(SzjRoute.SignCalendar) else onSignIn()
                 }
@@ -604,7 +605,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
     var loading by remember { mutableStateOf(true) }
 
     // Comments are rendered inline below the article body on the same screen.
-    var commentOrder by remember { mutableStateOf("like") } // "like" hottest / "new" newest
+    // Server order values: default (post time asc) / hot (likes) / time (newest).
+    var commentOrder by remember { mutableStateOf("default") }
+    var onlyAuthor by remember { mutableStateOf(false) } // 只看楼主
     var comments by remember { mutableStateOf(listOf<ShizhijiaComment>()) }
     var commentPage by remember { mutableStateOf(1) }
     var commentPageTime by remember { mutableStateOf("") }
@@ -689,9 +692,17 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 Row(Modifier.fillMaxWidth().background(CommentAreaBg).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("全部评论", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Row(Modifier.clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) {
-                        SzjSmallOption("最热", commentOrder == "like") { commentOrder = "like" }
-                        SzjSmallOption("最新", commentOrder == "new") { commentOrder = "new" }
+                        SzjSmallOption("默认", commentOrder == "default") { commentOrder = "default" }
+                        SzjSmallOption("热门", commentOrder == "hot") { commentOrder = "hot" }
+                        SzjSmallOption("最新", commentOrder == "time") { commentOrder = "time" }
                     }
+                    Spacer(Modifier.width(8.dp))
+                    // 只看楼主: client-side filter on the loaded comment list.
+                    Text("只看楼主", color = if (onlyAuthor) PhoneOnAccentContainer else PhoneMuted, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(if (onlyAuthor) PhoneAccentContainer else PhoneSurface)
+                            .clickable { onlyAuthor = !onlyAuthor }
+                            .padding(horizontal = 10.dp, vertical = 5.dp))
                 }
             }
             if (commentLoading && comments.isEmpty()) {
@@ -701,7 +712,12 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
             } else if (comments.isEmpty()) {
                 item(key = "comments-empty") { Text("暂无评论", color = PhoneMuted, modifier = Modifier.fillMaxWidth().background(CommentAreaBg).padding(24.dp), textAlign = TextAlign.Center) }
             } else {
-                items(comments, key = { it.id }) { c -> SzjCommentRow(c) }
+                val shown = if (onlyAuthor) comments.filter { it.isPostsAuthor } else comments
+                if (shown.isEmpty() && onlyAuthor) {
+                    item(key = "only-author-empty") { Text("楼主还没有在评论区发言", color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) }
+                } else {
+                    items(shown, key = { it.id }) { c -> SzjCommentRow(c) }
+                }
                 item(key = "comments-footer") {
                     if (commentLoading) Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(12.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
@@ -880,7 +896,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                                     Text("$typeLabel2·$q", fontSize = 12.sp, color = PhoneText,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(9.dp))
-                                            .background(Color(0xFFF0EDE6))
+                                            .background(PhoneSurfaceRaised)
                                             .pointerInput(q, t) {
                                                 detectTapGestures(
                                                     onTap = { query = q; searchType = t; doSearch() },
@@ -1195,7 +1211,7 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(if (signed) PhoneAccentContainer else Color(0xFFF0EDE6))
+                                        .background(if (signed) PhoneAccentContainer else PhoneSurfaceRaised)
                                         .wrapContentSize(Alignment.Center),
                                 )
                             }
@@ -1221,9 +1237,9 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                     }
                     when {
                         r.isGet == 1 -> Text("已领取", fontSize = 12.sp, color = PhoneMuted,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFE2E0E8)).padding(horizontal = 12.dp, vertical = 5.dp))
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp, vertical = 5.dp))
                         !claimable -> Text("未满足", fontSize = 12.sp, color = PhoneMuted,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFE2E0E8)).padding(horizontal = 12.dp, vertical = 5.dp))
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp, vertical = 5.dp))
                         else -> Text(if (claimingId == r.id) "…" else "领取", fontSize = 12.sp,
                             color = PhoneOnAccentContainer, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneAccentContainer)
@@ -1272,7 +1288,9 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
     var postPage by remember { mutableStateOf(1) }
     var postEnded by remember { mutableStateOf(false) }
 
+    var jobIcons by remember { mutableStateOf(mapOf<String, String>()) }
     LaunchedEffect(uuid) {
+        jobIcons = ShizhijiaApi.jobIconByName(context)
         profile = ShizhijiaApi.getUserProfile(context, uuid)
         val p = profile
         avatarUrl = when {
@@ -1349,12 +1367,18 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         if (battle.isNotEmpty()) {
                             Text("战斗精英 & 魔法导师", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(5.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                battle.chunked(4).forEach { row ->
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                battle.chunked(5).forEach { row ->
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         row.forEach { c ->
-                                            Text("${c.name} ${c.level}", fontSize = 11.sp, color = PhoneText,
-                                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFF0EDE6)).padding(horizontal = 8.dp, vertical = 4.dp))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                val icon = jobIcons[c.name].orEmpty()
+                                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                                                    if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
+                                                    else Text(c.name.take(1), color = PhoneMuted, fontSize = 12.sp)
+                                                }
+                                                Text("${c.name} ${c.level}", fontSize = 10.sp, color = PhoneText, maxLines = 1)
+                                            }
                                         }
                                     }
                                 }
@@ -1364,12 +1388,18 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         if (craft.isNotEmpty()) {
                             Text("能工巧匠 & 大地使者", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(5.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                craft.chunked(4).forEach { row ->
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                craft.chunked(5).forEach { row ->
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         row.forEach { c ->
-                                            Text("${c.name} ${c.level}", fontSize = 11.sp, color = PhoneText,
-                                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFF0EDE6)).padding(horizontal = 8.dp, vertical = 4.dp))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                val icon = jobIcons[c.name].orEmpty()
+                                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                                                    if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
+                                                    else Text(c.name.take(1), color = PhoneMuted, fontSize = 12.sp)
+                                                }
+                                                Text("${c.name} ${c.level}", fontSize = 10.sp, color = PhoneText, maxLines = 1)
+                                            }
                                         }
                                     }
                                 }
@@ -1477,8 +1507,8 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     ) { page ->
                         ShizhijiaRemoteImage(
                             url = d.images[page],
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                            contentScale = ContentScale.Fit,
                             showPlaceholder = true,
                             onClick = { url -> SzjViewer.url = url },
                         )
@@ -1530,7 +1560,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                     Text(label, color = PhoneMuted, fontSize = 12.sp)
                                     Spacer(Modifier.height(4.dp))
                                     if (equip == null && extraName.isBlank()) {
-                                        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFFEDEBF3)))
+                                        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurfaceRaised))
                                     } else {
                                         val eName = equip?.name ?: extraName
                                         val eIcon = equip?.iconUrl ?: extraIcon
@@ -1621,7 +1651,7 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
         // 推荐 / 最新 pills (仅全部 tab 有意义)
         if (tab == 0) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
-                Row(Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFFEDEBF3))) {
+                Row(Modifier.clip(RoundedCornerShape(14.dp)).background(PhoneSurfaceRaised)) {
                     listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
                         Text(label, fontSize = 12.sp,
                             color = if (sort == id) PhoneOnAccentContainer else PhoneMuted,
@@ -1637,56 +1667,44 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = PhoneMuted) }
             return@Column
         }
-        // Two-column waterfall: full-width-of-column images keep their own
-        // aspect ratio (no cropping), alternating items between the columns.
-        val leftState = androidx.compose.foundation.lazy.rememberLazyListState()
-        val rightState = androidx.compose.foundation.lazy.rememberLazyListState()
-        val leftItems = items.filterIndexed { i, _ -> i % 2 == 0 }
-        val rightItems = items.filterIndexed { i, _ -> i % 2 == 1 }
+        // True staggered waterfall: single scroll container, each card keeps
+        // its own height (image capped, top-cropped like the official app).
+        val gridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState()
         val nearEnd by remember { derivedStateOf {
-            val l = leftState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val r = rightState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            items.isNotEmpty() && maxOf(l, r) >= maxOf(leftItems.size, rightItems.size) - 1
+            val info = gridState.layoutInfo.visibleItemsInfo
+            val last = info.lastOrNull()?.index ?: 0
+            items.isNotEmpty() && last >= items.size - 3
         } }
         LaunchedEffect(nearEnd) { if (nearEnd && !ended && !loading) load(reset = false) }
 
-        if (items.isEmpty() && !loading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无内容", color = PhoneMuted) }
-        } else {
-            Row(Modifier.fillMaxSize()) {
-                fun columnContent() {}
-                androidx.compose.foundation.lazy.LazyColumn(
-                    state = leftState,
-                    modifier = Modifier.weight(1f).fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(6.dp),
-                ) {
-                    items(leftItems, key = { it.id }) { card -> SzjGlamourCardItem(card, nav) }
-                }
-                androidx.compose.foundation.lazy.LazyColumn(
-                    state = rightState,
-                    modifier = Modifier.weight(1f).fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(6.dp),
-                ) {
-                    items(rightItems, key = { it.id }) { card -> SzjGlamourCardItem(card, nav) }
-                }
+        androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
+            columns = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2),
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalItemSpacing = 10.dp,
+        ) {
+            items(items.size, key = { items[it].id }) { idx ->
+                SzjGlamourCardItem(items[idx], nav)
             }
-            if (loading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
-                }
+        }
+        if (loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
             }
         }
     }
 }
 
-/** 幻化瀑布流卡片：完整比例封面 + 标题 + 作者/服务器 + 收藏/点赞。 */
+/** 幻化瀑布流卡片：封面限高裁切 + 标题 + 作者/服务器 + 收藏/点赞。 */
 @Composable
 private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Unit) {
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
         ShizhijiaRemoteImage(
             url = card.mainImage,
-            modifier = Modifier.fillMaxWidth(),
-            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp),
+            contentScale = ContentScale.Crop,
         )
         Column(Modifier.padding(8.dp)) {
             Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

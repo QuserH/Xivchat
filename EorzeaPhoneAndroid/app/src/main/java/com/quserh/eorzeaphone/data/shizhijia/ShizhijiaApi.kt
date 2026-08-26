@@ -251,6 +251,27 @@ object ShizhijiaApi {
     // ---- Login-gated feed endpoints ---------------------------------------
 
     /** Another player's full profile (userInfo/getUserInfo?uuid=). */
+    private val jobIconCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * Career name -> job icon url, from the public recruit/getJobConfigList.
+     * Cached in-memory; used to render real job icons on the profile page.
+     */
+    suspend fun jobIconByName(context: Context): Map<String, String> {
+        if (jobIconCache.isNotEmpty()) return jobIconCache
+        val d = data(context, HOME_BASE, "recruit/getJobConfigList") ?: return jobIconCache
+        val arr = d.optJSONArray("rows") ?: d.optJSONArray("list") ?: d.optJSONArray("data")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val name = o.optString("value")
+                val pic = cleanStr(o.optString("job_pic_url"))
+                if (name.isNotBlank() && pic.isNotBlank()) jobIconCache[name] = pic
+            }
+        }
+        return jobIconCache
+    }
+
     suspend fun getUserProfile(context: Context, uuid: String): ShizhijiaUserProfile? {
         if (uuid.isBlank()) return null
         val d = data(context, HOME_BASE, "userInfo/getUserInfo", mapOf("uuid" to uuid)) ?: return null
