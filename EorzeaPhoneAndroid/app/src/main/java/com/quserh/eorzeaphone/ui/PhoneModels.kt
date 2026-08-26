@@ -1884,14 +1884,16 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         return !w.equals(myWorld, true)
     }
 
-    fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
+fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
         var n = (msg.senderName ?: msg.sender).cleanPlayerName()
         val w = msg.senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
         if (n.isBlank()) return "对方"
         if (w != null && n.endsWith(w)) n = n.removeSuffix(w).trim()
         val myWorld = profile?.homeWorld?.takeIf { it.isNotBlank() } ?: profile?.currentWorld.orEmpty()
-        if (w.isNullOrBlank() || w.equals(myWorld, true)) return n
-        val marker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" } ?: '\uE05D'
+        // 团队频道与新人频道一致：始终显示 名字❀服务器，不因同服而省略小花
+        val forceWorld = msg.category == com.quserh.eorzeaphone.data.ChatCategory.Team
+        if ((w.isNullOrBlank() || w.equals(myWorld, true)) && !forceWorld) return n
+        val marker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" } ?: '❀'
         return "$n$marker$w"
     }
 

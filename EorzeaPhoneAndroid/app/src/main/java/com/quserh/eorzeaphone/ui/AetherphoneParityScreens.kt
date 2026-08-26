@@ -829,10 +829,22 @@ private fun decodeChatEntities(value: String): String = value
 private fun cleanChatText(raw: String, author: String): String {
     var t = decodeChatEntities(raw.trim())
     t = t.replaceFirst(Regex("^\\[[^\\]]*\\]"), "").trim()
-    val lt = t.indexOf('<')
-    val gt = t.indexOf('>', lt.coerceAtLeast(0))
-    if (gt >= 0) {
-        t = t.substring(gt + 1).trim()
+    // 只删开头 "<名字> " 形式的名字前缀；<se.N> 音效标签是内容本身，删了会把前面的文字一起截掉
+    if (t.startsWith('<')) {
+        val gt = t.indexOf('>')
+        if (gt >= 0) {
+            val after = t.substring(gt + 1)
+            if (after.startsWith(" ") && !t.substring(0, gt).trimStart().startsWith("se.", ignoreCase = true)) {
+                t = after.trim()
+            } else {
+                val colon = t.indexOfAny(charArrayOf('：', ':'))
+                if (colon in 1..24) {
+                    t = t.substring(colon + 1).trim()
+                } else if (author.isNotEmpty() && t.startsWith(author)) {
+                    t = t.removePrefix(author).trimStart('：', ':', ' ', '>', '<').trim()
+                }
+            }
+        }
     } else {
         val colon = t.indexOfAny(charArrayOf('：', ':'))
         if (colon in 1..24) {
