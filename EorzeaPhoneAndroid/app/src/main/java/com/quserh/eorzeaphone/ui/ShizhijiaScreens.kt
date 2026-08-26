@@ -1,4 +1,4 @@
-package com.quserh.eorzeaphone.ui
+﻿package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -206,14 +208,36 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
     val context = LocalContext.current
     var bmp by remember(url) { mutableStateOf(if (url.startsWith("data:image")) decodeDataUri(url) else ShizhijiaImageLoader.peek(url)) }
     LaunchedEffect(url) { if (!url.startsWith("data:image")) bmp = ShizhijiaImageLoader.load(context, url) }
-    Box(Modifier.fillMaxSize().background(Color(0xE6000000))) {
-        if (bmp != null) {
-            Image(bmp!!.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+    // Pinch-zoom + pan. All gestures are consumed here so the list underneath
+    // never scrolls while the viewer is open.
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    Box(Modifier.fillMaxSize().background(Color(0xE6000000))
+        .pointerInput(Unit) {
+            detectTransformGestures { _, pan, zoom, _ ->
+                scale = (scale * zoom).coerceIn(1f, 5f)
+                offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+        .pointerInput(Unit) {
+            detectTapGestures(
+                onDoubleTap = { scale = if (scale > 1f) 1f else 2.5f },
+            )
+        }
+    ) {
+        val bmpV = bmp
+        if (bmpV != null) {
+            Image(bmpV.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+                    .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.White, modifier = Modifier.size(34.dp)) }
         }
-        Text("✕", color = Color.White, fontSize = 26.sp, modifier = Modifier.align(Alignment.TopStart)
-            .clip(RoundedCornerShape(10.dp)).clickable(onClick = onClose).padding(14.dp))
+        // Close button at the bottom-right corner.
+        Text("✕", color = Color.White, fontSize = 22.sp, modifier = Modifier.align(Alignment.BottomEnd)
+            .padding(18.dp)
+            .clip(CircleShape).background(Color(0x66000000))
+            .clickable(onClick = onClose).padding(horizontal = 14.dp, vertical = 8.dp))
     }
 }
 
@@ -396,11 +420,11 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
 private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier
-            .padding(horizontal = 18.dp, vertical = 10.dp).fillMaxWidth()
-            .shadow(6.dp, RoundedCornerShape(26.dp))
-            .clip(RoundedCornerShape(26.dp))
+            .padding(start = 18.dp, end = 18.dp, bottom = 10.dp).fillMaxWidth()
+            .shadow(6.dp, RoundedCornerShape(30.dp))
+            .clip(RoundedCornerShape(30.dp))
             .background(PhoneSurface)
-            .padding(vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -413,16 +437,16 @@ private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modif
 
 @Composable
 private fun SzjBottomTab(label: String, selected: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)
-            .padding(horizontal = 28.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    // Selected tab is wrapped in a filled circle, like a floating action chip.
+    Box(
+        Modifier.size(56.dp)
+            .clip(CircleShape)
+            .background(if (selected) PhoneAccentContainer else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = if (selected) PhoneAccent else PhoneMuted, fontSize = 14.sp,
+        Text(label, color = if (selected) PhoneOnAccentContainer else PhoneMuted, fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-        Spacer(Modifier.height(3.dp))
-        Box(Modifier.width(20.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
-            .background(if (selected) PhoneAccent else Color.Transparent))
     }
 }
 
@@ -638,6 +662,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
     var commentPage by remember { mutableStateOf(1) }
     var commentPageTime by remember { mutableStateOf("") }
     var commentLoading by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(postId) {
         loading = true
@@ -651,8 +676,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         val result = ShizhijiaApi.getPostComments(context, postId, commentOrder, onlyLandlord = onlyAuthor)
         comments = result.rows; commentPageTime = result.pageTime
         commentLoading = false
+        // Keep the jump predictable: land on the comments header, not somewhere random.
+        runCatching { listState.scrollToItem(2) }
     }
-    val listState = rememberLazyListState()
     // Infinite scroll for comments.
     val nearEnd by remember { derivedStateOf {
         val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
