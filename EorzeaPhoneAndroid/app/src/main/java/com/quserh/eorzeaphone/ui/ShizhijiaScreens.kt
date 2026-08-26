@@ -1,4 +1,4 @@
-﻿package com.quserh.eorzeaphone.ui
+package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -1762,7 +1762,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                 } else Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text("⊘", color = PhoneMuted, fontSize = 11.sp)
                                                     Spacer(Modifier.width(3.dp))
-                                                    Text("无染色", color = PhoneMuted, fontSize = 10.sp)
+                                                    Row(verticalAlignment = Alignment.CenterVertically) { Text("⊘", color = PhoneMuted, fontSize = 11.sp); Spacer(Modifier.width(3.dp)); Text("无染色", color = PhoneMuted, fontSize = 10.sp) }
                                                 }
                                             }
                                         }
@@ -1914,7 +1914,7 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
         ShizhijiaRemoteImage(
             url = card.mainImage,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 170.dp),
             contentScale = ContentScale.FillWidth,
         )
         Column(Modifier.padding(8.dp)) {
