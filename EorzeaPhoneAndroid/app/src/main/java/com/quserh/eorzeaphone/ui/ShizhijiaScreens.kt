@@ -1720,6 +1720,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
         "MAIN_HAND" to "主手", "OFF_HAND" to "副手", "HEAD" to "头部", "EARS" to "耳坠",
         "BODY" to "上衣", "NECK" to "项链", "GLOVES" to "手部", "WRISTS" to "手镯",
         "LEGS" to "腿部", "FINGER_LEFT" to "戒指", "FEET" to "脚部", "FINGER_RIGHT" to "戒指",
+        "GLASSES" to "面部配饰", "ORNAMENT" to "时尚配饰",
     )
     val leftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET", "GLASSES")
     val rightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT", "ORNAMENT")
@@ -1822,9 +1823,10 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                         }
                                                         Box(
                                                             Modifier.align(Alignment.TopEnd)
-                                                                .size(14.dp)
+                                                                .offset(x = 4.dp, y = (-4).dp)
+                                                                .size(16.dp)
                                                                 .clip(CircleShape)
-                                                                .background(Color(0xCC000000)),
+                                                                .background(Color(0xFFF5B400)),
                                                             contentAlignment = Alignment.Center,
                                                         ) {
                                                             androidx.compose.foundation.Canvas(Modifier.size(10.dp)) {
@@ -1852,7 +1854,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                                 val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: PhoneSurfaceRaised
                                                                 Box(Modifier.size(10.dp).clip(CircleShape).background(dyeColor).border(0.5.dp, PhoneMuted, CircleShape))
                                                                 Spacer(Modifier.width(3.dp))
-                                                                Text(dy.name, color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
+                                                                Text(dy.name.removeSuffix("染剂"), color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
                                                             } else {
                                                                 Text("⊘", color = PhoneMuted, fontSize = 11.sp)
                                                                 Spacer(Modifier.width(2.dp))
@@ -2095,7 +2097,7 @@ private fun SzjGlamourImage(url: String) {
         }
     }
     Box(
-        Modifier.fillMaxWidth().then(if (ratio > 0f) Modifier.aspectRatio(ratio) else Modifier.height(240.dp))
+        Modifier.fillMaxWidth().then(if (ratio > 0f) Modifier.aspectRatio(ratio) else Modifier.height(260.dp))
             .background(PhoneSurfaceRaised),
         contentAlignment = Alignment.Center,
     ) {
