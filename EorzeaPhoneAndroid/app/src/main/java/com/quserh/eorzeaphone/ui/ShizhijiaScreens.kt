@@ -2053,15 +2053,50 @@ private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, se
         }
     }
 }
+/**
+ * 幻化封面：先按（缓存的）真实宽高比占位，图片再慢慢加载填充。
+ * 这样瀑布流的高度一开始就是正确的，快速滑动也不会因为图片加载晚而重排跳动。
+ */
+@Composable
+private fun SzjGlamourImage(url: String) {
+    val context = LocalContext.current
+    // 已知尺寸（磁盘缓存/内存）→ 精确占位；未知 → 先用 3:4 兜底
+    val cached = remember(url) { ShizhijiaImageLoader.peekSize(context, url) }
+    val defaultAspect = 3f / 4f
+    var bmp by remember(url) { mutableStateOf<android.graphics.Bitmap?>(ShizhijiaImageLoader.peek(url)) }
+    var loaded by remember(url) { mutableStateOf(bmp != null) }
+    LaunchedEffect(url) {
+        if (!loaded) {
+            bmp = ShizhijiaImageLoader.load(context, url)
+            loaded = true
+        }
+    }
+    val ratio = remember(url, cached, bmp) {
+        when {
+            bmp != null -> bmp!!.width.toFloat() / bmp!!.height.toFloat()
+            cached != null -> cached.first.toFloat() / cached.second.toFloat()
+            else -> defaultAspect
+        }
+    }
+    Box(
+        Modifier.fillMaxWidth().aspectRatio(ratio)
+            .background(PhoneSurfaceRaised),
+        contentAlignment = Alignment.Center,
+    ) {
+        val b = bmp
+        if (b != null) {
+            Image(b.asImageBitmap(), contentDescription = null, contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxSize())
+        } else {
+            CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(22.dp))
+        }
+    }
+}
+
 /** 幻化瀑布流卡片：封面限高裁切 + 标题 + 作者/服务器 + 收藏/点赞。 */
 @Composable
 private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Unit) {
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
-        ShizhijiaRemoteImage(
-            url = card.mainImage,
-            modifier = Modifier.fillMaxWidth(),
-            contentScale = ContentScale.FillWidth,
-        )
+        SzjGlamourImage(url = card.mainImage)
         Column(Modifier.padding(8.dp)) {
             Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))

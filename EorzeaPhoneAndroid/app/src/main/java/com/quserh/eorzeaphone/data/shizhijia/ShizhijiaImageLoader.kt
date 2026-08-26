@@ -32,12 +32,37 @@ object ShizhijiaImageLoader {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
     }
 
+    // url -> (width, height) so layouts can reserve the exact aspect ratio
+    // before the full bitmap decodes (stable waterfall, no reflow while scrolling).
+    private val sizeCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Int>>()
+
     private fun diskDir(app: Context): File = File(app.cacheDir, DISK_DIR).apply { mkdirs() }
 
     private fun cacheFileName(url: String): String {
         val digest = java.security.MessageDigest.getInstance("SHA-1")
             .digest(url.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) } + ".jpg"
+    }
+
+    /**
+     * Synchronous bounds-only size read from the disk cache (fast, no full
+     * decode). Falls back to the in-memory size cache. Returns null when the
+     * image isn't downloaded yet.
+     */
+    fun peekSize(context: Context, url: String): Pair<Int, Int>? {
+        if (url.isBlank()) return null
+        sizeCache[url]?.let { return it }
+        val file = File(diskDir(context), cacheFileName(url))
+        if (!file.exists() || file.length() == 0L) return null
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, opts)
+        val s = if (opts.outWidth > 0 && opts.outHeight > 0) (opts.outWidth to opts.outHeight) else null
+        if (s != null) sizeCache[url] = s
+        return s
+    }
+
+    private fun rememberSize(url: String, bmp: Bitmap) {
+        sizeCache[url] = bmp.width to bmp.height
     }
 
     /** Synchronous memory-cache peek for UI thread reads; returns null on miss. */
@@ -49,17 +74,18 @@ object ShizhijiaImageLoader {
     suspend fun load(context: Context, url: String): Bitmap? {
         if (url.isBlank()) return null
         return withContext(Dispatchers.IO) {
-            memCache.get(url)?.let { return@withContext it }
+            memCache.get(url)?.let { rememberSize(url, it); return@withContext it }
 
             val file = File(diskDir(context), cacheFileName(url))
             if (file.exists() && file.length() > 0) {
                 BitmapFactory.decodeFile(file.absolutePath)?.let {
-                    memCache.put(url, it)
+                    memCache.put(url, it); rememberSize(url, it)
                     return@withContext it
                 }
             }
 
             val bmp = download(url) ?: return@withContext null
+            rememberSize(url, bmp)
             runCatching {
                 file.parentFile?.mkdirs()
                 // Preserve alpha: JPEG has no transparency, so transparent PNGs
