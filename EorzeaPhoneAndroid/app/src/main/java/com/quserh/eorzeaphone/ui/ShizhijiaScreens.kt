@@ -323,7 +323,11 @@ private fun ShizhijiaHomeScreen(
     ScreenFrame {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
-                ShizhijiaTopBar(state, nav, loggedIn, loginUser, onSignIn, signedToday)
+                // Top bar (avatar / sign-in / search) belongs to the community
+                // tab only; other tabs have their own headers.
+                if (mainTab == MAIN_COMMUNITY) {
+                    ShizhijiaTopBar(state, nav, loggedIn, loginUser, onSignIn, signedToday)
+                }
                 when (mainTab) {
                     MAIN_COMMUNITY -> {
                         SzjSubTabRow(subTab) { subTab = it }
@@ -423,6 +427,7 @@ LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
             Text("未登录", color = PhoneMuted)
             Spacer(Modifier.height(14.dp))
             Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("登录") }
+        }
         Spacer(Modifier.height(26.dp))
         Text("外观设置", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
@@ -436,7 +441,6 @@ LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
             valueRange = 48f..96f,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp),
         )
-        }
     }
 }
 
