@@ -1,4 +1,4 @@
-﻿package com.quserh.eorzeaphone.ui
+package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -184,7 +184,7 @@ fun ShizhijiaScreen(state: PhoneState) {
     Box(Modifier.fillMaxSize()) {
         when (route) {
             SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab)
-            is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop)
+            is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop, nav)
             is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop)
             SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav)
             SzjRoute.Login -> ShizhijiaLoginScreen(state, pop)
@@ -543,7 +543,7 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 post.coverPics.distinct().take(3).forEach { url ->
-                    ShizhijiaRemoteImage(url = url, modifier = Modifier.fillMaxWidth(0.32f).height(130.dp), showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+                    ShizhijiaRemoteImage(url = url, modifier = Modifier.width(104.dp).height(110.dp), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
                 }
             }
         }
@@ -625,7 +625,7 @@ private fun SzjDynamicRow(d: ShizhijiaDynamic, onClick: () -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: () -> Unit) {
+private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
     val context = LocalContext.current
     var detail by remember { mutableStateOf<ShizhijiaPostDetail?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -687,7 +687,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Text(d.title, color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold, lineHeight = 26.sp)
                     Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { nav(SzjRoute.UserProfile(d.uuid)) }) {
                         SzjAvatar(d.characterName, d.avatar, d.uuid, 36)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
@@ -738,7 +738,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
             } else if (comments.isEmpty()) {
                 item(key = "comments-empty") { Text("暂无评论", color = PhoneMuted, modifier = Modifier.fillMaxWidth().background(CommentAreaBg).padding(24.dp), textAlign = TextAlign.Center) }
             } else {
-                items(comments, key = { it.id }) { c -> SzjCommentRow(c) }
+                items(comments, key = { it.id }) { c -> SzjCommentRow(c, nav) }
                 item(key = "comments-footer") {
                     if (commentLoading) Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(12.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
@@ -762,10 +762,10 @@ private fun SzjSmallOption(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun SzjCommentRow(c: ShizhijiaComment) {
+private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
         .clip(RoundedCornerShape(14.dp)).background(PhoneSurface).padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { nav(SzjRoute.UserProfile(c.uuid)) }) {
             SzjAvatar(c.characterName, c.avatar, c.uuid, 30)
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
@@ -1317,10 +1317,12 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
     var postEnded by remember { mutableStateOf(false) }
 
     var jobIcons by remember { mutableStateOf(mapOf<String, String>()) }
+    var tipCareer by remember { mutableStateOf<String?>(null) }
     var recents by remember { mutableStateOf(listOf<ShizhijiaRecentEvent>()) }
     var recentsPrivate by remember { mutableStateOf(false) }
     LaunchedEffect(uuid) {
         jobIcons = ShizhijiaApi.jobIconByName(context)
+        android.util.Log.d("ShizhijiaLogin", "profile jobIcons size=${jobIcons.size} crp=${jobIcons["裁衣匠"] ?: "MISS"}")
         profile = ShizhijiaApi.getUserProfile(context, uuid)
         scope.launch {
             val r = ShizhijiaApi.getRecentEvents(context, uuid)
@@ -1409,10 +1411,10 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 val icon = jobIcons[c.name].orEmpty()
                                                 val abbr = szjCrafterAbbr(c.name)
-                                                var showTip by remember { mutableStateOf(false) }
+                                                var showTip = tipCareer == c.name
                                                 Box {
                                                     Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier.clickable { showTip = !showTip }) {
+                                                        modifier = Modifier.clickable { tipCareer = if (showTip) null else c.name }) {
                                                         Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                                                             if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
                                                             else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -1448,10 +1450,10 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 val icon = jobIcons[c.name].orEmpty()
                                                 val abbr = szjCrafterAbbr(c.name)
-                                                var showTip by remember { mutableStateOf(false) }
+                                                var showTip = tipCareer == c.name
                                                 Box {
                                                     Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier.clickable { showTip = !showTip }) {
+                                                        modifier = Modifier.clickable { tipCareer = if (showTip) null else c.name }) {
                                                         Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                                                             if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
                                                             else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -1510,7 +1512,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                     val medalUrl = if (a.medalId.isNotBlank())
                                         "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/medal/medal${a.medalId}.png" else ""
-                                    ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(38.dp), showPlaceholder = false)
+                                    ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(38.dp).clip(CircleShape), showPlaceholder = false)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(a.name, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

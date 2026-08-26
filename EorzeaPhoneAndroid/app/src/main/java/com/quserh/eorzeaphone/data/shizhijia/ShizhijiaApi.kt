@@ -279,6 +279,10 @@ object ShizhijiaApi {
      */
     suspend fun jobIconByName(context: Context): Map<String, String> {
         if (jobIconCache.isNotEmpty()) return jobIconCache
+        // Seed crafters first so they survive even if the config fetch fails.
+        crafterIcons.forEach { (name, path) ->
+            jobIconCache[name] = "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/$path"
+        }
         val d = data(context, HOME_BASE, "recruit/getJobConfigList") ?: return jobIconCache
         // data is an object keyed by Chinese category names ("职能分类",
         // "战斗精英", ...), each holding an array of {id,value,job_pic_url}.
@@ -291,6 +295,7 @@ object ShizhijiaApi {
                 if (name.isNotBlank() && pic.isNotBlank()) jobIconCache[name] = pic
             }
         }
+        android.util.Log.d("ShizhijiaLogin", "jobIconByName size=${jobIconCache.size} sampleCrp=${jobIconCache["刻木匠"] ?: "MISS"}")
         return jobIconCache
     }
 
