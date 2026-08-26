@@ -1758,8 +1758,8 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     ) { page ->
                         ShizhijiaRemoteImage(
                             url = d.images[page],
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentScale = ContentScale.FillWidth,
                             showPlaceholder = true,
                             onClick = { url -> SzjViewer.url = url },
                         )
