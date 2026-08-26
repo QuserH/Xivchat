@@ -213,6 +213,9 @@ class SzjSearchState {
     val userResults = mutableStateOf<List<ShizhijiaSearchUser>?>(null)
     val glamourResults = mutableStateOf<List<ShizhijiaSearchGlamour>?>(null)
     val searching = mutableStateOf(false)
+    val page = mutableStateOf(1)
+    val ended = mutableStateOf(false)
+    val loadingMore = mutableStateOf(false)
     val glamourGridState = androidx.compose.foundation.lazy.grid.LazyGridState()
     val postListState = androidx.compose.foundation.lazy.LazyListState()
     val userListState = androidx.compose.foundation.lazy.LazyListState()
@@ -1001,6 +1004,9 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
     val userResults = s.userResults
     val glamourResults = s.glamourResults
     val searching = s.searching
+    val page = s.page
+    val ended = s.ended
+    val loadingMore = s.loadingMore
     // Search channel: 帖子 / 攻略 / 用户 / 幻化 (common/search type ids).
     val typeLabel = when (searchType.value) {
         ShizhijiaApi.SEARCH_TYPE_STRAT -> "攻略"
@@ -1017,13 +1023,38 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
         history.value = ShizhijiaSession.searchHistory(context)
         scope.launch {
             searching.value = true
+            loadingMore.value = false
+            ended.value = false
+            page.value = 1
             postResults.value = null; userResults.value = null; glamourResults.value = null
             when (searchType.value) {
                 ShizhijiaApi.SEARCH_TYPE_USER -> userResults.value = ShizhijiaApi.searchUsers(context, q)
-                ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> glamourResults.value = ShizhijiaApi.searchGlamours(context, q)
-                else -> postResults.value = ShizhijiaApi.searchPosts(context, q, searchType.value)
+                ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> glamourResults.value = ShizhijiaApi.searchGlamours(context, q, page.value)
+                else -> postResults.value = ShizhijiaApi.searchPosts(context, q, searchType.value, page.value)
             }
             searching.value = false
+        }
+    }
+
+    fun loadMore() {
+        val q = query.value.trim()
+        if (q.isEmpty() || ended.value || loadingMore.value || searching.value) return
+        loadingMore.value = true
+        scope.launch {
+            val nextPage = page.value + 1
+            when (searchType.value) {
+                ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
+                    val next = ShizhijiaApi.searchGlamours(context, q, nextPage)
+                    glamourResults.value = (glamourResults.value.orEmpty() + next)
+                    if (next.isEmpty()) ended.value = true else page.value = nextPage
+                }
+                else -> {
+                    val next = ShizhijiaApi.searchPosts(context, q, searchType.value, nextPage)
+                    postResults.value = (postResults.value.orEmpty() + next)
+                    if (next.isEmpty()) ended.value = true else page.value = nextPage
+                }
+            }
+            loadingMore.value = false
         }
     }
 
@@ -1169,6 +1200,25 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                         items(postResults.value.orEmpty(), key = { it.postsId }) { post ->
                             SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) })
                         }
+                    }
+                }
+                // 滚动接近底部自动加载下一页（幻化/帖子）
+                val gridNearEnd = remember { derivedStateOf {
+                    val last = s.glamourGridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    val total = glamourResults.value?.size ?: 0
+                    searchType.value == ShizhijiaApi.SEARCH_TYPE_GLAMOUR && total > 0 && last >= total - 3
+                } }
+                val listNearEnd = remember { derivedStateOf {
+                    val last = s.postListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    val total = postResults.value?.size ?: 0
+                    searchType.value != ShizhijiaApi.SEARCH_TYPE_GLAMOUR && searchType.value != ShizhijiaApi.SEARCH_TYPE_USER && total > 0 && last >= total - 3
+                } }
+                LaunchedEffect(gridNearEnd.value, listNearEnd.value, loadingMore.value, ended.value) {
+                    if ((gridNearEnd.value || listNearEnd.value) && !loadingMore.value && !ended.value) loadMore()
+                }
+                if (loadingMore.value) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
                     }
                 }
             }

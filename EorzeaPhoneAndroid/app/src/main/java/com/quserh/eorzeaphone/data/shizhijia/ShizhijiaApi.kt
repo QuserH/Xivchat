@@ -243,9 +243,9 @@ object ShizhijiaApi {
     }
 
     /** Glamour search - rows carry main_image + like/favorite counts. */
-    suspend fun searchGlamours(context: Context, keywords: String, limit: Int = 20): List<ShizhijiaSearchGlamour> {
+    suspend fun searchGlamours(context: Context, keywords: String, page: Int = 1, limit: Int = 20): List<ShizhijiaSearchGlamour> {
         if (keywords.isBlank()) return emptyList()
-        val d = data(context, MAIN, "common/search", mapOf("type" to SEARCH_TYPE_GLAMOUR.toString(), "keywords" to keywords, "limit" to limit.toString()))
+        val d = data(context, MAIN, "common/search", mapOf("type" to SEARCH_TYPE_GLAMOUR.toString(), "keywords" to keywords, "page" to page.toString(), "limit" to limit.toString()))
             ?: return emptyList()
         val rows = d.optJSONArray("rows") ?: return emptyList()
         return buildList(rows.length()) {
