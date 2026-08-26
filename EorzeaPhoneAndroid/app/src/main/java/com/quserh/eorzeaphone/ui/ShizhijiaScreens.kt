@@ -1,4 +1,4 @@
-package com.quserh.eorzeaphone.ui
+﻿package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -173,11 +175,14 @@ private class SzjGlamourState {
 
 @Composable
 fun ShizhijiaScreen(state: PhoneState) {
+    val context = LocalContext.current
     var stack by remember { mutableStateOf(listOf<SzjRoute>(SzjRoute.Home)) }
     val postsState = remember { SzjPostsState() }
     val glamourState = remember { SzjGlamourState() }
     val homeMainTab = remember { mutableStateOf(MAIN_COMMUNITY) }
     val homeSubTab = remember { mutableStateOf(SUB_POSTS) }
+    var barHeight by remember { mutableStateOf(56f) }
+    LaunchedEffect(Unit) { barHeight = ShizhijiaSession.bottomBarHeight(context) }
     // Only swallow back while inside the app; the outer handler then leaves the desktop.
     BackHandler(enabled = stack.size > 1) { stack = stack.dropLast(1) }
     val route = stack.last()
@@ -186,7 +191,7 @@ fun ShizhijiaScreen(state: PhoneState) {
     val pop: () -> Unit = { if (stack.size > 1) stack = stack.dropLast(1) }
     Box(Modifier.fillMaxSize()) {
         when (route) {
-            SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab)
+SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab, barHeight) { barHeight = it }
             is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop, nav)
             is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop)
             SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav)
@@ -266,6 +271,8 @@ private fun ShizhijiaHomeScreen(
     glamourState: SzjGlamourState,
     mainTabState: MutableState<Int>,
     subTabState: MutableState<Int>,
+    barHeightDp: Float,
+    onBarHeightChange: (Float) -> Unit,
 ) {
     val context = LocalContext.current
     var mainTab by mainTabState
@@ -328,10 +335,10 @@ private fun ShizhijiaHomeScreen(
                     }
                     MAIN_RECRUIT -> SzjSectionPlaceholder("招募")
                     MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn, glamourState)
-                    else -> ShizhijiaMeTab(state, nav, loggedIn)
+                    else -> ShizhijiaMeTab(state, nav, loggedIn, barHeightDp, onBarHeightChange)
                 }
             }
-            SzjBottomBar(mainTab, onSelect = { mainTab = it }, modifier = Modifier.align(Alignment.BottomCenter))
+            SzjBottomBar(mainTab, onSelect = { mainTab = it }, barHeightDp = barHeightDp, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }
@@ -401,8 +408,10 @@ private fun SzjSectionPlaceholder(label: String) {
 }
 
 @Composable
-private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
+private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, bottomBarHeightDp: Float, onBottomBarHeightChange: (Float) -> Unit) {
     val context = LocalContext.current
+    var bottomBarHeightDp by remember { mutableStateOf(bottomBarHeightDp) }
+LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
     Column(Modifier.fillMaxSize().padding(bottom = 90.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         if (loggedIn) {
             Text("已登录石之家", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -412,16 +421,29 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
             Text("未登录", color = PhoneMuted)
             Spacer(Modifier.height(14.dp))
             Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("登录") }
+        Spacer(Modifier.height(26.dp))
+        Text("外观设置", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("悬浮底栏高度: ${bottomBarHeightDp.toInt()} dp", color = PhoneMuted, fontSize = 12.sp)
+        Slider(
+            value = bottomBarHeightDp,
+            onValueChange = {
+                bottomBarHeightDp = it
+                ShizhijiaSession.setBottomBarHeight(context, it)
+            },
+            valueRange = 48f..96f,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp),
+        )
         }
     }
 }
 
 /** MD3 floating bottom bar: a rounded capsule that hovers over the content. */
 @Composable
-private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, barHeightDp: Float, modifier: Modifier = Modifier) {
     Row(
         modifier
-            .padding(start = 18.dp, end = 18.dp, bottom = 10.dp).fillMaxWidth()
+            .padding(start = 18.dp, end = 18.dp, bottom = 10.dp).fillMaxWidth().height(barHeightDp.dp)
             .shadow(6.dp, RoundedCornerShape(30.dp))
             .clip(RoundedCornerShape(30.dp))
             .background(PhoneSurface)
@@ -1537,7 +1559,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                     val medalUrl = if (a.medalId.isNotBlank())
                                         "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/medal/medal${a.medalId}.png" else ""
-                                    ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(38.dp).clip(CircleShape).graphicsLayer { scaleX = 1.15f; scaleY = 1.15f }, contentScale = ContentScale.Crop, showPlaceholder = false)
+ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(36.dp), contentScale = ContentScale.Fit, showPlaceholder = false)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(a.name, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1839,10 +1861,11 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
             // Promo banner takes the first slot (top-left) like the official page.
             if (tab == 0) {
                 item(key = "glamour-banner") {
-                    ShizhijiaRemoteImage(
-                        url = "https://ff14risingstones.web.sdo.com/pc/png/glamour_banner.DAb8KKTU.png",
-                        modifier = Modifier.fillMaxWidth(),
+                    Image(
+                        painter = painterResource(id = com.quserh.eorzeaphone.R.drawable.glamour_banner),
+                        contentDescription = null,
                         contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }

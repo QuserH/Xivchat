@@ -60,7 +60,10 @@ object ShizhijiaImageLoader {
             val bmp = download(url) ?: return@withContext null
             runCatching {
                 file.parentFile?.mkdirs()
-                FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                // Preserve alpha: JPEG has no transparency, so transparent PNGs
+                // (medals, badges) would get black backgrounds. Store those as PNG.
+                val fmt = if (bmp.hasAlpha()) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+                FileOutputStream(file).use { bmp.compress(fmt, 90, it) }
             }
             memCache.put(url, bmp)
             bmp
