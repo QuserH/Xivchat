@@ -203,12 +203,28 @@ private class SzjGlamourState {
     val filterOpen = mutableStateOf(false)
 }
 
+// 搜索状态提升到模块根部：进详情再返回时保留关键词/类型/结果与滚动位置
+class SzjSearchState {
+    val query = mutableStateOf("")
+    val searchType = mutableStateOf(ShizhijiaApi.SEARCH_TYPE_POST)
+    val hotWords = mutableStateOf(listOf<String>())
+    val history = mutableStateOf(listOf<Pair<String, Int>>())
+    val postResults = mutableStateOf<List<ShizhijiaPostCard>?>(null)
+    val userResults = mutableStateOf<List<ShizhijiaSearchUser>?>(null)
+    val glamourResults = mutableStateOf<List<ShizhijiaSearchGlamour>?>(null)
+    val searching = mutableStateOf(false)
+    val glamourGridState = androidx.compose.foundation.lazy.grid.LazyGridState()
+    val postListState = androidx.compose.foundation.lazy.LazyListState()
+    val userListState = androidx.compose.foundation.lazy.LazyListState()
+}
+
 @Composable
 fun ShizhijiaScreen(state: PhoneState) {
     val context = LocalContext.current
     var stack by remember { mutableStateOf(listOf<SzjRoute>(SzjRoute.Home)) }
     val postsState = remember { SzjPostsState() }
     val glamourState = remember { SzjGlamourState() }
+    val searchState = remember { SzjSearchState() }
     val homeMainTab = remember { mutableStateOf(MAIN_COMMUNITY) }
     val homeSubTab = remember { mutableStateOf(SUB_POSTS) }
     var barHeight by remember { mutableStateOf(56f) }
@@ -225,7 +241,7 @@ fun ShizhijiaScreen(state: PhoneState) {
 SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab, barHeightDp = barHeight, barBottomDp = barBottom, onBarHeightChange = { barHeight = it }, onBarBottomChange = { barBottom = it })
             is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop, nav)
             is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop)
-            SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav)
+            SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav, searchState)
             SzjRoute.Login -> ShizhijiaLoginScreen(state, pop)
             SzjRoute.SignCalendar -> ShizhijiaSignCalendarScreen(state, pop)
             is SzjRoute.UserProfile -> ShizhijiaUserProfileScreen(state, route.uuid, pop, nav)
@@ -973,41 +989,41 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
+private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjRoute) -> Unit, s: SzjSearchState) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf("") }
-    // Search channel: 帖子 / 攻略 / 用户 / 幻化 (common/search type ids).
-    var searchType by remember { mutableStateOf(ShizhijiaApi.SEARCH_TYPE_POST) }
     var typeMenu by remember { mutableStateOf(false) }
-    val typeLabel = when (searchType) {
+    val query = s.query
+    val searchType = s.searchType
+    val hotWords = s.hotWords
+    val history = s.history
+    val postResults = s.postResults
+    val userResults = s.userResults
+    val glamourResults = s.glamourResults
+    val searching = s.searching
+    // Search channel: 帖子 / 攻略 / 用户 / 幻化 (common/search type ids).
+    val typeLabel = when (searchType.value) {
         ShizhijiaApi.SEARCH_TYPE_STRAT -> "攻略"
         ShizhijiaApi.SEARCH_TYPE_USER -> "用户"
         ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> "幻化"
         else -> "帖子"
     }
-    var hotWords by remember { mutableStateOf(listOf<String>()) }
-    var history by remember { mutableStateOf(ShizhijiaSession.searchHistory(context)) }
-    var postResults by remember { mutableStateOf<List<ShizhijiaPostCard>?>(null) }
-    var userResults by remember { mutableStateOf<List<ShizhijiaSearchUser>?>(null) }
-    var glamourResults by remember { mutableStateOf<List<ShizhijiaSearchGlamour>?>(null) }
-    var searching by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { hotWords = ShizhijiaApi.getHotSearchList(context).map { it.text }.filter { it.isNotBlank() }.distinct() }
+    LaunchedEffect(Unit) { hotWords.value = ShizhijiaApi.getHotSearchList(context).map { it.text }.filter { it.isNotBlank() }.distinct() }
 
     fun doSearch() {
-        val q = query.trim()
+        val q = query.value.trim()
         if (q.isEmpty()) return
-        ShizhijiaSession.addSearchHistory(context, q, searchType)
-        history = ShizhijiaSession.searchHistory(context)
+        ShizhijiaSession.addSearchHistory(context, q, searchType.value)
+        history.value = ShizhijiaSession.searchHistory(context)
         scope.launch {
-            searching = true
-            postResults = null; userResults = null; glamourResults = null
-            when (searchType) {
-                ShizhijiaApi.SEARCH_TYPE_USER -> userResults = ShizhijiaApi.searchUsers(context, q)
-                ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> glamourResults = ShizhijiaApi.searchGlamours(context, q)
-                else -> postResults = ShizhijiaApi.searchPosts(context, q, searchType)
+            searching.value = true
+            postResults.value = null; userResults.value = null; glamourResults.value = null
+            when (searchType.value) {
+                ShizhijiaApi.SEARCH_TYPE_USER -> userResults.value = ShizhijiaApi.searchUsers(context, q)
+                ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> glamourResults.value = ShizhijiaApi.searchGlamours(context, q)
+                else -> postResults.value = ShizhijiaApi.searchPosts(context, q, searchType.value)
             }
-            searching = false
+            searching.value = false
         }
     }
 
@@ -1029,22 +1045,22 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                             "幻化" to ShizhijiaApi.SEARCH_TYPE_GLAMOUR,
                         ).forEach { (label, id) ->
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(label, color = if (id == searchType) PhoneAccent else PhoneText) },
-                                onClick = { searchType = id; typeMenu = false },
+                                text = { Text(label, color = if (id == searchType.value) PhoneAccent else PhoneText) },
+                                onClick = { searchType.value = id; typeMenu = false },
                             )
                         }
                     }
                 }
                 BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
+                    value = query.value,
+                    onValueChange = { query.value = it },
                     singleLine = true,
                     textStyle = TextStyle(color = PhoneText, fontSize = 15.sp),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { doSearch() }),
                     decorationBox = { inner ->
                         Box {
-                            if (query.isEmpty()) Text("搜索$typeLabel", color = PhoneMuted, fontSize = 15.sp)
+                            if (query.value.isEmpty()) Text("搜索$typeLabel", color = PhoneMuted, fontSize = 15.sp)
                             inner()
                         }
                     },
@@ -1055,22 +1071,22 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                     Text("⌕", color = PhoneOnAccentContainer, fontSize = 18.sp)
                 }
             }
-            if (postResults == null && userResults == null && glamourResults == null && !searching) {
-                if (history.isNotEmpty()) {
+            if (postResults.value == null && userResults.value == null && glamourResults.value == null && !searching.value) {
+                if (history.value.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("搜索记录", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
                         Text("清空", color = PhoneMuted, fontSize = 11.sp,
                             modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
-                                history.forEach { ShizhijiaSession.removeSearchHistory(context, it.first, it.second) }
-                                history = emptyList()
+                                history.value.forEach { ShizhijiaSession.removeSearchHistory(context, it.first, it.second) }
+                                history.value = emptyList()
                             }.padding(horizontal = 6.dp, vertical = 2.dp))
                     }
                     Spacer(Modifier.height(8.dp))
                     // History chips: tap = quick search, long-press = remove entry.
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        history.chunked(3).forEach { row ->
+                        history.value.chunked(3).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 row.forEach { (q, t) ->
                                     val typeLabel2 = when (t) {
@@ -1085,10 +1101,10 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                                             .background(PhoneSurfaceRaised)
                                             .pointerInput(q, t) {
                                                 detectTapGestures(
-                                                    onTap = { query = q; searchType = t; doSearch() },
+                                                    onTap = { query.value = q; searchType.value = t; doSearch() },
                                                     onLongPress = {
                                                         ShizhijiaSession.removeSearchHistory(context, q, t)
-                                                        history = ShizhijiaSession.searchHistory(context)
+                                                        history.value = ShizhijiaSession.searchHistory(context)
                                                     },
                                                 )
                                             }
@@ -1102,18 +1118,18 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                 Text("热门搜索", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    hotWords.take(6).forEach { word ->
-                        SzjPartChip(word, selected = false) { query = word; doSearch() }
+                    hotWords.value.take(6).forEach { word ->
+                        SzjPartChip(word, selected = false) { query.value = word; doSearch() }
                     }
                 }
             } else {
                 Spacer(Modifier.height(8.dp))
                 when {
-                    searching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
-                    searchType == ShizhijiaApi.SEARCH_TYPE_USER -> {
-                        if (userResults.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关用户", color = PhoneMuted) }
-                        else LazyColumn(Modifier.fillMaxSize()) {
-                            items(userResults.orEmpty(), key = { it.uuid }) { u ->
+                    searching.value -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
+                    searchType.value == ShizhijiaApi.SEARCH_TYPE_USER -> {
+                        if (userResults.value.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关用户", color = PhoneMuted) }
+                        else LazyColumn(state = s.userListState, modifier = Modifier.fillMaxSize()) {
+                            items(userResults.value.orEmpty(), key = { it.uuid }) { u ->
                                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { nav(SzjRoute.UserProfile(u.uuid)) }, verticalAlignment = Alignment.CenterVertically) {
                                     SzjAvatar(u.name, u.avatar, u.uuid, 44)
                                     Spacer(Modifier.width(10.dp))
@@ -1128,16 +1144,17 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                             }
                         }
                     }
-                    searchType == ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
-                        if (glamourResults.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关幻化", color = PhoneMuted) }
+                    searchType.value == ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
+                        if (glamourResults.value.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关幻化", color = PhoneMuted) }
                         else androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                            state = s.glamourGridState,
                             columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            val results = glamourResults.orEmpty()
+                            val results = glamourResults.value.orEmpty()
                             items(results.size, key = { results[it].id }) { idx ->
                                 val g = results[idx]
                                 // 一行三列，只显示头图，点击进入幻化详情（不是预览）
@@ -1147,9 +1164,9 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                             }
                         }
                     }
-                    postResults.isNullOrEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关帖子", color = PhoneMuted) }
-                    else -> LazyColumn(Modifier.fillMaxSize()) {
-                        items(postResults.orEmpty(), key = { it.postsId }) { post ->
+                    postResults.value.isNullOrEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关帖子", color = PhoneMuted) }
+                    else -> LazyColumn(state = s.postListState, modifier = Modifier.fillMaxSize()) {
+                        items(postResults.value.orEmpty(), key = { it.postsId }) { post ->
                             SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) })
                         }
                     }
