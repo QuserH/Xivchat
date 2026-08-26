@@ -1890,10 +1890,14 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
         if (n.isBlank()) return "对方"
         if (w != null && n.endsWith(w)) n = n.removeSuffix(w).trim()
         val myWorld = profile?.homeWorld?.takeIf { it.isNotBlank() } ?: profile?.currentWorld.orEmpty()
-        // 团队频道与新人频道一致：始终显示 名字❀服务器，不因同服而省略小花
-        val forceWorld = msg.category == com.quserh.eorzeaphone.data.ChatCategory.Team
-        if ((w.isNullOrBlank() || w.equals(myWorld, true)) && !forceWorld) return n
-        val marker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" } ?: '❀'
+        val isTeam = msg.category == com.quserh.eorzeaphone.data.ChatCategory.Team
+        if (w.isNullOrBlank()) return n
+        val sameWorld = w.equals(myWorld, true)
+        // 非团队保持原逻辑：同服只显示名字；团队频道即使同服也显示 名字❀服务器（与新人频道一致）
+        if (!isTeam && sameWorld) return n
+        val rawMarker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" }
+        // 团队：同服 worldIcon=0 不会走图标拆分，PUA 小花会显示成方块，因此强制用真实 ❀ 直接渲染
+        val marker = if (isTeam) (rawMarker?.takeIf { it.code !in 0xE000..0xF8FF } ?: '❀') else (rawMarker ?: '\uE05D')
         return "$n$marker$w"
     }
 

@@ -59,7 +59,7 @@ data class GameChatMessage(
         val w = senderWorld?.takeIf { it.isNotBlank() }?.stripPlayerDecorations()
         if (!n.isNullOrBlank()) {
             if (w.isNullOrBlank()) return n
-            val marker = sender.firstOrNull { it.code in 0xE000..0xF8FF || it in PlayerNameFlowers } ?: '❀'
+            val marker = sender.firstOrNull { it.code in 0xE000..0xF8FF || it in PlayerNameFlowers } ?: '\uE05D'
             return "$n$marker$w"
         }
         return sender.displayPlayerName()
