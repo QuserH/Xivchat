@@ -1974,6 +1974,14 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
                     SzjGlamourCardItem(items[idx], nav)
                 }
             }
+            // 滚动到底自动加载下一页
+            val nearEnd by remember { derivedStateOf {
+                val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                items.isNotEmpty() && last >= items.size - 3
+            } }
+            LaunchedEffect(nearEnd, loading, ended) {
+                if (nearEnd && !loading && !ended) load(reset = false)
+            }
             if (loading && items.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
@@ -2051,8 +2059,8 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
         ShizhijiaRemoteImage(
             url = card.mainImage,
-            modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f),
-            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth(),
+            contentScale = ContentScale.FillWidth,
         )
         Column(Modifier.padding(8.dp)) {
             Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
