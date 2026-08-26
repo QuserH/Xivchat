@@ -1732,7 +1732,16 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                         val eIcon = equip?.iconUrl ?: extraIcon
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             if (eIcon.isNotBlank()) {
-                                                ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)))
+                                                Box {
+                                                    ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)))
+                                                    if (equip?.isMallItem == true) {
+                                                        Text("商城", color = PhoneOnAccentContainer, fontSize = 8.sp,
+                                                            modifier = Modifier.align(Alignment.TopEnd)
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(PhoneAccent)
+                                                                .padding(horizontal = 3.dp, vertical = 1.dp))
+                                                    }
+                                                }
                                                 Spacer(Modifier.width(8.dp))
                                             }
                                             Column {
@@ -1740,7 +1749,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                 Spacer(Modifier.height(2.dp))
                                                 val dyes = equip?.dyes ?: emptyList()
                                                 if (dyes.isNotEmpty()) {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                         dyes.forEach { dy ->
                                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                                 val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: PhoneSurfaceRaised
@@ -1750,7 +1759,11 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                             }
                                                         }
                                                     }
-                                                } else Text("无染色", color = PhoneMuted, fontSize = 10.sp)
+                                                } else Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("⊘", color = PhoneMuted, fontSize = 11.sp)
+                                                    Spacer(Modifier.width(3.dp))
+                                                    Text("无染色", color = PhoneMuted, fontSize = 10.sp)
+                                                }
                                             }
                                         }
                                     }
