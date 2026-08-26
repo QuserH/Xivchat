@@ -678,9 +678,12 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
         // collapse away (no blank frame before the healthy ones).
         if (post.coverPics.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                post.coverPics.distinct().take(3).forEach { url ->
-                    ShizhijiaRemoteImage(url = url, modifier = Modifier.width(104.dp).height(110.dp), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val cell = (maxWidth - 12.dp) / 3
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    post.coverPics.distinct().take(3).forEach { url ->
+                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+                    }
                 }
             }
         }
@@ -1831,7 +1834,13 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                         ) {
                                                             androidx.compose.foundation.Canvas(Modifier.size(10.dp)) {
                                                                 val s = size.width / 11.446f
+                                                                val dw = 11.446f * s
+                                                                val dh = 13.0683f * s
                                                                 withTransform({
+                                                                    translate(
+                                                                        left = (size.width - dw) / 2f,
+                                                                        top = (size.height - dh) / 2f,
+                                                                    )
                                                                     scale(scaleX = s, scaleY = s)
                                                                 }) {
                                                                     drawPath(bagPath, Color.White)
@@ -2079,8 +2088,6 @@ private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, se
 @Composable
 private fun SzjGlamourImage(url: String) {
     val context = LocalContext.current
-    // 已知尺寸（磁盘缓存/内存）→ 精确占位；未知 → 用固定高度兜底（不用比例）
-    val cached = remember(url) { ShizhijiaImageLoader.peekSize(context, url) }
     var bmp by remember(url) { mutableStateOf<android.graphics.Bitmap?>(ShizhijiaImageLoader.peek(url)) }
     var loaded by remember(url) { mutableStateOf(bmp != null) }
     LaunchedEffect(url) {
@@ -2089,21 +2096,14 @@ private fun SzjGlamourImage(url: String) {
             loaded = true
         }
     }
-    val ratio = remember(url, cached, bmp) {
-        when {
-            bmp != null -> bmp!!.width.toFloat() / bmp!!.height.toFloat()
-            cached != null -> cached.first.toFloat() / cached.second.toFloat()
-            else -> 0f
-        }
-    }
+    // 所有卡片用统一的固定比例（与移动端一致），保证卡片间距/交错距离均匀。
     Box(
-        Modifier.fillMaxWidth().then(if (ratio > 0f) Modifier.aspectRatio(ratio) else Modifier.height(260.dp))
-            .background(PhoneSurfaceRaised),
+        Modifier.fillMaxWidth().aspectRatio(3f / 4f).background(PhoneSurfaceRaised),
         contentAlignment = Alignment.Center,
     ) {
         val b = bmp
         if (b != null) {
-            Image(b.asImageBitmap(), contentDescription = null, contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxSize())
+            Image(b.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else {
             CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(22.dp))
         }
