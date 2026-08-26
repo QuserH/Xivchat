@@ -75,6 +75,7 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSearchGlamour
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaUserProfile
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourDetail
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourCard
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecentEvent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
@@ -606,7 +607,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
 
     // Comments are rendered inline below the article body on the same screen.
     // Server order values: default (post time asc) / hot (likes) / time (newest).
-    var commentOrder by remember { mutableStateOf("default") }
+    var commentOrder by remember { mutableStateOf("earliest") }
     var onlyAuthor by remember { mutableStateOf(false) } // 只看楼主
     var comments by remember { mutableStateOf(listOf<ShizhijiaComment>()) }
     var commentPage by remember { mutableStateOf(1) }
@@ -619,10 +620,10 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         loading = false
     }
     // (Re)load comments whenever the ordering changes.
-    LaunchedEffect(postId, commentOrder) {
+    LaunchedEffect(postId, commentOrder, onlyAuthor) {
         commentLoading = true
         comments = emptyList(); commentPage = 1; commentPageTime = ""
-        val result = ShizhijiaApi.getPostComments(context, postId, commentOrder)
+        val result = ShizhijiaApi.getPostComments(context, postId, commentOrder, onlyLandlord = onlyAuthor)
         comments = result.rows; commentPageTime = result.pageTime
         commentLoading = false
     }
@@ -632,10 +633,10 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
         last >= comments.size - 2
     } }
-    LaunchedEffect(nearEnd, commentOrder, postId) {
+    LaunchedEffect(nearEnd, commentOrder, postId, onlyAuthor) {
         if (nearEnd && !commentLoading && comments.isNotEmpty() && commentPageTime.isNotBlank()) {
             commentLoading = true
-            val next = ShizhijiaApi.getPostComments(context, postId, commentOrder, page = commentPage + 1, pageTime = commentPageTime)
+            val next = ShizhijiaApi.getPostComments(context, postId, commentOrder, page = commentPage + 1, pageTime = commentPageTime, onlyLandlord = onlyAuthor)
             if (next.rows.isEmpty()) commentPageTime = "" else {
                 comments = comments + next.rows
                 commentPageTime = next.pageTime
@@ -692,9 +693,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 Row(Modifier.fillMaxWidth().background(CommentAreaBg).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("全部评论", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Row(Modifier.clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) {
-                        SzjSmallOption("默认", commentOrder == "default") { commentOrder = "default" }
-                        SzjSmallOption("热门", commentOrder == "hot") { commentOrder = "hot" }
-                        SzjSmallOption("最新", commentOrder == "time") { commentOrder = "time" }
+                        SzjSmallOption("默认", commentOrder == "earliest") { commentOrder = "earliest" }
+                        SzjSmallOption("热门", commentOrder == "hottest") { commentOrder = "hottest" }
+                        SzjSmallOption("最新", commentOrder == "latest") { commentOrder = "latest" }
                     }
                     Spacer(Modifier.width(8.dp))
                     // 只看楼主: client-side filter on the loaded comment list.
@@ -712,12 +713,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
             } else if (comments.isEmpty()) {
                 item(key = "comments-empty") { Text("暂无评论", color = PhoneMuted, modifier = Modifier.fillMaxWidth().background(CommentAreaBg).padding(24.dp), textAlign = TextAlign.Center) }
             } else {
-                val shown = if (onlyAuthor) comments.filter { it.isPostsAuthor } else comments
-                if (shown.isEmpty() && onlyAuthor) {
-                    item(key = "only-author-empty") { Text("楼主还没有在评论区发言", color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) }
-                } else {
-                    items(shown, key = { it.id }) { c -> SzjCommentRow(c) }
-                }
+                items(comments, key = { it.id }) { c -> SzjCommentRow(c) }
                 item(key = "comments-footer") {
                     if (commentLoading) Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(12.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
@@ -1275,6 +1271,13 @@ private fun szjTribeName(id: Int) = when (id) {
     13 -> "日耀之民"; 14 -> "流浪之民"; 15 -> "拉维之民"; 16 -> "维娜之民"; else -> ""
 }
 
+/** 能工巧匠/大地使者没有官方图标资源，用标准英文缩写徽章代替。 */
+private fun szjCrafterAbbr(name: String) = when (name) {
+    "刻木匠" -> "CRP"; "锻铁匠" -> "BSM"; "铸甲匠" -> "ARM"; "雕金匠" -> "GLD"
+    "制革匠" -> "LTH"; "裁衣匠" -> "WVR"; "炼金术士" -> "ALC"; "烹调师" -> "CUL"
+    "采矿工" -> "MIN"; "园艺工" -> "BTN"; "捕鱼人" -> "FSH"; else -> name.take(1)
+}
+
 /** 玩家主页：资料卡(头像/UID/粉丝获赞) + 信息(职业/种族/部队/游戏数据) + TA的帖子。 */
 @Composable
 private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
@@ -1289,9 +1292,16 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
     var postEnded by remember { mutableStateOf(false) }
 
     var jobIcons by remember { mutableStateOf(mapOf<String, String>()) }
+    var recents by remember { mutableStateOf(listOf<ShizhijiaRecentEvent>()) }
+    var recentsPrivate by remember { mutableStateOf(false) }
     LaunchedEffect(uuid) {
         jobIcons = ShizhijiaApi.jobIconByName(context)
         profile = ShizhijiaApi.getUserProfile(context, uuid)
+        scope.launch {
+            val r = ShizhijiaApi.getRecentEvents(context, uuid)
+            recents = r
+            recentsPrivate = r.isEmpty()
+        }
         val p = profile
         avatarUrl = when {
             p == null -> ""
@@ -1373,9 +1383,10 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                         row.forEach { c ->
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 val icon = jobIcons[c.name].orEmpty()
+                                                val abbr = szjCrafterAbbr(c.name)
                                                 Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                                                     if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                    else Text(c.name.take(1), color = PhoneMuted, fontSize = 12.sp)
+                                                    else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                                 }
                                                 Text("${c.name} ${c.level}", fontSize = 10.sp, color = PhoneText, maxLines = 1)
                                             }
@@ -1394,9 +1405,10 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                         row.forEach { c ->
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 val icon = jobIcons[c.name].orEmpty()
+                                                val abbr = szjCrafterAbbr(c.name)
                                                 Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                                                     if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                    else Text(c.name.take(1), color = PhoneMuted, fontSize = 12.sp)
+                                                    else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                                 }
                                                 Text("${c.name} ${c.level}", fontSize = 10.sp, color = PhoneText, maxLines = 1)
                                             }
@@ -1427,6 +1439,46 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                     Text(label + "：", color = PhoneMuted, fontSize = 12.sp)
                                     Spacer(Modifier.width(4.dp))
                                     Text(value, color = PhoneText, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        // 特殊成就: medal icons + name/detail/time.
+                        if (p.achievements.isNotEmpty()) {
+                            Text("特殊成就 (${p.achievements.size})", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            p.achievements.take(20).forEach { a ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    val medalUrl = if (a.medalId.isNotBlank())
+                                        "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/medal/medal${a.medalId}.png" else ""
+                                    ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(38.dp), showPlaceholder = false)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(a.name, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (a.detail.isNotBlank()) Text(a.detail, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (a.time.isNotBlank()) Text(a.time.take(10), color = PhoneMuted, fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        // 游戏近况: recent/r{typeId}.png + event text.
+                        Text("游戏近况", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(6.dp))
+                        if (recents.isEmpty()) {
+                            Text(if (recentsPrivate) "对方设置了隐私，无法查看" else "暂无动态", color = PhoneMuted, fontSize = 12.sp)
+                        } else {
+                            recents.take(15).forEach { r ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    val recentUrl = if (r.typeId.isNotBlank())
+                                        "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/recent/r${r.typeId}.png" else ""
+                                    ShizhijiaRemoteImage(url = recentUrl, modifier = Modifier.size(30.dp), showPlaceholder = false)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(r.eventType, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        if (r.detail.isNotBlank()) Text(r.detail, color = PhoneMuted, fontSize = 11.sp)
+                                        if (r.logTime.isNotBlank()) Text(r.logTime, color = PhoneMuted, fontSize = 10.sp)
+                                    }
                                 }
                             }
                         }
@@ -1703,8 +1755,8 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
         ShizhijiaRemoteImage(
             url = card.mainImage,
-            modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp),
-            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth(),
+            contentScale = ContentScale.FillWidth,
         )
         Column(Modifier.padding(8.dp)) {
             Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

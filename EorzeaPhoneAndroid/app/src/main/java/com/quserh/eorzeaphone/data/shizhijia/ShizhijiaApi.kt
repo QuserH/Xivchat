@@ -186,15 +186,20 @@ object ShizhijiaApi {
         return ShizhijiaPostDetail.fromJson(d)
     }
 
-    /** Paged post comments. `order` is "new" (newest) or "like" (hottest). */
+    /**
+     * Paged post comments. Server order values: "earliest" (post time asc,
+     * the site's 默认), "hottest" (likes), "latest" (newest first).
+     * onlyLandlord=1 keeps only the post author's own replies (只看楼主).
+     */
     suspend fun getPostComments(
         context: Context,
         postId: String,
-        order: String = "like",
+        order: String = "earliest",
         page: Int = 1,
         pageTime: String = "",
+        onlyLandlord: Boolean = false,
     ): ShizhijiaPage<ShizhijiaComment> {
-        val params = mutableMapOf("id" to postId, "order" to order, "page" to page.toString())
+        val params = mutableMapOf("id" to postId, "order" to order, "page" to page.toString(), "onlyLandlord" to if (onlyLandlord) "1" else "0")
         if (pageTime.isNotBlank()) params["pageTime"] = pageTime
         val d = data(context, HOME_BASE, "posts/postsCommentDetail", params) ?: return ShizhijiaPage(emptyList(), "")
         val rows = d.optJSONArray("rows")
@@ -252,6 +257,21 @@ object ShizhijiaApi {
 
     /** Another player's full profile (userInfo/getUserInfo?uuid=). */
     private val jobIconCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    // Crafter/gatherer jobs use the static sjobN series (sjob0=刻木匠 ... sjob10=捕鱼人).
+    private val crafterIcons = mapOf(
+        "刻木匠" to "job/sjob0.png",
+        "锻铁匠" to "job/sjob1.png",
+        "铸甲匠" to "job/sjob2.png",
+        "雕金匠" to "job/sjob3.png",
+        "制革匠" to "job/sjob4.png",
+        "裁衣匠" to "job/sjob5.png",
+        "炼金术士" to "job/sjob6.png",
+        "烹调师" to "job/sjob7.png",
+        "采矿工" to "job/sjob8.png",
+        "园艺工" to "job/sjob9.png",
+        "捕鱼人" to "job/sjob10.png",
+    )
 
     /**
      * Career name -> job icon url, from the public recruit/getJobConfigList.
@@ -312,6 +332,30 @@ object ShizhijiaApi {
             ?: return emptyList()
         val rows = d.optJSONArray("rows") ?: return emptyList()
         return ShizhijiaGlamourCard.fromArray(rows)
+    }
+
+    /**
+     * 游戏近况 (userInfo/getResently). Pass uuid for other players - returns
+     * empty when they set the activity feed to private (code 10001).
+     * Icons: ffstones/recent/r{typeId}.png
+     */
+    suspend fun getRecentEvents(context: Context, uuid: String? = null): List<ShizhijiaRecentEvent> {
+        val params = if (uuid.isNullOrBlank()) emptyMap() else mapOf("uuid" to uuid)
+        val json = request(context, HOME_BASE, "userInfo/getResently", params) ?: return emptyList()
+        val arr = json.takeIf { it.isOk() }?.opt("data") as? org.json.JSONArray ?: return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                add(
+                    ShizhijiaRecentEvent(
+                        typeId = o.optString("event_type_id"),
+                        eventType = o.optString("event_type"),
+                        detail = o.optString("detail"),
+                        logTime = o.optString("log_time"),
+                    ),
+                )
+            }
+        }
     }
 
     /** Following dynamics feed; requires an authenticated session cookie. */

@@ -263,6 +263,23 @@ data class ShizhijiaSignLog(
     val days: List<String>,
 )
 
+/** 特殊成就 (userInfo/getUserInfo -> achieveInfo[])。图标: ffstones/medal/medal{medalId}.png */
+data class ShizhijiaAchievement(
+    val medalId: String,
+    val medalType: String,
+    val name: String,
+    val detail: String,
+    val time: String,
+)
+
+/** 游戏近况 (userInfo/getResently)。图标: ffstones/recent/r{typeId}.png */
+data class ShizhijiaRecentEvent(
+    val typeId: String,
+    val eventType: String,
+    val detail: String,
+    val logTime: String,
+)
+
 /** Glamour feed card (glamour/glamoursList | glamoursFollowList). */
 data class ShizhijiaGlamourCard(
     val id: String,
@@ -384,6 +401,7 @@ data class ShizhijiaUserProfile(
     val treasureTimes: Int,
     val newrank: Int,
     val careers: List<ShizhijiaCareer>,
+    val achievements: List<ShizhijiaAchievement>,
 ) {
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaUserProfile {
@@ -401,6 +419,21 @@ data class ShizhijiaUserProfile(
                             name = c.optString("career"),
                             level = c.optInt("character_level"),
                             type = c.optString("career_type"),
+                        ),
+                    )
+                }
+            }
+            val achievements = mutableListOf<ShizhijiaAchievement>()
+            o.optJSONArray("achieveInfo")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val a = arr.optJSONObject(i) ?: continue
+                    achievements.add(
+                        ShizhijiaAchievement(
+                            medalId = a.optString("medal_id"),
+                            medalType = a.optString("medal_type"),
+                            name = a.optString("achieve_name"),
+                            detail = a.optString("achieve_detail"),
+                            time = a.optString("achieve_time"),
                         ),
                     )
                 }
@@ -431,6 +464,7 @@ data class ShizhijiaUserProfile(
                 treasureTimes = det.optInt("treasure_times"),
                 newrank = det.optInt("newrank"),
                 careers = careers,
+                achievements = achievements,
             )
         }
     }
