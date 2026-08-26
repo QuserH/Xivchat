@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -1720,8 +1721,8 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
         "BODY" to "上衣", "NECK" to "项链", "GLOVES" to "手部", "WRISTS" to "手镯",
         "LEGS" to "腿部", "FINGER_LEFT" to "戒指", "FEET" to "脚部", "FINGER_RIGHT" to "戒指",
     )
-    val leftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET")
-    val rightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT")
+    val leftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET", "GLASSES")
+    val rightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT", "ORNAMENT")
 
     ScreenFrame {
         ScreenHeader("幻化详情", state, onBack = pop)
@@ -1815,11 +1816,26 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                 Box {
                                                     ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)))
                                                     if (equip?.isMallItem == true) {
-                                                        Text("商城", color = PhoneOnAccentContainer, fontSize = 8.sp,
-                                                            modifier = Modifier.align(Alignment.TopEnd)
-                                                                .clip(RoundedCornerShape(4.dp))
-                                                                .background(PhoneAccent)
-                                                                .padding(horizontal = 3.dp, vertical = 1.dp))
+                                                        // 商城购物袋图标，悬浮在部件图标右上角角点。
+                                                        val bagPath = remember {
+                                                            androidx.compose.ui.graphics.vector.PathParser().parsePathString("M9.90778 2.90427L8.60053 2.90427L8.60053 2.87697C8.60053 1.29042 7.31008 -3.05176e-05 5.72353 -3.05176e-05C4.13698 -3.05176e-05 2.84653 1.29042 2.84653 2.87697L2.84653 2.90427L1.53823 2.90427C0.688784 2.90427 -1.52588e-05 3.59307 -1.52588e-05 4.44252L-1.52588e-05 11.53C-1.52588e-05 12.3795 0.688784 13.0683 1.53823 13.0683L9.90778 13.0683C10.7572 13.0683 11.446 12.3795 11.446 11.53L11.446 4.44252C11.4471 3.59307 10.7583 2.90427 9.90778 2.90427ZM4.12438 2.87697C4.12438 1.99497 4.84153 1.27782 5.72353 1.27782C6.60554 1.27782 7.32268 1.99497 7.32268 2.87697L7.32268 2.90427L4.12438 2.90427L4.12438 2.87697L4.12438 2.87697ZM9.01108 9.41742C8.95648 9.49092 7.65448 11.214 5.71198 11.214C3.76528 11.214 2.48533 9.48567 2.43283 9.41217C2.22493 9.12657 2.28793 8.72652 2.57353 8.51967C2.66409 8.45384 2.77035 8.41296 2.88168 8.40112C2.993 8.38928 3.10549 8.4069 3.20786 8.45221C3.31023 8.49753 3.3989 8.56895 3.46498 8.65932C3.48178 8.68242 4.42783 9.93612 5.71198 9.93612C6.99824 9.93612 7.97578 8.66877 7.98523 8.65512C8.19523 8.37162 8.59633 8.31282 8.87983 8.52282C9.16228 8.73282 9.22108 9.13392 9.01108 9.41742L9.01108 9.41742Z").toPath()
+                                                        }
+                                                        Box(
+                                                            Modifier.align(Alignment.TopEnd)
+                                                                .size(14.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xCC000000)),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            androidx.compose.foundation.Canvas(Modifier.size(10.dp)) {
+                                                                val s = size.width / 11.446f
+                                                                withTransform({
+                                                                    scale(scaleX = s, scaleY = s)
+                                                                }) {
+                                                                    drawPath(bagPath, Color.White)
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                                 Spacer(Modifier.width(8.dp))
@@ -1827,22 +1843,23 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                             Column {
                                                 Text(eName, color = PhoneText, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 Spacer(Modifier.height(2.dp))
-                                                val dyes = equip?.dyes ?: emptyList()
-                                                if (dyes.isNotEmpty()) {
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                        dyes.forEach { dy ->
-                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val holeCount = maxOf(equip?.dyeHoleCount ?: 0, 0)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    for (hi in 0 until holeCount) {
+                                                        val dy = equip?.dyes?.getOrNull(hi)
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            if (dy != null) {
                                                                 val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: PhoneSurfaceRaised
                                                                 Box(Modifier.size(10.dp).clip(CircleShape).background(dyeColor).border(0.5.dp, PhoneMuted, CircleShape))
-                                                                Spacer(Modifier.width(4.dp))
+                                                                Spacer(Modifier.width(3.dp))
                                                                 Text(dy.name, color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
+                                                            } else {
+                                                                Text("⊘", color = PhoneMuted, fontSize = 11.sp)
+                                                                Spacer(Modifier.width(2.dp))
+                                                                Text("无染色", color = PhoneMuted, fontSize = 10.sp)
                                                             }
                                                         }
                                                     }
-                                                } else Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("⊘", color = PhoneMuted, fontSize = 11.sp)
-                                                    Spacer(Modifier.width(3.dp))
-                                                    Row(verticalAlignment = Alignment.CenterVertically) { Text("⊘", color = PhoneMuted, fontSize = 11.sp); Spacer(Modifier.width(3.dp)); Text("无染色", color = PhoneMuted, fontSize = 10.sp) }
                                                 }
                                             }
                                         }
@@ -2060,9 +2077,8 @@ private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, se
 @Composable
 private fun SzjGlamourImage(url: String) {
     val context = LocalContext.current
-    // 已知尺寸（磁盘缓存/内存）→ 精确占位；未知 → 先用 3:4 兜底
+    // 已知尺寸（磁盘缓存/内存）→ 精确占位；未知 → 用固定高度兜底（不用比例）
     val cached = remember(url) { ShizhijiaImageLoader.peekSize(context, url) }
-    val defaultAspect = 3f / 4f
     var bmp by remember(url) { mutableStateOf<android.graphics.Bitmap?>(ShizhijiaImageLoader.peek(url)) }
     var loaded by remember(url) { mutableStateOf(bmp != null) }
     LaunchedEffect(url) {
@@ -2075,11 +2091,11 @@ private fun SzjGlamourImage(url: String) {
         when {
             bmp != null -> bmp!!.width.toFloat() / bmp!!.height.toFloat()
             cached != null -> cached.first.toFloat() / cached.second.toFloat()
-            else -> defaultAspect
+            else -> 0f
         }
     }
     Box(
-        Modifier.fillMaxWidth().aspectRatio(ratio)
+        Modifier.fillMaxWidth().then(if (ratio > 0f) Modifier.aspectRatio(ratio) else Modifier.height(240.dp))
             .background(PhoneSurfaceRaised),
         contentAlignment = Alignment.Center,
     ) {

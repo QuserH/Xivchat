@@ -481,6 +481,7 @@ data class ShizhijiaGlamourEquip(
     val dyes: List<ShizhijiaGlamourDye>,
     val iconUrl: String,
     val mallUrl: String,
+    val dyeHoleCount: Int,
 ) {
     val isMallItem: Boolean get() = mallUrl.isNotBlank()
 
@@ -511,6 +512,7 @@ data class ShizhijiaGlamourEquip(
                 }
             }
             val ordered = mutableListOf<ShizhijiaGlamourDye>()
+            val holeCount = o.optJSONArray("dye_ids")?.length() ?: 0
             o.optJSONArray("dye_ids")?.let { ids ->
                 for (k in 0 until ids.length()) {
                     dyeById.remove(ids.optString(k))?.let { ordered.add(it) }
@@ -523,6 +525,7 @@ data class ShizhijiaGlamourEquip(
                 dyes = ordered,
                 iconUrl = iconUrlFor(o.optString("icon_id")),
                 mallUrl = o.optString("sqmall_url").takeUnless { it.isBlank() || it == "null" }.orEmpty(),
+                dyeHoleCount = holeCount,
             )
         }
     }
