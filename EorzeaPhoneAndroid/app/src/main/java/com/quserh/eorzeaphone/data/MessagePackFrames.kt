@@ -123,9 +123,20 @@ internal object XivChatCodec {
             val close = t.indexOf(']')
             if (close >= 0) t = t.substring(close + 1).trim()
         }
-        val lt = t.indexOf('<')
-        val gt = t.indexOf('>', lt.coerceAtLeast(0))
-        if (gt >= 0) return t.substring(gt + 1).trim()
+        // Strip a leading "<PlayerName> content" prefix ONLY when the angle
+        // bracket sits at the very start and is followed by a space. Sound
+        // effects (<se.11>) and mid-text tags are content, not a name prefix -
+        // stripping them would drop everything before the tag (e.g. a macro
+        // "辅导员来查寝了 <se.11>" must keep the text).
+        if (t.startsWith('<')) {
+            val gt = t.indexOf('>')
+            if (gt >= 0) {
+                val after = t.substring(gt + 1)
+                if (after.startsWith(" ") && !t.substring(0, gt).trimStart().startsWith("se.", ignoreCase = true)) {
+                    return after.trim()
+                }
+            }
+        }
         if (sender.isNotEmpty() && t.startsWith(sender)) {
             t = t.removePrefix(sender).trimStart('：', ':', ' ', '>', '<').trim()
         }

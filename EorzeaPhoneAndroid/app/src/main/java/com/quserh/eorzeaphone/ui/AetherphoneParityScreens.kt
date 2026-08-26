@@ -1619,7 +1619,7 @@ private fun dayKey(timestamp: Long): String {
     return String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
 }
 
-private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 2): Boolean {
+private fun nearBottomLazy(listState: LazyListState, itemMargin: Int = 0): Boolean {
     if (listState.isScrollInProgress) return false
     val info = listState.layoutInfo
     if (info.totalItemsCount <= 0) return true
@@ -1641,10 +1641,12 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
         )
     }
     val listLaidOut = remember(conversation.key) { mutableStateOf(false) }
-    // 进入会话：等列表完成首次布局(onGloballyPositioned)后贴底
-    LaunchedEffect(listLaidOut.value, messages.size) {
-        if (listLaidOut.value && followLatest && messages.isNotEmpty()) {
+    var anchoredBottom by remember(conversation.key) { mutableStateOf(false) }
+    // 进入会话：等列表完成首次布局(onGloballyPositioned)后贴底；只在首次贴底，新消息到达时不得拽回底部
+    LaunchedEffect(listLaidOut.value) {
+        if (listLaidOut.value && followLatest && messages.isNotEmpty() && !anchoredBottom) {
             listState.requestScrollToItem(messages.lastIndex)
+            anchoredBottom = true
         }
     }
     // 新消息到达且仍贴近底部时自动跟到底部
@@ -1679,9 +1681,10 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 } else 0L
                 // 私聊会话不显示消息上方的角色 ID（气泡区分自己/对方），但组首条仍有尾巴；其它频道照旧
                 val groupStart = shouldShowLightSender(messages, index, state.profile?.name)
-                val showAuthor = conversation.category != ChatCategory.Tell && groupStart
-                // 私聊界面所有气泡统一带尾巴，不区分首条/合并；其它频道仍按“组首条带尾巴”
-                val showTail = conversation.category == ChatCategory.Tell || groupStart
+                // 只有真正的私聊窗口(tell:)按私聊渲染；筛选器(tab:)/群聊/本地列都按“非私聊窗口”合并——组首条显示作者
+                val privateChat = conversation.key.startsWith("tell:")
+                val showAuthor = !privateChat && groupStart
+                val showTail = privateChat || groupStart
                 LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
@@ -1702,9 +1705,15 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
 private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversation, anchorTimestamp: Long, onBack: () -> Unit) {
     val messages = conversation.messages
     val listState = rememberLazyListState()
+    var anchored by remember { mutableStateOf(false) }
     val anchorIndex = remember(messages.size, anchorTimestamp) { messages.indexOfFirst { it.timestamp == anchorTimestamp }.coerceAtLeast(0) }
-    LaunchedEffect(anchorIndex, messages.size) {
-        if (messages.isNotEmpty()) listState.requestScrollToItem(anchorIndex)
+    // 只在该屏首次进入（或换日期）时定位到当天第一条；后续新消息到达不再跳回，
+    // 否则用户上滑查看历史时会被新消息拽回当天第一条
+    LaunchedEffect(anchorIndex) {
+        if (messages.isNotEmpty() && !anchored) {
+            listState.requestScrollToItem(anchorIndex)
+            anchored = true
+        }
     }
     Column(Modifier.fillMaxSize()) {
         LightHeader(conversation.title, onBack) {}
