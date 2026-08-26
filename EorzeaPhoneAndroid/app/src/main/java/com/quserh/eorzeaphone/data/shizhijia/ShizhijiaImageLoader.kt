@@ -24,7 +24,9 @@ import java.net.URL
 object ShizhijiaImageLoader {
 
     private const val MEM_CACHE_BYTES = 64_000 // ~64MB of decoded bitmaps
-    private const val DISK_DIR = "shizhijia-img"
+    // v2: v1 cached every image as JPEG which destroyed transparency (medal /
+    // badge icons got black backgrounds). Bumping the dir abandons those files.
+    private const val DISK_DIR = "shizhijia-img-v2"
 
     private val memCache = object : LruCache<String, Bitmap>(MEM_CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024

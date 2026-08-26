@@ -12,6 +12,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -412,7 +414,7 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
     val context = LocalContext.current
     var bottomBarHeightDp by remember { mutableStateOf(bottomBarHeightDp) }
 LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
-    Column(Modifier.fillMaxSize().padding(bottom = 90.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (loggedIn) {
             Text("已登录石之家", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(14.dp))
@@ -1861,12 +1863,20 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
             // Promo banner takes the first slot (top-left) like the official page.
             if (tab == 0) {
                 item(key = "glamour-banner") {
-                    Image(
-                        painter = painterResource(id = com.quserh.eorzeaphone.R.drawable.glamour_banner),
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    val context = LocalContext.current
+                    val banner = remember {
+                        runCatching {
+                            android.graphics.BitmapFactory.decodeStream(context.assets.open("glamour_banner.png"))
+                        }.getOrNull()
+                    }
+                    if (banner != null) {
+                        Image(
+                            bitmap = banner.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
             items(items.size, key = { items[it].id }) { idx ->
