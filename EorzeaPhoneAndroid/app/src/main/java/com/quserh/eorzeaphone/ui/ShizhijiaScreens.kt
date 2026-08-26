@@ -1820,32 +1820,30 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                 Box {
                                                     ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)))
                                                     if (equip?.isMallItem == true) {
-                                                        // 商城购物袋图标，悬浮在部件图标右上角角点。
+                                                        // 商城角标：黄底圆 + 购物袋图标在同一个 Canvas 内一体绘制，
+                                                        // 天然保持相对位置并随设备密度自适应居中。
                                                         val bagPath = remember {
                                                             androidx.compose.ui.graphics.vector.PathParser().parsePathString("M9.90778 2.90427L8.60053 2.90427L8.60053 2.87697C8.60053 1.29042 7.31008 -3.05176e-05 5.72353 -3.05176e-05C4.13698 -3.05176e-05 2.84653 1.29042 2.84653 2.87697L2.84653 2.90427L1.53823 2.90427C0.688784 2.90427 -1.52588e-05 3.59307 -1.52588e-05 4.44252L-1.52588e-05 11.53C-1.52588e-05 12.3795 0.688784 13.0683 1.53823 13.0683L9.90778 13.0683C10.7572 13.0683 11.446 12.3795 11.446 11.53L11.446 4.44252C11.4471 3.59307 10.7583 2.90427 9.90778 2.90427ZM4.12438 2.87697C4.12438 1.99497 4.84153 1.27782 5.72353 1.27782C6.60554 1.27782 7.32268 1.99497 7.32268 2.87697L7.32268 2.90427L4.12438 2.90427L4.12438 2.87697L4.12438 2.87697ZM9.01108 9.41742C8.95648 9.49092 7.65448 11.214 5.71198 11.214C3.76528 11.214 2.48533 9.48567 2.43283 9.41217C2.22493 9.12657 2.28793 8.72652 2.57353 8.51967C2.66409 8.45384 2.77035 8.41296 2.88168 8.40112C2.993 8.38928 3.10549 8.4069 3.20786 8.45221C3.31023 8.49753 3.3989 8.56895 3.46498 8.65932C3.48178 8.68242 4.42783 9.93612 5.71198 9.93612C6.99824 9.93612 7.97578 8.66877 7.98523 8.65512C8.19523 8.37162 8.59633 8.31282 8.87983 8.52282C9.16228 8.73282 9.22108 9.13392 9.01108 9.41742L9.01108 9.41742Z").toPath()
                                                         }
-                                                        Box(
+                                                        androidx.compose.foundation.Canvas(
                                                             Modifier.align(Alignment.TopEnd)
-                                                                .offset(x = 4.dp, y = (-4).dp)
-                                                                .size(16.dp)
-                                                                .clip(CircleShape)
-                                                                .background(Color(0xFFF5B400)),
-                                                            contentAlignment = Alignment.Center,
+                                                                .offset(x = 5.dp, y = (-5).dp)
+                                                                .size(18.dp)
                                                         ) {
-                                                            androidx.compose.foundation.Canvas(Modifier.size(10.dp)) {
-                                                                // 购物袋是高(13.07)宽(11.45)的竖形，按两维取小缩放才不溢出且居中
-                                                                val s = minOf(size.width / 11.446f, size.height / 13.0683f)
-                                                                val dw = 11.446f * s
-                                                                val dh = 13.0683f * s
-                                                                withTransform({
-                                                                    translate(
-                                                                        left = (size.width - dw) / 2f,
-                                                                        top = (size.height - dh) / 2f,
-                                                                    )
-                                                                    scale(scaleX = s, scaleY = s)
-                                                                }) {
-                                                                    drawPath(bagPath, Color.White)
-                                                                }
+                                                            // 黄色圆底
+                                                            drawCircle(Color(0xFFF5B400))
+                                                            // 购物袋图标（竖形，按两维取小缩放完整放入并居中）
+                                                            val s = minOf(size.width / 11.446f, size.height / 13.0683f)
+                                                            val dw = 11.446f * s
+                                                            val dh = 13.0683f * s
+                                                            withTransform({
+                                                                translate(
+                                                                    left = (size.width - dw) / 2f,
+                                                                    top = (size.height - dh) / 2f,
+                                                                )
+                                                                scale(scaleX = s, scaleY = s)
+                                                            }) {
+                                                                drawPath(bagPath, Color.White)
                                                             }
                                                         }
                                                     }
