@@ -1833,7 +1833,8 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                             contentAlignment = Alignment.Center,
                                                         ) {
                                                             androidx.compose.foundation.Canvas(Modifier.size(10.dp)) {
-                                                                val s = size.width / 11.446f
+                                                                // 购物袋是高(13.07)宽(11.45)的竖形，按两维取小缩放才不溢出且居中
+                                                                val s = minOf(size.width / 11.446f, size.height / 13.0683f)
                                                                 val dw = 11.446f * s
                                                                 val dh = 13.0683f * s
                                                                 withTransform({
@@ -2096,9 +2097,9 @@ private fun SzjGlamourImage(url: String) {
             loaded = true
         }
     }
-    // 所有卡片用统一的固定比例（与移动端一致），保证卡片间距/交错距离均匀。
+    // 所有卡片用统一的 9:16 比例（实测移动端封面统一 9:16），保证间距均匀。
     Box(
-        Modifier.fillMaxWidth().aspectRatio(3f / 4f).background(PhoneSurfaceRaised),
+        Modifier.fillMaxWidth().aspectRatio(9f / 16f).background(PhoneSurfaceRaised),
         contentAlignment = Alignment.Center,
     ) {
         val b = bmp
