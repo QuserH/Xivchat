@@ -130,6 +130,19 @@ object SzjViewer {
  * per-race portrait (fetched lazily by uuid for players without a photo) →
  * letter chip. Mirrors how the official site treats missing avatars.
  */
+/** 移动端风格定位图标（昵称与服务器之间的符号）。 */
+@Composable
+private fun SzjLocPin(sizeDp: Int = 12) {
+    val ctx = LocalContext.current
+    val pin = remember { runCatching { android.graphics.BitmapFactory.decodeStream(ctx.assets.open("loc_pin.png")) }.getOrNull() }
+    if (pin != null) {
+        Image(bitmap = pin.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.size(sizeDp.dp))
+    } else {
+        Text("📍", color = PhoneMuted, fontSize = (sizeDp * 0.85f).sp)
+    }
+}
+
+
 @Composable
 private fun SzjAvatar(name: String, avatar: String, uuid: String, sizeDp: Int) {
     val context = LocalContext.current
@@ -486,7 +499,7 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
             }
             Spacer(Modifier.height(10.dp))
             Text(p?.name ?: "已登录", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            val line = listOfNotNull(p?.area, p?.group).joinToString(" · ")
+            val line = listOfNotNull(p?.area, p?.group).joinToString(" ")
             if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 12.sp)
             Spacer(Modifier.height(14.dp))
             // ---- 入口宫格 ----
@@ -692,7 +705,13 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(post.characterName.ifBlank { "匿名玩家" }, color = PhoneMuted, fontSize = 12.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (post.commentCount > 0) Text("${post.commentCount}评论 ", color = PhoneMuted, fontSize = 11.sp)
+            if (post.groupName.isNotBlank()) {
+                Spacer(Modifier.width(3.dp))
+                SzjLocPin(10)
+                Spacer(Modifier.width(2.dp))
+                Text(post.groupName, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (post.commentCount > 0) Text(" ${post.commentCount}评论 ", color = PhoneMuted, fontSize = 11.sp)
             if (post.readCount > 0) Text("${post.readCount}阅读", color = PhoneMuted, fontSize = 11.sp)
         }
     }
@@ -832,8 +851,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(d.characterName, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text(listOf(d.areaName, d.groupName, d.createdAt).filter { it.isNotBlank() }.joinToString(" · "),
-                                color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" "), color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); if (d.createdAt.isNotBlank()) { Text(" " + d.createdAt, color = PhoneMuted, fontSize = 11.sp, maxLines = 1) } }
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -913,8 +931,7 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
                     Text(c.characterName.ifBlank { "匿名玩家" }, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     if (c.isPostsAuthor) Text(" 作者", color = PhoneAccent, fontSize = 11.sp)
                 }
-                Text(listOf(c.areaName, c.groupName, c.createdAt).filter { it.isNotBlank() }.joinToString(" · "),
-                    color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" "), color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.createdAt.isNotBlank()) { Text(" " + c.createdAt, color = PhoneMuted, fontSize = 11.sp, maxLines = 1) } }
             }
             if (c.likeCount > 0) Text("赞 ${c.likeCount}", color = PhoneMuted, fontSize = 11.sp)
         }
@@ -1091,7 +1108,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(u.name, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                        val line = listOf(u.areaName, u.groupName).filter { it.isNotBlank() }.joinToString(" · ")
+                                        val line = listOf(u.areaName, u.groupName).filter { it.isNotBlank() }.joinToString(" ")
                                         if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         if (u.profile.isNotBlank()) Text(u.profile, color = PhoneMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
@@ -1500,7 +1517,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p.name, color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            val line = listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" · ")
+                            val line = listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" ")
                             Text(line, color = PhoneMuted, fontSize = 12.sp)
                             Text("UID $uuid", color = PhoneMuted, fontSize = 11.sp)
                         }
@@ -1742,7 +1759,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(d.authorName, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        val line = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" · ")
+                        val line = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
                         if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 11.sp)
                     }
                 }
