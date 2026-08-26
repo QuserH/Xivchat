@@ -1896,8 +1896,8 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
         // 非团队保持原逻辑：同服只显示名字；团队频道即使同服也显示 名字❀服务器（与新人频道一致）
         if (!isTeam && sameWorld) return n
         val rawMarker = msg.sender.firstOrNull { it.code in 0xE000..0xF8FF || it in "❀✿❁❃❈❉✽❊❋🌸🌼🌺★☆♡♥⚜＊*" }
-        // 团队：同服 worldIcon=0 不会走图标拆分，PUA 小花会显示成方块，因此强制用真实 ❀ 直接渲染
-        val marker = if (isTeam) (rawMarker?.takeIf { it.code !in 0xE000..0xF8FF } ?: '❀') else (rawMarker ?: '\uE05D')
+        // 团队：分隔符固定用 \uE05D（与新人频道一致），由轴字体渲染真小花；不能用真实字符 ❀（会被当成假花）
+        val marker = if (isTeam) '\uE05D' else (rawMarker ?: '\uE05D')
         return "$n$marker$w"
     }
 
