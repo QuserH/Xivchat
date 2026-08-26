@@ -2217,7 +2217,8 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
                     val worldIcon = (message.senderWorldIcon ?: senderWorldIconId.takeIf { it > 0 })?.takeIf { it > 0 }
-                    val statIconId = if (!self && message.senderStatusIcon != null && message.senderStatusIcon != worldIcon) message.senderStatusIcon?.takeIf { it > 0 } else null
+                    // 状态图标只渲染可识别的导芽/身份图标（77-95），插件下发其它无法识别的值时不显示，避免名字左侧留空占位
+                    val statIconId = if (!self && message.senderStatusIcon != null && message.senderStatusIcon != worldIcon) message.senderStatusIcon?.takeIf { it > 0 && statusIconDrawable(it) != null } else null
                     val titleIcon = if (!self) (senderStatusNameIcon(message.senderStatusName) ?: senderStatus.takeIf { it != 0L }?.let { friendStatusIcon(it) }) else null
                     val tagEnd = if (author.startsWith('[')) author.indexOf(']') else -1
                     if (tagEnd >= 0) {
