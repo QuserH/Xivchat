@@ -130,15 +130,21 @@ object SzjViewer {
  * per-race portrait (fetched lazily by uuid for players without a photo) →
  * letter chip. Mirrors how the official site treats missing avatars.
  */
-/** 移动端风格定位图标（昵称与服务器之间的符号）。 */
+/** 移动端风格定位图标（昵称与服务器之间的符号），颜色 #c4a86a（移动端 dwcolor 金色）。 */
 @Composable
 private fun SzjLocPin(sizeDp: Int = 12) {
     val ctx = LocalContext.current
     val pin = remember { runCatching { android.graphics.BitmapFactory.decodeStream(ctx.assets.open("loc_pin.png")) }.getOrNull() }
     if (pin != null) {
-        Image(bitmap = pin.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.size(sizeDp.dp))
+        Image(
+            bitmap = pin.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFFC4A86A)),
+            modifier = Modifier.size(sizeDp.dp),
+        )
     } else {
-        Text("📍", color = PhoneMuted, fontSize = (sizeDp * 0.85f).sp)
+        Text("📍", color = Color(0xFFC4A86A), fontSize = (sizeDp * 0.85f).sp)
     }
 }
 
@@ -499,8 +505,7 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
             }
             Spacer(Modifier.height(10.dp))
             Text(p?.name ?: "已登录", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            val line = listOfNotNull(p?.area, p?.group).joinToString(" ")
-            if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOfNotNull(p?.area, p?.group).joinToString(" "), color = PhoneMuted, fontSize = 12.sp) }
             Spacer(Modifier.height(14.dp))
             // ---- 入口宫格 ----
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -704,13 +709,14 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(post.characterName.ifBlank { "匿名玩家" }, color = PhoneMuted, fontSize = 12.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (post.groupName.isNotBlank()) {
                 Spacer(Modifier.width(3.dp))
                 SzjLocPin(10)
                 Spacer(Modifier.width(2.dp))
                 Text(post.groupName, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Spacer(Modifier.weight(1f))
             if (post.commentCount > 0) Text(" ${post.commentCount}评论 ", color = PhoneMuted, fontSize = 11.sp)
             if (post.readCount > 0) Text("${post.readCount}阅读", color = PhoneMuted, fontSize = 11.sp)
         }
@@ -1517,8 +1523,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p.name, color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            val line = listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                            Text(line, color = PhoneMuted, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" "), color = PhoneMuted, fontSize = 12.sp) }
                             Text("UID $uuid", color = PhoneMuted, fontSize = 11.sp)
                         }
                     }
@@ -2127,11 +2132,14 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
             Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (card.groupName.isNotBlank()) {
                     Spacer(Modifier.width(3.dp))
-                    Text("📍" + card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    SzjLocPin(10)
+                    Spacer(Modifier.width(2.dp))
+                    Text(card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                Spacer(Modifier.weight(1f))
             }
             Spacer(Modifier.height(3.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
