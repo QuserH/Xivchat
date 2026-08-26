@@ -325,10 +325,27 @@ object ShizhijiaApi {
     /**
      * Glamour feed (glamour/glamoursList). order="" = 推荐 (hot_score),
      * "time" = 最新. Requires login.
+     * Filters: raceId (1-8, -1/blank=全部), genderId (-1全部/1男/2女),
+     * createTime (all/last24H/lastWeek/lastMonth).
      */
-    suspend fun getGlamours(context: Context, page: Int = 1, limit: Int = 10, order: String = ""): List<ShizhijiaGlamourCard> {
-        val d = data(context, HOME_BASE, "glamour/glamoursList", mapOf("page" to page.toString(), "limit" to limit.toString(), "order" to order))
-            ?: return emptyList()
+    suspend fun getGlamours(
+        context: Context,
+        page: Int = 1,
+        limit: Int = 10,
+        order: String = "",
+        raceId: Int = -1,
+        genderId: Int = -1,
+        createTime: String = "all",
+    ): List<ShizhijiaGlamourCard> {
+        val params = mutableMapOf(
+            "page" to page.toString(),
+            "limit" to limit.toString(),
+            "order" to order,
+        )
+        if (raceId > 0) params["race_id"] = raceId.toString()
+        if (genderId > 0) params["gender_id"] = genderId.toString()
+        if (createTime != "all") params["createTime"] = createTime
+        val d = data(context, HOME_BASE, "glamour/glamoursList", params) ?: return emptyList()
         val rows = d.optJSONArray("rows") ?: return emptyList()
         return ShizhijiaGlamourCard.fromArray(rows)
     }

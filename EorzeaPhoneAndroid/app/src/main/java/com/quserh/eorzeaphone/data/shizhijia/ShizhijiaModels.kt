@@ -1,4 +1,4 @@
-﻿package com.quserh.eorzeaphone.data.shizhijia
+package com.quserh.eorzeaphone.data.shizhijia
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -327,7 +327,7 @@ data class ShizhijiaSearchUser(
             avatar = cleanAvatar(o.optString("avatar")),
             areaName = o.optString("area_name"),
             groupName = o.optString("group_name"),
-            profile = o.optString("profile"),
+            profile = o.optString("profile").takeUnless { it.isBlank() || it == "null" }.orEmpty(),
             fansNum = o.optInt("fansNum"),
         )
 

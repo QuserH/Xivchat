@@ -88,9 +88,11 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourCard
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecentEvent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
+import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
+import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import kotlinx.coroutines.launch
@@ -173,6 +175,11 @@ private class SzjGlamourState {
     val ended = mutableStateOf(false)
     val loadedKey = mutableStateOf("")
     val gridState = androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState()
+    // 筛选
+    val raceId = mutableStateOf(-1)
+    val genderId = mutableStateOf(-1)
+    val createTimeIdx = mutableStateOf(0)
+    val filterOpen = mutableStateOf(false)
 }
 
 @Composable
@@ -341,7 +348,7 @@ private fun ShizhijiaHomeScreen(
                     }
                     MAIN_RECRUIT -> SzjSectionPlaceholder("招募")
                     MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn, glamourState)
-                    else -> ShizhijiaMeTab(state, nav, loggedIn, barHeightDp, onBarHeightChange)
+                    else -> ShizhijiaMeTab(state, nav, loggedIn, loginUser, barHeightDp, onBarHeightChange)
                 }
             }
             SzjBottomBar(mainTab, onSelect = { mainTab = it }, barHeightDp = barHeightDp, modifier = Modifier.align(Alignment.BottomCenter))
@@ -414,33 +421,93 @@ private fun SzjSectionPlaceholder(label: String) {
 }
 
 @Composable
-private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, bottomBarHeightDp: Float, onBottomBarHeightChange: (Float) -> Unit) {
+private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, loginUser: ShizhijiaLoginUser?, bottomBarHeightDp: Float, onBottomBarHeightChange: (Float) -> Unit) {
     val context = LocalContext.current
     var bottomBarHeightDp by remember { mutableStateOf(bottomBarHeightDp) }
-LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
-    Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (loggedIn) {
-            Text("已登录石之家", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
+    var showSettings by remember { mutableStateOf(false) }
+    val p = loginUser
+    Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
+        if (showSettings) {
+            // ---- 设置页 ----
+            Text("设置", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            Text("外观设置", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Text("悬浮底栏高度: ${bottomBarHeightDp.toInt()} dp", color = PhoneMuted, fontSize = 12.sp)
+            Slider(
+                value = bottomBarHeightDp,
+                onValueChange = {
+                    bottomBarHeightDp = it
+                    ShizhijiaSession.setBottomBarHeight(context, it)
+                },
+                valueRange = 48f..96f,
+            )
+            Spacer(Modifier.height(16.dp))
+            if (loggedIn) {
+                Button(onClick = {
+                    ShizhijiaSession.clear(context)
+                    showSettings = false
+                    android.widget.Toast.makeText(context, "已退出登录", android.widget.Toast.LENGTH_SHORT).show()
+                }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent), modifier = Modifier.fillMaxWidth()) { Text("退出登录") }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("返回", color = PhoneAccent, fontSize = 14.sp, modifier = Modifier.clickable { showSettings = false }.padding(8.dp))
+        } else if (loggedIn) {
+            // ---- 资料头卡: 头像 + 关注/粉丝/获赞 ----
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                SzjAvatar(p?.name ?: "", p?.avatar ?: "", "", 64)
+                Spacer(Modifier.width(16.dp))
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    listOf("关注" to 0, "粉丝" to 0, "获赞" to 0).forEach { (label, num) ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("$num", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text(label, color = PhoneMuted, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(p?.name ?: "已登录", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            val line = listOfNotNull(p?.area, p?.group).joinToString(" · ")
+            if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 12.sp)
             Spacer(Modifier.height(14.dp))
-            Button(onClick = { ShizhijiaSession.clear(context) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("退出登录") }
+            // ---- 入口宫格 ----
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                listOf("收藏", "我的部队", "招募管理", "设置").forEach { label ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable {
+                            if (label == "设置") showSettings = true
+                            else android.widget.Toast.makeText(context, label + "开发中", android.widget.Toast.LENGTH_SHORT).show()
+                        }.padding(8.dp)) {
+                        Box(Modifier.size(46.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                            Text(label.take(1), color = PhoneAccent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Text(label, color = PhoneMuted, fontSize = 11.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                listOf("切换角色", "专项数据").forEach { label ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable {
+                            android.widget.Toast.makeText(context, label + "开发中", android.widget.Toast.LENGTH_SHORT).show()
+                        }.padding(8.dp)) {
+                        Box(Modifier.size(46.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                            Text(label.take(1), color = PhoneAccent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Text(label, color = PhoneMuted, fontSize = 11.sp)
+                    }
+                }
+            }
         } else {
             Text("未登录", color = PhoneMuted)
             Spacer(Modifier.height(14.dp))
             Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("登录") }
         }
-        Spacer(Modifier.height(26.dp))
-        Text("外观设置", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text("悬浮底栏高度: ${bottomBarHeightDp.toInt()} dp", color = PhoneMuted, fontSize = 12.sp)
-        Slider(
-            value = bottomBarHeightDp,
-            onValueChange = {
-                bottomBarHeightDp = it
-                ShizhijiaSession.setBottomBarHeight(context, it)
-            },
-            valueRange = 48f..96f,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp),
-        )
     }
 }
 
@@ -896,10 +963,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
     }
 
     ScreenFrame {
-        ScreenHeader("搜索", state, onBack = { pop() }, trailing = {
-            Text("搜索", color = PhoneAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { doSearch() }.padding(horizontal = 10.dp, vertical = 4.dp))
-        })
+        ScreenHeader("搜索", state, onBack = { pop() })
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 // Channel switch button in front of the search bar.
@@ -1799,6 +1863,12 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
     var page by gs.page
     var ended by gs.ended
     val gridState = gs.gridState
+    // 筛选: 种族 / 性别 / 发布时间
+    var raceId by gs.raceId
+    var genderId by gs.genderId
+    var createTimeIdx by gs.createTimeIdx
+    var filterOpen by gs.filterOpen
+    val createTimeValues = listOf("all", "last24H", "lastWeek", "lastMonth")
 
     fun load(reset: Boolean) {
         if (loading) return
@@ -1806,108 +1876,159 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
         loading = true
         scope.launch {
             val next = if (tab == 1) ShizhijiaApi.getFollowGlamours(context, page)
-            else ShizhijiaApi.getGlamours(context, page, order = if (sort == 1) "time" else "")
+            else ShizhijiaApi.getGlamours(context, page, order = if (sort == 1) "time" else "", raceId = raceId, genderId = genderId, createTime = createTimeValues[createTimeIdx])
             items = items + next
             if (next.isEmpty()) ended = true else page += 1
             loading = false
         }
     }
-    // Reload only when the channel changed; returning from a detail page keeps
-    // the loaded feed, the scroll position (gridState) and the active tab.
-    LaunchedEffect(tab, sort) {
-        val key = "$tab-$sort"
+    // Reload only when the channel/filters changed; returning from a detail
+    // page keeps the loaded feed, scroll position and active tab.
+    LaunchedEffect(tab, sort, raceId, genderId, createTimeIdx) {
+        val key = "$tab-$sort-$raceId-$genderId-$createTimeIdx"
         if (gs.loadedKey.value != key || items.isEmpty()) {
             gs.loadedKey.value = key
             load(reset = true)
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        // 关注 / 全部 + 筛选占位
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
-                Text("关注", fontSize = 15.sp,
-                    color = if (tab == 1) PhoneAccent else PhoneMuted,
-                    fontWeight = if (tab == 1) FontWeight.SemiBold else FontWeight.Normal,
-                    modifier = Modifier.clickable { tab = 1 }.padding(horizontal = 12.dp, vertical = 6.dp))
-                Spacer(Modifier.width(18.dp))
-                Text("全部", fontSize = 15.sp,
-                    color = if (tab == 0) PhoneAccent else PhoneMuted,
-                    fontWeight = if (tab == 0) FontWeight.SemiBold else FontWeight.Normal,
-                    modifier = Modifier.clickable { tab = 0 }.padding(horizontal = 12.dp, vertical = 6.dp))
-            }
-            Text("筛选", fontSize = 13.sp, color = PhoneMuted,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-                    android.widget.Toast.makeText(context, "筛选开发中", android.widget.Toast.LENGTH_SHORT).show()
-                }.padding(horizontal = 8.dp, vertical = 6.dp))
-        }
-        // 推荐 / 最新 pills (仅全部 tab 有意义)
-        if (tab == 0) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
-                Row(Modifier.clip(RoundedCornerShape(14.dp)).background(PhoneSurfaceRaised)) {
-                    listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
-                        Text(label, fontSize = 12.sp,
-                            color = if (sort == id) PhoneOnAccentContainer else PhoneMuted,
-                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
-                                .background(if (sort == id) PhoneAccentContainer else Color.Transparent)
-                                .clickable { if (sort != id) { sort = id } }
-                                .padding(horizontal = 14.dp, vertical = 5.dp))
-                    }
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
+                    Text("关注", fontSize = 15.sp,
+                        color = if (tab == 1) PhoneAccent else PhoneMuted,
+                        fontWeight = if (tab == 1) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.clickable { tab = 1 }.padding(horizontal = 12.dp, vertical = 6.dp))
+                    Spacer(Modifier.width(18.dp))
+                    Text("全部", fontSize = 15.sp,
+                        color = if (tab == 0) PhoneAccent else PhoneMuted,
+                        fontWeight = if (tab == 0) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.clickable { tab = 0 }.padding(horizontal = 12.dp, vertical = 6.dp))
                 }
+                Text("筛选", fontSize = 13.sp, color = PhoneMuted,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { filterOpen = !filterOpen }
+                        .padding(horizontal = 8.dp, vertical = 6.dp))
             }
-        }
-        if (tab == 1 && !loggedIn) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = PhoneMuted) }
-            return@Column
-        }
-        // True staggered waterfall: single scroll container, each card keeps
-        // its own height (image capped, top-cropped like the official app).
-                val nearEnd by remember { derivedStateOf {
-            val info = gridState.layoutInfo.visibleItemsInfo
-            val last = info.lastOrNull()?.index ?: 0
-            items.isNotEmpty() && last >= items.size - 3
-        } }
-        LaunchedEffect(nearEnd) { if (nearEnd && !ended && !loading) load(reset = false) }
-
-        androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
-            columns = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2),
-            state = gridState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalItemSpacing = 10.dp,
-        ) {
-            // Promo banner takes the first slot (top-left) like the official page.
             if (tab == 0) {
-                item(key = "glamour-banner") {
-                    val context = LocalContext.current
-                    val banner = remember {
-                        runCatching {
-                            android.graphics.BitmapFactory.decodeStream(context.assets.open("glamour_banner.png"))
-                        }.getOrNull()
-                    }
-                    if (banner != null) {
-                        Image(
-                            bitmap = banner.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+                    Row(Modifier.clip(RoundedCornerShape(14.dp)).background(PhoneSurfaceRaised)) {
+                        listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
+                            Text(label, fontSize = 12.sp,
+                                color = if (sort == id) PhoneOnAccentContainer else PhoneMuted,
+                                modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                                    .background(if (sort == id) PhoneAccentContainer else Color.Transparent)
+                                    .clickable { if (sort != id) { sort = id } }
+                                    .padding(horizontal = 14.dp, vertical = 5.dp))
+                        }
                     }
                 }
             }
-            items(items.size, key = { items[it].id }) { idx ->
-                SzjGlamourCardItem(items[idx], nav)
+            if (tab == 1 && !loggedIn) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = PhoneMuted) }
+                return@Column
+            }
+            androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
+                columns = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalItemSpacing = 10.dp,
+            ) {
+                if (tab == 0) {
+                    item(key = "glamour-banner") {
+                        val ctx = LocalContext.current
+                        val banner = remember(ctx) {
+                            runCatching {
+                                android.graphics.BitmapFactory.decodeStream(ctx.assets.open("glamour_banner.png"))
+                            }.onFailure { android.util.Log.w("ShizhijiaImg", "banner: ${it.message}") }.getOrNull()
+                        }
+                        if (banner != null) {
+                            Image(
+                                bitmap = banner.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+                items(items.size, key = { items[it].id }) { idx ->
+                    SzjGlamourCardItem(items[idx], nav)
+                }
+            }
+            if (loading && items.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
+                }
             }
         }
-        if (loading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
+        // 筛选面板: 从顶部展开, 点击面板外区域自动收起。
+        if (filterOpen) {
+            val noRipple = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Column(
+                Modifier.fillMaxSize()
+                    .background(Color(0x66000000))
+                    .pointerInput(Unit) { detectTapGestures { filterOpen = false } }
+            ) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(bottomEnd = 16.dp, bottomStart = 16.dp))
+                        .background(PhoneBackground)
+                        .clickable(interactionSource = noRipple, indication = null) { }
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    SzjFilterSection("种族", listOf("全部种族" to -1, "人族" to 1, "精灵族" to 2, "拉拉菲尔族" to 3, "猫魅族" to 4, "鲁加族" to 5, "敖龙族" to 6, "硌狮族" to 7, "维埃拉族" to 8), raceId) { raceId = it }
+                    Spacer(Modifier.height(8.dp))
+                    SzjFilterSection("性别", listOf("全部" to -1, "男性" to 1, "女性" to 2), genderId) { genderId = it }
+                    Spacer(Modifier.height(8.dp))
+                    SzjFilterSection("发布时间", listOf("全部" to 0, "24小时内" to 1, "最近一周" to 2, "最近一个月" to 3), createTimeIdx) { createTimeIdx = it }
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { raceId = -1; genderId = -1; createTimeIdx = 0 },
+                            colors = ButtonDefaults.buttonColors(containerColor = PhoneSurfaceRaised),
+                            modifier = Modifier.weight(1f),
+                        ) { Text("重置", color = PhoneText) }
+                        Button(
+                            onClick = {
+                                filterOpen = false
+                                gs.loadedKey.value = ""
+                                load(reset = true)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PhoneAccentContainer),
+                            modifier = Modifier.weight(1f),
+                        ) { Text("确认", color = PhoneOnAccentContainer) }
+                    }
+                }
             }
         }
     }
 }
 
+@Composable
+private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, selected: Int, onSelect: (Int) -> Unit) {
+    Column {
+        Text(label, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            options.chunked(4).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (label2, id) ->
+                        Text(label2, fontSize = 12.sp,
+                            color = if (selected == id) PhoneOnAccentContainer else PhoneText,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected == id) PhoneAccentContainer else PhoneSurfaceRaised)
+                                .clickable { onSelect(id) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp))
+                    }
+                }
+            }
+        }
+    }
+}
 /** 幻化瀑布流卡片：封面限高裁切 + 标题 + 作者/服务器 + 收藏/点赞。 */
 @Composable
 private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Unit) {
