@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -191,6 +192,7 @@ fun ShizhijiaScreen(state: PhoneState) {
     val homeMainTab = remember { mutableStateOf(MAIN_COMMUNITY) }
     val homeSubTab = remember { mutableStateOf(SUB_POSTS) }
     var barHeight by remember { mutableStateOf(56f) }
+    var barBottom by remember { mutableStateOf(ShizhijiaSession.bottomBarBottom(context)) }
     LaunchedEffect(Unit) { barHeight = ShizhijiaSession.bottomBarHeight(context) }
     // Only swallow back while inside the app; the outer handler then leaves the desktop.
     BackHandler(enabled = stack.size > 1) { stack = stack.dropLast(1) }
@@ -200,7 +202,7 @@ fun ShizhijiaScreen(state: PhoneState) {
     val pop: () -> Unit = { if (stack.size > 1) stack = stack.dropLast(1) }
     Box(Modifier.fillMaxSize()) {
         when (route) {
-SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab, barHeight) { barHeight = it }
+SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab, barHeightDp = barHeight, barBottomDp = barBottom, onBarHeightChange = { barHeight = it }, onBarBottomChange = { barBottom = it })
             is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop, nav)
             is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop)
             SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav)
@@ -282,6 +284,8 @@ private fun ShizhijiaHomeScreen(
     subTabState: MutableState<Int>,
     barHeightDp: Float,
     onBarHeightChange: (Float) -> Unit,
+    barBottomDp: Float,
+    onBarBottomChange: (Float) -> Unit,
 ) {
     val context = LocalContext.current
     var mainTab by mainTabState
@@ -348,10 +352,10 @@ private fun ShizhijiaHomeScreen(
                     }
                     MAIN_RECRUIT -> SzjSectionPlaceholder("招募")
                     MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn, glamourState)
-                    else -> ShizhijiaMeTab(state, nav, loggedIn, loginUser, barHeightDp, onBarHeightChange)
+                    else -> ShizhijiaMeTab(state, nav, loggedIn, loginUser, barHeightDp, barBottomDp, onBarHeightChange, onBarBottomChange)
                 }
             }
-            SzjBottomBar(mainTab, onSelect = { mainTab = it }, barHeightDp = barHeightDp, modifier = Modifier.align(Alignment.BottomCenter))
+            SzjBottomBar(mainTab, onSelect = { mainTab = it }, barHeightDp = barHeightDp, barBottomDp = barBottomDp, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }
@@ -421,10 +425,12 @@ private fun SzjSectionPlaceholder(label: String) {
 }
 
 @Composable
-private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, loginUser: ShizhijiaLoginUser?, bottomBarHeightDp: Float, onBottomBarHeightChange: (Float) -> Unit) {
+private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, loginUser: ShizhijiaLoginUser?, bottomBarHeightDp: Float, barBottomDp: Float, onBarHeightChange: (Float) -> Unit, onBarBottomChange: (Float) -> Unit) {
     val context = LocalContext.current
     var bottomBarHeightDp by remember { mutableStateOf(bottomBarHeightDp) }
-    LaunchedEffect(bottomBarHeightDp) { onBottomBarHeightChange(bottomBarHeightDp) }
+    var barBottomDp by remember { mutableStateOf(barBottomDp) }
+    LaunchedEffect(barBottomDp) { onBarBottomChange(barBottomDp) }
+    LaunchedEffect(bottomBarHeightDp) { onBarHeightChange(bottomBarHeightDp) }
     var showSettings by remember { mutableStateOf(false) }
     val p = loginUser
     Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -442,6 +448,16 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
                     ShizhijiaSession.setBottomBarHeight(context, it)
                 },
                 valueRange = 48f..96f,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text("距底部距离: " + barBottomDp.toInt() + " dp", color = PhoneMuted, fontSize = 12.sp)
+            Slider(
+                value = barBottomDp,
+                onValueChange = {
+                    barBottomDp = it
+                    ShizhijiaSession.setBottomBarBottom(context, it)
+                },
+                valueRange = 0f..40f,
             )
             Spacer(Modifier.height(16.dp))
             if (loggedIn) {
@@ -513,10 +529,10 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
 
 /** MD3 floating bottom bar: a rounded capsule that hovers over the content. */
 @Composable
-private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, barHeightDp: Float, modifier: Modifier = Modifier) {
+private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, barHeightDp: Float, barBottomDp: Float, modifier: Modifier = Modifier) {
     Row(
         modifier
-            .padding(start = 18.dp, end = 18.dp, bottom = 10.dp).fillMaxWidth().height(barHeightDp.dp)
+            .padding(start = 18.dp, end = 18.dp, bottom = 10.dp + barBottomDp.dp).fillMaxWidth().height(barHeightDp.dp)
             .shadow(6.dp, RoundedCornerShape(30.dp))
             .clip(RoundedCornerShape(30.dp))
             .background(PhoneSurface)
@@ -2035,8 +2051,8 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
         ShizhijiaRemoteImage(
             url = card.mainImage,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 170.dp),
-            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f),
+            contentScale = ContentScale.Crop,
         )
         Column(Modifier.padding(8.dp)) {
             Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
