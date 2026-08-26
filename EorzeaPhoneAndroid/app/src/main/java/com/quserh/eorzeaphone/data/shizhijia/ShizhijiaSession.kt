@@ -18,6 +18,7 @@ object ShizhijiaSession {
     private const val KEY_TIME = "login_time"
     private const val KEY_SIGN = "last_sign_date"
     private const val KEY_USER = "cached_login_user"
+    private const val KEY_BAR_HEIGHT = "bottom_bar_height"
     private const val KEY_SEARCH_HISTORY = "search_history"
 
     /** Search history entries (keyword + channel type), newest first, capped at 10. */
@@ -102,6 +103,15 @@ object ShizhijiaSession {
     fun clearCachedUser(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY_USER).apply()
+    }
+
+    /** 悬浮底栏高度（dp），外观设置里可调。 */
+    fun bottomBarHeight(context: Context): Float =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY_BAR_HEIGHT, 56f)
+
+    fun setBottomBarHeight(context: Context, heightDp: Float) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_BAR_HEIGHT, heightDp).apply()
     }
 
     /** yyyy-MM-dd of the last automatic check-in, so we only sign in once a day. */

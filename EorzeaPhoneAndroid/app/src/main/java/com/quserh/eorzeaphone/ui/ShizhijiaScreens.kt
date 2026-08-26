@@ -1,4 +1,4 @@
-﻿package com.quserh.eorzeaphone.ui
+package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -8,6 +8,7 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -669,15 +670,13 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         detail = ShizhijiaApi.getPostDetail(context, postId)
         loading = false
     }
-    // (Re)load comments whenever the ordering changes.
+    // (Re)load comments whenever the ordering changes. The old list stays
+    // visible while fetching and the scroll position is not touched.
     LaunchedEffect(postId, commentOrder, onlyAuthor) {
         commentLoading = true
-        comments = emptyList(); commentPage = 1; commentPageTime = ""
         val result = ShizhijiaApi.getPostComments(context, postId, commentOrder, onlyLandlord = onlyAuthor)
-        comments = result.rows; commentPageTime = result.pageTime
+        comments = result.rows; commentPageTime = result.pageTime; commentPage = 1
         commentLoading = false
-        // Keep the jump predictable: land on the comments header, not somewhere random.
-        runCatching { listState.scrollToItem(2) }
     }
     // Infinite scroll for comments.
     val nearEnd by remember { derivedStateOf {
@@ -1538,7 +1537,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                     val medalUrl = if (a.medalId.isNotBlank())
                                         "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/medal/medal${a.medalId}.png" else ""
-                                    ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(38.dp).clip(CircleShape), showPlaceholder = false)
+                                    ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(38.dp).clip(CircleShape).graphicsLayer { scaleX = 1.15f; scaleY = 1.15f }, contentScale = ContentScale.Crop, showPlaceholder = false)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(a.name, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1713,9 +1712,14 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                 Spacer(Modifier.height(2.dp))
                                                 val dyes = equip?.dyes ?: emptyList()
                                                 if (dyes.isNotEmpty()) {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                                         dyes.forEach { dy ->
-                                                            Text(dy, color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: PhoneSurfaceRaised
+                                                                Box(Modifier.size(10.dp).clip(CircleShape).background(dyeColor).border(0.5.dp, PhoneMuted, CircleShape))
+                                                                Spacer(Modifier.width(4.dp))
+                                                                Text(dy.name, color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
+                                                            }
                                                         }
                                                     }
                                                 } else Text("无染色", color = PhoneMuted, fontSize = 10.sp)
@@ -1832,6 +1836,16 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalItemSpacing = 10.dp,
         ) {
+            // Promo banner takes the first slot (top-left) like the official page.
+            if (tab == 0) {
+                item(key = "glamour-banner") {
+                    ShizhijiaRemoteImage(
+                        url = "https://ff14risingstones.web.sdo.com/pc/png/glamour_banner.DAb8KKTU.png",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.FillWidth,
+                    )
+                }
+            }
             items(items.size, key = { items[it].id }) { idx ->
                 SzjGlamourCardItem(items[idx], nav)
             }

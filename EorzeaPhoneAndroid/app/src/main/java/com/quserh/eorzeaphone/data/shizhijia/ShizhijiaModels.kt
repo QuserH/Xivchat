@@ -470,11 +470,14 @@ data class ShizhijiaUserProfile(
     }
 }
 
+/** One dye of a glamour equipment (name + hex color), ordered by dye_ids. */
+data class ShizhijiaGlamourDye(val name: String, val color: String)
+
 /** One equipment slot of a glamour outfit (glamour/glamourDetail -> equipments[]). */
 data class ShizhijiaGlamourEquip(
     val slot: String,
     val name: String,
-    val dyes: List<String>,
+    val dyes: List<ShizhijiaGlamourDye>,
     val iconUrl: String,
 ) {
     companion object {
@@ -488,6 +491,38 @@ data class ShizhijiaGlamourEquip(
             if (id <= 0) return ""
             val folder = (id / 1000).toString() + "000"
             return "$ICON_BASE/${folder.padStart(6, '0')}/${id.toString().padStart(6, '0')}_hr1.png"
+        }
+
+        fun fromJson(o: JSONObject): ShizhijiaGlamourEquip {
+            // Dyes must render in dye_ids order (two-dye results depend on the
+            // order), so map dye objects by id and follow dye_ids sequence.
+            val dyeById = mutableMapOf<String, ShizhijiaGlamourDye>()
+            val leftovers = mutableListOf<ShizhijiaGlamourDye>()
+            o.optJSONArray("dyes")?.let { da ->
+                for (k in 0 until da.length()) {
+                    val d = da.optJSONObject(k) ?: continue
+                    val dye = ShizhijiaGlamourDye(
+                        name = d.optString("name"),
+                        color = d.optString("color"),
+                    )
+                    val id = d.optString("id")
+                    if (id.isNotBlank()) dyeById[id] = dye else leftovers.add(dye)
+                }
+            }
+            val ordered = mutableListOf<ShizhijiaGlamourDye>()
+            o.optJSONArray("dye_ids")?.let { ids ->
+                for (k in 0 until ids.length()) {
+                    val id = ids.optString(k)
+                    dyeById.remove(id)?.let { ordered.add(it) }
+                }
+            }
+            ordered.addAll(leftovers)
+            return ShizhijiaGlamourEquip(
+                slot = o.optString("slot"),
+                name = o.optString("name"),
+                dyes = ordered,
+                iconUrl = iconUrlFor(o.optString("icon_id")),
+            )
         }
     }
 }
@@ -530,21 +565,7 @@ data class ShizhijiaGlamourDetail(
                     val e = arr.optJSONObject(i) ?: continue
                     val name = e.optString("name")
                     if (name.isBlank() || name == "null") continue
-                    val dyes = mutableListOf<String>()
-                    e.optJSONArray("dyes")?.let { da ->
-                        for (k in 0 until da.length()) {
-                            val d = da.optJSONObject(k) ?: continue
-                            d.optString("name").takeIf { it.isNotBlank() }?.let { dyes.add(it) }
-                        }
-                    }
-                    equips.add(
-                        ShizhijiaGlamourEquip(
-                            slot = e.optString("slot"),
-                            name = name,
-                            dyes = dyes,
-                            iconUrl = ShizhijiaGlamourEquip.iconUrlFor(e.optString("icon_id")),
-                        ),
-                    )
+                    equips.add(ShizhijiaGlamourEquip.fromJson(e))
                 }
             }
             val author = o.optJSONObject("userInfo")
