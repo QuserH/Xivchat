@@ -368,7 +368,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
         }
         val myName = state.profile?.name.orEmpty().normalizedPlayerName()
         val rows = state.conversations.filter { c ->
-            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party || c.key == "novice") &&
+            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party || c.category == ChatCategory.Team || c.key == "novice") &&
                 !state.isConversationHidden(c) &&
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
@@ -547,7 +547,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
         ),
         "团体" to listOf(
             ChannelChoice("party", ChatCategory.Party, "小队", setOf(14, 84)),
-            ChannelChoice("alliance", ChatCategory.Party, "团队", setOf(15)),
+            ChannelChoice("alliance", ChatCategory.Team, "团队", setOf(15)),
             ChannelChoice("crossparty", ChatCategory.Party, "跨服小队", setOf(32)),
             ChannelChoice("pvp", ChatCategory.Party, "PvP小队", setOf(36)),
             ChannelChoice("pvpann", ChatCategory.Party, "PvP公告 / 登录", setOf(77, 78)),
@@ -1685,7 +1685,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 val privateChat = conversation.key.startsWith("tell:")
                 val showAuthor = !privateChat && groupStart
                 val showTail = privateChat || groupStart
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party || conversation.category == ChatCategory.Team) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     Text(
                         "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -2807,6 +2807,7 @@ private fun lightConversationColor(category: ChatCategory): Color {
     val lightHue = when (category) {
         ChatCategory.Public -> Color(0xFF7ED9A7)
         ChatCategory.Party -> Color(0xFF8FB0FF)
+        ChatCategory.Team -> Color(0xFF6FC3E8)
         ChatCategory.Tell -> Color(0xFFFFB06E)
         ChatCategory.Linkshell -> Color(0xFFBE9BE8)
         ChatCategory.FreeCompany -> Color(0xFFE8A879)
@@ -2816,6 +2817,7 @@ private fun lightConversationColor(category: ChatCategory): Color {
     val darkHue = when (category) {
         ChatCategory.Public -> Color(0xFF2E7D50)
         ChatCategory.Party -> Color(0xFF3E63C4)
+        ChatCategory.Team -> Color(0xFF2C6E9E)
         ChatCategory.Tell -> Color(0xFFC06A24)
         ChatCategory.Linkshell -> Color(0xFF6E4E9E)
         ChatCategory.FreeCompany -> Color(0xFF965C2C)

@@ -1125,7 +1125,8 @@ private fun ChatConversation.displayChannelHint(): String = if (tellRecipient.is
 }
 private fun convColor(category: ChatCategory): Color = when (category) {
     ChatCategory.Public -> Color(0xFF4C9F70)
-    ChatCategory.Party -> Color(0xFF5B8DEF)
+ChatCategory.Party -> Color(0xFF5B8DEF)
+    ChatCategory.Team -> Color(0xFF3FA9D9)
     ChatCategory.Tell -> Color(0xFFE08A3C)
     ChatCategory.Linkshell -> Color(0xFF9B6BC4)
     ChatCategory.FreeCompany -> Color(0xFFC0783F)

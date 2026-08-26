@@ -84,6 +84,7 @@ data class GameChatMessage(
 enum class ChatCategory(val label: String) {
     Public("周围"),
     Party("队伍"),
+    Team("团队"),
     Tell("私聊"),
     Linkshell("通讯贝"),
     FreeCompany("部队"),
@@ -93,7 +94,8 @@ enum class ChatCategory(val label: String) {
     companion object {
         fun fromChannel(channel: Int): ChatCategory = when (channel) {
             10, 11, 30, 81, 82, 83 -> Public
-            14, 15, 32, 36, 84 -> Party
+            14, 32, 36, 84 -> Party
+            15 -> Team
             12, 13, 80 -> Tell
             in 16..23, in 86..93, 37, in 101..107 -> Linkshell
             24, 85 -> FreeCompany

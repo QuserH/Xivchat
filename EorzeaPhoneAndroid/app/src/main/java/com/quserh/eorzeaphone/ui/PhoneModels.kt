@@ -775,6 +775,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         conversationIconOverrides[key]?.let { return it }
         return when (category) {
             ChatCategory.Party -> "party"
+            ChatCategory.Team -> "party"
             ChatCategory.FreeCompany -> "fc"
             else -> ""
         }
@@ -912,6 +913,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 conversation.category == ChatCategory.Tell -> conversation.tellRecipient.displayPlayerName()
                 conversation.key == "novice" -> "新人频道"
                 conversation.category == ChatCategory.Party -> "小队"
+                conversation.category == ChatCategory.Team -> "团队"
                 conversation.category == ChatCategory.FreeCompany -> "部队"
                 conversation.category == ChatCategory.Linkshell -> (groupNameForChannel(conversation.messages.firstOrNull()?.channel ?: 0) ?: conversation.title)
                 else -> conversation.title
@@ -1816,6 +1818,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private fun outChannelFor(category: ChatCategory): Int = when (category) {
         ChatCategory.Tell -> 12
         ChatCategory.Party -> 2
+        ChatCategory.Team -> 5
         ChatCategory.FreeCompany -> 6
         ChatCategory.Linkshell -> 19
         ChatCategory.Public -> 1
@@ -1865,7 +1868,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     // 未读角标：只统计会显示在消息列表里的会话（排除隐藏会话，以及以自己名字命名的会话），首页聊天图标角标与消息标签共用
     fun badgeUnread(): Int = conversations
         .filter { c ->
-            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party || c.key == "novice") &&
+            (c.category == ChatCategory.Tell || c.category == ChatCategory.Linkshell || c.category == ChatCategory.FreeCompany || c.category == ChatCategory.Party || c.category == ChatCategory.Team || c.key == "novice") &&
                 !isConversationHidden(c) &&
                 (profile?.name.orEmpty().isBlank() || c.title.normalizedPlayerName() != profile?.name?.normalizedPlayerName())
         }
@@ -2069,7 +2072,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         if (message.category == ChatCategory.System) return null
         // Group channels (部队/通讯贝/跨服贝) behave like group chats: even our own
         // sent message must keep the group conversation visible in the message list.
-        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party || isNovice
+        val groupChannel = message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Linkshell || message.category == ChatCategory.Party || message.category == ChatCategory.Team || isNovice
         if (message.self || message.isSelfMessage(profile?.name)) {
             // 自用情感动作已按 routeToTell 路由成私聊，不再被“自己消息不建会话”的规则拦下
             if (!groupChannel && !routeToTell && message.category != ChatCategory.Tell) return null
@@ -2080,6 +2083,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             isNovice -> "新人频道"
             message.category == ChatCategory.Linkshell -> groupNameForChannel(message.channel) ?: message.conversationTitle()
             message.category == ChatCategory.Party -> "小队"
+            message.category == ChatCategory.Team -> "团队"
             message.category == ChatCategory.FreeCompany -> "部队"
             else -> message.conversationTitle()
         }

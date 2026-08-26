@@ -49,7 +49,7 @@ class PhoneNotifier(private val context: Context) {
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val convKey = when {
             message.channel == 27 || message.channel == 75 || message.channel == 94 -> "novice"
-            message.category == ChatCategory.Tell || message.category == ChatCategory.Linkshell || message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Party -> message.conversationKey()
+            message.category == ChatCategory.Tell || message.category == ChatCategory.Linkshell || message.category == ChatCategory.FreeCompany || message.category == ChatCategory.Party || message.category == ChatCategory.Team -> message.conversationKey()
             else -> "local"
         }
         intent.putExtra(MainActivity.EXTRA_CONVERSATION_KEY, convKey)
