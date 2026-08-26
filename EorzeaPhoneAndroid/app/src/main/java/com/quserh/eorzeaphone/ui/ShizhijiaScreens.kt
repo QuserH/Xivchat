@@ -132,7 +132,7 @@ object SzjViewer {
  */
 /** 移动端风格定位图标（昵称与服务器之间的符号），颜色 #c4a86a（移动端 dwcolor 金色）。 */
 @Composable
-private fun SzjLocPin(sizeDp: Int = 12) {
+private fun SzjLocPin(sizeDp: Int = 16) {
     val ctx = LocalContext.current
     val pin = remember { runCatching { android.graphics.BitmapFactory.decodeStream(ctx.assets.open("loc_pin.png")) }.getOrNull() }
     if (pin != null) {
@@ -401,7 +401,11 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
         Column(Modifier.weight(1f)) {
             Text(loginUser?.name ?: if (loggedIn) "已登录" else "未登录", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             val server = listOfNotNull(loginUser?.area, loginUser?.group)
-            Text(if (server.isNotEmpty()) server.joinToString(" ") else "石之家 · FF14 官方社区", color = PhoneMuted, fontSize = 11.sp)
+            if (server.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(server.joinToString(" "), color = PhoneMuted, fontSize = 11.sp) }
+            } else {
+                Text("石之家 · FF14 官方社区", color = PhoneMuted, fontSize = 11.sp)
+            }
         }
         // Check-in button flips to a greyed "已签到" once done today; clicking it
         // then opens the sign-in calendar (rewards + signed days) instead.
@@ -712,7 +716,7 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (post.groupName.isNotBlank()) {
                 Spacer(Modifier.width(3.dp))
-                SzjLocPin(10)
+                SzjLocPin(14)
                 Spacer(Modifier.width(2.dp))
                 Text(post.groupName, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -766,6 +770,8 @@ private fun SzjDynamicRow(d: ShizhijiaDynamic, onClick: () -> Unit) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(d.characterName.ifBlank { "光之战士" }, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                val dserver = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
+                if (dserver.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(dserver, color = PhoneMuted, fontSize = 11.sp) }
                 if (d.createdAt.isNotBlank()) Text(d.createdAt, color = PhoneMuted, fontSize = 11.sp)
             }
         }
@@ -1008,12 +1014,13 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
     ScreenFrame {
         ScreenHeader("搜索", state, onBack = { pop() })
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // Channel switch button in front of the search bar.
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 类型切换与输入框融合在同一搜索栏内（左侧）
                 Box {
-                    Text("$typeLabel ▾", color = PhoneText, fontSize = 14.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(PhoneSurface)
-                            .clickable { typeMenu = true }.padding(horizontal = 10.dp, vertical = 12.dp))
+                    Row(Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { typeMenu = true }.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(typeLabel, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("▾", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp))
+                    }
                     androidx.compose.material3.DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
                         listOf(
                             "帖子" to ShizhijiaApi.SEARCH_TYPE_POST,
@@ -1028,26 +1035,24 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                         }
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                Row(Modifier.weight(1f).clip(RoundedCornerShape(11.dp)).background(PhoneSurface).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("⌕", color = PhoneMuted, fontSize = 20.sp, modifier = Modifier.padding(end = 8.dp))
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        textStyle = TextStyle(color = PhoneText, fontSize = 15.sp),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { doSearch() }),
-                        decorationBox = { inner ->
-                            Box {
-                                if (query.isEmpty()) Text("搜索$typeLabel", color = PhoneMuted, fontSize = 15.sp)
-                                inner()
-                            }
-                        },
-                        modifier = Modifier.weight(1f).padding(vertical = 12.dp),
-                    )
-                    Text("搜索", color = PhoneAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { doSearch() }.padding(horizontal = 6.dp, vertical = 4.dp))
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = PhoneText, fontSize = 15.sp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { doSearch() }),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) Text("搜索$typeLabel", color = PhoneMuted, fontSize = 15.sp)
+                            inner()
+                        }
+                    },
+                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 12.dp),
+                )
+                // 放大镜图标替换原来的“搜索”文字按钮
+                Box(Modifier.size(34.dp).clip(CircleShape).background(PhoneAccentContainer).clickable { doSearch() }, contentAlignment = Alignment.Center) {
+                    Text("⌕", color = PhoneOnAccentContainer, fontSize = 18.sp)
                 }
             }
             if (postResults == null && userResults == null && glamourResults == null && !searching) {
@@ -1125,38 +1130,19 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                     }
                     searchType == ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
                         if (glamourResults.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关幻化", color = PhoneMuted) }
-                        else androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
-                            columns = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2),
+                        else androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalItemSpacing = 10.dp,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             val results = glamourResults.orEmpty()
                             items(results.size, key = { results[it].id }) { idx ->
                                 val g = results[idx]
-                                Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(g.id)) }) {
+                                // 一行三列，只显示头图，点击进入幻化详情（不是预览）
+                                Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable { nav(SzjRoute.GlamourDetail(g.id)) }) {
                                     SzjGlamourImage(url = g.mainImage)
-                                    Column(Modifier.padding(8.dp)) {
-                                        Text(g.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Spacer(Modifier.height(2.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(g.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            if (g.groupName.isNotBlank()) {
-                                                Spacer(Modifier.width(3.dp))
-                                                SzjLocPin(10)
-                                                Spacer(Modifier.width(2.dp))
-                                                Text(g.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            }
-                                            Spacer(Modifier.weight(1f))
-                                        }
-                                        Spacer(Modifier.height(3.dp))
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                            Text("★ ${g.favorites}", color = PhoneMuted, fontSize = 11.sp)
-                                            Spacer(Modifier.width(10.dp))
-                                            Text("👍 ${g.likes}", color = PhoneMuted, fontSize = 11.sp)
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -1786,7 +1772,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     Column {
                         Text(d.authorName, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         val line = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                        if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 11.sp)
+                        if (line.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(line, color = PhoneMuted, fontSize = 11.sp) }
                     }
                 }
             }
@@ -2156,7 +2142,7 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
                 Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (card.groupName.isNotBlank()) {
                     Spacer(Modifier.width(3.dp))
-                    SzjLocPin(10)
+                    SzjLocPin(14)
                     Spacer(Modifier.width(2.dp))
                     Text(card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
