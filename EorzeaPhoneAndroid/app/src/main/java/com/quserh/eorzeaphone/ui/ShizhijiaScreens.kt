@@ -1125,16 +1125,37 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                     }
                     searchType == ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
                         if (glamourResults.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关幻化", color = PhoneMuted) }
-                        else LazyColumn(Modifier.fillMaxSize()) {
-                            items(glamourResults.orEmpty(), key = { it.id }) { g ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                    ShizhijiaRemoteImage(url = g.mainImage, modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)))
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(g.title, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        val line = listOf(g.areaName, g.groupName, g.characterName).filter { it.isNotBlank() }.joinToString(" · ")
-                                        Text(line, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text("♥ ${g.likes}  ★ ${g.favorites}", color = PhoneMuted, fontSize = 11.sp)
+                        else androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
+                            columns = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalItemSpacing = 10.dp,
+                        ) {
+                            val results = glamourResults.orEmpty()
+                            items(results.size, key = { results[it].id }) { idx ->
+                                val g = results[idx]
+                                Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(g.id)) }) {
+                                    SzjGlamourImage(url = g.mainImage)
+                                    Column(Modifier.padding(8.dp)) {
+                                        Text(g.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Spacer(Modifier.height(2.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(g.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (g.groupName.isNotBlank()) {
+                                                Spacer(Modifier.width(3.dp))
+                                                SzjLocPin(10)
+                                                Spacer(Modifier.width(2.dp))
+                                                Text(g.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            Spacer(Modifier.weight(1f))
+                                        }
+                                        Spacer(Modifier.height(3.dp))
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                            Text("★ ${g.favorites}", color = PhoneMuted, fontSize = 11.sp)
+                                            Spacer(Modifier.width(10.dp))
+                                            Text("👍 ${g.likes}", color = PhoneMuted, fontSize = 11.sp)
+                                        }
                                     }
                                 }
                             }
