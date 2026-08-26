@@ -1,4 +1,4 @@
-package com.quserh.eorzeaphone.data.shizhijia
+﻿package com.quserh.eorzeaphone.data.shizhijia
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
@@ -280,8 +280,10 @@ object ShizhijiaApi {
     suspend fun jobIconByName(context: Context): Map<String, String> {
         if (jobIconCache.isNotEmpty()) return jobIconCache
         val d = data(context, HOME_BASE, "recruit/getJobConfigList") ?: return jobIconCache
-        val arr = d.optJSONArray("rows") ?: d.optJSONArray("list") ?: d.optJSONArray("data")
-        if (arr != null) {
+        // data is an object keyed by Chinese category names ("职能分类",
+        // "战斗精英", ...), each holding an array of {id,value,job_pic_url}.
+        d.keys().forEach { key ->
+            val arr = d.optJSONArray(key) ?: return@forEach
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val name = o.optString("value")

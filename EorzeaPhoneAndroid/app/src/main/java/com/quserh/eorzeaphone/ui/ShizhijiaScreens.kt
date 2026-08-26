@@ -1,4 +1,4 @@
-package com.quserh.eorzeaphone.ui
+﻿package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -153,10 +156,25 @@ private class SzjPostsState {
     val listState = androidx.compose.foundation.lazy.LazyListState()
 }
 
+/** Hoisted glamour feed state so it survives detail push/pop. */
+private class SzjGlamourState {
+    val tab = mutableStateOf(0)        // 0=全部 1=关注
+    val sort = mutableStateOf(0)       // 0=推荐 1=最新
+    val items = mutableStateOf(listOf<ShizhijiaGlamourCard>())
+    val loading = mutableStateOf(false)
+    val page = mutableStateOf(1)
+    val ended = mutableStateOf(false)
+    val loadedKey = mutableStateOf("")
+    val gridState = androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState()
+}
+
 @Composable
 fun ShizhijiaScreen(state: PhoneState) {
     var stack by remember { mutableStateOf(listOf<SzjRoute>(SzjRoute.Home)) }
     val postsState = remember { SzjPostsState() }
+    val glamourState = remember { SzjGlamourState() }
+    val homeMainTab = remember { mutableStateOf(MAIN_COMMUNITY) }
+    val homeSubTab = remember { mutableStateOf(SUB_POSTS) }
     // Only swallow back while inside the app; the outer handler then leaves the desktop.
     BackHandler(enabled = stack.size > 1) { stack = stack.dropLast(1) }
     val route = stack.last()
@@ -165,7 +183,7 @@ fun ShizhijiaScreen(state: PhoneState) {
     val pop: () -> Unit = { if (stack.size > 1) stack = stack.dropLast(1) }
     Box(Modifier.fillMaxSize()) {
         when (route) {
-            SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState)
+            SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, glamourState, homeMainTab, homeSubTab)
             is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop)
             is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop)
             SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav)
@@ -216,10 +234,17 @@ private const val SUB_GUIDE = 2
 private val CommentAreaBg: Color @Composable get() = PhoneSurfaceRaised
 
 @Composable
-private fun ShizhijiaHomeScreen(state: PhoneState, nav: (SzjRoute) -> Unit, postsState: SzjPostsState) {
+private fun ShizhijiaHomeScreen(
+    state: PhoneState,
+    nav: (SzjRoute) -> Unit,
+    postsState: SzjPostsState,
+    glamourState: SzjGlamourState,
+    mainTabState: MutableState<Int>,
+    subTabState: MutableState<Int>,
+) {
     val context = LocalContext.current
-    var mainTab by remember { mutableStateOf(MAIN_COMMUNITY) }
-    var subTab by remember { mutableStateOf(SUB_POSTS) }
+    var mainTab by mainTabState
+    var subTab by subTabState
     // Login state drives the top bar and the dynamics tab.
     var loggedIn by remember { mutableStateOf(ShizhijiaSession.hasSession(context)) }
     // Hydrate from the persisted profile first so the top bar shows the real
@@ -277,7 +302,7 @@ private fun ShizhijiaHomeScreen(state: PhoneState, nav: (SzjRoute) -> Unit, post
                         }
                     }
                     MAIN_RECRUIT -> SzjSectionPlaceholder("招募")
-                    MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn)
+                    MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn, glamourState)
                     else -> ShizhijiaMeTab(state, nav, loggedIn)
                 }
             }
@@ -1384,11 +1409,28 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 val icon = jobIcons[c.name].orEmpty()
                                                 val abbr = szjCrafterAbbr(c.name)
-                                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
-                                                    if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                    else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                var showTip by remember { mutableStateOf(false) }
+                                                Box {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                                                        modifier = Modifier.clickable { showTip = !showTip }) {
+                                                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                                                            if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
+                                                            else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                        Text("${c.level}", fontSize = 10.sp, color = PhoneText)
+                                                    }
+                                                    if (showTip) {
+                                                        // Small bubble above the icon with the job name.
+                                                        Box(Modifier.matchParentSize()) {
+                                                            Text(c.name, color = PhoneOnAccentContainer, fontSize = 10.sp,
+                                                                modifier = Modifier.align(Alignment.TopCenter)
+                                                                    .offset(y = (-22).dp)
+                                                                    .clip(RoundedCornerShape(6.dp))
+                                                                    .background(PhoneAccentContainer)
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp))
+                                                        }
+                                                    }
                                                 }
-                                                Text("${c.name} ${c.level}", fontSize = 10.sp, color = PhoneText, maxLines = 1)
                                             }
                                         }
                                     }
@@ -1406,11 +1448,28 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                 val icon = jobIcons[c.name].orEmpty()
                                                 val abbr = szjCrafterAbbr(c.name)
-                                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
-                                                    if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                    else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                var showTip by remember { mutableStateOf(false) }
+                                                Box {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                                                        modifier = Modifier.clickable { showTip = !showTip }) {
+                                                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                                                            if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
+                                                            else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                        Text("${c.level}", fontSize = 10.sp, color = PhoneText)
+                                                    }
+                                                    if (showTip) {
+                                                        // Small bubble above the icon with the job name.
+                                                        Box(Modifier.matchParentSize()) {
+                                                            Text(c.name, color = PhoneOnAccentContainer, fontSize = 10.sp,
+                                                                modifier = Modifier.align(Alignment.TopCenter)
+                                                                    .offset(y = (-22).dp)
+                                                                    .clip(RoundedCornerShape(6.dp))
+                                                                    .background(PhoneAccentContainer)
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp))
+                                                        }
+                                                    }
                                                 }
-                                                Text("${c.name} ${c.level}", fontSize = 10.sp, color = PhoneText, maxLines = 1)
                                             }
                                         }
                                     }
@@ -1657,15 +1716,16 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
 
 /** 底栏「幻化」：关注/全部 + 推荐/最新 + 双列卡片流（仿官方布局）。 */
 @Composable
-private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
+private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: SzjGlamourState) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var tab by remember { mutableStateOf(0) }        // 0=全部 1=关注
-    var sort by remember { mutableStateOf(0) }       // 0=推荐 1=最新
-    var items by remember { mutableStateOf(listOf<ShizhijiaGlamourCard>()) }
-    var loading by remember { mutableStateOf(false) }
-    var page by remember { mutableStateOf(1) }
-    var ended by remember { mutableStateOf(false) }
+    var tab by gs.tab        // 0=全部 1=关注
+    var sort by gs.sort      // 0=推荐 1=最新
+    var items by gs.items
+    var loading by gs.loading
+    var page by gs.page
+    var ended by gs.ended
+    val gridState = gs.gridState
 
     fun load(reset: Boolean) {
         if (loading) return
@@ -1679,7 +1739,15 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
             loading = false
         }
     }
-    LaunchedEffect(tab, sort) { load(reset = true) }
+    // Reload only when the channel changed; returning from a detail page keeps
+    // the loaded feed, the scroll position (gridState) and the active tab.
+    LaunchedEffect(tab, sort) {
+        val key = "$tab-$sort"
+        if (gs.loadedKey.value != key || items.isEmpty()) {
+            gs.loadedKey.value = key
+            load(reset = true)
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         // 关注 / 全部 + 筛选占位
@@ -1721,8 +1789,7 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
         }
         // True staggered waterfall: single scroll container, each card keeps
         // its own height (image capped, top-cropped like the official app).
-        val gridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState()
-        val nearEnd by remember { derivedStateOf {
+                val nearEnd by remember { derivedStateOf {
             val info = gridState.layoutInfo.visibleItemsInfo
             val last = info.lastOrNull()?.index ?: 0
             items.isNotEmpty() && last >= items.size - 3
