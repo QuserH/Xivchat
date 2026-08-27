@@ -192,10 +192,23 @@ object ShizhijiaApi {
     // ---- Public, login-free feed endpoints --------------------------------
 
     /** Forum partitions list (冒险者行会 / 同人创作 / ...). */
-    suspend fun getPostParts(context: Context): List<ShizhijiaPostPart> {
-        val d = data(context, HOME_BASE, "posts/partList", mapOf("type" to "1")) ?: return emptyList()
-        val arr = d.optJSONArray("rows") ?: d.optJSONArray("list") ?: return emptyList()
-        return buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(ShizhijiaPostPart.fromJson(it)) } }
+    suspend fun getPostParts(context: Context): List<ShizhijiaPostPart> = partList(context, "1")
+
+    /**
+     * 版块字典。
+     *
+     * 注意 `data` 是**裸数组**，不是 `{rows:[...]}`——原来走 data() 取
+     * optJSONObject("data") 直接拿到 null，所以版块 chips 和推荐过滤
+     * 一直是空的（只剩"推荐"那一个）。
+     */
+    private suspend fun partList(context: Context, type: String): List<ShizhijiaPostPart> {
+        val payload = dataAny(context, HOME_BASE, "posts/partList", mapOf("type" to type))
+        val arr = payload as? org.json.JSONArray
+            ?: (payload as? JSONObject)?.let { it.optJSONArray("rows") ?: it.optJSONArray("list") }
+            ?: return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(ShizhijiaPostPart.fromJson(it)) }
+        }
     }
 
     /** Hot search words for the search box placeholder row. */
@@ -385,11 +398,7 @@ object ShizhijiaApi {
      * 注意别在 KDoc 里写 `posts` + 斜杠星号：Kotlin 的块注释可嵌套，
      * 那个序列会开一层内嵌注释，把后面的代码整段吞掉。
      */
-    suspend fun getStrategyParts(context: Context): List<ShizhijiaPostPart> {
-        val d = data(context, HOME_BASE, "posts/partList", mapOf("type" to "2")) ?: return emptyList()
-        val arr = d.optJSONArray("rows") ?: d.optJSONArray("list") ?: return emptyList()
-        return buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(ShizhijiaPostPart.fromJson(it)) } }
-    }
+    suspend fun getStrategyParts(context: Context): List<ShizhijiaPostPart> = partList(context, "2")
 
     /** 攻略列表。和 getPostsList 同构，差别只是 type=2。 */
     suspend fun getStrategyList(
@@ -899,6 +908,7 @@ object ShizhijiaApi {
 
         var detail: JSONObject? = null
         var bindAvatar = ""
+        var bindUuid = ""
         runCatching {
             val bindJson = request(context, HOME_BASE, "groupAndRole/getCharacterBindInfo", mapOf("platform" to "2"))
             android.util.Log.d(
@@ -907,9 +917,12 @@ object ShizhijiaApi {
             )
             val bind = bindJson?.takeIf { it.isOk() }?.optJSONObject("data")
             bindAvatar = clean(bind?.optString("avatar"))
+            // uuid 在这里，不在 isLogin 里——官网 store 就是
+            // `myuuid = parseInt(getCharacterBindInfo.data.uuid)`。
+            bindUuid = clean(bind?.optString("uuid"))
             detail = bind?.optJSONObject("characterDetail")
                 ?: bind?.optJSONArray("rows")?.optJSONObject(0)?.optJSONObject("characterDetail")
-            android.util.Log.d(tag, "characterDetail=$detail bindAvatarLen=${bindAvatar.length}")
+            android.util.Log.d(tag, "characterDetail=$detail bindAvatarLen=${bindAvatar.length} uuid=$bindUuid")
         }.onFailure { android.util.Log.d(tag, "bindInfo call failed: ${it.message}") }
 
         val infoAvatar = clean(runCatching { data(context, HOME_BASE, "userInfo/getUserInfo")?.optString("avatar").orEmpty() }.getOrDefault(""))
@@ -935,9 +948,12 @@ object ShizhijiaApi {
             ?: listOf(bindAvatar, infoAvatar, isLoginAvatar).firstOrNull { it.startsWith("data:image") }
             ?: ""
         android.util.Log.d(tag, "avatar sources: bind=${bindAvatar.take(30)} info=${infoAvatar.take(30)} isLogin=${isLoginAvatar.take(30)} -> final=${chosen.take(90)}")
-        // uuid：isLogin 里就有；万一没有，再从绑定信息里兜一下。
-        val uuid = clean(d.optString("uuid"))
+        // uuid 主要来自 getCharacterBindInfo；isLogin 和 characterDetail 只作兜底。
+        val uuid = bindUuid
+            .ifBlank { clean(d.optString("uuid")) }
             .ifBlank { clean(detail?.optString("uuid")) }
+            .ifBlank { clean(runCatching { data(context, HOME_BASE, "userInfo/getUserInfo")?.optString("uuid").orEmpty() }.getOrDefault("")) }
+        android.util.Log.d(tag, "resolved uuid=$uuid")
         return ShizhijiaLoginUser(name, d.optString("area_name"), d.optString("group_name"), chosen, uuid)
     }
 

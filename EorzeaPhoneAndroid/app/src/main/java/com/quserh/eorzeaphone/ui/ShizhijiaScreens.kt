@@ -611,8 +611,6 @@ private object SzjNav {
     /** 四个分区（社区/招募/幻化/我）和社区的二级 Tab。 */
     val mainTab = mutableStateOf(MAIN_COMMUNITY)
     val subTab = mutableStateOf(SUB_POSTS)
-    /** 分区切换历史：在招募按返回应该回社区，而不是直接退到桌面。 */
-    private var tabHistory by mutableStateOf(listOf<Int>())
 
     // 各分区的数据缓存也挂这儿，回桌面再进来不用重新拉一遍。
     val posts = SzjPostsState()
@@ -624,25 +622,16 @@ private object SzjNav {
     fun push(r: SzjRoute) { stack = stack + r }
     fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
 
-    /** 切分区时记一笔来路，供返回键回溯。 */
-    fun selectTab(tab: Int) {
-        if (tab == mainTab.value) return
-        tabHistory = (tabHistory + mainTab.value).takeLast(8)
-        mainTab.value = tab
-    }
+    fun selectTab(tab: Int) { mainTab.value = tab }
 
     /**
-     * 返回键能不能被石之家吃掉：栈里有上一页，或者分区有来路。
-     * 都没有才让它穿透到桌面。
+     * 返回键只在栈里还有上一页时被石之家吃掉。
+     * 已经回到底部导航那一层（上面也没有覆盖层）时就穿透出去关掉石之家——
+     * 不在四个分区之间回溯，那样要按好几次才出得去。
      */
-    val canGoBack: Boolean get() = stack.size > 1 || tabHistory.isNotEmpty()
+    val canGoBack: Boolean get() = stack.size > 1
 
-    fun back() {
-        if (stack.size > 1) { stack = stack.dropLast(1); return }
-        val prev = tabHistory.lastOrNull() ?: return
-        tabHistory = tabHistory.dropLast(1)
-        mainTab.value = prev
-    }
+    fun back() { pop() }
 }
 
 /**
@@ -805,6 +794,22 @@ class SzjSearchState {
     val glamourGridState = androidx.compose.foundation.lazy.grid.LazyGridState()
     val postListState = androidx.compose.foundation.lazy.LazyListState()
     val userListState = androidx.compose.foundation.lazy.LazyListState()
+
+    /**
+     * 回到"还没搜"的状态。进搜索页时调一次——
+     * 状态本身要留着（翻进详情再回来结果还在），但重新进入应该是干净的。
+     * 频道（searchType）保留，那是偏好不是结果。
+     */
+    fun reset() {
+        query.value = ""
+        postResults.value = null
+        userResults.value = null
+        glamourResults.value = null
+        searching.value = false
+        page.value = 1
+        ended.value = false
+        loadingMore.value = false
+    }
 }
 
 @Composable
@@ -973,15 +978,10 @@ private fun ShizhijiaHomeScreen(
 
     // 品牌行 + 账号卡不再固定在顶部，而是作为各分区滚动容器里的第一项，
     // 所以往下滑时它们跟着内容一起被顶出屏幕（原来是钉住不动）。
+    // 标题行去掉了：进了石之家就知道是石之家，它只占地方。
+    // 各分区顶部改成留一点呼吸的空隙。
     val brandRow: @Composable () -> Unit = {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            SzjShard(widthDp = 4, heightDp = 24)
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text("石之家", color = SzjText, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Text("摩杜纳 · 拂晓血盟", color = SzjMuted, style = SzjMetaStyle)
-            }
-        }
+        Spacer(Modifier.height(8.dp))
     }
     // 社区分区的完整头部：品牌行 + 账号卡。其他分区只要品牌行。
     val communityHeader: @Composable () -> Unit = {
@@ -1208,6 +1208,8 @@ private fun ShizhijiaMeTab(
     LaunchedEffect(barBottomDp) { onBarBottomChange(barBottomDp) }
     LaunchedEffect(bottomBarHeightDp) { onBarHeightChange(bottomBarHeightDp) }
     var showSettings by remember { mutableStateOf(false) }
+    // 设置页盖在「我」上面，返回键先退出设置。
+    BackHandler(enabled = showSettings) { showSettings = false }
     val p = loginUser
     Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState())) {
       // 品牌行随内容滑走，和其他分区一致。它自带左右 16dp，所以放在内边距外面。
@@ -1378,9 +1380,14 @@ private fun SzjPostFilterCard() {
     val context = LocalContext.current
     var parts by remember { mutableStateOf(listOf<ShizhijiaPostPart>()) }
     var muted by remember { mutableStateOf(ShizhijiaSession.mutedParts(context)) }
-    LaunchedEffect(Unit) {
+    // null = 还在读；空表 = 读完了但没有内容（要能区分，否则失败时永远显示"正在读"）
+    var loaded by remember { mutableStateOf(false) }
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(reload) {
+        loaded = false
         // 帖子和攻略两套版块都列上，两个流用的是同一份屏蔽名单。
         parts = ShizhijiaApi.getPostParts(context) + ShizhijiaApi.getStrategyParts(context)
+        loaded = true
     }
     SzjCardSurface(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(15.dp)) {
@@ -1393,7 +1400,19 @@ private fun SzjPostFilterCard() {
             )
             Spacer(Modifier.height(12.dp))
             if (parts.isEmpty()) {
-                Text("正在读版块列表", color = SzjMuted, style = SzjMetaStyle)
+                if (!loaded) {
+                    Text("正在读版块列表", color = SzjMuted, style = SzjMetaStyle)
+                } else {
+                    // 读完了还是空：给个重试，别让人干等。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("没读到版块列表", color = SzjMuted, style = SzjMetaStyle)
+                        Spacer(Modifier.width(10.dp))
+                        SzjPressable(onClick = { reload++ }, shape = SzjChipShape) {
+                            Text("重试", color = SzjAccent, style = SzjLabelStyle,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        }
+                    }
+                }
             } else {
                 // 选中 = 已屏蔽。用实心态表示"拦住了"，比灰掉更直观。
                 val distinct = parts.distinctBy { it.id }
@@ -2132,6 +2151,8 @@ private fun SzjRecruitFilterPanel(
     // 面板里改的是草稿，确认后才写回 state 触发重新加载
     var draft by remember(kind) { mutableStateOf(rs.filterFor(kind)) }
     val noRipple = remember { MutableInteractionSource() }
+    // 面板是覆盖层：返回键先关它，别一路穿透到关掉石之家。
+    BackHandler { onClose() }
 
     Column(
         Modifier.fillMaxSize()
@@ -2692,9 +2713,12 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 }
             }
             item {
-                // Rich HTML body: paragraphs, bold, inline images, links.
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    ShizhijiaRichContent(d.contentHtml)
+                // 正文也收进石板。原来它直接躺在背景上，四周全是卡片、
+                // 只有正文没有承载，看着像误插进来的一段消息。
+                SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
+                    Column(Modifier.padding(horizontal = 15.dp, vertical = 14.dp)) {
+                        ShizhijiaRichContent(d.contentHtml)
+                    }
                 }
             }
             item {
@@ -2849,7 +2873,13 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
         ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> "幻化"
         else -> "帖子"
     }
-    LaunchedEffect(Unit) { hotWords.value = ShizhijiaApi.getHotSearchList(context).map { it.text }.filter { it.isNotBlank() }.distinct() }
+    // 每次进搜索页都是一次新的搜索：清掉上次的关键词和结果。
+    // 搜索状态挂在 SzjNav 上（这样翻到帖子详情再回来结果还在），
+    // 所以必须在进页面时显式清一次，否则会看到上回搜的东西。
+    LaunchedEffect(Unit) {
+        s.reset()
+        hotWords.value = ShizhijiaApi.getHotSearchList(context).map { it.text }.filter { it.isNotBlank() }.distinct()
+    }
 
     fun doSearch() {
         val q = query.value.trim()
