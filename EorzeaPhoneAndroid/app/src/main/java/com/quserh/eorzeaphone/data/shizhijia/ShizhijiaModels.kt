@@ -837,21 +837,41 @@ data class ShizhijiaBoundCharacter(
     val tribe: Int,
     val gender: Int,
     val avatar: String,
+    /** 切换角色要用它（bindCharacterInfo 的 character_id）。 */
+    val characterId: String,
+    /** 所属部队 id。来自 characterDetail.fc_id，「我的部队」用它查主页。 */
+    val fcId: String,
     val isCurrent: Boolean,
 ) {
     companion object {
+        /**
+         * getCharacterBindInfo 的 data 是**单个角色**：顶层有 character_name/uuid，
+         * 种族和 fc_id 在嵌套的 characterDetail 里。getFF14Characters 的数组元素
+         * 则是扁平结构。两种都从这里进，所以嵌套字段先在 detail 里找，找不到再
+         * 回退到顶层。
+         */
         fun fromJson(o: JSONObject, fallbackName: String = ""): ShizhijiaBoundCharacter {
+            val detail = o.optJSONObject("characterDetail")
             fun pick(vararg keys: String): String =
-                keys.firstNotNullOfOrNull { k -> cleanField(o.optString(k)).takeIf { it.isNotBlank() } }.orEmpty()
+                keys.firstNotNullOfOrNull { k ->
+                    cleanField(detail?.optString(k) ?: "").takeIf { it.isNotBlank() }
+                        ?: cleanField(o.optString(k)).takeIf { it.isNotBlank() }
+                }.orEmpty()
+            fun pickInt(key: String, def: Int = 0): Int {
+                detail?.let { if (it.has(key)) return it.optInt(key, def) }
+                return o.optInt(key, def)
+            }
             return ShizhijiaBoundCharacter(
                 name = pick("character_name", "characterName", "name").ifBlank { cleanField(fallbackName) },
                 areaName = pick("area_name", "areaName", "AreaName"),
                 groupName = pick("group_name", "groupName", "GroupName"),
-                race = o.optInt("race"),
-                tribe = o.optInt("tribe"),
-                gender = o.optInt("gender", -1),
+                race = pickInt("race"),
+                tribe = pickInt("tribe"),
+                gender = pickInt("gender", -1),
                 avatar = cleanAvatar(pick("avatar", "face")),
-                // 官方用 is_default / is_current 之类标记当前角色，两个都认。
+                characterId = pick("character_id", "characterId", "cicuid"),
+                fcId = pick("fc_id", "fcId"),
+                // 官方用 is_default / is_current 之类标记当前角色，几个都认。
                 isCurrent = o.optInt("is_current") == 1 || o.optInt("is_default") == 1 ||
                     o.optBoolean("current", false),
             )
@@ -863,6 +883,29 @@ data class ShizhijiaBoundCharacter(
                     arr.optJSONObject(i)?.let { add(fromJson(it)) }
                 }
             }.filter { it.name.isNotBlank() }
+    }
+}
+
+/** 大区 + 其下服务器（groupAndRole/getAreaAndGroupList，公开）。 */
+data class ShizhijiaArea(
+    val areaId: Int,
+    val areaName: String,
+    val groups: List<Pair<Int, String>>,
+) {
+    companion object {
+        fun fromArray(arr: JSONArray): List<ShizhijiaArea> = buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val g = o.optJSONArray("vGroup")
+                val groups = buildList(g?.length() ?: 0) {
+                    for (j in 0 until (g?.length() ?: 0)) {
+                        val go = g?.optJSONObject(j) ?: continue
+                        add(go.optInt("GroupID") to go.optString("GroupName"))
+                    }
+                }
+                add(ShizhijiaArea(o.optInt("AreaID"), o.optString("AreaName"), groups))
+            }
+        }
     }
 }
 

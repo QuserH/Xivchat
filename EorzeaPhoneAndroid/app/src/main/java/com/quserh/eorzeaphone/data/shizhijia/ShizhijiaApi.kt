@@ -384,22 +384,63 @@ object ShizhijiaApi {
     }
 
     /**
-     * 账号下绑定的角色。需登录。
+     * 当前绑定的角色。需登录。
      *
-     * 本机没有可用会话，拿不到真实样本，所以这里对 data 的形状做宽松处理：
-     * 可能是 characterDetail 对象、characterDetail 数组，或 rows 数组。
-     * 三种都试，取不到就返回空列表让界面显示"读不到"。
+     * 形状来自官网前端（pc/static/js/index.js）：
+     *     getCharacterBindInfo?platform=2 → data.character_name / data.uuid /
+     *     data.characterDetail{race,tribe,gender,fc_id,character_id,...}
+     * 也就是**单个角色**，不是列表——之前按数组解析所以一直读不出来。
+     * platform: PC=2，移动端=1；这里跟 App 的其他调用保持 platform=2。
      */
-    suspend fun getBoundCharacters(context: Context): List<ShizhijiaBoundCharacter> {
-        val d = data(context, HOME_BASE, "groupAndRole/getCharacterBindInfo", mapOf("platform" to "1"))
+    suspend fun getCurrentCharacter(context: Context): ShizhijiaBoundCharacter? {
+        val d = data(context, HOME_BASE, "groupAndRole/getCharacterBindInfo", mapOf("platform" to "2"))
+            ?: return null
+        if (d.optString("character_name").isBlank()) return null
+        return ShizhijiaBoundCharacter.fromJson(d)
+    }
+
+    /**
+     * 某个大区下我名下的角色列表，用于切换角色。
+     * 前端：`getFF14Characters?AreaID=<n>`，AreaID 来自 getAreaAndGroupList。
+     */
+    suspend fun getAreaCharacters(context: Context, areaId: Int): List<ShizhijiaBoundCharacter> {
+        val payload = dataAny(context, HOME_BASE, "groupAndRole/getFF14Characters", mapOf("AreaID" to areaId.toString()))
+        val arr = payload as? org.json.JSONArray
+            ?: (payload as? JSONObject)?.let { it.optJSONArray("rows") ?: it.optJSONArray("list") }
             ?: return emptyList()
-        val arr = d.optJSONArray("characterDetail")
-            ?: d.optJSONArray("rows")
-            ?: d.optJSONArray("list")
-        if (arr != null) return ShizhijiaBoundCharacter.fromArray(arr)
-        // 单个对象的情况：把它自己当成唯一一条。
-        val one = d.optJSONObject("characterDetail") ?: return emptyList()
-        return listOf(ShizhijiaBoundCharacter.fromJson(one, fallbackName = d.optString("character_name")))
+        return ShizhijiaBoundCharacter.fromArray(arr)
+    }
+
+    /** 大区/服务器字典（公开）。 */
+    suspend fun getAreaList(context: Context): List<ShizhijiaArea> {
+        val payload = dataAny(context, HOME_BASE, "groupAndRole/getAreaAndGroupList")
+        val arr = payload as? org.json.JSONArray ?: return emptyList()
+        return ShizhijiaArea.fromArray(arr)
+    }
+
+    /**
+     * 切换（绑定）角色。
+     * 前端 actBindCharacter 实际只发 `{character_id, platform}`——
+     * store 里虽然解构了 device_id，但调用点没传，所以是 undefined。
+     */
+    suspend fun bindCharacter(context: Context, characterId: String, platform: Int = 2): Boolean {
+        if (characterId.isBlank()) return false
+        val json = request(
+            context, HOME_BASE, "groupAndRole/bindCharacterInfo",
+            body = mapOf("character_id" to characterId, "platform" to platform.toString()),
+            method = "POST",
+        ) ?: return false
+        return json.isOk()
+    }
+
+    /**
+     * 我的部队主页信息。
+     * 部队 id 就是当前角色的 `characterDetail.fc_id`（前端 GuildMain 里
+     * 用 `characterDetail.fc_id === guild_id` 判断"这是我自己的部队"）。
+     */
+    suspend fun getGuildInfo(context: Context, guildId: String): JSONObject? {
+        if (guildId.isBlank()) return null
+        return data(context, HOME_BASE, "guild/getGuildInfo", mapOf("guild_id" to guildId))
     }
 
     /** 我收藏的帖子。需登录（未登录 10403）。 */

@@ -99,6 +99,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaComment
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruit
@@ -529,8 +530,10 @@ private sealed interface SzjRoute {
     data object Favorites : SzjRoute
     /** 我发布的招募 + 一键擦亮（需登录）。 */
     data object MyRecruits : SzjRoute
-    /** 账号下绑定的角色（只读展示）。 */
+    /** 当前角色 + 换绑。 */
     data object Characters : SzjRoute
+    /** 我的部队主页（部队 id = 当前角色的 fc_id）。 */
+    data object MyGuild : SzjRoute
 }
 
 /** App-wide full-screen image viewer state; any thumbnail sets its URL here. */
@@ -705,6 +708,7 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             SzjRoute.Favorites -> ShizhijiaFavoritesScreen(pop, nav)
             SzjRoute.MyRecruits -> ShizhijiaMyRecruitsScreen(pop, nav)
             SzjRoute.Characters -> ShizhijiaCharactersScreen(pop)
+            SzjRoute.MyGuild -> ShizhijiaMyGuildScreen(pop, nav)
         }
         SzjViewer.url?.let { url ->
             // Full-screen overlay for viewing a tapped image at size.
@@ -1177,10 +1181,10 @@ private fun ShizhijiaMeTab(
                                         "收藏" -> nav(SzjRoute.Favorites)
                                         "招募管理" -> nav(SzjRoute.MyRecruits)
                                         "我的角色" -> nav(SzjRoute.Characters)
-                                        // 部队主页要社团 id，个人资料里只有部队名和 tag，
-                                        // 没有能拿到 id 的公开途径；专项数据是 40 多个
-                                        // 需登录+绑角色的接口，本机无会话无法确认响应形状。
-                                        else -> android.widget.Toast.makeText(context, "$label 还没接口，等你登录后抓一次就能补", android.widget.Toast.LENGTH_SHORT).show()
+                                        "我的部队" -> nav(SzjRoute.MyGuild)
+                                        // 专项数据是 40 多个需登录+绑角色的接口，
+                                        // 字段名不在前端代码里，只能等实测。
+                                        else -> android.widget.Toast.makeText(context, "$label 还要抓一次响应才能接", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 },
                             ) {
@@ -2850,72 +2854,313 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
 }
 
 /**
- * 我的角色：账号下绑定的 FF14 角色，只读。
+ * 我的角色：当前绑定的角色 + 按大区换绑。
  *
- * 「切换角色」这个动作没有实现——官方切换要调写接口且会影响数据开放的归属，
- * 本机没有可用会话，无法确认请求体形状，猜着写风险太高。这里先把读到的
- * 角色列出来，等有会话抓一次包就能补上切换。
+ * 接口链路取自官网前端（不是猜的）：
+ *   getCharacterBindInfo?platform=2  → 当前角色（单个对象，不是数组）
+ *   getAreaAndGroupList              → 大区字典（公开）
+ *   getFF14Characters?AreaID=<n>     → 该大区下我的角色
+ *   bindCharacterInfo {character_id, platform}  → 换绑
  */
 @Composable
 private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
     val context = LocalContext.current
-    var chars by remember { mutableStateOf<List<ShizhijiaBoundCharacter>?>(null) }
-    LaunchedEffect(Unit) { chars = ShizhijiaApi.getBoundCharacters(context) }
+    val scope = rememberCoroutineScope()
+    var current by remember { mutableStateOf<ShizhijiaBoundCharacter?>(null) }
+    var loadingCurrent by remember { mutableStateOf(true) }
+    var areas by remember { mutableStateOf(listOf<ShizhijiaArea>()) }
+    var areaId by remember { mutableStateOf(-1) }
+    var candidates by remember { mutableStateOf<List<ShizhijiaBoundCharacter>?>(null) }
+    var switching by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        current = ShizhijiaApi.getCurrentCharacter(context)
+        loadingCurrent = false
+        areas = ShizhijiaApi.getAreaList(context)
+    }
+    LaunchedEffect(areaId) {
+        if (areaId < 0) return@LaunchedEffect
+        candidates = null
+        candidates = ShizhijiaApi.getAreaCharacters(context, areaId)
+    }
 
     ScreenFrame(background = SzjBg) {
         SzjHeader("我的角色", onBack = pop)
-        val list = chars
-        when {
-            list == null -> Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
-                repeat(2) {
-                    SzjShimmerBox(Modifier.fillMaxWidth().height(72.dp), SzjCardShape)
-                    Spacer(Modifier.height(10.dp))
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 4.dp, bottom = 24.dp),
+        ) {
+            item(key = "current") {
+                Column(Modifier.padding(horizontal = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                        SzjShard(widthDp = 2, heightDp = 12)
+                        Spacer(Modifier.width(7.dp))
+                        Text("当前角色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    when {
+                        loadingCurrent -> SzjShimmerBox(Modifier.fillMaxWidth().height(76.dp), SzjCardShape)
+                        current == null -> SzjCardSurface(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(15.dp)) {
+                                Text("没读到绑定角色", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Spacer(Modifier.height(5.dp))
+                                Text("需要先登录并在石之家绑定一个角色", color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp)
+                            }
+                        }
+                        else -> SzjCharacterCard(current!!, isCurrent = true, busy = false, onSwitch = null)
+                    }
                 }
             }
-            list.isEmpty() -> SzjEmpty(
-                "读不到绑定角色",
-                "这个接口需要登录并绑定角色。如果你已经登录，说明返回的字段和预期不同，告诉我我来调",
-            )
-            else -> LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 20.dp),
-            ) {
-                itemsIndexed(list) { index, c ->
+            item(key = "switch-title") {
+                Column(Modifier.padding(horizontal = 14.dp).padding(top = 20.dp, bottom = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SzjShard(widthDp = 2, heightDp = 12)
+                        Spacer(Modifier.width(7.dp))
+                        Text("换一个角色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("先选大区，再选该区下你名下的角色", color = SzjMuted, style = SzjMetaStyle)
+                }
+            }
+            item(key = "areas") {
+                if (areas.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
+                        SzjShimmerBox(Modifier.fillMaxWidth().height(34.dp), SzjChipShape)
+                    }
+                } else {
+                    LazyRow(
+                        Modifier.fillMaxWidth(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(areas, key = { it.areaId }) { a ->
+                            SzjPartChip(a.areaName, areaId == a.areaId) { areaId = a.areaId }
+                        }
+                    }
+                }
+            }
+            val list = candidates
+            when {
+                areaId < 0 -> item(key = "pick-area") {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
+                        Text("选一个大区看看", color = SzjMuted, style = SzjMetaStyle)
+                    }
+                }
+                list == null -> item(key = "cand-loading") {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        repeat(2) {
+                            SzjShimmerBox(Modifier.fillMaxWidth().height(72.dp), SzjCardShape)
+                            Spacer(Modifier.height(10.dp))
+                        }
+                    }
+                }
+                list.isEmpty() -> item(key = "cand-empty") {
+                    SzjEmptyInline("这个大区下没有你的角色", "换个大区试试")
+                }
+                else -> itemsIndexed(list, key = { _, c -> c.characterId.ifBlank { c.name } }) { index, c ->
+                    val isCur = c.characterId.isNotBlank() && c.characterId == current?.characterId
                     SzjRise(index) {
-                        SzjCardSurface(
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
-                            raised = c.isCurrent,
-                        ) {
-                            Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                                SzjAvatar(c.name, c.avatar, "", 44)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(c.name, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                    val srv = listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                                    if (srv.isNotBlank()) {
-                                        Spacer(Modifier.height(2.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(13); Text(srv, color = SzjMuted, style = SzjMetaStyle) }
+                        Box(Modifier.padding(horizontal = 14.dp, vertical = 5.dp)) {
+                            SzjCharacterCard(
+                                c,
+                                isCurrent = isCur,
+                                busy = switching == c.characterId,
+                                onSwitch = if (isCur || c.characterId.isBlank()) null else ({
+                                    switching = c.characterId
+                                    scope.launch {
+                                        val ok = ShizhijiaApi.bindCharacter(context, c.characterId)
+                                        switching = ""
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            if (ok) "已切换到 ${c.name}" else "切换失败，可能需要重新登录",
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
+                                        if (ok) {
+                                            // 换绑后当前角色变了，重新读一次；缓存的登录信息也要清，
+                                            // 否则顶栏还显示旧角色。
+                                            ShizhijiaSession.clearCachedUser(context)
+                                            loadingCurrent = true
+                                            current = ShizhijiaApi.getCurrentCharacter(context)
+                                            loadingCurrent = false
+                                        }
                                     }
-                                    val rt = listOf(szjRaceName(c.race), szjTribeName(c.tribe))
-                                        .filter { it.isNotBlank() }.joinToString(" · ")
-                                    if (rt.isNotBlank()) Text(rt, color = SzjMuted, style = SzjMetaStyle)
+                                })
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 我的部队。
+ *
+ * 部队 id 没有独立接口——它是当前角色的 `characterDetail.fc_id`
+ * （官网 GuildMain 就是用 `characterDetail.fc_id === guild_id` 判断
+ * "这是我自己的部队"）。所以这里先读当前角色拿 fc_id，再查部队主页。
+ *
+ * getGuildInfo 的字段名没有实测样本（要登录+有部队），所以取值时对
+ * 几种常见命名都试一遍，取不到就不显示那一行，不会因为字段不符而空白一片。
+ */
+@Composable
+private fun ShizhijiaMyGuildScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
+    val context = LocalContext.current
+    var fcId by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        val cur = ShizhijiaApi.getCurrentCharacter(context)
+        fcId = cur?.fcId.orEmpty()
+        if (!fcId.isNullOrBlank()) info = ShizhijiaApi.getGuildInfo(context, fcId!!)
+        loading = false
+    }
+
+    /** 在返回的 JSON 里按多个候选键名取字符串。 */
+    fun pick(vararg keys: String): String {
+        val o = info ?: return ""
+        for (k in keys) {
+            val v = o.optString(k)
+            if (v.isNotBlank() && v != "null") return v
+        }
+        return ""
+    }
+
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("我的部队", onBack = pop)
+        when {
+            loading -> Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                SzjShimmerBox(Modifier.fillMaxWidth().height(96.dp), SzjCardShape)
+                Spacer(Modifier.height(10.dp))
+                SzjShimmerBox(Modifier.fillMaxWidth().height(140.dp), SzjCardShape)
+            }
+            fcId.isNullOrBlank() -> SzjEmpty(
+                "你的角色没有加入部队",
+                "部队信息跟着当前绑定的角色走。换个角色再看看，或者先登录",
+            ) { SzjPrimaryButton("我的角色", onClick = { nav(SzjRoute.Characters) }) }
+            info == null -> SzjEmpty(
+                "读不到部队信息",
+                "接口返回了空。如果你确实有部队，把控制台里 guild/getGuildInfo 的字段名发我，我来对",
+            )
+            else -> {
+                val name = pick("guild_name", "guildName", "name", "fc_name")
+                val tag = pick("guild_tag", "guildTag", "tag")
+                val slogan = pick("slogan", "guild_slogan", "introduction", "profile", "detail")
+                val master = pick("master_name", "masterName", "leader_name")
+                val area = pick("area_name", "areaName")
+                val group = pick("group_name", "groupName")
+                val logo = pick("guild_logo", "logo", "cover_pic", "avatar")
+                val memberNum = pick("member_num", "memberNum", "member_count")
+                val formed = pick("create_time", "created_at", "form_time")
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 4.dp, bottom = 24.dp),
+                ) {
+                    item(key = "head") {
+                        SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
+                            Column(Modifier.padding(15.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (logo.isNotBlank()) {
+                                        ShizhijiaRemoteImage(
+                                            url = logo,
+                                            modifier = Modifier.size(52.dp).clip(SzjInnerShape),
+                                            contentScale = ContentScale.Crop,
+                                            collapseOnFail = true,
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            name.ifBlank { "未命名部队" },
+                                            color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                        )
+                                        if (tag.isNotBlank()) {
+                                            Spacer(Modifier.height(2.dp))
+                                            Text("«$tag»", color = SzjAccent, style = SzjMetaStyle)
+                                        }
+                                        val srv = listOf(area, group).filter { it.isNotBlank() }.joinToString(" ")
+                                        if (srv.isNotBlank()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(13); Text(srv, color = SzjMuted, style = SzjMetaStyle) }
+                                        }
+                                    }
                                 }
-                                if (c.isCurrent) {
-                                    Text(
-                                        "当前", color = SzjOnAccentSoft, style = SzjMetaStyle,
-                                        modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft).padding(horizontal = 9.dp, vertical = 4.dp),
-                                    )
+                                if (slogan.isNotBlank()) {
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(slogan, color = SzjMuted, fontSize = 12.sp, lineHeight = 18.sp)
                                 }
                             }
                         }
                     }
+                    val rows = listOf(
+                        "部队 ID" to fcId.orEmpty(),
+                        "团长" to master,
+                        "成员" to memberNum,
+                        "成立" to formed,
+                    ).filter { it.second.isNotBlank() }
+                    if (rows.isNotEmpty()) {
+                        item(key = "rows") {
+                            SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Column(Modifier.padding(14.dp)) {
+                                    rows.forEachIndexed { i, (k, v) ->
+                                        if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                                        Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                                            Text(k, color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.width(70.dp))
+                                            Text(v, color = SzjText, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item(key = "note") {
+                        Text(
+                            "成员、相册、部队动态这几个子页还没接",
+                            color = SzjMuted, style = SzjMetaStyle,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
-                item(key = "note") {
+            }
+        }
+    }
+}
+
+/** 角色卡：头像 + 名字 + 服务器 + 种族，右侧是「当前」标记或「切换」按钮。 */
+@Composable
+private fun SzjCharacterCard(
+    c: ShizhijiaBoundCharacter,
+    isCurrent: Boolean,
+    busy: Boolean,
+    onSwitch: (() -> Unit)?,
+) {
+    SzjCardSurface(Modifier.fillMaxWidth(), raised = isCurrent) {
+        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+            SzjAvatar(c.name, c.avatar, "", 44)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(c.name, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                val srv = listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" ")
+                if (srv.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(13); Text(srv, color = SzjMuted, style = SzjMetaStyle) }
+                }
+                val rt = listOf(szjRaceName(c.race), szjTribeName(c.tribe))
+                    .filter { it.isNotBlank() }.joinToString(" · ")
+                if (rt.isNotBlank()) Text(rt, color = SzjMuted, style = SzjMetaStyle)
+            }
+            Spacer(Modifier.width(8.dp))
+            when {
+                isCurrent -> Text(
+                    "当前", color = SzjOnAccentSoft, style = SzjMetaStyle,
+                    modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft).padding(horizontal = 9.dp, vertical = 4.dp),
+                )
+                busy -> CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                onSwitch != null -> SzjPressable(onClick = onSwitch, shape = SzjChipShape) {
                     Text(
-                        "切换角色需要写接口，等你登录后抓一次包我再补",
-                        color = SzjMuted, style = SzjMetaStyle,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                        textAlign = TextAlign.Center,
+                        "切换", color = SzjOnAccent, style = SzjLabelStyle,
+                        modifier = Modifier.clip(SzjChipShape).background(SzjAccent).padding(horizontal = 13.dp, vertical = 7.dp),
                     )
                 }
             }
@@ -3577,22 +3822,9 @@ private fun ShizhijiaGlamourTab(
                     }
                 } else {
                     if (tab == 0) {
-                        item(key = "glamour-banner", span = fullLine) {
-                            val ctx = LocalContext.current
-                            val banner = remember(ctx) {
-                                runCatching {
-                                    android.graphics.BitmapFactory.decodeStream(ctx.assets.open("glamour_banner.png"))
-                                }.onFailure { android.util.Log.w("ShizhijiaImg", "banner: ${it.message}") }.getOrNull()
-                            }
-                            if (banner != null) {
-                                Image(
-                                    bitmap = banner.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.FillWidth,
-                                    modifier = Modifier.fillMaxWidth().clip(SzjInnerShape),
-                                )
-                            }
-                        }
+                        // 「光之收藏家」标识占瀑布流左列第一格，和幻化卡片同宽，
+                        // 不跨列——跨列会把两列的卡片一起压下去。
+                        item(key = "glamour-banner") { SzjGlamourBannerCard() }
                     }
                     items(items.size, key = { items[it].id }) { idx ->
                         SzjRise(idx) { SzjGlamourCardItem(items[idx], nav) }
@@ -3730,6 +3962,45 @@ private fun SzjGlamourImage(url: String) {
         } else {
             // 未就位时用微光占位，和别处的加载态一致。
             SzjShimmerBox(Modifier.fillMaxSize(), RoundedCornerShape(0.dp))
+        }
+    }
+}
+
+/**
+ * 幻化分区的「光之收藏家」标识卡。
+ *
+ * 原来这里放的是 glamour_banner.png——那其实是旧版紫色 Material3 界面的截图
+ * （1982x1125，98% 都是 #A060C0 一类的紫），当初误当成官方 banner 存了进来。
+ * 现在换成移动端真正用的那张标识，白底已扣成透明，按主题取两版墨色，
+ * 黄星和暗红描边保留原色。
+ */
+@Composable
+private fun SzjGlamourBannerCard() {
+    val ctx = LocalContext.current
+    val light = szjLight
+    val logo = remember(light) {
+        val name = if (light) "glamour_logo_light.png" else "glamour_logo_dark.png"
+        runCatching { android.graphics.BitmapFactory.decodeStream(ctx.assets.open(name)) }
+            .onFailure { android.util.Log.w("ShizhijiaImg", "glamour logo: ${it.message}") }
+            .getOrNull()
+    }
+    SzjCardSurface(Modifier.fillMaxWidth()) {
+        Box(
+            // 标识本身 2.59:1，卡片给到 1.9:1 留出四周呼吸，别让字贴边。
+            Modifier.fillMaxWidth().aspectRatio(1.9f).padding(horizontal = 14.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (logo != null) {
+                Image(
+                    bitmap = logo.asImageBitmap(),
+                    contentDescription = "光之收藏家",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                // 资源读不到时退回文字，别留一张空卡。
+                Text("光之收藏家", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            }
         }
     }
 }
