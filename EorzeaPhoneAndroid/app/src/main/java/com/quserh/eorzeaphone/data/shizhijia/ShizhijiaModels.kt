@@ -834,6 +834,103 @@ data class ShizhijiaRecruitDetail(
     }
 }
 
+/**
+ * 发布招募的表单。三类共用一个 data class，`toBody(kind)` 只挑那一类要的字段——
+ * 分成三个类会让界面层为了共用控件反复转换。
+ */
+data class ShizhijiaRecruitForm(
+    // 通用
+    val targetAreaId: String = "",
+    val targetGroupId: String = "",
+    val contactInfo: String = "",
+    val detail: String = "",
+    val title: String = "",
+    // 副本组队
+    val fbType: String = "",
+    val fbName: String = "",
+    val progress: String = "",
+    val strategy: String = "",
+    val fbTime: String = "",
+    val needJobs: List<String> = emptyList(),
+    val labelIds: List<String> = emptyList(),
+    val customLabels: List<String> = emptyList(),
+    val teamDetail: String = "",
+    val recruitRequire: String = "",
+    val strategyDesc: String = "",
+    val teamComposition: String = "满编小队",
+    /** 位置 → 职业 id。空着的位置填 "0"。 */
+    val slots: Map<String, String> = emptyMap(),
+    /** 团队(24)：小队 → (位置 → 职业 id)。 */
+    val alliance: Map<String, Map<String, String>> = emptyMap(),
+    // 新人招待
+    val identity: Int = 1,
+    val weekdayTime: String = "",
+    val weekendTime: String = "",
+    val styleIds: List<String> = emptyList(),
+    // 其他招募
+    val categoryId: String = "",
+    val coverPic: String = "",
+) {
+    fun toBody(kind: ShizhijiaRecruitKind): Map<String, String> {
+        val m = mutableMapOf<String, String>()
+        fun put(k: String, v: String) { m[k] = v }
+        when (kind) {
+            ShizhijiaRecruitKind.Fb -> {
+                put("fb_type", fbType)
+                put("fb_name", fbName)
+                put("target_area_id", targetAreaId)
+                put("progress", progress)
+                put("strategy", strategy)
+                put("fb_time", fbTime)
+                put("need_job", needJobs.joinToString(","))
+                put("contact_info", contactInfo)
+                put("label", labelIds.joinToString(","))
+                put("custom_label", customLabels.joinToString(","))
+                put("team_detail", teamDetail)
+                put("recruit_require", recruitRequire)
+                put("strategy_desc", strategyDesc)
+                put("team_composition", teamComposition)
+                // 团队是一个 JSON 字符串，其他规模平铺。
+                if (teamComposition == "团队") {
+                    put("team_position", JSONObject(alliance.mapValues { JSONObject(it.value as Map<*, *>) }).toString())
+                } else {
+                    // 服务端要求这几个键都在，没占的位置传 "0"。
+                    for (k in ALL_SLOT_KEYS) put(k, slots[k] ?: "0")
+                }
+            }
+            ShizhijiaRecruitKind.Novice -> {
+                put("title", title)
+                put("identity", identity.toString())
+                put("target_area_id", targetAreaId)
+                put("target_group_id", targetGroupId)
+                put("weekday_time", weekdayTime)
+                put("weekend_time", weekendTime)
+                put("contact_info", contactInfo)
+                put("style", styleIds.joinToString(","))
+                put("detail", detail)
+            }
+            ShizhijiaRecruitKind.Other -> {
+                put("title", title)
+                put("target_area_id", targetAreaId)
+                put("target_group_id", targetGroupId)
+                put("contact_info", contactInfo)
+                put("category", categoryId)
+                put("cover_pic", coverPic)
+                put("detail", detail)
+            }
+            // RP 俱乐部和部队招募的发布表单字段更多（封面图、营业时间、
+            // 团长权限校验），这一版不做。
+            else -> Unit
+        }
+        return m
+    }
+
+    companion object {
+        /** 服务端要求平铺时这十个键都在。T/H 是轻锐小队用的。 */
+        val ALL_SLOT_KEYS = listOf("T", "H", "MT", "ST", "H1", "H2", "D1", "D2", "D3", "D4")
+    }
+}
+
 /** 招募卡上的一个位置槽。jobId 为空/"0" 表示位置还空着。 */
 data class ShizhijiaSlot(val name: String, val jobId: String) {
     val filled: Boolean get() = jobId.isNotBlank() && jobId != "0"

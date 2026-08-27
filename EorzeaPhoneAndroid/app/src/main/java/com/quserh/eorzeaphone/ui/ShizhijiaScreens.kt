@@ -79,6 +79,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -105,6 +106,7 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaComment
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruit
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitDetail
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitForm
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitFilter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitKind
 import androidx.compose.ui.text.SpanStyle
@@ -589,6 +591,8 @@ private sealed interface SzjRoute {
     data class GuildPhotoDetail(val photoId: String) : SzjRoute
     /** 招募详情（四类共用一个页面，接口按 kind 分）。 */
     data class RecruitDetail(val kind: ShizhijiaRecruitKind, val id: String) : SzjRoute
+    /** 发布招募（副本 / 新人 / 其他）。 */
+    data class PublishRecruit(val kind: ShizhijiaRecruitKind) : SzjRoute
 }
 
 /** App-wide full-screen image viewer state; any thumbnail sets its URL here. */
@@ -849,6 +853,7 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             SzjRoute.MyGuild -> ShizhijiaMyGuildScreen(pop, nav)
             is SzjRoute.GuildPhotoDetail -> ShizhijiaGuildPhotoDetailScreen(route.photoId, pop, nav)
             is SzjRoute.RecruitDetail -> ShizhijiaRecruitDetailScreen(route.kind, route.id, pop, nav)
+            is SzjRoute.PublishRecruit -> ShizhijiaPublishRecruitScreen(route.kind, recruitState, pop, nav)
         }
         SzjViewer.url?.let { url ->
             // Full-screen overlay for viewing a tapped image at size.
@@ -1389,15 +1394,29 @@ private fun SzjPostFilterCard() {
         parts = ShizhijiaApi.getPostParts(context) + ShizhijiaApi.getStrategyParts(context)
         loaded = true
     }
-    SzjCardSurface(Modifier.fillMaxWidth()) {
+    // 默认收起，只显示这一项本身；点开才铺版块。
+    // 十几个版块常态铺开会把设置页顶得很长。
+    var expanded by remember { mutableStateOf(false) }
+    SzjCardSurface(Modifier.fillMaxWidth(), onClick = { expanded = !expanded }) {
         Column(Modifier.padding(15.dp)) {
-            Text("推荐过滤", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (muted.isEmpty()) "选中的版块不会出现在推荐里"
-                else "已屏蔽 ${muted.size} 个版块",
-                color = SzjMuted, style = SzjMetaStyle,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("推荐过滤", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (muted.isEmpty()) "选中的版块不会出现在推荐里"
+                        else "已屏蔽 ${muted.size} 个版块",
+                        color = SzjMuted, style = SzjMetaStyle,
+                    )
+                }
+                // 展开时箭头转成向上，收起时向下。
+                val rot by animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "szjFilterArrow")
+                Text(
+                    "⌄", color = SzjMuted, fontSize = 17.sp,
+                    modifier = Modifier.graphicsLayer { rotationZ = rot }.padding(start = 8.dp),
+                )
+            }
+            if (expanded) {
             Spacer(Modifier.height(12.dp))
             if (parts.isEmpty()) {
                 if (!loaded) {
@@ -1456,6 +1475,7 @@ private fun SzjPostFilterCard() {
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                     }
                 }
+            }
             }
         }
     }
@@ -2007,50 +2027,74 @@ private fun ShizhijiaRecruitTab(
             header = header,
             sticky = {
                 Column(Modifier.fillMaxWidth().background(SzjBg).padding(bottom = 6.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        LazyRow(
-                            Modifier.weight(1f),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(ShizhijiaRecruitKind.entries, key = { it.name }) { k ->
-                                SzjPartChip(k.label, kind == k) { rs.kind.value = k }
-                            }
-                        }
-                        // 部队招募列表没有公开筛选参数，所以那一类不给筛选入口。
-                        if (kind != ShizhijiaRecruitKind.Guild) {
-                            val on = filter.activeFor(kind)
-                            SzjPressable(onClick = { rs.filterOpen.value = true }, shape = SzjChipShape) {
-                                Text(
-                                    "筛选",
-                                    style = SzjLabelStyle,
-                                    color = if (on) SzjOnAccent else SzjMuted,
-                                    modifier = Modifier.clip(SzjChipShape)
-                                        .background(if (on) SzjAccent else SzjCardRaised)
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                                )
-                            }
-                            Spacer(Modifier.width(14.dp))
+                    // 分类 Tab 独占一行，横向滚动不被右边的按钮挤窄。
+                    LazyRow(
+                        Modifier.fillMaxWidth(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(ShizhijiaRecruitKind.entries, key = { it.name }) { k ->
+                            SzjPartChip(k.label, kind == k) { rs.kind.value = k }
                         }
                     }
-                    // 生效的条件在 Tab 下面列一行，不用打开面板也知道筛了什么
-                    val chips = szjFilterSummary(kind, filter, rs)
-                    if (chips.isNotEmpty()) {
-                        LazyRow(
-                            Modifier.fillMaxWidth().padding(top = 6.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    // 筛选行：左边是"筛选"，右边跟着生效的条件。
+                    // 原来挤在 Tab 行右端，既压窄了 Tab 也不知道它管的是哪一层。
+                    // 部队招募列表没有公开筛选参数，那一类不给入口。
+                    if (kind != ShizhijiaRecruitKind.Guild) {
+                        val on = filter.activeFor(kind)
+                        val chips = szjFilterSummary(kind, filter, rs)
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            items(chips) { c ->
-                                Text(
-                                    c, color = SzjOnAccentSoft, style = SzjMetaStyle,
-                                    modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(SzjAccentSoft)
-                                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                                )
+                            SzjPressable(onClick = { rs.filterOpen.value = true }, shape = SzjChipShape) {
+                                Row(
+                                    Modifier.clip(SzjChipShape)
+                                        .background(if (on) SzjAccentSoft else SzjCardRaised)
+                                        .padding(horizontal = 11.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // 三条渐短的横线：漏斗的意思，比纯文字更快认出来
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
+                                        listOf(11.dp, 7.dp, 3.dp).forEach { w ->
+                                            Box(Modifier.width(w).height(1.5.dp)
+                                                .background(if (on) SzjOnAccentSoft else SzjMuted))
+                                        }
+                                    }
+                                    Spacer(Modifier.width(7.dp))
+                                    Text(
+                                        if (on) "已筛选" else "筛选",
+                                        style = SzjLabelStyle,
+                                        color = if (on) SzjOnAccentSoft else SzjMuted,
+                                    )
+                                }
                             }
-                            item {
-                                SzjPressable(onClick = { rs.setFilter(kind, ShizhijiaRecruitFilter()) }, shape = SzjChipShape) {
-                                    Text("清空", color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                            if (chips.isEmpty()) {
+                                Spacer(Modifier.width(10.dp))
+                                Text("全部招募", color = SzjMuted, style = SzjMetaStyle)
+                                Spacer(Modifier.weight(1f))
+                            } else {
+                                LazyRow(
+                                    Modifier.weight(1f).padding(start = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    items(chips) { c ->
+                                        Text(
+                                            c, color = SzjOnAccentSoft, style = SzjMetaStyle,
+                                            modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(SzjAccentSoft)
+                                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                                        )
+                                    }
+                                    item {
+                                        SzjPressable(onClick = { rs.setFilter(kind, ShizhijiaRecruitFilter()) }, shape = SzjChipShape) {
+                                            Text("清空", color = SzjMuted, style = SzjMetaStyle,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2085,6 +2129,26 @@ private fun ShizhijiaRecruitTab(
                             }
                         }
                     }
+                }
+            }
+        }
+        // 发布按钮：浮在右下、底栏之上。RP 和部队招募的发布表单没做，
+        // 那两类不给入口（点了也发不出去）。
+        if (kind != ShizhijiaRecruitKind.Rp && kind != ShizhijiaRecruitKind.Guild) {
+            SzjPressable(
+                onClick = { nav(SzjRoute.PublishRecruit(kind)) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 108.dp),
+                shape = CircleShape,
+            ) {
+                Row(
+                    Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                        .clip(SzjChipShape).background(SzjAccent)
+                        .padding(horizontal = 15.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("＋", color = SzjOnAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(5.dp))
+                    Text("发布", color = SzjOnAccent, style = SzjLabelStyle)
                 }
             }
         }
@@ -2302,6 +2366,97 @@ private fun SzjRecruitFilterPanel(
 /** 多选列表里加/减一项。 */
 private fun List<String>.toggle(id: String): List<String> =
     if (contains(id)) this - id else this + id
+
+/**
+ * 发布表单的文本输入。单行和多行共用一个，`lines` 大于 1 时是多行。
+ * 外观跟卡片体系一致：石板底 + 内圆角，聚焦时描边换成主色。
+ */
+@Composable
+private fun SzjFormField(
+    label: String,
+    value: String,
+    placeholder: String = "",
+    lines: Int = 1,
+    required: Boolean = false,
+    maxLen: Int = 0,
+    onChange: (String) -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val border by animateColorAsState(if (focused) SzjAccent else SzjHairline, tween(180), label = "szjFieldBorder")
+    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = SzjText, style = SzjLabelStyle)
+            if (required) Text(" *", color = SzjAccent, style = SzjLabelStyle)
+            Spacer(Modifier.weight(1f))
+            if (maxLen > 0) Text("${value.length}/$maxLen", color = SzjMuted, style = SzjMetaStyle)
+        }
+        Spacer(Modifier.height(7.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = { if (maxLen <= 0 || it.length <= maxLen) onChange(it) },
+            singleLine = lines <= 1,
+            minLines = lines,
+            textStyle = TextStyle(color = SzjText, fontSize = 14.sp, lineHeight = 21.sp),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(SzjAccent),
+            decorationBox = { inner ->
+                Box(
+                    Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCard)
+                        .border(1.dp, border, SzjInnerShape)
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
+                ) {
+                    if (value.isEmpty() && placeholder.isNotBlank()) {
+                        Text(placeholder, color = SzjMuted, fontSize = 14.sp)
+                    }
+                    inner()
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
+        )
+    }
+}
+
+/** 发布表单里的一组选项（单选/多选），复用筛选那套 chip 外观。 */
+@Composable
+private fun SzjFormChips(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: Set<String>,
+    multi: Boolean = false,
+    required: Boolean = false,
+    onPick: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = SzjText, style = SzjLabelStyle)
+            if (required) Text(" *", color = SzjAccent, style = SzjLabelStyle)
+            if (multi) Text("  可多选", color = SzjMuted, style = SzjMetaStyle)
+        }
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            options.chunked(3).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    row.forEach { (id, name) ->
+                        val on = id in selected
+                        SzjPressable(onClick = { onPick(id) }, modifier = Modifier.weight(1f), shape = SzjChipShape) {
+                            Text(
+                                name,
+                                color = if (on) SzjOnAccent else SzjMuted,
+                                style = SzjLabelStyle,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().clip(SzjChipShape)
+                                    .background(if (on) SzjAccent else SzjCardRaised)
+                                    .padding(vertical = 9.dp, horizontal = 4.dp),
+                            )
+                        }
+                    }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
 
 /** 一组筛选 chip。multi=true 时是多选（选中项各自高亮），否则单选。 */
 @Composable
@@ -2551,6 +2706,434 @@ private fun ShizhijiaRecruitDetailScreen(
                         "报名要在石之家网页或官方 App 里做",
                         color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 副本组队的发布字段。副本表按类型二级联动，位置槽可以点着选职业。 */
+@Composable
+private fun SzjPublishFbFields(
+    form: ShizhijiaRecruitForm,
+    rs: SzjRecruitState,
+    onChange: (ShizhijiaRecruitForm) -> Unit,
+) {
+    val types = rs.fbConfig.value.map { it.fbType }.distinct().filter { it.isNotBlank() }
+    SzjFormChips("副本类型", types.map { it to it }, setOf(form.fbType), required = true) { t ->
+        // 换类型时清掉副本名，并把规模跟到那个类型的默认值上
+        val comp = rs.fbConfig.value.firstOrNull { it.fbType == t }?.teamComposition.orEmpty()
+        onChange(form.copy(fbType = t, fbName = "", teamComposition = comp.ifBlank { form.teamComposition }))
+    }
+    if (form.fbType.isNotBlank()) {
+        val names = rs.fbConfig.value.filter { it.fbType == form.fbType }
+            .map { it.fbName }.distinct().filter { it.isNotBlank() }
+        if (names.isNotEmpty()) {
+            SzjFormChips("具体副本", names.map { it to it }, setOf(form.fbName), required = true) { n ->
+                val comp = rs.fbConfig.value.firstOrNull { it.fbType == form.fbType && it.fbName == n }?.teamComposition.orEmpty()
+                onChange(form.copy(fbName = n, teamComposition = comp.ifBlank { form.teamComposition }))
+            }
+        }
+    }
+    SzjFormChips(
+        "队伍规模",
+        ShizhijiaRecruitFilter.TEAM_COMPOSITIONS,
+        setOf(form.teamComposition),
+        required = true,
+    ) { onChange(form.copy(teamComposition = it, slots = emptyMap(), alliance = emptyMap())) }
+
+    // 位置：点一格选职业。留空表示这个位置在招人。
+    val slotKeys = when (form.teamComposition) {
+        "满编小队" -> listOf("MT", "ST", "H1", "H2", "D1", "D2", "D3", "D4")
+        "轻锐小队" -> listOf("T", "H", "D1", "D2")
+        else -> emptyList()
+    }
+    if (slotKeys.isNotEmpty()) {
+        SzjPublishSlotPicker(
+            keys = slotKeys,
+            slots = form.slots,
+            jobs = rs.jobs.value,
+            onSet = { k, v -> onChange(form.copy(slots = form.slots + (k to v))) },
+        )
+    } else if (form.teamComposition == "团队") {
+        // 24 人：三个小队各一组
+        listOf("A", "B", "C").forEach { g ->
+            Text("$g 队", color = SzjAccent, style = SzjLabelStyle, modifier = Modifier.padding(bottom = 6.dp))
+            SzjPublishSlotPicker(
+                keys = listOf("MT", "ST", "H1", "H2", "D1", "D2", "D3", "D4"),
+                slots = form.alliance[g].orEmpty(),
+                jobs = rs.jobs.value,
+                onSet = { k, v ->
+                    val cur = form.alliance[g].orEmpty()
+                    onChange(form.copy(alliance = form.alliance + (g to (cur + (k to v)))))
+                },
+            )
+        }
+    }
+
+    // 招募职能：官方就是那七个"职能分类"，不是具体职业
+    val roles = rs.jobs.value.values.filter { it.type == "职能分类" }.sortedBy { it.id.toIntOrNull() ?: 0 }
+    if (roles.isNotEmpty()) {
+        SzjFormChips(
+            "招募职能", roles.map { it.id to it.name },
+            selected = form.needJobs.toSet(), multi = true,
+        ) { onChange(form.copy(needJobs = form.needJobs.toggle(it))) }
+    }
+    SzjFormField("进度", form.progress, "例如 P3 开荒 P2 练", maxLen = 30) { onChange(form.copy(progress = it)) }
+    SzjFormField("攻略", form.strategy, "例如 猪野一套", maxLen = 30) { onChange(form.copy(strategy = it)) }
+    SzjFormField("时间", form.fbTime, "例如 235 晚 9-11", maxLen = 30) { onChange(form.copy(fbTime = it)) }
+    if (rs.fbLabels.value.isNotEmpty()) {
+        SzjFormChips("标签", rs.fbLabels.value, form.labelIds.toSet(), multi = true) {
+            onChange(form.copy(labelIds = form.labelIds.toggle(it)))
+        }
+    }
+    SzjFormField("招募要求", form.recruitRequire, "对队友的要求", lines = 3, maxLen = 500) {
+        onChange(form.copy(recruitRequire = it))
+    }
+    SzjFormField("备注", form.teamDetail, "叠甲、约定、别的想说的", lines = 3, maxLen = 500) {
+        onChange(form.copy(teamDetail = it))
+    }
+}
+
+/**
+ * 位置槽选择器：点一格弹出职业列表，选完那格显示职业图标。
+ * 再点已选中的格子清空（回到"这个位置在招人"）。
+ */
+@Composable
+private fun SzjPublishSlotPicker(
+    keys: List<String>,
+    slots: Map<String, String>,
+    jobs: Map<String, ShizhijiaJob>,
+    onSet: (String, String) -> Unit,
+) {
+    var picking by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("我的位置", color = SzjText, style = SzjLabelStyle)
+            Text("  点一格选自己玩的职业，留空＝这个位置在招人", color = SzjMuted, style = SzjMetaStyle)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            keys.forEach { k ->
+                val jobId = slots[k].orEmpty()
+                val filled = jobId.isNotBlank() && jobId != "0"
+                val job = jobs[jobId]
+                SzjPressable(
+                    onClick = { if (filled) onSet(k, "0") else picking = k },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(6.dp))
+                            .background(if (filled) SzjAccentSoft else SzjCardRaised),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (filled && job != null && job.iconUrl.isNotBlank()) {
+                            ShizhijiaRemoteImage(
+                                url = job.iconUrl,
+                                modifier = Modifier.fillMaxSize().padding(2.dp),
+                                contentScale = ContentScale.Fit,
+                                showPlaceholder = false,
+                            )
+                        } else {
+                            Text(k, color = SzjMuted, fontSize = 11.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // 职业选择：按职能分组列出具体职业
+    val slot = picking
+    if (slot != null) {
+        val byRole = jobs.values.filter { it.type != "职能分类" }.groupBy { it.type }
+        SzjSheet(title = "$slot 位置的职业", onClose = { picking = null }) {
+            byRole.forEach { (role, list) ->
+                Text(role, color = SzjAccent, style = SzjLabelStyle, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    list.sortedBy { it.id.toIntOrNull() ?: 0 }.chunked(4).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { j ->
+                                SzjPressable(
+                                    onClick = { onSet(slot, j.id); picking = null },
+                                    modifier = Modifier.weight(1f),
+                                    shape = SzjChipShape,
+                                ) {
+                                    Column(
+                                        Modifier.fillMaxWidth().clip(SzjChipShape).background(SzjCardRaised)
+                                            .padding(vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
+                                        if (j.iconUrl.isNotBlank()) {
+                                            ShizhijiaRemoteImage(
+                                                url = j.iconUrl,
+                                                modifier = Modifier.size(26.dp),
+                                                contentScale = ContentScale.Fit,
+                                                showPlaceholder = false,
+                                            )
+                                            Spacer(Modifier.height(4.dp))
+                                        }
+                                        Text(j.name, color = SzjText, fontSize = 10.sp, maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                    }
+                                }
+                            }
+                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 从底部升起的选择层。发布表单里的二级选择（职业等）用它。 */
+@Composable
+private fun SzjSheet(title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    BackHandler { onClose() }
+    val noRipple = remember { MutableInteractionSource() }
+    Box(
+        Modifier.fillMaxSize().background(Color(0x8C000000))
+            .pointerInput(Unit) { detectTapGestures { onClose() } },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().fillMaxHeight(0.72f)
+                .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                .background(SzjBg)
+                .clickable(interactionSource = noRipple, indication = null) { }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
+                SzjShard(widthDp = 3, heightDp = 16)
+                Spacer(Modifier.width(8.dp))
+                Text(title, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                SzjPressable(onClick = onClose, shape = CircleShape) {
+                    Text("✕", color = SzjMuted, fontSize = 17.sp, modifier = Modifier.padding(6.dp))
+                }
+            }
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { content() }
+        }
+    }
+}
+
+/** 新人招待的发布字段。 */
+@Composable
+private fun SzjPublishNoviceFields(
+    form: ShizhijiaRecruitForm,
+    rs: SzjRecruitState,
+    onChange: (ShizhijiaRecruitForm) -> Unit,
+) {
+    SzjFormField("标题", form.title, "一句话说清你在找什么", required = true, maxLen = 40) {
+        onChange(form.copy(title = it))
+    }
+    SzjFormChips(
+        "我的身份",
+        ShizhijiaRecruitFilter.NOVICE_IDENTITY.map { it.first.toString() to it.second },
+        setOf(form.identity.toString()),
+        required = true,
+    ) { onChange(form.copy(identity = it.toIntOrNull() ?: 1)) }
+    if (rs.styles.value.isNotEmpty()) {
+        SzjFormChips("玩法风格", rs.styles.value, form.styleIds.toSet(), multi = true) {
+            onChange(form.copy(styleIds = form.styleIds.toggle(it)))
+        }
+    }
+    SzjFormField("工作日在线", form.weekdayTime, "例如 20:00-24:00", maxLen = 24) {
+        onChange(form.copy(weekdayTime = it))
+    }
+    SzjFormField("周末在线", form.weekendTime, "例如 14:00-02:00", maxLen = 24) {
+        onChange(form.copy(weekendTime = it))
+    }
+    SzjFormField("正文", form.detail, "想带什么、想学什么，写清楚一点更容易配到人", lines = 5, required = true, maxLen = 1000) {
+        onChange(form.copy(detail = it))
+    }
+}
+
+/** 其他招募的发布字段。 */
+@Composable
+private fun SzjPublishOtherFields(
+    form: ShizhijiaRecruitForm,
+    rs: SzjRecruitState,
+    onChange: (ShizhijiaRecruitForm) -> Unit,
+) {
+    SzjFormField("标题", form.title, "一句话说清你在找什么", required = true, maxLen = 40) {
+        onChange(form.copy(title = it))
+    }
+    if (rs.categories.value.isNotEmpty()) {
+        SzjFormChips("分类", rs.categories.value, setOf(form.categoryId), required = true) {
+            onChange(form.copy(categoryId = it))
+        }
+    }
+    SzjFormField("正文", form.detail, "详细说明", lines = 5, required = true, maxLen = 1000) {
+        onChange(form.copy(detail = it))
+    }
+}
+
+/**
+ * 发布招募。三类共用这一页，字段按 kind 分支。
+ *
+ * body 字段名对齐官网发布页（RecruitPublishInstance / Beginner / Others）。
+ * RP 俱乐部和部队招募没做：前者要传封面图和营业时间，后者要校验团长身份，
+ * 都得先有图片上传通道。
+ */
+@Composable
+private fun ShizhijiaPublishRecruitScreen(
+    kind: ShizhijiaRecruitKind,
+    rs: SzjRecruitState,
+    pop: () -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var form by remember(kind) { mutableStateOf(ShizhijiaRecruitForm()) }
+    var submitting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    // 发布要登录：先确认，没登录就直接引导，别等填完一屏才报错。
+    var loggedIn by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(Unit) {
+        loggedIn = ShizhijiaApi.isLoggedIn(context)
+        // 字典（副本表、标签、风格、分类、大区）都是公开接口，进来就补齐。
+        if (!rs.dictLoaded.value) {
+            rs.dictLoaded.value = true
+            rs.fbConfig.value = ShizhijiaApi.getFbConfig(context)
+            rs.styles.value = ShizhijiaApi.getStyleConfig(context)
+            rs.categories.value = ShizhijiaApi.getOtherCategories(context)
+            rs.fbLabels.value = ShizhijiaApi.getFbLabels(context)
+            rs.jobs.value = ShizhijiaApi.getJobConfig(context)
+        }
+        if (rs.areas.value.isEmpty()) rs.areas.value = ShizhijiaApi.getAreaList(context)
+    }
+
+    // 必填校验：缺什么直接说缺什么，不做成灰按钮让人猜。
+    fun missing(): String = when (kind) {
+        ShizhijiaRecruitKind.Fb -> when {
+            form.fbType.isBlank() -> "选一个副本类型"
+            form.fbName.isBlank() -> "选一个具体副本"
+            form.targetAreaId.isBlank() -> "选招募大区"
+            form.contactInfo.isBlank() -> "填联系方式"
+            else -> ""
+        }
+        ShizhijiaRecruitKind.Novice -> when {
+            form.title.isBlank() -> "填标题"
+            form.targetAreaId.isBlank() -> "选招募大区"
+            form.contactInfo.isBlank() -> "填联系方式"
+            form.detail.isBlank() -> "填正文"
+            else -> ""
+        }
+        else -> when {
+            form.title.isBlank() -> "填标题"
+            form.categoryId.isBlank() -> "选一个分类"
+            form.targetAreaId.isBlank() -> "选招募大区"
+            form.contactInfo.isBlank() -> "填联系方式"
+            form.detail.isBlank() -> "填正文"
+            else -> ""
+        }
+    }
+
+    val submit: () -> Unit = {
+        val miss = missing()
+        if (miss.isNotBlank()) error = miss
+        else {
+            error = ""
+            submitting = true
+            scope.launch {
+                val res = ShizhijiaApi.publishRecruit(context, kind, form)
+                submitting = false
+                when (res) {
+                    is ShizhijiaApi.Res.Ok -> {
+                        android.widget.Toast.makeText(context, res.value, android.widget.Toast.LENGTH_SHORT).show()
+                        // 发布成功后清掉那一类的缓存，回去能看到新发的。
+                        rs.items.value = rs.items.value - kind
+                        rs.pages.value = rs.pages.value - kind
+                        rs.ended.value = rs.ended.value - kind
+                        pop()
+                    }
+                    is ShizhijiaApi.Res.NeedLogin -> error = "登录状态过期了，重新登录一次"
+                    is ShizhijiaApi.Res.NeedCharacter -> error = "账号还没绑定角色"
+                    is ShizhijiaApi.Res.Failed ->
+                        error = res.msg.ifBlank { if (res.code == null) "网络没通" else "服务端返回 ${res.code}" }
+                }
+            }
+        }
+    }
+
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("发布${kind.label}", onBack = pop)
+        if (loggedIn == false) {
+            SzjEmpty("发布招募要先登录", "登录后才能以你的角色名义发布") {
+                SzjPrimaryButton("登录", onClick = { nav(SzjRoute.Login) })
+            }
+            return@ScreenFrame
+        }
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp,
+            ),
+        ) {
+            item(key = "fields") {
+                Column {
+                    when (kind) {
+                        ShizhijiaRecruitKind.Fb -> SzjPublishFbFields(form, rs) { form = it }
+                        ShizhijiaRecruitKind.Novice -> SzjPublishNoviceFields(form, rs) { form = it }
+                        else -> SzjPublishOtherFields(form, rs) { form = it }
+                    }
+                    // 招募大区：三类共用。"不限大区" 不是有效的发布目标，所以没有空选项。
+                    if (rs.areas.value.isNotEmpty()) {
+                        SzjFormChips(
+                            "招募大区",
+                            rs.areas.value.map { it.areaId.toString() to it.areaName },
+                            selected = setOf(form.targetAreaId),
+                            required = true,
+                        ) { form = form.copy(targetAreaId = it, targetGroupId = "") }
+                        // 选了大区再列服务器（可不选，代表整个大区）。
+                        val groups = rs.areas.value.firstOrNull { it.areaId.toString() == form.targetAreaId }?.groups
+                        if (!groups.isNullOrEmpty() && kind != ShizhijiaRecruitKind.Fb) {
+                            SzjFormChips(
+                                "服务器（不选＝整个大区）",
+                                listOf("" to "整个大区") + groups.map { it.first.toString() to it.second },
+                                selected = setOf(form.targetGroupId),
+                            ) { form = form.copy(targetGroupId = it) }
+                        }
+                    }
+                    SzjFormField(
+                        "联系方式", form.contactInfo,
+                        placeholder = "游戏 ID / QQ 群 / 别的能找到你的方式",
+                        required = true, maxLen = 60,
+                    ) { form = form.copy(contactInfo = it) }
+                }
+            }
+            item(key = "submit") {
+                Column {
+                    if (error.isNotBlank()) {
+                        Text(
+                            error, color = SzjAccent, style = SzjMetaStyle,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        )
+                    }
+                    SzjPressable(
+                        onClick = { if (!submitting) submit() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = SzjInnerShape,
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().clip(SzjInnerShape)
+                                .background(if (submitting) SzjCardRaised else SzjAccent)
+                                .padding(vertical = 13.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (submitting) {
+                                CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                            } else {
+                                Text("发布", color = SzjOnAccent, style = SzjLabelStyle)
+                            }
+                        }
+                    }
+                    Text(
+                        "发布后可以在 我 → 招募管理 里擦亮或下架",
+                        color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     )
                 }
             }
@@ -3618,6 +4201,18 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
                 )
             }
         })
+        // 发布入口跟着当前分类。部队招募的表单没做，那一类不给。
+        if (kind != ShizhijiaRecruitKind.Guild) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.End) {
+                SzjPressable(onClick = { nav(SzjRoute.PublishRecruit(kind)) }, shape = SzjChipShape) {
+                    Text(
+                        "＋ 发布${kind.label}", color = SzjOnAccentSoft, style = SzjLabelStyle,
+                        modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft)
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                }
+            }
+        }
         LazyRow(
             Modifier.fillMaxWidth().padding(vertical = 8.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
@@ -3631,7 +4226,7 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
             list.isNullOrEmpty() -> SzjResState(
                 res = status,
                 emptyTitle = "这一类你还没发过招募",
-                emptyHint = "发布要在石之家网页或官方 App 里做，这里只看和擦亮",
+                emptyHint = if (kind == ShizhijiaRecruitKind.Guild) "部队招募的发布要在网页里做" else null,
                 onLogin = { nav(SzjRoute.Login) },
             )
             else -> LazyColumn(
@@ -4887,6 +5482,8 @@ private fun ShizhijiaGlamourTab(
     var genderId by gs.genderId
     var createTimeIdx by gs.createTimeIdx
     var filterOpen by gs.filterOpen
+    // 筛选面板盖在幻化流上面：返回键先收面板，不能一路退出石之家。
+    BackHandler(enabled = filterOpen) { filterOpen = false }
     val createTimeValues = listOf("all", "last24H", "lastWeek", "lastMonth")
 
     fun load(reset: Boolean) {

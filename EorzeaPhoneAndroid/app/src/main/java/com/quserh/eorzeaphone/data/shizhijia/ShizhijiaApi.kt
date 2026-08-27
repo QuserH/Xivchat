@@ -482,6 +482,49 @@ object ShizhijiaApi {
         }
     }
 
+    // ---- 发布招募 ---------------------------------------------------------
+
+    /**
+     * 发布招募。需登录。
+     *
+     * 三类的 body 取自官网的发布页（RecruitPublishInstance / Beginner / Others），
+     * 字段名和顺序都对齐了：
+     *   副本 createRecruitFb    fb_type,fb_name,target_area_id,progress,strategy,
+     *                          fb_time,need_job,contact_info,label,custom_label,
+     *                          team_detail,recruit_require,strategy_desc,
+     *                          team_composition + 位置字段
+     *   新人 createNoviceEntertain title,identity,target_area_id,target_group_id,
+     *                          weekday_time,weekend_time,contact_info,style,detail
+     *   其他 createRecruitOther title,target_area_id,target_group_id,contact_info,
+     *                          category,cover_pic,detail
+     *
+     * 位置字段的挂法跟着规模走：满编/轻锐是平铺（MT/ST/H1…），
+     * 团队(24) 是 team_position 一个 JSON 字符串。
+     */
+    suspend fun publishRecruit(
+        context: Context,
+        kind: ShizhijiaRecruitKind,
+        form: ShizhijiaRecruitForm,
+    ): Res<String> {
+        val path = when (kind) {
+            ShizhijiaRecruitKind.Fb -> "recruit/createRecruitFb"
+            ShizhijiaRecruitKind.Novice -> "recruit/createNoviceEntertain"
+            ShizhijiaRecruitKind.Other -> "recruit/createRecruitOther"
+            ShizhijiaRecruitKind.Rp -> "recruit/createRecruitRp"
+            ShizhijiaRecruitKind.Guild -> "recruit/createRecruitGuild"
+        }
+        val json = request(context, HOME_BASE, path, body = form.toBody(kind), method = "POST")
+            ?: return Res.Failed(null, "网络没通")
+        val code = json.optLong("code")
+        val msg = json.optString("msg")
+        return when {
+            json.isOk() -> Res.Ok(msg.ifBlank { "发布成功" })
+            code == CODE_NEED_LOGIN -> Res.NeedLogin
+            code == CODE_NEED_CHARACTER -> Res.NeedCharacter
+            else -> Res.Failed(code, msg)
+        }
+    }
+
     // ---- 招募筛选用到的字典（全部公开） ----------------------------------
 
     /** 副本字典：{id, fb_type(绝境战/零式/多变迷宫/诛灭战), fb_name, team_composition}。 */
