@@ -316,6 +316,133 @@ object ShizhijiaApi {
         return ShizhijiaPage(rows = rows?.let { ShizhijiaPostCard.fromArray(it) } ?: emptyList(), pageTime = "")
     }
 
+    /**
+     * 攻略帖列表。攻略在站点上是独立页面，但接口复用 `posts` 那一套，
+     * 只是 type=2 且版块树来自 partList?type=2（见 08 文档第五节）。
+     * 已实测：type=2 返回与帖子同构的 rows。
+     *
+     * 注意别在 KDoc 里写 `posts` + 斜杠星号：Kotlin 的块注释可嵌套，
+     * 那个序列会开一层内嵌注释，把后面的代码整段吞掉。
+     */
+    suspend fun getStrategyParts(context: Context): List<ShizhijiaPostPart> {
+        val d = data(context, HOME_BASE, "posts/partList", mapOf("type" to "2")) ?: return emptyList()
+        val arr = d.optJSONArray("rows") ?: d.optJSONArray("list") ?: return emptyList()
+        return buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(ShizhijiaPostPart.fromJson(it)) } }
+    }
+
+    /** 攻略列表。和 getPostsList 同构，差别只是 type=2。 */
+    suspend fun getStrategyList(
+        context: Context,
+        partId: String = "",
+        page: Int = 1,
+        pageTime: String = "",
+    ): ShizhijiaPage<ShizhijiaPostCard> {
+        val params = mutableMapOf(
+            "type" to "2",
+            "is_top" to "0",
+            "is_refine" to "0",
+            "part_id" to partId,
+            "order" to "",
+            "page" to page.toString(),
+            "limit" to "15",
+        )
+        if (pageTime.isNotBlank()) params["pageTime"] = pageTime
+        val d = data(context, HOME_BASE, "posts/postsList", params) ?: return ShizhijiaPage(emptyList(), "")
+        val rows = d.optJSONArray("rows")
+        return ShizhijiaPage(
+            rows = rows?.let { ShizhijiaPostCard.fromArray(it) } ?: emptyList(),
+            pageTime = d.optString("pageTime"),
+        )
+    }
+
+    // ---- 招募 -------------------------------------------------------------
+
+    /**
+     * 招募列表。五类各自的接口路径不同，行结构也不同，
+     * 由 ShizhijiaRecruit 归一（字段名以实测为准，见 03 文档）。
+     *
+     * 除部队招募外都公开；部队招募未登录返回 10403，
+     * 此时返回空列表，界面显示登录引导。
+     */
+    suspend fun getRecruitList(
+        context: Context,
+        kind: ShizhijiaRecruitKind,
+        page: Int = 1,
+        limit: Int = 15,
+    ): List<ShizhijiaRecruit> {
+        val path = when (kind) {
+            ShizhijiaRecruitKind.Fb -> "recruit/recruitFbList"
+            ShizhijiaRecruitKind.Novice -> "recruit/recruitNeList"
+            ShizhijiaRecruitKind.Guild -> "recruit/recruitGuildList"
+            ShizhijiaRecruitKind.Other -> "recruit/recruitOtherList"
+            ShizhijiaRecruitKind.Rp -> "recruit/recruitRpList"
+        }
+        val d = data(context, HOME_BASE, path, mapOf("page" to page.toString(), "limit" to limit.toString()))
+            ?: return emptyList()
+        val rows = d.optJSONArray("rows") ?: return emptyList()
+        return ShizhijiaRecruit.fromArray(rows, kind)
+    }
+
+    /**
+     * 账号下绑定的角色。需登录。
+     *
+     * 本机没有可用会话，拿不到真实样本，所以这里对 data 的形状做宽松处理：
+     * 可能是 characterDetail 对象、characterDetail 数组，或 rows 数组。
+     * 三种都试，取不到就返回空列表让界面显示"读不到"。
+     */
+    suspend fun getBoundCharacters(context: Context): List<ShizhijiaBoundCharacter> {
+        val d = data(context, HOME_BASE, "groupAndRole/getCharacterBindInfo", mapOf("platform" to "1"))
+            ?: return emptyList()
+        val arr = d.optJSONArray("characterDetail")
+            ?: d.optJSONArray("rows")
+            ?: d.optJSONArray("list")
+        if (arr != null) return ShizhijiaBoundCharacter.fromArray(arr)
+        // 单个对象的情况：把它自己当成唯一一条。
+        val one = d.optJSONObject("characterDetail") ?: return emptyList()
+        return listOf(ShizhijiaBoundCharacter.fromJson(one, fallbackName = d.optString("character_name")))
+    }
+
+    /** 我收藏的帖子。需登录（未登录 10403）。 */
+    suspend fun getMyStarPosts(context: Context, page: Int = 1, limit: Int = 15): List<ShizhijiaPostCard> {
+        val d = data(context, HOME_BASE, "userInfo/myStarPosts", mapOf("page" to page.toString(), "limit" to limit.toString()))
+            ?: return emptyList()
+        val rows = d.optJSONArray("rows") ?: return emptyList()
+        return ShizhijiaPostCard.fromArray(rows)
+    }
+
+    /**
+     * 我发布的招募。需登录。四类各有自己的"我的"接口，
+     * 部队招募的路径与其他三类命名不同（myGuildRecruitList）。
+     */
+    suspend fun getMyRecruitList(
+        context: Context,
+        kind: ShizhijiaRecruitKind,
+        page: Int = 1,
+        limit: Int = 15,
+    ): List<ShizhijiaRecruit> {
+        val path = when (kind) {
+            ShizhijiaRecruitKind.Fb -> "recruit/myFbRecruitList"
+            ShizhijiaRecruitKind.Novice -> "recruit/myNeRecruitList"
+            ShizhijiaRecruitKind.Guild -> "recruit/myGuildRecruitList"
+            ShizhijiaRecruitKind.Other -> "recruit/myOtherRecruitList"
+            // RP 没有 myRpRecruitList，主页收藏接口是另一套，这里不提供。
+            ShizhijiaRecruitKind.Rp -> return emptyList()
+        }
+        val d = data(context, HOME_BASE, path, mapOf("page" to page.toString(), "limit" to limit.toString()))
+            ?: return emptyList()
+        val rows = d.optJSONArray("rows") ?: return emptyList()
+        return ShizhijiaRecruit.fromArray(rows, kind)
+    }
+
+    /**
+     * 一键擦亮：把自己所有招募的排序时间刷新到当前。
+     * 返回 true 表示服务端接受了这次请求。
+     */
+    suspend fun oneKeyPolish(context: Context): Boolean {
+        val json = request(context, HOME_BASE, "recruit/oneKeyPolish") ?: return false
+        return json.isOk()
+    }
+
     /** Full glamour post (glamour/glamourDetail?id=). */
     suspend fun getGlamourDetail(context: Context, id: String): ShizhijiaGlamourDetail? {
         val d = data(context, HOME_BASE, "glamour/glamourDetail", mapOf("id" to id)) ?: return null

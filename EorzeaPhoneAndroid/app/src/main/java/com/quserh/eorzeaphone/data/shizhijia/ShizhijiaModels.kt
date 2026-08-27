@@ -88,6 +88,13 @@ internal fun splitPictures(raw: String): List<String> =
 internal fun cleanAvatar(raw: String): String =
     raw.trim().takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) }.orEmpty()
 
+/**
+ * 接口里空值有三种写法：缺字段、空串、字面量 "null"。三种一律归成空串。
+ * （原先是 ShizhijiaGlamourDetail.fromJson 里的局部函数，招募解析也要用，提到顶层。）
+ */
+internal fun cleanField(v: String?): String =
+    v?.takeUnless { it.isBlank() || it == "null" || it == "NULL" }?.trim().orEmpty()
+
 /** Full post detail (posts/postsDetail -> data). `contentHtml` is the article body. */
 data class ShizhijiaPostDetail(
     val id: String,
@@ -577,7 +584,6 @@ data class ShizhijiaGlamourDetail(
             val ort = o.optJSONObject("ortInfo")
             val glassesIcon = ort?.optString("glasses_icon").orEmpty()
             val ornamentIcon = ort?.optString("ornament_icon").orEmpty()
-            fun cleanField(v: String?): String = v?.takeUnless { it.isBlank() || it == "null" }.orEmpty()
             return ShizhijiaGlamourDetail(
                 id = o.optString("id"),
                 title = o.optString("title"),
@@ -602,4 +608,299 @@ data class ShizhijiaGlamourDetail(
             )
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 招募（recruit/*）
+//
+// 五类招募各有自己的行结构，但列表页要展示的东西高度重合：谁发的、在哪个服、
+// 标题/正文摘要、一串标签、时间。所以统一成一个 ShizhijiaRecruit，
+// 由各自的 fromXxx 把差异塞进 tags/lines，界面只认这一种卡片。
+// 字段名以实测响应为准（见 开发/石之家OX/03-招募系统.md）。
+// ---------------------------------------------------------------------------
+
+/** 招募分类。id 用于路由到对应的 list 接口。 */
+enum class ShizhijiaRecruitKind(val label: String) {
+    Fb("副本组队"),
+    Novice("新人招待"),
+    Guild("部队招募"),
+    Other("其他"),
+    Rp("RP 俱乐部"),
+}
+
+data class ShizhijiaRecruit(
+    val id: String,
+    val kind: ShizhijiaRecruitKind,
+    val uuid: String,
+    val title: String,
+    val characterName: String,
+    val areaName: String,
+    val groupName: String,
+    /** 招募面向的服务器（和发布者所在服可能不同）。 */
+    val targetServer: String,
+    val avatar: String,
+    val coverPic: String,
+    /** 摘要（招募正文是富文本，这里已去标签）。 */
+    val summary: String,
+    /** 副标题行，例如 "绝境战 · 满编小队" 或 "工作日 20:00-00:00"。 */
+    val lines: List<String>,
+    /** 标签（副本标签 / 玩法风格 / 分类名 / RP 自定义标签）。 */
+    val tags: List<String>,
+    /** 已报名人数，没有这个概念时为 -1。 */
+    val responseNum: Int,
+    val createdAt: String,
+) {
+    companion object {
+        /** 副本组队：fb_type/fb_name/进度/时间 + 各位置报名数。 */
+        fun fromFb(o: JSONObject): ShizhijiaRecruit {
+            val lines = buildList {
+                listOf(o.optString("fb_type"), o.optString("fb_name"))
+                    .filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+                    ?.let { add(it.joinToString(" · ")) }
+                val time = cleanField(o.optString("fb_time"))
+                val comp = cleanField(o.optString("team_composition"))
+                listOf(comp, time).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+                    ?.let { add(it.joinToString(" · ")) }
+                cleanField(o.optString("progress")).takeIf { it.isNotBlank() }?.let { add("进度 $it") }
+            }
+            return ShizhijiaRecruit(
+                id = o.optString("id"),
+                kind = ShizhijiaRecruitKind.Fb,
+                uuid = o.optString("uuid"),
+                // 副本组队没有 title 字段，用副本名当标题。
+                title = listOf(o.optString("fb_name"), o.optString("fb_type"))
+                    .firstOrNull { it.isNotBlank() }.orEmpty().ifBlank { "副本组队" },
+                characterName = o.optString("character_name"),
+                areaName = o.optString("area_name"),
+                groupName = o.optString("group_name"),
+                targetServer = cleanField(o.optString("target_area_name")),
+                avatar = cleanAvatar(o.optString("avatar")),
+                coverPic = "",
+                summary = cleanField(o.optString("strategy")).takeIf { it.isNotBlank() }?.let { "攻略参考：$it" }.orEmpty(),
+                lines = lines,
+                tags = namesOf(o.optJSONArray("labelInfo"), "name") +
+                    splitPictures(cleanField(o.optString("custom_label"))),
+                responseNum = o.optInt("response_num", -1),
+                createdAt = o.optString("created_at"),
+            )
+        }
+
+        /** 新人招待：identity 决定是豆芽找导师还是导师找学员。 */
+        fun fromNovice(o: JSONObject): ShizhijiaRecruit {
+            val identity = when (o.optInt("identity")) {
+                1 -> "找导师"
+                2 -> "找学员"
+                else -> ""
+            }
+            val lines = buildList {
+                identity.takeIf { it.isNotBlank() }?.let { add(it) }
+                val wd = cleanField(o.optString("weekday_time"))
+                val we = cleanField(o.optString("weekend_time"))
+                if (wd.isNotBlank()) add("工作日 $wd")
+                if (we.isNotBlank()) add("周末 $we")
+            }
+            return ShizhijiaRecruit(
+                id = o.optString("id"),
+                kind = ShizhijiaRecruitKind.Novice,
+                uuid = o.optString("uuid"),
+                title = o.optString("title").ifBlank { "新人招待" },
+                characterName = o.optString("character_name"),
+                areaName = o.optString("area_name"),
+                groupName = o.optString("group_name"),
+                targetServer = listOf(o.optString("target_area_name"), o.optString("target_group_name"))
+                    .map { cleanField(it) }.filter { it.isNotBlank() }.joinToString(" "),
+                avatar = cleanAvatar(o.optString("avatar")),
+                coverPic = "",
+                summary = stripHtml(o.optString("detail_mask")),
+                lines = lines,
+                tags = namesOf(o.optJSONArray("styleInfo"), "style"),
+                responseNum = -1,
+                createdAt = o.optString("created_at"),
+            )
+        }
+
+        /** 其他招募：category_name 就是"好友/住宅/RP"这类分类。 */
+        fun fromOther(o: JSONObject): ShizhijiaRecruit = ShizhijiaRecruit(
+            id = o.optString("id"),
+            kind = ShizhijiaRecruitKind.Other,
+            uuid = o.optString("uuid"),
+            title = o.optString("title").ifBlank { "其他招募" },
+            characterName = o.optString("character_name"),
+            areaName = o.optString("area_name"),
+            groupName = o.optString("group_name"),
+            targetServer = listOf(o.optString("target_area_name"), o.optString("target_group_name"))
+                .map { cleanField(it) }.filter { it.isNotBlank() }.joinToString(" "),
+            avatar = cleanAvatar(o.optString("avatar")),
+            coverPic = cleanField(o.optString("cover_pic")),
+            summary = stripHtml(o.optString("detail_mask")),
+            lines = emptyList(),
+            tags = listOfNotNull(cleanField(o.optString("category_name")).takeIf { it.isNotBlank() }),
+            responseNum = -1,
+            createdAt = o.optString("created_at"),
+        )
+
+        /** RP 俱乐部：有评分、地址、营业时间。 */
+        fun fromRp(o: JSONObject): ShizhijiaRecruit {
+            val lines = buildList {
+                cleanField(o.optString("open_time")).takeIf { it.isNotBlank() }?.let { add("营业 $it") }
+                cleanField(o.optString("address")).takeIf { it.isNotBlank() }?.let { add(it) }
+                val score = cleanField(o.optString("comment_score"))
+                val votes = o.optInt("score_count")
+                if (score.isNotBlank() && score != "0" && votes > 0) add("评分 $score（$votes 人）")
+            }
+            return ShizhijiaRecruit(
+                id = o.optString("id"),
+                kind = ShizhijiaRecruitKind.Rp,
+                uuid = o.optString("uuid"),
+                title = o.optString("rp_name").ifBlank { "RP 俱乐部" },
+                characterName = o.optString("character_name"),
+                areaName = o.optString("area_name"),
+                groupName = o.optString("group_name"),
+                targetServer = listOf(o.optString("rp_area_name"), o.optString("rp_group_name"))
+                    .map { cleanField(it) }.filter { it.isNotBlank() }.joinToString(" "),
+                avatar = cleanAvatar(o.optString("avatar")),
+                coverPic = cleanField(o.optString("cover_h5_pic")).ifBlank { cleanField(o.optString("cover_pic")) },
+                summary = stripHtml(o.optString("profile")),
+                lines = lines,
+                // rp_type 是数组，自定义标签是逗号串。
+                tags = stringsOf(o.optJSONArray("rp_type")) +
+                    splitPictures(cleanField(o.optString("custom_label"))),
+                responseNum = -1,
+                createdAt = o.optString("created_at"),
+            )
+        }
+
+        /**
+         * 部队招募：接口需登录，本机无会话时拿不到样本，
+         * 所以这里按文档字段做尽量宽松的解析——取得到就显示，取不到留空，
+         * 不会因为字段名不符而崩。
+         */
+        fun fromGuild(o: JSONObject): ShizhijiaRecruit {
+            val lines = buildList {
+                listOf("guild_name", "guildName").firstNotNullOfOrNull { k ->
+                    cleanField(o.optString(k)).takeIf { it.isNotBlank() }
+                }?.let { add(it) }
+                listOf("activity", "act_content", "recruit_require").forEach { k ->
+                    cleanField(o.optString(k)).takeIf { it.isNotBlank() }?.let { add(it) }
+                }
+            }
+            return ShizhijiaRecruit(
+                id = o.optString("id"),
+                kind = ShizhijiaRecruitKind.Guild,
+                uuid = o.optString("uuid"),
+                title = listOf("title", "guild_name", "guildName")
+                    .firstNotNullOfOrNull { k -> o.optString(k).takeIf { it.isNotBlank() } }
+                    .orEmpty().ifBlank { "部队招募" },
+                characterName = o.optString("character_name"),
+                areaName = o.optString("area_name"),
+                groupName = o.optString("group_name"),
+                targetServer = listOf(o.optString("target_area_name"), o.optString("target_group_name"))
+                    .map { cleanField(it) }.filter { it.isNotBlank() }.joinToString(" "),
+                avatar = cleanAvatar(o.optString("avatar")),
+                coverPic = cleanField(o.optString("cover_pic")),
+                summary = stripHtml(o.optString("detail_mask").ifBlank { o.optString("detail") }),
+                lines = lines.take(2),
+                tags = namesOf(o.optJSONArray("labelInfo"), "name"),
+                responseNum = o.optInt("response_num", -1),
+                createdAt = o.optString("created_at"),
+            )
+        }
+
+        fun fromArray(arr: JSONArray, kind: ShizhijiaRecruitKind): List<ShizhijiaRecruit> =
+            buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    add(
+                        when (kind) {
+                            ShizhijiaRecruitKind.Fb -> fromFb(o)
+                            ShizhijiaRecruitKind.Novice -> fromNovice(o)
+                            ShizhijiaRecruitKind.Guild -> fromGuild(o)
+                            ShizhijiaRecruitKind.Other -> fromOther(o)
+                            ShizhijiaRecruitKind.Rp -> fromRp(o)
+                        }
+                    )
+                }
+            }
+    }
+}
+
+/**
+ * 账号绑定的角色（groupAndRole/getCharacterBindInfo）。
+ * 字段名按官方其他接口的习惯猜取多个候选——本机无会话无法实测，
+ * 所以每个字段都给几种可能的键名，取到哪个算哪个。
+ */
+data class ShizhijiaBoundCharacter(
+    val name: String,
+    val areaName: String,
+    val groupName: String,
+    val race: Int,
+    val tribe: Int,
+    val gender: Int,
+    val avatar: String,
+    val isCurrent: Boolean,
+) {
+    companion object {
+        fun fromJson(o: JSONObject, fallbackName: String = ""): ShizhijiaBoundCharacter {
+            fun pick(vararg keys: String): String =
+                keys.firstNotNullOfOrNull { k -> cleanField(o.optString(k)).takeIf { it.isNotBlank() } }.orEmpty()
+            return ShizhijiaBoundCharacter(
+                name = pick("character_name", "characterName", "name").ifBlank { cleanField(fallbackName) },
+                areaName = pick("area_name", "areaName", "AreaName"),
+                groupName = pick("group_name", "groupName", "GroupName"),
+                race = o.optInt("race"),
+                tribe = o.optInt("tribe"),
+                gender = o.optInt("gender", -1),
+                avatar = cleanAvatar(pick("avatar", "face")),
+                // 官方用 is_default / is_current 之类标记当前角色，两个都认。
+                isCurrent = o.optInt("is_current") == 1 || o.optInt("is_default") == 1 ||
+                    o.optBoolean("current", false),
+            )
+        }
+
+        fun fromArray(arr: JSONArray): List<ShizhijiaBoundCharacter> =
+            buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { add(fromJson(it)) }
+                }
+            }.filter { it.name.isNotBlank() }
+    }
+}
+
+/** 取 [{key: "..."}] 里的 key 值，用于 labelInfo/styleInfo 这类字典数组。 */
+internal fun namesOf(arr: JSONArray?, key: String): List<String> {
+    arr ?: return emptyList()
+    return buildList(arr.length()) {
+        for (i in 0 until arr.length()) {
+            arr.optJSONObject(i)?.optString(key)?.takeIf { it.isNotBlank() }?.let { add(it) }
+        }
+    }
+}
+
+/** 取纯字符串数组（rp_type 这种）。 */
+internal fun stringsOf(arr: JSONArray?): List<String> {
+    arr ?: return emptyList()
+    return buildList(arr.length()) {
+        for (i in 0 until arr.length()) {
+            arr.optString(i).takeIf { it.isNotBlank() && it != "null" }?.let { add(it) }
+        }
+    }
+}
+
+/**
+ * 招募正文是富文本，列表只要摘要，所以直接去标签压空白。
+ * 帖子详情那种需要保留结构的仍然走 ShizhijiaRichContent。
+ */
+internal fun stripHtml(raw: String): String {
+    if (raw.isBlank() || raw == "null") return ""
+    return raw
+        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("</(p|div|li|h[1-6])>", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("<[^>]*>"), "")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 }
