@@ -40,6 +40,8 @@ data class ShizhijiaPostCard(
     val title: String,
     val partName: String,
     val partParentName: String,
+    /** 版块 id，用于"不推荐这个版块"的本地过滤。 */
+    val partId: String,
     val characterName: String,
     val areaName: String,
     val groupName: String,
@@ -59,6 +61,7 @@ data class ShizhijiaPostCard(
             title = o.optString("title"),
             partName = o.optString("part_name"),
             partParentName = o.optString("part_parent_name"),
+            partId = o.optString("part_id"),
             characterName = o.optString("character_name"),
             areaName = o.optString("area_name"),
             groupName = o.optString("group_name"),
@@ -779,6 +782,58 @@ data class ShizhijiaJob(
     }
 }
 
+/**
+ * 招募详情。四类各有自己的接口，但都是 `?id=`，也都不需要登录：
+ *   副本  recruit/getRecruitFbDetail
+ *   新人  recruit/getNeDetail
+ *   其他  recruit/getOtherDetail
+ *   RP    recruit/getRpDetail
+ * 比列表多出来的主要是正文（*_mask 字段）、有效期和发布者的 ip 归属地。
+ *
+ * card 复用列表那套解析，所以标题/位置槽/标签这些不用再写一遍。
+ */
+data class ShizhijiaRecruitDetail(
+    val card: ShizhijiaRecruit,
+    /** 正文段落：标题 → 内容。空的段落不进来。 */
+    val sections: List<Pair<String, String>>,
+    /** 有效期（还剩几天）。 */
+    val dueDay: Int,
+    val ipLocation: String,
+    val updatedAt: String,
+) {
+    companion object {
+        fun fromJson(o: JSONObject, kind: ShizhijiaRecruitKind): ShizhijiaRecruitDetail {
+            val sections = buildList {
+                fun add(label: String, vararg keys: String) {
+                    val v = keys.firstNotNullOfOrNull { k ->
+                        stripHtml(o.optString(k)).takeIf { it.isNotBlank() }
+                    }
+                    if (v != null) add(label to v)
+                }
+                when (kind) {
+                    ShizhijiaRecruitKind.Fb -> {
+                        add("招募要求", "recruit_require_mask")
+                        add("备注", "team_detail_mask")
+                        add("攻略说明", "strategy_desc_mask")
+                    }
+                    ShizhijiaRecruitKind.Rp -> {
+                        add("简介", "profile")
+                        add("详情", "detail_mask")
+                    }
+                    else -> add("详情", "detail_mask")
+                }
+            }
+            return ShizhijiaRecruitDetail(
+                card = ShizhijiaRecruit.fromDetail(o, kind),
+                sections = sections,
+                dueDay = o.optInt("due_day", -1),
+                ipLocation = cleanField(o.optString("ip_location")),
+                updatedAt = cleanField(o.optString("updated_at")),
+            )
+        }
+    }
+}
+
 /** 招募卡上的一个位置槽。jobId 为空/"0" 表示位置还空着。 */
 data class ShizhijiaSlot(val name: String, val jobId: String) {
     val filled: Boolean get() = jobId.isNotBlank() && jobId != "0"
@@ -1038,6 +1093,18 @@ data class ShizhijiaRecruit(
             )
         }
 
+        /**
+         * 详情响应转卡片。字段名和列表基本一致，所以直接复用列表的解析。
+         * 差别：RP 详情用 create_time 而不是 created_at，这里已在各 from* 里兜过。
+         */
+        fun fromDetail(o: JSONObject, kind: ShizhijiaRecruitKind): ShizhijiaRecruit = when (kind) {
+            ShizhijiaRecruitKind.Fb -> fromFb(o)
+            ShizhijiaRecruitKind.Novice -> fromNovice(o)
+            ShizhijiaRecruitKind.Guild -> fromGuild(o)
+            ShizhijiaRecruitKind.Other -> fromOther(o)
+            ShizhijiaRecruitKind.Rp -> fromRp(o)
+        }
+
         fun fromArray(arr: JSONArray, kind: ShizhijiaRecruitKind): List<ShizhijiaRecruit> =
             buildList(arr.length()) {
                 for (i in 0 until arr.length()) {
@@ -1178,28 +1245,29 @@ data class ShizhijiaGuildPhoto(
     val createdAt: String,
 ) {
     companion object {
+        fun fromJson(o: JSONObject): ShizhijiaGuildPhoto {
+            fun pick(vararg keys: String): String =
+                keys.firstNotNullOfOrNull { k -> cleanField(o.optString(k)).takeIf { it.isNotBlank() } }.orEmpty()
+            return ShizhijiaGuildPhoto(
+                id = pick("id", "photo_id"),
+                urls = splitPictures(pick("photo_url", "photoUrl", "url")),
+                uploaderName = pick("character_name", "characterName"),
+                uploaderUuid = pick("uuid"),
+                uploaderAvatar = cleanAvatar(pick("avatar")),
+                desc = stripHtml(pick("content", "desc", "photo_desc")),
+                likeCount = o.optInt("like_count"),
+                commentCount = o.optInt("comment_count"),
+                createdAt = pick("created_at", "create_time"),
+            )
+        }
+
         fun fromArray(arr: JSONArray?): List<ShizhijiaGuildPhoto> {
             arr ?: return emptyList()
             return buildList(arr.length()) {
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
-                    fun pick(vararg keys: String): String =
-                        keys.firstNotNullOfOrNull { k -> cleanField(o.optString(k)).takeIf { it.isNotBlank() } }.orEmpty()
-                    val urls = splitPictures(pick("photo_url", "photoUrl", "url"))
-                    if (urls.isEmpty()) continue
-                    add(
-                        ShizhijiaGuildPhoto(
-                            id = pick("id", "photo_id"),
-                            urls = urls,
-                            uploaderName = pick("character_name", "characterName"),
-                            uploaderUuid = pick("uuid"),
-                            uploaderAvatar = cleanAvatar(pick("avatar")),
-                            desc = stripHtml(pick("content", "desc", "photo_desc")),
-                            likeCount = o.optInt("like_count"),
-                            commentCount = o.optInt("comment_count"),
-                            createdAt = pick("created_at", "create_time"),
-                        )
-                    )
+                    val p = fromJson(o)
+                    if (p.urls.isNotEmpty()) add(p)
                 }
             }
         }

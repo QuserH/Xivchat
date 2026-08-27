@@ -450,6 +450,29 @@ object ShizhijiaApi {
         return rowsRes(context, HOME_BASE, path, params) { ShizhijiaRecruit.fromArray(it, kind) }
     }
 
+    /**
+     * 招募详情。四类各有接口，参数统一是 `?id=`，都不需要登录。
+     * 部队招募的详情接口（getRecruitGuildDetail）要登录，所以那一类返回 NeedLogin
+     * 时界面会提示登录。
+     */
+    suspend fun getRecruitDetail(
+        context: Context,
+        kind: ShizhijiaRecruitKind,
+        id: String,
+    ): Res<ShizhijiaRecruitDetail?> {
+        if (id.isBlank()) return Res.Failed(null, "没有招募 id")
+        val path = when (kind) {
+            ShizhijiaRecruitKind.Fb -> "recruit/getRecruitFbDetail"
+            ShizhijiaRecruitKind.Novice -> "recruit/getNeDetail"
+            ShizhijiaRecruitKind.Other -> "recruit/getOtherDetail"
+            ShizhijiaRecruitKind.Rp -> "recruit/getRpDetail"
+            ShizhijiaRecruitKind.Guild -> "recruit/getRecruitGuildDetail"
+        }
+        return dataRes(context, HOME_BASE, path, mapOf("id" to id)) { root ->
+            root.optJSONObject("data")?.let { ShizhijiaRecruitDetail.fromJson(it, kind) }
+        }
+    }
+
     // ---- 招募筛选用到的字典（全部公开） ----------------------------------
 
     /** 副本字典：{id, fb_type(绝境战/零式/多变迷宫/诛灭战), fb_name, team_composition}。 */
@@ -595,6 +618,34 @@ object ShizhijiaApi {
             val arr = root.optJSONObject("data")?.optJSONArray("rows")
             ShizhijiaGuildPhoto.fromArray(arr)
         }
+    }
+
+    /**
+     * 单张照片详情。前端 GuildPhotoDetail 用 `{id}`，
+     * 返回里 photo_url 还是逗号分隔的多图。
+     */
+    suspend fun getGuildPhotoDetail(context: Context, photoId: String): Res<ShizhijiaGuildPhoto?> {
+        if (photoId.isBlank()) return Res.Failed(null, "没有照片 id")
+        return dataRes(context, HOME_BASE, "guild/getGuildPhotoDetail", mapOf("id" to photoId)) { root ->
+            root.optJSONObject("data")?.let { ShizhijiaGuildPhoto.fromJson(it) }
+        }
+    }
+
+    /**
+     * 照片的评论。注意路径首字母大写（`guild/GuildPhotoCommentDetail`），
+     * 这是服务端的写法，改成小写会 404。
+     */
+    suspend fun getGuildPhotoComments(
+        context: Context,
+        photoId: String,
+        page: Int = 1,
+        limit: Int = 20,
+    ): Res<List<ShizhijiaComment>> {
+        if (photoId.isBlank()) return Res.Failed(null, "没有照片 id")
+        return rowsRes(
+            context, HOME_BASE, "guild/GuildPhotoCommentDetail",
+            mapOf("photo_id" to photoId, "page" to page.toString(), "limit" to limit.toString()),
+        ) { ShizhijiaComment.fromArray(it) }
     }
 
     /** 我收藏的帖子。需登录——未登录返回 Res.NeedLogin，界面据此区分空列表和未登录。 */
@@ -884,17 +935,32 @@ object ShizhijiaApi {
             ?: listOf(bindAvatar, infoAvatar, isLoginAvatar).firstOrNull { it.startsWith("data:image") }
             ?: ""
         android.util.Log.d(tag, "avatar sources: bind=${bindAvatar.take(30)} info=${infoAvatar.take(30)} isLogin=${isLoginAvatar.take(30)} -> final=${chosen.take(90)}")
-        return ShizhijiaLoginUser(name, d.optString("area_name"), d.optString("group_name"), chosen)
+        // uuid：isLogin 里就有；万一没有，再从绑定信息里兜一下。
+        val uuid = clean(d.optString("uuid"))
+            .ifBlank { clean(detail?.optString("uuid")) }
+        return ShizhijiaLoginUser(name, d.optString("area_name"), d.optString("group_name"), chosen, uuid)
     }
 
     private const val RACE_AVATAR_BASE =
         "https://static.web.sdo.com/jijiamobile/pic/ff14/2023ffstone/"
 }
 
-/** Basic identity of the logged-in character, for the top bar. */
-data class ShizhijiaLoginUser(val name: String, val area: String, val group: String, val avatar: String = "") {
+/**
+ * Basic identity of the logged-in character, for the top bar.
+ *
+ * uuid 是点自己头像进主页要用的——玩家主页接口按 uuid 取人，
+ * 没有它就只能看别人的主页、看不了自己的。
+ */
+data class ShizhijiaLoginUser(
+    val name: String,
+    val area: String,
+    val group: String,
+    val avatar: String = "",
+    val uuid: String = "",
+) {
     fun toJson(): String = org.json.JSONObject().apply {
         put("name", name); put("area", area); put("group", group); put("avatar", avatar)
+        put("uuid", uuid)
     }.toString()
 
     companion object {
@@ -903,6 +969,7 @@ data class ShizhijiaLoginUser(val name: String, val area: String, val group: Str
             area = o.optString("area"),
             group = o.optString("group"),
             avatar = o.optString("avatar"),
+            uuid = o.optString("uuid"),
         )
     }
 }

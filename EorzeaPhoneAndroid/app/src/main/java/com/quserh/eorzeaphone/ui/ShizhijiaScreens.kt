@@ -104,6 +104,7 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaComment
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruit
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitDetail
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitFilter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitKind
 import androidx.compose.ui.text.SpanStyle
@@ -584,11 +585,64 @@ private sealed interface SzjRoute {
     data object Characters : SzjRoute
     /** 我的部队主页（部队 id = 当前角色的 fc_id）。 */
     data object MyGuild : SzjRoute
+    /** 部队照片墙的单张详情 + 评论。 */
+    data class GuildPhotoDetail(val photoId: String) : SzjRoute
+    /** 招募详情（四类共用一个页面，接口按 kind 分）。 */
+    data class RecruitDetail(val kind: ShizhijiaRecruitKind, val id: String) : SzjRoute
 }
 
 /** App-wide full-screen image viewer state; any thumbnail sets its URL here. */
 object SzjViewer {
     var url by mutableStateOf<String?>(null)
+}
+
+/**
+ * 石之家的导航与分区状态。
+ *
+ * 必须活在 composable 外面：ShizhijiaScreen 挂在外层 AnimatedContent 里，
+ * 回桌面再进来这个 composable 是重建的，`remember` 的东西全丢——
+ * 原来退出去再进来总是回到社区首页，就是这个原因。
+ * 放到 object 里之后，返回栈、四个分区的选中项和各列表的数据都留着。
+ */
+private object SzjNav {
+    var stack by mutableStateOf(listOf<SzjRoute>(SzjRoute.Home))
+        private set
+
+    /** 四个分区（社区/招募/幻化/我）和社区的二级 Tab。 */
+    val mainTab = mutableStateOf(MAIN_COMMUNITY)
+    val subTab = mutableStateOf(SUB_POSTS)
+    /** 分区切换历史：在招募按返回应该回社区，而不是直接退到桌面。 */
+    private var tabHistory by mutableStateOf(listOf<Int>())
+
+    // 各分区的数据缓存也挂这儿，回桌面再进来不用重新拉一遍。
+    val posts = SzjPostsState()
+    val strategy = SzjStrategyState()
+    val recruit = SzjRecruitState()
+    val glamour = SzjGlamourState()
+    val search = SzjSearchState()
+
+    fun push(r: SzjRoute) { stack = stack + r }
+    fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
+
+    /** 切分区时记一笔来路，供返回键回溯。 */
+    fun selectTab(tab: Int) {
+        if (tab == mainTab.value) return
+        tabHistory = (tabHistory + mainTab.value).takeLast(8)
+        mainTab.value = tab
+    }
+
+    /**
+     * 返回键能不能被石之家吃掉：栈里有上一页，或者分区有来路。
+     * 都没有才让它穿透到桌面。
+     */
+    val canGoBack: Boolean get() = stack.size > 1 || tabHistory.isNotEmpty()
+
+    fun back() {
+        if (stack.size > 1) { stack = stack.dropLast(1); return }
+        val prev = tabHistory.lastOrNull() ?: return
+        tabHistory = tabHistory.dropLast(1)
+        mainTab.value = prev
+    }
 }
 
 /**
@@ -756,23 +810,24 @@ class SzjSearchState {
 @Composable
 fun ShizhijiaScreen(state: PhoneState) {
     val context = LocalContext.current
-    var stack by remember { mutableStateOf(listOf<SzjRoute>(SzjRoute.Home)) }
-    val postsState = remember { SzjPostsState() }
-    val strategyState = remember { SzjStrategyState() }
-    val recruitState = remember { SzjRecruitState() }
-    val glamourState = remember { SzjGlamourState() }
-    val searchState = remember { SzjSearchState() }
-    val homeMainTab = remember { mutableStateOf(MAIN_COMMUNITY) }
-    val homeSubTab = remember { mutableStateOf(SUB_POSTS) }
+    // 状态全部来自 SzjNav（object，活得比这个 composable 长）：
+    // 回桌面再进来还在原来那一页，列表也不用重新拉。
+    val postsState = SzjNav.posts
+    val strategyState = SzjNav.strategy
+    val recruitState = SzjNav.recruit
+    val glamourState = SzjNav.glamour
+    val searchState = SzjNav.search
+    val homeMainTab = SzjNav.mainTab
+    val homeSubTab = SzjNav.subTab
     var barHeight by remember { mutableStateOf(56f) }
     var barBottom by remember { mutableStateOf(ShizhijiaSession.bottomBarBottom(context)) }
     LaunchedEffect(Unit) { barHeight = ShizhijiaSession.bottomBarHeight(context) }
-    // Only swallow back while inside the app; the outer handler then leaves the desktop.
-    BackHandler(enabled = stack.size > 1) { stack = stack.dropLast(1) }
-    val route = stack.last()
+    // 有上一页、或者分区有来路时吃掉返回键；都没有才穿透到桌面。
+    BackHandler(enabled = SzjNav.canGoBack) { SzjNav.back() }
+    val route = SzjNav.stack.last()
     // nav pushes a destination; pop returns to the previous one (login success uses pop).
-    val nav: (SzjRoute) -> Unit = { stack = stack + it }
-    val pop: () -> Unit = { if (stack.size > 1) stack = stack.dropLast(1) }
+    val nav: (SzjRoute) -> Unit = { SzjNav.push(it) }
+    val pop: () -> Unit = { SzjNav.pop() }
     Box(Modifier.fillMaxSize()) {
         when (route) {
 SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recruitState, glamourState, homeMainTab, homeSubTab, barHeightDp = barHeight, barBottomDp = barBottom, onBarHeightChange = { barHeight = it }, onBarBottomChange = { barBottom = it })
@@ -787,6 +842,8 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             SzjRoute.MyRecruits -> ShizhijiaMyRecruitsScreen(pop, nav)
             SzjRoute.Characters -> ShizhijiaCharactersScreen(pop)
             SzjRoute.MyGuild -> ShizhijiaMyGuildScreen(pop, nav)
+            is SzjRoute.GuildPhotoDetail -> ShizhijiaGuildPhotoDetailScreen(route.photoId, pop, nav)
+            is SzjRoute.RecruitDetail -> ShizhijiaRecruitDetailScreen(route.kind, route.id, pop, nav)
         }
         SzjViewer.url?.let { url ->
             // Full-screen overlay for viewing a tapped image at size.
@@ -976,7 +1033,7 @@ private fun ShizhijiaHomeScreen(
             }
             SzjBottomBar(
                 mainTab,
-                onSelect = { mainTab = it },
+                onSelect = { SzjNav.selectTab(it) },
                 barHeightDp = barHeightDp,
                 barBottomDp = barBottomDp,
                 hidden = bar.hidden,
@@ -989,10 +1046,19 @@ private fun ShizhijiaHomeScreen(
 /** Top bar with the account entry (avatar + login label) and a check-in button. */
 @Composable
 private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, loginUser: ShizhijiaLoginUser?, onSignIn: () -> Unit, signedToday: Boolean) {
+    // 头像和昵称点进自己的主页；没登录就去登录页。
+    // uuid 来自 GHome/isLogin，没有它主页接口取不到人。
+    val myUuid = loginUser?.uuid.orEmpty()
+    val openMe: () -> Unit = {
+        if (!loggedIn) nav(SzjRoute.Login)
+        else if (myUuid.isNotBlank()) nav(SzjRoute.UserProfile(myUuid))
+    }
     // 账号行本身就是一张石板卡片，取代原来"一行内容 + 一条分割线"。
     SzjCardSurface(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(40.dp)
+                .clip(CircleShape)
+                .clickable(enabled = !loggedIn || myUuid.isNotBlank(), onClick = openMe)
                 .shadow(2.dp, CircleShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
                 .clip(CircleShape).background(SzjCardRaised), contentAlignment = Alignment.Center) {
             val ava = loginUser?.avatar
@@ -1008,7 +1074,11 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
             }
             }
             Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
+            Column(
+                Modifier.weight(1f)
+                    .clip(SzjChipShape)
+                    .clickable(enabled = !loggedIn || myUuid.isNotBlank(), onClick = openMe),
+            ) {
                 Text(loginUser?.name ?: if (loggedIn) "已登录" else "未登录", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 val server = listOfNotNull(loginUser?.area, loginUser?.group)
                 if (server.isNotEmpty()) {
@@ -1209,15 +1279,23 @@ private fun ShizhijiaMeTab(
                 }
             }
             Spacer(Modifier.height(12.dp))
+            // ---- 推荐过滤：勾掉的版块不进"推荐"流 ----
+            SzjPostFilterCard()
+            Spacer(Modifier.height(12.dp))
             SzjPressable(onClick = { showSettings = false }, shape = SzjChipShape) {
                 Text("‹ 返回", color = SzjAccent, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
             }
         } else if (loggedIn) {
             // ---- 资料头卡：头像 + 名字 + 服务器 + 三个计数 ----
-            SzjCardSurface(Modifier.fillMaxWidth()) {
+            // 整张资料头卡可以点进自己的主页（uuid 来自 GHome/isLogin）。
+            val myUuid = p?.uuid.orEmpty()
+            SzjCardSurface(
+                Modifier.fillMaxWidth(),
+                onClick = if (myUuid.isNotBlank()) ({ nav(SzjRoute.UserProfile(myUuid)) }) else null,
+            ) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SzjAvatar(p?.name ?: "", p?.avatar ?: "", "", 60)
+                        SzjAvatar(p?.name ?: "", p?.avatar ?: "", myUuid, 60)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p?.name ?: "已登录", color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1227,6 +1305,7 @@ private fun ShizhijiaMeTab(
                                 Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(14); Text(srv, color = SzjMuted, style = SzjMetaStyle) }
                             }
                         }
+                        if (myUuid.isNotBlank()) Text("›", color = SzjMuted, fontSize = 22.sp)
                     }
                     Spacer(Modifier.height(16.dp))
                     // 计数条：数字大、标签小，中间用竖棱条分隔。
@@ -1285,6 +1364,81 @@ private fun ShizhijiaMeTab(
             ) { SzjPrimaryButton("登录石之家", onClick = { nav(SzjRoute.Login) }) }
         }
       }
+    }
+}
+
+/**
+ * 推荐过滤：勾掉的版块不出现在"推荐"流里。
+ *
+ * 帖子接口没有排除参数，所以这是本地过滤（拉回来之后筛掉）。
+ * 只作用于"推荐"——主动点开某个版块时不筛，那是明确想看。
+ */
+@Composable
+private fun SzjPostFilterCard() {
+    val context = LocalContext.current
+    var parts by remember { mutableStateOf(listOf<ShizhijiaPostPart>()) }
+    var muted by remember { mutableStateOf(ShizhijiaSession.mutedParts(context)) }
+    LaunchedEffect(Unit) {
+        // 帖子和攻略两套版块都列上，两个流用的是同一份屏蔽名单。
+        parts = ShizhijiaApi.getPostParts(context) + ShizhijiaApi.getStrategyParts(context)
+    }
+    SzjCardSurface(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(15.dp)) {
+            Text("推荐过滤", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (muted.isEmpty()) "选中的版块不会出现在推荐里"
+                else "已屏蔽 ${muted.size} 个版块",
+                color = SzjMuted, style = SzjMetaStyle,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (parts.isEmpty()) {
+                Text("正在读版块列表", color = SzjMuted, style = SzjMetaStyle)
+            } else {
+                // 选中 = 已屏蔽。用实心态表示"拦住了"，比灰掉更直观。
+                val distinct = parts.distinctBy { it.id }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    distinct.chunked(3).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { p ->
+                                val on = p.id in muted
+                                SzjPressable(
+                                    onClick = {
+                                        muted = if (on) muted - p.id else muted + p.id
+                                        ShizhijiaSession.setMutedParts(context, muted)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = SzjChipShape,
+                                ) {
+                                    Text(
+                                        p.name,
+                                        color = if (on) SzjOnAccent else SzjMuted,
+                                        style = SzjLabelStyle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth().clip(SzjChipShape)
+                                            .background(if (on) SzjAccent else SzjCardRaised)
+                                            .padding(vertical = 9.dp, horizontal = 4.dp),
+                                    )
+                                }
+                            }
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+                if (muted.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    SzjPressable(
+                        onClick = { muted = emptySet(); ShizhijiaSession.setMutedParts(context, emptySet()) },
+                        shape = SzjChipShape,
+                    ) {
+                        Text("全部恢复", color = SzjAccent, style = SzjLabelStyle,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1432,6 +1586,33 @@ private fun ShizhijiaPostsTab(
         }
     }
 
+    // 推荐过滤：接口没有"排除版块"的参数，所以在本地筛。
+    // 只在"推荐"流里生效——你主动点开某个版块，说明就是想看它。
+    val muted = ShizhijiaSession.mutedParts(context)
+    val shown = remember(ps.posts.value, muted, ps.partId.value) {
+        if (ps.partId.value.isNotBlank() || muted.isEmpty()) ps.posts.value
+        else ps.posts.value.filter { it.partId !in muted }
+    }
+    // 屏蔽得多的时候整页可能被筛空，这时候要主动再拉一页，
+    // 否则列表空着、滚不动，分页也就永远不会被触发。
+    LaunchedEffect(shown.size, ps.posts.value.size, ps.loading.value) {
+        if (shown.isEmpty() && ps.posts.value.isNotEmpty() &&
+            !ps.loading.value && ps.pageTime.value.isNotBlank()
+        ) {
+            ps.loading.value = true
+            val next = ShizhijiaApi.getPostsList(
+                context, partId = ps.partId.value,
+                page = ps.page.value + 1, pageTime = ps.pageTime.value,
+            )
+            if (next.rows.isEmpty()) ps.pageTime.value = "" else {
+                ps.posts.value = ps.posts.value + next.rows
+                ps.pageTime.value = next.pageTime
+                ps.page.value += 1
+            }
+            ps.loading.value = false
+        }
+    }
+
     // 整个分区（头部 + Tab 行 + 版块 chips + 帖子流）都在同一个 LazyColumn 里，
     // 所以头部随内容滑走；Tab 行和 chips 用 stickyHeader 钉住，
     // 滑到深处也还能切换分区。
@@ -1451,9 +1632,12 @@ private fun ShizhijiaPostsTab(
         when {
             // 首屏用骨架屏：先把三张卡片的轮廓占住，比转圈更能说明马上出什么。
             ps.loading.value && ps.posts.value.isEmpty() -> item(key = "skeleton") { SzjFeedSkeleton() }
+            shown.isEmpty() && ps.posts.value.isNotEmpty() -> item(key = "allmuted") {
+                SzjEmptyInline("这一页都被你屏蔽了", "在 我 → 设置 → 推荐过滤 里改")
+            }
             ps.posts.value.isEmpty() -> item(key = "empty") { SzjEmptyInline("这个分区还没有帖子", "换个分区，或下拉看看推荐") }
             else -> {
-                itemsIndexed(ps.posts.value, key = { _, it -> it.postsId }) { index, post ->
+                itemsIndexed(shown, key = { _, it -> it.postsId }) { index, post ->
                     SzjRise(index) {
                         SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) })
                     }
@@ -2146,9 +2330,10 @@ private fun SzjFilterChips(
  */
 @Composable
 private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit, jobs: Map<String, ShizhijiaJob>) {
+    // 整张卡进招募详情；底部那行的头像/昵称单独点是进发布者主页。
     SzjCardSurface(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
-        onClick = if (r.uuid.isNotBlank()) ({ nav(SzjRoute.UserProfile(r.uuid)) }) else null,
+        onClick = if (r.id.isNotBlank()) ({ nav(SzjRoute.RecruitDetail(r.kind, r.id)) }) else null,
     ) {
         if (r.coverPic.isNotBlank()) {
             Box(Modifier.clip(RoundedCornerShape(topStart = 13.dp, topEnd = 13.dp))) {
@@ -2237,7 +2422,11 @@ private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit, jobs: Ma
                 }
             }
             Spacer(Modifier.height(11.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.clip(SzjChipShape)
+                    .clickable(enabled = r.uuid.isNotBlank()) { nav(SzjRoute.UserProfile(r.uuid)) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 SzjAvatar(r.characterName, r.avatar, r.uuid, 22)
                 Spacer(Modifier.width(7.dp))
                 Text(r.characterName.ifBlank { "匿名玩家" }, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -2249,6 +2438,100 @@ private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit, jobs: Ma
                 }
                 Spacer(Modifier.weight(1f))
                 if (r.responseNum >= 0) Text("${r.responseNum} 报名", color = SzjMuted, style = SzjMetaStyle)
+            }
+        }
+    }
+}
+
+/**
+ * 招募详情。四类共用这一页——卡片部分复用列表那张卡（位置槽、标签都在里面），
+ * 下面接详情独有的正文段落和有效期。
+ *
+ * 四个接口都是公开的（`?id=`，不用登录），只有部队招募的详情要登录。
+ */
+@Composable
+private fun ShizhijiaRecruitDetailScreen(
+    kind: ShizhijiaRecruitKind,
+    id: String,
+    pop: () -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
+    val context = LocalContext.current
+    var res by remember(kind, id) { mutableStateOf<ShizhijiaApi.Res<ShizhijiaRecruitDetail?>?>(null) }
+    var jobs by remember { mutableStateOf(mapOf<String, ShizhijiaJob>()) }
+    LaunchedEffect(kind, id) {
+        jobs = ShizhijiaApi.getJobConfig(context)
+        res = ShizhijiaApi.getRecruitDetail(context, kind, id)
+    }
+
+    ScreenFrame(background = SzjBg) {
+        SzjHeader(kind.label, onBack = pop)
+        val d = (res as? ShizhijiaApi.Res.Ok)?.value
+        when {
+            res == null -> Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
+                SzjShimmerBox(Modifier.fillMaxWidth().height(200.dp), SzjCardShape)
+            }
+            d == null -> {
+                val r = res
+                SzjEmpty(
+                    "看不到这条招募",
+                    when (r) {
+                        is ShizhijiaApi.Res.NeedLogin -> "这一类的详情要登录才能看"
+                        is ShizhijiaApi.Res.Failed ->
+                            r.msg.ifBlank { if (r.code == null) "网络没通" else "服务端返回 ${r.code}" }
+                        else -> "可能已经下架了"
+                    },
+                ) {
+                    if (r is ShizhijiaApi.Res.NeedLogin) SzjPrimaryButton("登录", onClick = { nav(SzjRoute.Login) })
+                }
+            }
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 2.dp, bottom = 24.dp),
+            ) {
+                // 顶部就是列表里那张卡，不另画一套——同一条招募在两处长得一样。
+                item(key = "card") { SzjRecruitRow(d.card, nav, jobs) }
+                items(d.sections, key = { it.first }) { (label, body) ->
+                    SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SzjShard(widthDp = 3, heightDp = 13)
+                                Spacer(Modifier.width(7.dp))
+                                Text(label, color = SzjText, style = SzjLabelStyle)
+                            }
+                            Spacer(Modifier.height(9.dp))
+                            Text(body, color = SzjText, fontSize = 13.sp, lineHeight = 21.sp)
+                        }
+                    }
+                }
+                item(key = "meta") {
+                    val rows = buildList {
+                        if (d.dueDay >= 0) add("有效期" to "还剩 ${d.dueDay} 天")
+                        if (d.card.responseNum >= 0) add("报名" to "${d.card.responseNum} 人")
+                        if (d.updatedAt.isNotBlank()) add("更新" to d.updatedAt)
+                        if (d.ipLocation.isNotBlank()) add("发布地" to d.ipLocation)
+                    }
+                    if (rows.isNotEmpty()) {
+                        SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
+                            Column(Modifier.padding(14.dp)) {
+                                rows.forEachIndexed { i, (k, v) ->
+                                    if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                                        Text(k, color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.width(60.dp))
+                                        Text(v, color = SzjText, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                item(key = "note") {
+                    Text(
+                        "报名要在石之家网页或官方 App 里做",
+                        color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                    )
+                }
             }
         }
     }
@@ -3670,7 +3953,7 @@ private fun ShizhijiaMyGuildScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
                         }
                         GUILD_MEMBERS -> szjGuildMemberItems(members, nav)
                         GUILD_DYNAMICS -> szjGuildDynamicItems(dynamics, nav)
-                        else -> szjGuildPhotoItems(photos)
+                        else -> szjGuildPhotoItems(photos, nav)
                     }
                 }
             }
@@ -3772,16 +4055,26 @@ private fun LazyListScope.szjGuildDynamicItems(
     }
 }
 
-/** 照片墙子页。一条记录可能带多张图，点开进全屏查看器。 */
-private fun LazyListScope.szjGuildPhotoItems(res: ShizhijiaApi.Res<List<ShizhijiaGuildPhoto>>?) {
+/**
+ * 照片墙子页。整张卡可点进详情看评论；卡里的图单独点是放大看原图。
+ */
+private fun LazyListScope.szjGuildPhotoItems(
+    res: ShizhijiaApi.Res<List<ShizhijiaGuildPhoto>>?,
+    nav: (SzjRoute) -> Unit,
+) {
     val v = (res as? ShizhijiaApi.Res.Ok)?.value
     if (szjGuildPlaceholder(res, v.isNullOrEmpty(), "照片墙还是空的", "gp")) return
-    itemsIndexed(v ?: return, key = { _, it -> it.id }) { i, p -> SzjRise(i) { SzjGuildPhotoCard(p) } }
+    itemsIndexed(v ?: return, key = { _, it -> it.id }) { i, p ->
+        SzjRise(i) { SzjGuildPhotoCard(p, onOpen = { nav(SzjRoute.GuildPhotoDetail(p.id)) }) }
+    }
 }
 
 @Composable
-private fun SzjGuildPhotoCard(p: ShizhijiaGuildPhoto) {
-    SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
+private fun SzjGuildPhotoCard(p: ShizhijiaGuildPhoto, onOpen: (() -> Unit)? = null) {
+    SzjCardSurface(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
+        onClick = onOpen.takeIf { p.id.isNotBlank() },
+    ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SzjAvatar(p.uploaderName, p.uploaderAvatar, p.uploaderUuid, 32)
@@ -3833,6 +4126,125 @@ private fun SzjGuildPhotoCard(p: ShizhijiaGuildPhoto) {
                     if (p.likeCount > 0) Text("赞 ${p.likeCount}", color = SzjMuted, style = SzjMetaStyle)
                     if (p.likeCount > 0 && p.commentCount > 0) Text("   ", style = SzjMetaStyle)
                     if (p.commentCount > 0) Text("评论 ${p.commentCount}", color = SzjMuted, style = SzjMetaStyle)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 照片墙的单张详情：大图 + 说明 + 评论。
+ *
+ * 评论接口的路径首字母是大写的（guild/GuildPhotoCommentDetail），
+ * 服务端就这么写的，别顺手改成小写。
+ */
+@Composable
+private fun ShizhijiaGuildPhotoDetailScreen(photoId: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
+    val context = LocalContext.current
+    var photo by remember(photoId) { mutableStateOf<ShizhijiaGuildPhoto?>(null) }
+    var photoRes by remember(photoId) { mutableStateOf<ShizhijiaApi.Res<ShizhijiaGuildPhoto?>?>(null) }
+    var comments by remember(photoId) { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaComment>>?>(null) }
+
+    LaunchedEffect(photoId) {
+        val d = ShizhijiaApi.getGuildPhotoDetail(context, photoId)
+        photoRes = d
+        photo = (d as? ShizhijiaApi.Res.Ok)?.value
+        comments = ShizhijiaApi.getGuildPhotoComments(context, photoId)
+    }
+
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("照片", onBack = pop)
+        val p = photo
+        when {
+            photoRes == null -> Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
+                SzjShimmerBox(Modifier.fillMaxWidth().height(240.dp), SzjCardShape)
+            }
+            p == null -> {
+                val r = photoRes
+                SzjEmpty(
+                    "看不到这张照片",
+                    when (r) {
+                        is ShizhijiaApi.Res.NeedLogin -> "登录后再看"
+                        is ShizhijiaApi.Res.Failed ->
+                            r.msg.ifBlank { if (r.code == null) "网络没通" else "服务端返回 ${r.code}" }
+                        else -> "可能已经被删掉了"
+                    },
+                )
+            }
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+            ) {
+                item(key = "head") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SzjPressable(
+                            onClick = { if (p.uploaderUuid.isNotBlank()) nav(SzjRoute.UserProfile(p.uploaderUuid)) },
+                            shape = CircleShape,
+                        ) { SzjAvatar(p.uploaderName, p.uploaderAvatar, p.uploaderUuid, 38) }
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                p.uploaderName.ifBlank { "光之战士" }, color = SzjText,
+                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                            if (p.createdAt.isNotBlank()) Text(p.createdAt, color = SzjMuted, style = SzjMetaStyle)
+                        }
+                    }
+                }
+                if (p.desc.isNotBlank()) {
+                    item(key = "desc") {
+                        Text(
+                            p.desc, color = SzjText, fontSize = 14.sp, lineHeight = 21.sp,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+                // 大图竖排铺满宽度，点开进全屏查看器。
+                items(p.urls, key = { it }) { url ->
+                    ShizhijiaRemoteImage(
+                        url = url,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp).clip(SzjInnerShape),
+                        contentScale = ContentScale.FillWidth,
+                        collapseOnFail = true,
+                        onClick = { SzjViewer.url = it },
+                    )
+                }
+                item(key = "counts") {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text("赞 ${p.likeCount}", color = SzjMuted, style = SzjMetaStyle)
+                        Spacer(Modifier.width(14.dp))
+                        Text("评论 ${p.commentCount}", color = SzjMuted, style = SzjMetaStyle)
+                    }
+                }
+                item(key = "clabel") {
+                    Row(
+                        Modifier.fillMaxWidth().background(SzjCommentBg)
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SzjShard(widthDp = 3, heightDp = 13)
+                        Spacer(Modifier.width(7.dp))
+                        Text("评论", color = SzjText, style = SzjLabelStyle)
+                    }
+                }
+                val cs = (comments as? ShizhijiaApi.Res.Ok)?.value
+                when {
+                    comments == null -> item(key = "cload") {
+                        Box(Modifier.fillMaxWidth().background(SzjCommentBg).padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    cs.isNullOrEmpty() -> item(key = "cempty") {
+                        Box(Modifier.fillMaxWidth().background(SzjCommentBg)) {
+                            SzjEmptyInline("还没有评论")
+                        }
+                    }
+                    else -> items(cs, key = { it.id }) { c ->
+                        Box(Modifier.fillMaxWidth().background(SzjCommentBg)) { SzjCommentRow(c, nav) }
+                    }
                 }
             }
         }

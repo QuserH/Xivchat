@@ -21,6 +21,20 @@ object ShizhijiaSession {
     private const val KEY_BAR_HEIGHT = "bottom_bar_height"
     private const val KEY_BAR_BOTTOM = "bottom_bar_bottom"
     private const val KEY_SEARCH_HISTORY = "search_history"
+    private const val KEY_MUTED_PARTS = "muted_post_parts"
+
+    /**
+     * 不想在推荐里看到的版块 id。
+     * 帖子接口没有"排除版块"的参数，所以是本地过滤——拉回来之后筛掉。
+     */
+    fun mutedParts(context: Context): Set<String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_MUTED_PARTS, emptySet()).orEmpty()
+
+    fun setMutedParts(context: Context, ids: Set<String>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putStringSet(KEY_MUTED_PARTS, ids).apply()
+    }
 
     /** Search history entries (keyword + channel type), newest first, capped at 10. */
     fun searchHistory(context: Context): List<Pair<String, Int>> {
