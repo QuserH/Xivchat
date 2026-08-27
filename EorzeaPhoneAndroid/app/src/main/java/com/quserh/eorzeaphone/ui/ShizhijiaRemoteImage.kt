@@ -49,7 +49,8 @@ fun ShizhijiaRemoteImage(
     url: String,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
-    placeholderColor: Color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFEFE9DC) else Color(0xFF1D2127),
+    // 与石之家板岩体系的 SzjCardRaised 同值。
+    placeholderColor: Color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFE3E8ED) else Color(0xFF232932),
     showPlaceholder: Boolean = true,
     fitByAspect: Boolean = false,
     collapseOnFail: Boolean = false,

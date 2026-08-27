@@ -234,7 +234,8 @@ private fun handleTag(tag: String, p: RichParagraphBuilder, flush: () -> Unit, b
 @Composable
 fun ShizhijiaRichContent(html: String, modifier: Modifier = Modifier, placeholder: Boolean = false, imgMaxWidth: androidx.compose.ui.unit.Dp? = null) {
     // 石之家专属正文色，跟随深/浅主题，避免富文本内容显示成全局主题色。
-    val textColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFF23201A) else Color(0xFFECEAE4)
+    // 与 ShizhijiaScreens.kt 的 SzjText 保持同值（板岩体系的正文色）。
+    val textColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFF1B2129) else Color(0xFFE8EDF2)
     // Tight inter-block spacing keeps the article/comment body dense like a
     // forum thread; paragraphs already carry their own line structure.
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -253,7 +254,7 @@ fun ShizhijiaRichContent(html: String, modifier: Modifier = Modifier, placeholde
                             .then(if (imgMaxWidth != null) Modifier.widthIn(max = imgMaxWidth) else Modifier.fillMaxWidth())
                     },
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    placeholderColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFEFE9DC) else Color(0xFF1D2127),
+                    placeholderColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFE3E8ED) else Color(0xFF232932),
                     showPlaceholder = false,
                     collapseOnFail = true,
                     onClick = if (isEmo) null else { url -> SzjViewer.url = url },
