@@ -123,6 +123,7 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaLoginUser
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaPostCard
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaPostDetail
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaPostPart
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaProbe
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaImageLoader
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSession
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSignLog
@@ -174,37 +175,37 @@ private val SzjLightLine = Color(0xFFDDE3E9)
 private val SzjLightHairline = Color(0xFFC6CFD8)
 private val SzjLightEdge = Color(0x0A000000)
 
-private val szjLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
+internal val szjLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
-private val SzjBg: Color @Composable get() = if (szjLight) SzjLightBg else SzjDarkBg
-private val SzjCard: Color @Composable get() = if (szjLight) SzjLightCard else SzjDarkCard
-private val SzjCardRaised: Color @Composable get() = if (szjLight) SzjLightCardRaised else SzjDarkCardRaised
-private val SzjAccent: Color @Composable get() = if (szjLight) SzjLightAccent else SzjDarkAccent
-private val SzjAccentSoft: Color @Composable get() = if (szjLight) SzjLightAccentSoft else SzjDarkAccentSoft
-private val SzjOnAccentSoft: Color @Composable get() = if (szjLight) SzjLightOnAccentSoft else SzjDarkOnAccentSoft
-private val SzjText: Color @Composable get() = if (szjLight) SzjLightText else SzjDarkText
-private val SzjMuted: Color @Composable get() = if (szjLight) SzjLightMuted else SzjDarkMuted
-private val SzjLine: Color @Composable get() = if (szjLight) SzjLightLine else SzjDarkLine
-private val SzjHairline: Color @Composable get() = if (szjLight) SzjLightHairline else SzjDarkHairline
-private val SzjEdge: Color @Composable get() = if (szjLight) SzjLightEdge else SzjDarkEdge
-private val SzjOnAccent: Color @Composable get() = if (szjLight) Color(0xFFFFFFFF) else Color(0xFF07211F)
+internal val SzjBg: Color @Composable get() = if (szjLight) SzjLightBg else SzjDarkBg
+internal val SzjCard: Color @Composable get() = if (szjLight) SzjLightCard else SzjDarkCard
+internal val SzjCardRaised: Color @Composable get() = if (szjLight) SzjLightCardRaised else SzjDarkCardRaised
+internal val SzjAccent: Color @Composable get() = if (szjLight) SzjLightAccent else SzjDarkAccent
+internal val SzjAccentSoft: Color @Composable get() = if (szjLight) SzjLightAccentSoft else SzjDarkAccentSoft
+internal val SzjOnAccentSoft: Color @Composable get() = if (szjLight) SzjLightOnAccentSoft else SzjDarkOnAccentSoft
+internal val SzjText: Color @Composable get() = if (szjLight) SzjLightText else SzjDarkText
+internal val SzjMuted: Color @Composable get() = if (szjLight) SzjLightMuted else SzjDarkMuted
+internal val SzjLine: Color @Composable get() = if (szjLight) SzjLightLine else SzjDarkLine
+internal val SzjHairline: Color @Composable get() = if (szjLight) SzjLightHairline else SzjDarkHairline
+internal val SzjEdge: Color @Composable get() = if (szjLight) SzjLightEdge else SzjDarkEdge
+internal val SzjOnAccent: Color @Composable get() = if (szjLight) Color(0xFFFFFFFF) else Color(0xFF07211F)
 private val SzjCommentBg: Color @Composable get() = if (szjLight) Color(0xFFE7ECF1) else Color(0xFF161B21)
 
 // ---- 形状：卡片舒展，控件收紧。三档而不是一档，层级靠圆角区分。 ----
-private val SzjCardShape = RoundedCornerShape(14.dp)
-private val SzjInnerShape = RoundedCornerShape(10.dp)
-private val SzjChipShape = RoundedCornerShape(9.dp)
+internal val SzjCardShape = RoundedCornerShape(14.dp)
+internal val SzjInnerShape = RoundedCornerShape(10.dp)
+internal val SzjChipShape = RoundedCornerShape(9.dp)
 
 // ---- 排版：没有可用的中文显示字体（项目内 AXIS 只有图标字形），
 // 所以人格靠字号跨度、字重和字距，而不是字体家族。
 // 元信息统一用宽字距小字，和正文形成"标签 vs 内容"的对照。
-private val SzjMetaStyle = TextStyle(fontSize = 11.sp, letterSpacing = 0.4.sp, fontWeight = FontWeight.Medium)
-private val SzjLabelStyle = TextStyle(fontSize = 12.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold)
+internal val SzjMetaStyle = TextStyle(fontSize = 11.sp, letterSpacing = 0.4.sp, fontWeight = FontWeight.Medium)
+internal val SzjLabelStyle = TextStyle(fontSize = 12.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold)
 
 // ---- 动效 ----
 /** 系统「减少动画」开着时把动效降到 0，无障碍设置优先于观感。 */
 @Composable
-private fun szjMotionEnabled(): Boolean {
+internal fun szjMotionEnabled(): Boolean {
     val ctx = LocalContext.current
     return remember {
         runCatching {
@@ -218,7 +219,7 @@ private fun szjMotionEnabled(): Boolean {
 }
 
 /** 按压回弹：低刚度弹簧，手指离开时"浮"回来而不是弹回来。 */
-private val SzjPressSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
+internal val SzjPressSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
 private val SzjMorphSpring = spring<Float>(dampingRatio = 0.75f, stiffness = 320f)
 private const val SZJ_ENTER_MS = 260
 private const val SZJ_STAGGER_MS = 26
@@ -230,7 +231,7 @@ private const val SZJ_STAGGER_MS = 26
  * 比通用下划线更能标出"你在这里"，也是整套设计里唯一的装饰性笔画。
  */
 @Composable
-private fun SzjShard(
+internal fun SzjShard(
     widthDp: Int = 3,
     heightDp: Int = 18,
     color: Color = SzjAccent,
@@ -259,7 +260,7 @@ private fun SzjShard(
  * 所以"手感"在全模块是一致的。
  */
 @Composable
-private fun SzjCardSurface(
+internal fun SzjCardSurface(
     modifier: Modifier = Modifier,
     shape: RoundedCornerShape = SzjCardShape,
     onClick: (() -> Unit)? = null,
@@ -309,7 +310,7 @@ private fun SzjCardSurface(
  * 否则无限滚动会一直有东西在动，反而显得廉价。
  */
 @Composable
-private fun SzjRise(index: Int, content: @Composable () -> Unit) {
+internal fun SzjRise(index: Int, content: @Composable () -> Unit) {
     val motion = szjMotionEnabled()
     if (!motion || index >= 10) { content(); return }
     var shown by remember { mutableStateOf(false) }
@@ -434,7 +435,7 @@ private fun SzjShimmerBox(modifier: Modifier, shape: RoundedCornerShape = SzjInn
  * @param emptyTitle / emptyHint 请求成功但列表为空时的说法
  */
 @Composable
-private fun <T> SzjResState(
+internal fun <T> SzjResState(
     res: ShizhijiaApi.Res<T>?,
     emptyTitle: String,
     emptyHint: String? = null,
@@ -468,7 +469,7 @@ private fun <T> SzjResState(
  * 不是只写"暂无内容"的地方。棱条在这里当一个安静的锚点。
  */
 @Composable
-private fun SzjEmpty(title: String, hint: String? = null, action: (@Composable () -> Unit)? = null) {
+internal fun SzjEmpty(title: String, hint: String? = null, action: (@Composable () -> Unit)? = null) {
     Box(Modifier.fillMaxSize().padding(bottom = 90.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 40.dp)) {
             SzjShard(widthDp = 4, heightDp = 26, color = SzjHairline)
@@ -488,7 +489,7 @@ private fun SzjEmpty(title: String, hint: String? = null, action: (@Composable (
 
 /** 主按钮：实心水晶青，按下缩一下。石之家里所有确认动作都用它。 */
 @Composable
-private fun SzjPrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SzjPrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     SzjPressable(onClick = onClick, modifier = modifier, shape = SzjInnerShape) {
         Text(
             label,
@@ -524,7 +525,7 @@ private fun SzjFeedSkeleton() {
  * 顺便把签名元素带进每一个子页面，不用再画分割线。
  */
 @Composable
-private fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
+internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, SzjPressSpring, label = "szjBack")
@@ -593,6 +594,8 @@ private sealed interface SzjRoute {
     data class RecruitDetail(val kind: ShizhijiaRecruitKind, val id: String) : SzjRoute
     /** 发布招募（副本 / 新人 / 其他）。 */
     data class PublishRecruit(val kind: ShizhijiaRecruitKind) : SzjRoute
+    /** 专项数据（官网的数据中心，7 个分类）。 */
+    data object Statistics : SzjRoute
 }
 
 /** App-wide full-screen image viewer state; any thumbnail sets its URL here. */
@@ -854,6 +857,7 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             is SzjRoute.GuildPhotoDetail -> ShizhijiaGuildPhotoDetailScreen(route.photoId, pop, nav)
             is SzjRoute.RecruitDetail -> ShizhijiaRecruitDetailScreen(route.kind, route.id, pop, nav)
             is SzjRoute.PublishRecruit -> ShizhijiaPublishRecruitScreen(route.kind, recruitState, pop, nav)
+            SzjRoute.Statistics -> ShizhijiaStatisticsScreen(pop, onLogin = { nav(SzjRoute.Login) })
         }
         SzjViewer.url?.let { url ->
             // Full-screen overlay for viewing a tapped image at size.
@@ -1122,7 +1126,7 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
  * 因为小控件位移小，不压狠一些看不出来。
  */
 @Composable
-private fun SzjPressable(
+internal fun SzjPressable(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = SzjChipShape,
@@ -1289,6 +1293,10 @@ private fun ShizhijiaMeTab(
             Spacer(Modifier.height(12.dp))
             // ---- 推荐过滤：勾掉的版块不进"推荐"流 ----
             SzjPostFilterCard()
+            if (loggedIn) {
+                Spacer(Modifier.height(12.dp))
+                SzjDataCenterProbeCard()
+            }
             Spacer(Modifier.height(12.dp))
             SzjPressable(onClick = { showSettings = false }, shape = SzjChipShape) {
                 Text("‹ 返回", color = SzjAccent, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
@@ -1331,7 +1339,7 @@ private fun ShizhijiaMeTab(
             }
             Spacer(Modifier.height(14.dp))
             // ---- 入口宫格：三列，每格一张小石板 ----
-            // 已接通的入口直接跳页；「我的部队」和「专项数据」还没接（见下方注释）。
+            // 六个入口都接通了，直接跳页。
             val entries = listOf("收藏", "招募管理", "我的角色", "我的部队", "专项数据", "设置")
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 entries.chunked(3).forEach { row ->
@@ -1347,9 +1355,8 @@ private fun ShizhijiaMeTab(
                                         "招募管理" -> nav(SzjRoute.MyRecruits)
                                         "我的角色" -> nav(SzjRoute.Characters)
                                         "我的部队" -> nav(SzjRoute.MyGuild)
-                                        // 专项数据是 40 多个需登录+绑角色的接口，
-                                        // 字段名不在前端代码里，只能等实测。
-                                        else -> android.widget.Toast.makeText(context, "$label 还要抓一次响应才能接", android.widget.Toast.LENGTH_SHORT).show()
+                                        "专项数据" -> nav(SzjRoute.Statistics)
+                                        else -> android.widget.Toast.makeText(context, "$label 还没接", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 },
                             ) {
@@ -1372,6 +1379,67 @@ private fun ShizhijiaMeTab(
             ) { SzjPrimaryButton("登录石之家", onClick = { nav(SzjRoute.Login) }) }
         }
       }
+    }
+}
+
+/**
+ * 临时开发卡：抓一次专项数据的接口形状。
+ *
+ * 专项数据那 43 个接口要登录态，字段名又不在官网前端代码里，所以只能用真实
+ * 响应来定结构。跑在设备上是因为会话 cookie 按域存，从浏览器复制出来的那份
+ * 属于页面域，对接口域一律 10105。接完 7 个分类之后这张卡就删掉。
+ */
+@Composable
+private fun SzjDataCenterProbeCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var running by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf("") }
+    SzjCardSurface(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(15.dp)) {
+            Text("抓取专项数据结构", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "开发用：请求 43 个专项数据接口，把字段名和类型写到文件，用来接入 7 个分类。" +
+                    "不记录任何登录凭证。",
+                color = SzjMuted, style = SzjMetaStyle,
+            )
+            Spacer(Modifier.height(12.dp))
+            SzjPressable(
+                onClick = {
+                    if (running) return@SzjPressable
+                    running = true
+                    result = ""
+                    scope.launch {
+                        val summary = ShizhijiaProbe.runDataCenterProbe(context) { done, total, path ->
+                            progress = "$done/$total  $path"
+                        }
+                        result = summary
+                        running = false
+                        progress = ""
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(), shape = SzjInnerShape,
+            ) {
+                Text(
+                    if (running) "抓取中…" else "开始抓取",
+                    color = if (running) SzjMuted else SzjAccent, style = SzjLabelStyle,
+                    modifier = Modifier.fillMaxWidth().clip(SzjInnerShape)
+                        .border(1.dp, SzjHairline, SzjInnerShape)
+                        .padding(vertical = 12.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            if (progress.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(progress, color = SzjMuted, style = SzjMetaStyle)
+            }
+            if (result.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(result, color = SzjAccent, style = SzjMetaStyle)
+            }
+        }
     }
 }
 
@@ -1721,7 +1789,7 @@ private fun SzjFeedScaffold(
  * 里会塌成零高，所以这里给一个固定高度的版本。
  */
 @Composable
-private fun SzjEmptyInline(title: String, hint: String? = null, action: (@Composable () -> Unit)? = null) {
+internal fun SzjEmptyInline(title: String, hint: String? = null, action: (@Composable () -> Unit)? = null) {
     Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 40.dp)) {
             SzjShard(widthDp = 4, heightDp = 26, color = SzjHairline)

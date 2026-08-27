@@ -94,6 +94,18 @@ object ShizhijiaApi {
         }.getOrNull()
     }
 
+    /**
+     * 原样返回一次 GET 的整个响应体（含 code/msg），只给 [ShizhijiaProbe] 用。
+     *
+     * 专项数据那 40 多个接口的字段名不在前端 bundle 里，只能拿一次真实响应来看。
+     * 这里不加任何解析，探测器自己去折叠形状。
+     */
+    internal suspend fun rawGet(
+        context: Context,
+        path: String,
+        params: Map<String, String> = emptyMap(),
+    ): JSONObject? = request(context, HOME_BASE, path, params)
+
     /** True when the payload signals a successful business response. */
     private fun JSONObject.isOk(): Boolean {
         val code = optLong("code")
