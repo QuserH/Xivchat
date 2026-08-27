@@ -206,7 +206,7 @@ private fun LightSearchField(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp),
             ) {
-                Text("⌕", color = AetherLightMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                ImageGlyph(R.drawable.ic_search, AetherLightMuted, Modifier.size(19.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     if (value.isEmpty()) Text(placeholder, color = AetherLightMuted, fontSize = 14.sp)
                     field()
@@ -240,13 +240,10 @@ private fun LightHeader(
     // 标题垂直位置与 ScreenHeader（捕鱼等窗口）保持一致：内容高度 + 上下 12dp，返回键尺寸一致
     Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
-            Text(
-                "‹",
-                color = AetherPurple,
-                fontSize = 38.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.Light,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 4.dp, vertical = 6.dp),
+            ImageGlyph(
+                R.drawable.ic_back,
+                AetherPurple,
+                Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 6.dp, vertical = 4.dp),
             )
         }
         // 标题限定在返回键与右侧按钮之间，避免窄屏/大边距时与右侧按钮重叠
@@ -402,7 +399,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
                         Text("本地", color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
                         if (state.localPinned()) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
-                        Text("说话/喊话/呼喊/情感动作 ›", color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("说话/喊话/呼喊/情感动作", color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 items(sortedRows, key = { "message-${it.key}" }) { conversation ->
@@ -508,7 +505,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         val selected = state.defaultChatListTab == key
                         Row(Modifier.fillMaxWidth().clickable { state.defaultChatListTab = key; state.chatListTab = key; showDefaultTabDialog = false }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(label, color = AetherLightText, modifier = Modifier.weight(1f))
-                            Text(if (selected) "●" else "○", color = if (selected) AetherPurple else AetherLightMuted, fontSize = 20.sp)
+                            ImageGlyph(if (selected) R.drawable.ic_radio_on else R.drawable.ic_radio_off, if (selected) AetherPurple else AetherLightMuted, Modifier.size(22.dp))
                         }
                     }
                 }
@@ -651,7 +648,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                             }) {
                             Box(Modifier.size(9.dp).clip(CircleShape).background(colors[(groupIndex + index + 1) % colors.size]))
                             Text(row.label, color = AetherLightText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
-                            if (chosen) Text("✓", color = AetherPurple, fontSize = 18.sp)
+                            if (chosen) ImageGlyph(R.drawable.ic_check_small, AetherPurple, Modifier.size(20.dp))
                         }
                     }
                 }
@@ -1407,7 +1404,7 @@ private fun ShizhijiaLinkCard(state: PhoneState, link: ShizhijiaFriendLink.Resul
                 }
                 Text(sub, color = AetherLightMuted, fontSize = 11.sp, maxLines = 2)
             }
-            if (clickable) Text("›", color = AetherLightMuted, fontSize = 24.sp, modifier = Modifier.padding(start = 6.dp))
+            if (clickable) ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp))
         }
     }
 }
@@ -1511,9 +1508,9 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            ChatSettingRow("查找聊天记录", onClick = onSearchHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("查找聊天记录", onClick = onSearchHistory, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("设为置顶", trailing = { Switch(checked = state.isConversationPinned(conversation), onCheckedChange = { state.toggleConversationPin(conversation) }) })
             ChatSettingDivider()
@@ -1544,9 +1541,9 @@ private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
         }
@@ -1570,11 +1567,11 @@ private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversat
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("编辑筛选器", onClick = onEditFilter, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("编辑筛选器", onClick = onEditFilter, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { Text("›", color = AetherLightMuted, fontSize = 24.sp) })
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("设为置顶", trailing = { Switch(checked = state.isConversationPinned(conversation), onCheckedChange = { state.toggleConversationPin(conversation) }) })
             ChatSettingDivider()
@@ -1602,11 +1599,11 @@ private fun ChatAdjustRow(label: String, value: Int, onMinus: () -> Unit, onPlus
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.weight(1f))
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onMinus), contentAlignment = Alignment.Center) {
-                Text("−", color = AetherPurple, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                ImageGlyph(R.drawable.ic_remove, AetherPurple, Modifier.size(22.dp))
             }
             Text("  $value  ", color = AetherLightText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onPlus), contentAlignment = Alignment.Center) {
-                Text("＋", color = AetherPurple, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                ImageGlyph(R.drawable.ic_add, AetherPurple, Modifier.size(22.dp))
             }
         }
         if (hint != null) {
@@ -1650,7 +1647,7 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
             PhoneThemeMode.entries.forEachIndexed { index, mode ->
                 Row(Modifier.fillMaxWidth().clickable { state.themeMode = mode }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(mode.label, color = AetherLightText, modifier = Modifier.weight(1f))
-                    Text(if (state.themeMode == mode) "●" else "○", color = if (state.themeMode == mode) AetherPurple else AetherLightMuted, fontSize = 20.sp)
+                    ImageGlyph(if (state.themeMode == mode) R.drawable.ic_radio_on else R.drawable.ic_radio_off, if (state.themeMode == mode) AetherPurple else AetherLightMuted, Modifier.size(22.dp))
                 }
                 if (index < PhoneThemeMode.entries.lastIndex) ChatSettingDivider()
             }
@@ -1669,7 +1666,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
                     modifier = Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightControl)
                         .clickable(onClick = onOpenInput).padding(horizontal = 13.dp),
                 ) {
-                    Text("⌕", color = AetherLightMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                    ImageGlyph(R.drawable.ic_search, AetherLightMuted, Modifier.size(19.dp))
                     Text("搜索聊天记录", color = AetherLightMuted, fontSize = 14.sp)
                 }
             }
@@ -1879,18 +1876,18 @@ private fun ChatCalendarScreen(conversation: ChatConversation, onBack: () -> Uni
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天记录日历", onBack) {}
         Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", color = AetherPurple, fontSize = 30.sp, modifier = Modifier.clickable {
+            ImageGlyph(R.drawable.ic_chevron_left, AetherPurple, Modifier.clickable {
                 month -= 1
                 if (month < 0) { month = 11; year -= 1 }
-            }.padding(8.dp))
+            }.padding(8.dp).size(30.dp))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("${year}年${month + 1}月", color = AetherLightText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text(if (monthHasMessages) "本月有聊天记录" else "本月无聊天记录", color = if (monthHasMessages) AetherPurple else AetherLightMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
             }
-            Text("›", color = AetherPurple, fontSize = 30.sp, modifier = Modifier.clickable {
+            ImageGlyph(R.drawable.ic_chevron_right, AetherPurple, Modifier.clickable {
                 month += 1
                 if (month > 11) { month = 0; year += 1 }
-            }.padding(8.dp))
+            }.padding(8.dp).size(30.dp))
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             listOf("日", "一", "二", "三", "四", "五", "六").forEach { Text(it, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.weight(1f), textAlign = TextAlign.Center) }
@@ -2630,7 +2627,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                                         Modifier.size(25.dp).clip(CircleShape).background(if (reminder.done) AetherPurple else Color.Transparent)
                                             .clickable { state.toggleReminder(reminder.id) },
                                         contentAlignment = Alignment.Center,
-                                    ) { Text(if (reminder.done) "✓" else "○", color = if (reminder.done) Color.White else AetherLightMuted, fontSize = 18.sp) }
+                                    ) { ImageGlyph(if (reminder.done) R.drawable.ic_check_small else R.drawable.ic_radio_off, if (reminder.done) Color.White else AetherLightMuted, Modifier.size(22.dp)) }
                                     Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                         Text(reminder.title, color = if (reminder.done) AetherLightMuted else AetherLightText, fontSize = 15.sp)
                                         reminder.dueAt?.let { Text(reminderDate(it), color = if (it < System.currentTimeMillis() && !reminder.done) Color(0xFFD64A57) else AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp)) }
@@ -2725,11 +2722,11 @@ fun AetherphoneJobsScreen(state: PhoneState) {
     DarkDataFrame(AetherNavyTop, AetherNavyBottom) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = state::back) { Text("‹", color = Color(0xFF78A7FF), fontSize = 37.sp) }
+                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, Color(0xFF78A7FF), Modifier.size(28.dp)) }
                 Text("职业", color = Color(0xFFE7EEF9), fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) { Text("▣", color = Color.White, fontSize = 13.sp) }
+                Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_character, Color.White, Modifier.size(19.dp)) }
                 Spacer(Modifier.width(9.dp))
-                Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) { Text("◉", color = Color.White, fontSize = 13.sp) }
+                Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_settings, Color.White, Modifier.size(19.dp)) }
             }
             if (state.jobs.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (state.connected) "正在读取职业套装" else "连接游戏后显示职业套装", color = Color(0xFF8FA1BA)) }
@@ -2818,12 +2815,12 @@ fun AetherphoneActivityScreen(state: PhoneState) {
     DarkDataFrame(Color(0xFF063454), Color(0xFF03111D)) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = state::back) { Text("‹", color = Color(0xFF66ADD6), fontSize = 37.sp) }
+                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, Color(0xFF66ADD6), Modifier.size(28.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("活跃度", color = Color(0xFFAFC0D2), fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text(listOf(state.profile?.jobName, state.profile?.level?.let { "Lv$it" }, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.joinToString(" · "), color = Color(0xFF6D879C), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
-                Text("◉", color = Color(0xFF7897AA), fontSize = 18.sp, modifier = Modifier.width(46.dp), textAlign = TextAlign.Center)
+                ImageGlyph(R.drawable.ic_timer, Color(0xFF7897AA), Modifier.size(22.dp))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(42.dp).clip(CircleShape).background(Color(0xFF0D3C5B))) {
                 listOf("今天" to false, "历史" to true).forEach { (label, value) ->
@@ -2858,10 +2855,10 @@ private fun ActivityToday(activity: GameActivity) {
         }
         item("card") {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xAA07131D)).padding(vertical = 6.dp)) {
-                ActivityMetric("⚡", "经验值", "+${compactNumber(activity.todayExpGained)}", progress, ActivityRed, "目前的 ${(progress * 100).toInt()}%")
-                ActivityMetric("▥", "副本", "${activity.todayDutiesCompleted} / 3", adventure, ActivityGreen)
-                ActivityMetric("◉", "获得金币", "+${compactNumber(activity.todayGilEarned)}", fortune, ActivityCyan)
-                ActivityMetric("◷", "游戏时长", activityDuration(activity.todayPlaySeconds), null, Color(0xFF6C98C7))
+                ActivityMetric(R.drawable.ic_bolt, "经验值", "+${compactNumber(activity.todayExpGained)}", progress, ActivityRed, "目前的 ${(progress * 100).toInt()}%")
+                ActivityMetric(R.drawable.ic_swords, "副本", "${activity.todayDutiesCompleted} / 3", adventure, ActivityGreen)
+                ActivityMetric(R.drawable.ic_coin, "获得金币", "+${compactNumber(activity.todayGilEarned)}", fortune, ActivityCyan)
+                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.todayPlaySeconds), null, Color(0xFF6C98C7))
             }
         }
         item("bottom") { Spacer(Modifier.height(22.dp)) }
@@ -2874,10 +2871,10 @@ private fun ActivityHistory(activity: GameActivity) {
         item {
             Text("本次登录", color = Color(0xFF88A2B7), fontSize = 12.sp)
             Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xAA07131D)).padding(vertical = 6.dp)) {
-                ActivityMetric("⚡", "经验值", "+${compactNumber(activity.sessionExpGained)}", null, ActivityRed)
-                ActivityMetric("▥", "副本", activity.sessionDutiesCompleted.toString(), null, ActivityGreen)
-                ActivityMetric("◉", "获得金币", "+${compactNumber(activity.sessionGilEarned)}", null, ActivityCyan)
-                ActivityMetric("◷", "游戏时长", activityDuration(activity.sessionPlaySeconds), null, Color(0xFF6C98C7))
+                ActivityMetric(R.drawable.ic_bolt, "经验值", "+${compactNumber(activity.sessionExpGained)}", null, ActivityRed)
+                ActivityMetric(R.drawable.ic_swords, "副本", activity.sessionDutiesCompleted.toString(), null, ActivityGreen)
+                ActivityMetric(R.drawable.ic_coin, "获得金币", "+${compactNumber(activity.sessionGilEarned)}", null, ActivityCyan)
+                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.sessionPlaySeconds), null, Color(0xFF6C98C7))
             }
         }
         item {
@@ -2919,9 +2916,9 @@ private fun ActivityLegend(label: String, value: String, color: Color) {
 }
 
 @Composable
-private fun ActivityMetric(icon: String, label: String, value: String, fraction: Float?, color: Color, detail: String? = null) {
+private fun ActivityMetric(@DrawableRes icon: Int, label: String, value: String, fraction: Float?, color: Color, detail: String? = null) {
     Row(Modifier.fillMaxWidth().height(82.dp).padding(horizontal = 17.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(color.copy(alpha = .85f)), contentAlignment = Alignment.Center) { Text(icon, color = Color.White, fontSize = 19.sp) }
+        Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(color.copy(alpha = .85f)), contentAlignment = Alignment.Center) { ImageGlyph(icon, Color.White, Modifier.size(22.dp)) }
         Column(Modifier.weight(1f).padding(start = 15.dp)) {
             Row(Modifier.fillMaxWidth()) {
                 Text(label, color = Color(0xFFA9B8C5), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

@@ -750,8 +750,12 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
 
 @Composable
 private fun DetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().animateContentSize().clip(RoundedCornerShape(10.dp)).background(PhoneSurface).padding(14.dp)) {
-        Text(title, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 7.dp))
+    Column(Modifier.fillMaxWidth().animateContentSize().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).height(16.dp).clip(RoundedCornerShape(2.dp)).background(PhoneAccent))
+            Text(title, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 9.dp))
+        }
+        Spacer(Modifier.height(10.dp))
         content()
     }
 }
@@ -856,7 +860,7 @@ private fun TooltipBubble(text: String) {
 @Composable
 private fun TechniqueArrow(label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 1.dp)) {
-        Text("→", color = PhoneMuted, fontSize = 19.sp, lineHeight = 20.sp)
+        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(18.dp))
         Text(label, color = PhoneMuted, fontSize = 8.sp, maxLines = 1)
     }
 }
@@ -868,7 +872,10 @@ private fun ItemPath(label: String, items: List<FishingItemRef>) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
             TooltipIcon(item.icon, item.name, 32.dp, item.name.take(1))
             Text(item.name, color = PhoneText, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
-            if (index < items.lastIndex) Text("  →", color = PhoneAccent, fontSize = 13.sp)
+            if (index < items.lastIndex) {
+                ImageGlyph(R.drawable.ic_chevron_right, PhoneAccent, Modifier.size(18.dp))
+                Spacer(Modifier.width(2.dp))
+            }
         }
     }
 }

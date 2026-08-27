@@ -128,12 +128,10 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
     val sidePad = (margin.coerceAtLeast(2) - 2).dp
     Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart)) {
-            if (showBack) Text(
-                "‹",
-                color = PhoneAccent,
-                fontSize = 38.sp,
-                lineHeight = 30.sp,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
+            if (showBack) ImageGlyph(
+                R.drawable.ic_back,
+                PhoneAccent,
+                Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
             ) else Spacer(Modifier.width(12.dp))
         }
         Text(
@@ -1284,5 +1282,5 @@ private fun countdownLabel(seconds: Long): String {
 }
 @Composable
 fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(tint), modifier = modifier.size(28.dp))
+    androidx.compose.foundation.Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(tint), modifier = modifier)
 }
