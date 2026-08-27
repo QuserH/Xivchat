@@ -16,9 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaImageLoader
 import android.graphics.BitmapFactory
 
@@ -47,7 +49,7 @@ fun ShizhijiaRemoteImage(
     url: String,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
-    placeholderColor: Color = Color(0xFFE3E0EA),
+    placeholderColor: Color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFEFE9DC) else Color(0xFF1D2127),
     showPlaceholder: Boolean = true,
     fitByAspect: Boolean = false,
     collapseOnFail: Boolean = false,

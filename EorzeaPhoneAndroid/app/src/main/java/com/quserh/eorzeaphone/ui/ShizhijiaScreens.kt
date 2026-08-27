@@ -1,4 +1,4 @@
-﻿package com.quserh.eorzeaphone.ui
+package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
@@ -42,6 +42,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -88,25 +90,84 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaUserProfile
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourDetail
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourCard
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecentEvent
-import com.quserh.eorzeaphone.ui.theme.PhoneAccent
-import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
-import com.quserh.eorzeaphone.ui.theme.PhoneBackground
-import com.quserh.eorzeaphone.ui.theme.PhoneMuted
-import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
-import com.quserh.eorzeaphone.ui.theme.PhoneSurface
-import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
-import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
-import com.quserh.eorzeaphone.ui.theme.PhoneText
 import kotlinx.coroutines.launch
+
+// ---- 石之家专属极简设计 token（只作用于石之家，不污染全局主题） ----
+// 跟随 App 的深/浅主题：浅色 = 暖米白底 + 深炭字 + 暗金；深色 = 近黑底 + 米白字 + 暖金。
+private val SzjDarkBg = Color(0xFF0F1114)
+private val SzjDarkCard = Color(0xFF16191E)
+private val SzjDarkCardRaised = Color(0xFF1D2127)
+private val SzjDarkGold = Color(0xFFC8A45E)
+private val SzjDarkGoldSoft = Color(0xFF2A2417)
+private val SzjDarkOnGoldSoft = Color(0xFFEBD5A2)
+private val SzjDarkText = Color(0xFFECEAE4)
+private val SzjDarkMuted = Color(0xFF9A968E)
+private val SzjDarkLine = Color(0xFF2C3138)
+private val SzjDarkHairline = Color(0xFF3B4048)
+private val SzjLightBg = Color(0xFFF7F3EA)
+private val SzjLightCard = Color(0xFFFFFFFF)
+private val SzjLightCardRaised = Color(0xFFEFE9DC)
+private val SzjLightGold = Color(0xFF8A6D2F)
+private val SzjLightGoldSoft = Color(0xFFF1E6CB)
+private val SzjLightOnGoldSoft = Color(0xFF4D3A12)
+private val SzjLightText = Color(0xFF23201A)
+private val SzjLightMuted = Color(0xFF6E6759)
+private val SzjLightLine = Color(0xFFDCD3C0)
+private val SzjLightHairline = Color(0xFFC9BFA9)
+
+private val SzjBg: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightBg else SzjDarkBg
+private val SzjCard: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightCard else SzjDarkCard
+private val SzjCardRaised: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightCardRaised else SzjDarkCardRaised
+private val SzjGold: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightGold else SzjDarkGold
+private val SzjGoldSoft: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightGoldSoft else SzjDarkGoldSoft
+private val SzjOnGoldSoft: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightOnGoldSoft else SzjDarkOnGoldSoft
+private val SzjText: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightText else SzjDarkText
+private val SzjMuted: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightMuted else SzjDarkMuted
+private val SzjLine: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightLine else SzjDarkLine
+private val SzjHairline: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) SzjLightHairline else SzjDarkHairline
+private val SzjOnGold: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFFFFFFF) else Color(0xFF1A160D)
+private val SzjCommentBg: Color @Composable get() = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFF1ECDF) else Color(0xFF14171B)
+
+@Composable
+private fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
+    Column(Modifier.fillMaxWidth().background(SzjBg)) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "‹",
+                color = SzjGold,
+                fontSize = 34.sp,
+                lineHeight = 30.sp,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = { onBack?.invoke() })
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            )
+            Text(
+                title,
+                color = SzjText,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(start = 4.dp),
+            )
+            trailing?.invoke()
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+    }
+}
 
 /**
  * 石之家 (FF14 Rising Stones official community) - the in-phone "app".
  *
  * Renders the forum through the public JSON API: a post feed with partitions,
  * post detail (HTML body), comments, search, and the login-gated dynamics feed.
- * All screens share the existing MD3 theme, ScreenFrame/ScreenHeader scaffolds
- * and the user-configurable content margin. Internal navigation uses a simple
- * back stack so the system back button walks out of the app level-by-level.
+ * The whole feature uses its own minimal "Rising Stones" design language:
+ * near-black base, warm off-white text, antique-gold accents and thin hairline
+ * dividers instead of the global purple Material3 theme. Internal navigation
+ * uses a simple back stack so the system back button walks out level-by-level.
  */
 
 private sealed interface SzjRoute {
@@ -158,7 +219,8 @@ private fun SzjAvatar(name: String, avatar: String, uuid: String, sizeDp: Int) {
             url = ShizhijiaApi.resolveAvatar(context, uuid)
         }
     }
-    Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(SzjCardRaised)
+        .border(1.dp, SzjLine, CircleShape), contentAlignment = Alignment.Center) {
         if (url.isNotBlank()) {
             ShizhijiaRemoteImage(
                 url = url,
@@ -166,7 +228,7 @@ private fun SzjAvatar(name: String, avatar: String, uuid: String, sizeDp: Int) {
                 showPlaceholder = false,
             )
         } else {
-            Text(name.take(1).ifBlank { "?" }, color = PhoneMuted, fontSize = (sizeDp * 0.38f).sp)
+            Text(name.take(1).ifBlank { "?" }, color = SzjMuted, fontSize = (sizeDp * 0.38f).sp)
         }
     }
 }
@@ -287,12 +349,13 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
                 modifier = Modifier.fillMaxSize()
                     .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
         } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.White, modifier = Modifier.size(34.dp)) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(34.dp)) }
         }
         // Close button at the bottom-right corner.
-        Text("✕", color = Color.White, fontSize = 22.sp, modifier = Modifier.align(Alignment.BottomEnd)
+        Text("✕", color = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFF4D3A12) else SzjGold, fontSize = 22.sp, modifier = Modifier.align(Alignment.BottomEnd)
             .padding(18.dp)
-            .clip(CircleShape).background(Color(0x66000000))
+            .clip(CircleShape).background(SzjCardRaised.copy(alpha = 0.92f))
+            .border(1.dp, SzjLine, CircleShape)
             .clickable(onClick = onClose).padding(horizontal = 14.dp, vertical = 8.dp))
     }
 }
@@ -309,9 +372,9 @@ private const val SUB_POSTS = 0
 private const val SUB_DYNAMICS = 1
 private const val SUB_GUIDE = 2
 
-/** Tinted backdrop for the comment area, distinct from the article body so the
- *  two regions are obvious while scrolling. */
-private val CommentAreaBg: Color @Composable get() = PhoneSurfaceRaised
+/** Slightly raised backdrop for the comment area, distinct from the article
+ *  body so the two regions are obvious while scrolling. */
+private val CommentAreaBg: Color @Composable get() = SzjCommentBg
 
 @Composable
 private fun ShizhijiaHomeScreen(
@@ -370,9 +433,17 @@ private fun ShizhijiaHomeScreen(
         }
     }
 
-    ScreenFrame {
+    ScreenFrame(background = SzjBg) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
+                // 品牌标题行：金色标记 + 石之家 + 细线，主界面专属的极简识别元素。
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(4.dp).background(SzjGold))
+                    Spacer(Modifier.width(8.dp))
+                    Text("石之家", color = SzjText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.height(1.dp).weight(1f).background(SzjLine))
+                }
                 // Top bar (avatar / sign-in / search) belongs to the community
                 // tab only; other tabs have their own headers.
                 if (mainTab == MAIN_COMMUNITY) {
@@ -402,8 +473,9 @@ private fun ShizhijiaHomeScreen(
 /** Top bar with the account entry (avatar + login label) and a check-in button. */
 @Composable
 private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn: Boolean, loginUser: ShizhijiaLoginUser?, onSignIn: () -> Unit, signedToday: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(SzjCardRaised).border(1.dp, SzjLine, CircleShape), contentAlignment = Alignment.Center) {
             val ava = loginUser?.avatar
             // Default portraits arrive as inline data:image URIs; decode them
             // here so we can fall back to the first character on any failure.
@@ -413,35 +485,37 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
             } else if (!ava.isNullOrBlank() && !ava.startsWith("data:image")) {
                 ShizhijiaRemoteImage(url = ava, modifier = Modifier.fillMaxSize().clip(CircleShape), showPlaceholder = false)
             } else {
-                Text(loginUser?.name?.take(1) ?: if (loggedIn) "我" else "?", color = PhoneMuted, fontSize = 15.sp)
+                Text(loginUser?.name?.take(1) ?: if (loggedIn) "我" else "?", color = SzjMuted, fontSize = 15.sp)
             }
-        }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(loginUser?.name ?: if (loggedIn) "已登录" else "未登录", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            val server = listOfNotNull(loginUser?.area, loginUser?.group)
-            if (server.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(server.joinToString(" "), color = PhoneMuted, fontSize = 11.sp) }
-            } else {
-                Text("石之家 · FF14 官方社区", color = PhoneMuted, fontSize = 11.sp)
             }
-        }
-        // Check-in button flips to a greyed "已签到" once done today; clicking it
-        // then opens the sign-in calendar (rewards + signed days) instead.
-        Text(
-            if (signedToday) "已签到" else "签到",
-            color = if (signedToday) PhoneMuted else PhoneOnAccentContainer,
-            fontSize = 13.sp,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                .background(if (signedToday) PhoneSurfaceRaised else PhoneAccentContainer)
-                .clickable {
-                    if (signedToday) nav(SzjRoute.SignCalendar) else onSignIn()
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(loginUser?.name ?: if (loggedIn) "已登录" else "未登录", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                val server = listOfNotNull(loginUser?.area, loginUser?.group)
+                if (server.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(server.joinToString(" "), color = SzjMuted, fontSize = 11.sp) }
+                } else {
+                    Text("石之家 · FF14 官方社区", color = SzjMuted, fontSize = 11.sp)
                 }
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text("⌕", color = PhoneAccent, fontSize = 22.sp, modifier = Modifier
-            .clip(RoundedCornerShape(10.dp)).clickable { nav(SzjRoute.Search) }.padding(horizontal = 8.dp, vertical = 4.dp))
+            }
+            // Check-in button flips to a greyed "已签到" once done today; clicking it
+            // then opens the sign-in calendar (rewards + signed days) instead.
+            Text(
+                if (signedToday) "已签到" else "签到",
+                color = if (signedToday) SzjMuted else SzjOnGoldSoft,
+                fontSize = 13.sp,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                    .background(if (signedToday) SzjCardRaised else SzjGoldSoft)
+                    .clickable {
+                        if (signedToday) nav(SzjRoute.SignCalendar) else onSignIn()
+                    }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("⌕", color = SzjGold, fontSize = 22.sp, modifier = Modifier
+                .clip(RoundedCornerShape(4.dp)).clickable { nav(SzjRoute.Search) }.padding(horizontal = 8.dp, vertical = 4.dp))
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
     }
 }
 
@@ -457,14 +531,17 @@ private fun SzjSubTabRow(selected: Int, onSelect: (Int) -> Unit) {
 
 @Composable
 private fun SzjSubTab(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(label, color = if (selected) PhoneAccent else PhoneMuted, fontSize = 15.sp,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp))
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+        Text(label, color = if (selected) SzjGold else SzjMuted, fontSize = 15.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+        Box(Modifier.fillMaxWidth().height(2.dp).background(if (selected) SzjGold else Color.Transparent))
+    }
 }
 
 @Composable
 private fun SzjSectionPlaceholder(label: String) {
-    Box(Modifier.fillMaxSize().padding(bottom = 90.dp), contentAlignment = Alignment.Center) { Text("「$label」开发中", color = PhoneMuted) }
+    Box(Modifier.fillMaxSize().padding(bottom = 90.dp), contentAlignment = Alignment.Center) { Text("「$label」开发中", color = SzjMuted) }
 }
 
 @Composable
@@ -479,11 +556,11 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
     Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
         if (showSettings) {
             // ---- 设置页 ----
-            Text("设置", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("设置", color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
-            Text("外观设置", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("外观设置", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            Text("悬浮底栏高度: ${bottomBarHeightDp.toInt()} dp", color = PhoneMuted, fontSize = 12.sp)
+            Text("悬浮底栏高度: ${bottomBarHeightDp.toInt()} dp", color = SzjMuted, fontSize = 12.sp)
             Slider(
                 value = bottomBarHeightDp,
                 onValueChange = {
@@ -493,7 +570,7 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
                 valueRange = 48f..96f,
             )
             Spacer(Modifier.height(10.dp))
-            Text("距底部距离: " + barBottomDp.toInt() + " dp", color = PhoneMuted, fontSize = 12.sp)
+            Text("距底部距离: " + barBottomDp.toInt() + " dp", color = SzjMuted, fontSize = 12.sp)
             Slider(
                 value = barBottomDp,
                 onValueChange = {
@@ -508,10 +585,10 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
                     ShizhijiaSession.clear(context)
                     showSettings = false
                     android.widget.Toast.makeText(context, "已退出登录", android.widget.Toast.LENGTH_SHORT).show()
-                }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent), modifier = Modifier.fillMaxWidth()) { Text("退出登录") }
+                }, colors = ButtonDefaults.buttonColors(containerColor = SzjGold, contentColor = SzjOnGold), modifier = Modifier.fillMaxWidth()) { Text("退出登录") }
             }
             Spacer(Modifier.height(10.dp))
-            Text("返回", color = PhoneAccent, fontSize = 14.sp, modifier = Modifier.clickable { showSettings = false }.padding(8.dp))
+            Text("返回", color = SzjGold, fontSize = 14.sp, modifier = Modifier.clickable { showSettings = false }.padding(8.dp))
         } else if (loggedIn) {
             // ---- 资料头卡: 头像 + 关注/粉丝/获赞 ----
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -520,29 +597,30 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
                     listOf("关注" to 0, "粉丝" to 0, "获赞" to 0).forEach { (label, num) ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("$num", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text(label, color = PhoneMuted, fontSize = 11.sp)
+                            Text("$num", color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text(label, color = SzjMuted, fontSize = 11.sp)
                         }
                     }
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(p?.name ?: "已登录", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOfNotNull(p?.area, p?.group).joinToString(" "), color = PhoneMuted, fontSize = 12.sp) }
+            Text(p?.name ?: "已登录", color = SzjText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOfNotNull(p?.area, p?.group).joinToString(" "), color = SzjMuted, fontSize = 12.sp) }
             Spacer(Modifier.height(14.dp))
             // ---- 入口宫格 ----
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 listOf("收藏", "我的部队", "招募管理", "设置").forEach { label ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable {
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable {
                             if (label == "设置") showSettings = true
                             else android.widget.Toast.makeText(context, label + "开发中", android.widget.Toast.LENGTH_SHORT).show()
                         }.padding(8.dp)) {
-                        Box(Modifier.size(46.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
-                            Text(label.take(1), color = PhoneAccent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Box(Modifier.size(46.dp).clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                            .border(1.dp, SzjLine, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                            Text(label.take(1), color = SzjGold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(Modifier.height(5.dp))
-                        Text(label, color = PhoneMuted, fontSize = 11.sp)
+                        Text(label, color = SzjMuted, fontSize = 11.sp)
                     }
                 }
             }
@@ -550,21 +628,22 @@ private fun ShizhijiaMeTab(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn:
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 listOf("切换角色", "专项数据").forEach { label ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable {
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable {
                             android.widget.Toast.makeText(context, label + "开发中", android.widget.Toast.LENGTH_SHORT).show()
                         }.padding(8.dp)) {
-                        Box(Modifier.size(46.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
-                            Text(label.take(1), color = PhoneAccent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Box(Modifier.size(46.dp).clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                            .border(1.dp, SzjLine, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                            Text(label.take(1), color = SzjGold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(Modifier.height(5.dp))
-                        Text(label, color = PhoneMuted, fontSize = 11.sp)
+                        Text(label, color = SzjMuted, fontSize = 11.sp)
                     }
                 }
             }
         } else {
-            Text("未登录", color = PhoneMuted)
+            Text("未登录", color = SzjMuted)
             Spacer(Modifier.height(14.dp))
-            Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("登录") }
+            Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = SzjGold, contentColor = SzjOnGold)) { Text("登录") }
         }
     }
 }
@@ -575,9 +654,10 @@ private fun SzjBottomBar(selected: Int, onSelect: (Int) -> Unit, barHeightDp: Fl
     Row(
         modifier
             .padding(start = 18.dp, end = 18.dp, bottom = 10.dp + barBottomDp.dp).fillMaxWidth().height(barHeightDp.dp)
-            .shadow(6.dp, RoundedCornerShape(30.dp))
-            .clip(RoundedCornerShape(30.dp))
-            .background(PhoneSurface)
+            .shadow(4.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(SzjCard)
+            .border(1.dp, SzjLine, RoundedCornerShape(18.dp))
             .padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -595,11 +675,12 @@ private fun SzjBottomTab(label: String, selected: Boolean, onClick: () -> Unit) 
     Box(
         Modifier.size(56.dp)
             .clip(CircleShape)
-            .background(if (selected) PhoneAccentContainer else Color.Transparent)
+            .background(if (selected) SzjGoldSoft else Color.Transparent)
+            .border(if (selected) 1.dp else 0.dp, SzjGold.copy(alpha = 0.55f), CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = if (selected) PhoneOnAccentContainer else PhoneMuted, fontSize = 14.sp,
+        Text(label, color = if (selected) SzjOnGoldSoft else SzjMuted, fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
@@ -654,10 +735,10 @@ private fun ShizhijiaPostsTab(state: PhoneState, nav: (SzjRoute) -> Unit, ps: Sz
         Spacer(Modifier.height(4.dp))
         when {
             ps.loading.value && ps.posts.value.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(30.dp))
+                CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(30.dp))
             }
             ps.posts.value.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无帖子", color = PhoneMuted)
+                Text("暂无帖子", color = SzjMuted)
             }
             else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 96.dp)) {
@@ -666,7 +747,7 @@ private fun ShizhijiaPostsTab(state: PhoneState, nav: (SzjRoute) -> Unit, ps: Sz
                 }
                 item(key = "loading-footer") {
                     if (ps.loading.value) Box(Modifier.fillMaxWidth().padding(14.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(22.dp))
+                        CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(22.dp))
                     }
                 }
             }
@@ -678,11 +759,11 @@ private fun ShizhijiaPostsTab(state: PhoneState, nav: (SzjRoute) -> Unit, ps: Sz
 private fun SzjPartChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
-        color = if (selected) PhoneOnAccentContainer else PhoneMuted,
+        color = if (selected) SzjOnGoldSoft else SzjMuted,
         fontSize = 13.sp,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        modifier = Modifier.clip(RoundedCornerShape(20.dp))
-            .background(if (selected) PhoneAccentContainer else PhoneSurface)
+        modifier = Modifier.clip(RoundedCornerShape(4.dp))
+            .background(if (selected) SzjGoldSoft else SzjCard)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
     )
@@ -692,7 +773,8 @@ private fun SzjPartChip(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp)).background(PhoneSurface)
+            .clip(RoundedCornerShape(4.dp)).background(SzjCard)
+            .border(1.dp, SzjLine, RoundedCornerShape(4.dp))
             .clickable(onClick = onClick).padding(14.dp),
     ) {
         // Line 1: title with the [partition] tag on its left.
@@ -700,15 +782,15 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
             if (post.partName.isNotBlank()) {
                 Text(
                     post.partName,
-                    color = PhoneOnAccentContainer, fontSize = 11.sp,
+                    color = SzjOnGoldSoft, fontSize = 11.sp,
                     modifier = Modifier.padding(top = 2.dp, end = 6.dp)
-                        .clip(RoundedCornerShape(5.dp)).background(PhoneAccentContainer)
+                        .clip(RoundedCornerShape(4.dp)).background(SzjGoldSoft)
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
             Text(
                 post.title,
-                color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                 lineHeight = 21.sp,
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -723,7 +805,7 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
                 val cell = (maxWidth - 12.dp) / 3
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     post.coverPics.distinct().take(3).forEach { url ->
-                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
                     }
                 }
             }
@@ -731,17 +813,17 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
         // Line 3: author on the left; comment / read counts on the right.
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(post.characterName.ifBlank { "匿名玩家" }, color = PhoneMuted, fontSize = 12.sp,
+            Text(post.characterName.ifBlank { "匿名玩家" }, color = SzjMuted, fontSize = 12.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (post.groupName.isNotBlank()) {
                 Spacer(Modifier.width(3.dp))
                 SzjLocPin(14)
                 Spacer(Modifier.width(2.dp))
-                Text(post.groupName, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(post.groupName, color = SzjMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.weight(1f))
-            if (post.commentCount > 0) Text(" ${post.commentCount}评论 ", color = PhoneMuted, fontSize = 11.sp)
-            if (post.readCount > 0) Text("${post.readCount}阅读", color = PhoneMuted, fontSize = 11.sp)
+            if (post.commentCount > 0) Text(" ${post.commentCount}评论 ", color = SzjMuted, fontSize = 11.sp)
+            if (post.readCount > 0) Text("${post.readCount}阅读", color = SzjMuted, fontSize = 11.sp)
         }
     }
 }
@@ -760,15 +842,15 @@ private fun ShizhijiaDynamicsTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
         if (!loggedIn) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("登录后查看关注动态", color = PhoneMuted, fontSize = 14.sp)
+                    Text("登录后查看关注动态", color = SzjMuted, fontSize = 14.sp)
                     Spacer(Modifier.height(14.dp))
-                    Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("登录") }
+                    Button(onClick = { nav(SzjRoute.Login) }, colors = ButtonDefaults.buttonColors(containerColor = SzjGold, contentColor = SzjOnGold)) { Text("登录") }
                 }
             }
         } else if (loading && dynamics.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(30.dp)) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(30.dp)) }
         } else if (dynamics.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无动态", color = PhoneMuted) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无动态", color = SzjMuted) }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
                 items(dynamics, key = { it.id }) { d -> SzjDynamicRow(d, onClick = { nav(SzjRoute.DynamicDetail(d.id)) }) }
@@ -781,22 +863,23 @@ private fun ShizhijiaDynamicsTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean) {
 private fun SzjDynamicRow(d: ShizhijiaDynamic, onClick: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp)).background(PhoneSurface)
+            .clip(RoundedCornerShape(4.dp)).background(SzjCard)
+            .border(1.dp, SzjLine, RoundedCornerShape(4.dp))
             .clickable(onClick = onClick).padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SzjAvatar(d.characterName, d.avatar, d.uuid, 38)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(d.characterName.ifBlank { "光之战士" }, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(d.characterName.ifBlank { "光之战士" }, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 val dserver = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                if (dserver.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(dserver, color = PhoneMuted, fontSize = 11.sp) }
-                if (d.createdAt.isNotBlank()) Text(d.createdAt, color = PhoneMuted, fontSize = 11.sp)
+                if (dserver.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(dserver, color = SzjMuted, fontSize = 11.sp) }
+                if (d.createdAt.isNotBlank()) Text(d.createdAt, color = SzjMuted, fontSize = 11.sp)
             }
         }
         if (d.contentText.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
-            Text(d.contentText, color = PhoneText, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Text(d.contentText, color = SzjText, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
         d.images.firstOrNull()?.let { first ->
             Spacer(Modifier.height(8.dp))
@@ -804,8 +887,8 @@ private fun SzjDynamicRow(d: ShizhijiaDynamic, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Row {
-            if (d.likeCount > 0) Text("赞 ${d.likeCount}", color = PhoneMuted, fontSize = 12.sp)
-            if (d.commentCount > 0) { Spacer(Modifier.width(12.dp)); Text("评论 ${d.commentCount}", color = PhoneMuted, fontSize = 12.sp) }
+            if (d.likeCount > 0) Text("赞 ${d.likeCount}", color = SzjMuted, fontSize = 12.sp)
+            if (d.commentCount > 0) { Spacer(Modifier.width(12.dp)); Text("评论 ${d.commentCount}", color = SzjMuted, fontSize = 12.sp) }
         }
     }
 }
@@ -861,36 +944,36 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         }
     }
 
-    ScreenFrame {
-        ScreenHeader("帖子详情", state, onBack = { pop() })
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("帖子详情", onBack = { pop() })
         if (loading && detail == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(30.dp)) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(30.dp)) }
             return@ScreenFrame
         }
         val d = detail
         if (d == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("加载失败", color = PhoneMuted) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("加载失败", color = SzjMuted) }
             return@ScreenFrame
         }
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             item {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(d.title, color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold, lineHeight = 26.sp)
+                    Text(d.title, color = SzjText, fontSize = 19.sp, fontWeight = FontWeight.Bold, lineHeight = 26.sp)
                     Spacer(Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { nav(SzjRoute.UserProfile(d.uuid)) }) {
                         SzjAvatar(d.characterName, d.avatar, d.uuid, 36)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(d.characterName, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" "), color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); if (d.createdAt.isNotBlank()) { Text(" " + d.createdAt, color = PhoneMuted, fontSize = 11.sp, maxLines = 1) } }
+                            Text(d.characterName, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); if (d.createdAt.isNotBlank()) { Text(" " + d.createdAt, color = SzjMuted, fontSize = 11.sp, maxLines = 1) } }
                         }
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        if (d.readCount > 0) Text("阅读 ${d.readCount}", color = PhoneMuted, fontSize = 12.sp)
-                        if (d.likeCount > 0) Text("赞 ${d.likeCount}", color = PhoneMuted, fontSize = 12.sp)
-                        if (d.commentCount > 0) Text("评论 ${d.commentCount}", color = PhoneMuted, fontSize = 12.sp)
-                        if (d.starCount > 0) Text("收藏 ${d.starCount}", color = PhoneMuted, fontSize = 12.sp)
+                        if (d.readCount > 0) Text("阅读 ${d.readCount}", color = SzjMuted, fontSize = 12.sp)
+                        if (d.likeCount > 0) Text("赞 ${d.likeCount}", color = SzjMuted, fontSize = 12.sp)
+                        if (d.commentCount > 0) Text("评论 ${d.commentCount}", color = SzjMuted, fontSize = 12.sp)
+                        if (d.starCount > 0) Text("收藏 ${d.starCount}", color = SzjMuted, fontSize = 12.sp)
                     }
                 }
             }
@@ -905,32 +988,32 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 // backdrop signals the switch from the article body into the
                 // comment area, so the two never blur together while scrolling.
                 Row(Modifier.fillMaxWidth().background(CommentAreaBg).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("全部评论", color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) {
+                    Text("全部评论", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Row(Modifier.clip(RoundedCornerShape(4.dp)).background(SzjCard)) {
                         SzjSmallOption("默认", commentOrder == "earliest") { commentOrder = "earliest" }
                         SzjSmallOption("热门", commentOrder == "hottest") { commentOrder = "hottest" }
                         SzjSmallOption("最新", commentOrder == "latest") { commentOrder = "latest" }
                     }
                     Spacer(Modifier.width(8.dp))
                     // 只看楼主: client-side filter on the loaded comment list.
-                    Text("只看楼主", color = if (onlyAuthor) PhoneOnAccentContainer else PhoneMuted, fontSize = 12.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(10.dp))
-                            .background(if (onlyAuthor) PhoneAccentContainer else PhoneSurface)
+                    Text("只看楼主", color = if (onlyAuthor) SzjOnGoldSoft else SzjMuted, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                            .background(if (onlyAuthor) SzjGoldSoft else SzjCard)
                             .clickable { onlyAuthor = !onlyAuthor }
                             .padding(horizontal = 10.dp, vertical = 5.dp))
                 }
             }
             if (commentLoading && comments.isEmpty()) {
                 item(key = "comments-loading") {
-                    Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp)) }
+                    Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(24.dp)) }
                 }
             } else if (comments.isEmpty()) {
-                item(key = "comments-empty") { Text("暂无评论", color = PhoneMuted, modifier = Modifier.fillMaxWidth().background(CommentAreaBg).padding(24.dp), textAlign = TextAlign.Center) }
+                item(key = "comments-empty") { Text("暂无评论", color = SzjMuted, modifier = Modifier.fillMaxWidth().background(CommentAreaBg).padding(24.dp), textAlign = TextAlign.Center) }
             } else {
                 items(comments, key = { it.id }) { c -> SzjCommentRow(c, nav) }
                 item(key = "comments-footer") {
                     if (commentLoading) Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(12.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
+                        CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -944,27 +1027,28 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
 
 @Composable
 private fun SzjSmallOption(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(label, color = if (selected) PhoneOnAccentContainer else PhoneMuted, fontSize = 12.sp,
-        modifier = Modifier.clip(RoundedCornerShape(10.dp))
-            .background(if (selected) PhoneAccentContainer else Color.Transparent)
+    Text(label, color = if (selected) SzjOnGoldSoft else SzjMuted, fontSize = 12.sp,
+        modifier = Modifier.clip(RoundedCornerShape(4.dp))
+            .background(if (selected) SzjGoldSoft else Color.Transparent)
             .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp))
 }
 
 @Composable
 private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
-        .clip(RoundedCornerShape(14.dp)).background(PhoneSurface).padding(12.dp)) {
+        .clip(RoundedCornerShape(4.dp)).background(SzjCard)
+        .border(1.dp, SzjLine, RoundedCornerShape(4.dp)).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { nav(SzjRoute.UserProfile(c.uuid)) }) {
             SzjAvatar(c.characterName, c.avatar, c.uuid, 30)
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(c.characterName.ifBlank { "匿名玩家" }, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    if (c.isPostsAuthor) Text(" 作者", color = PhoneAccent, fontSize = 11.sp)
+                    Text(c.characterName.ifBlank { "匿名玩家" }, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    if (c.isPostsAuthor) Text(" 作者", color = SzjGold, fontSize = 11.sp)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" "), color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.createdAt.isNotBlank()) { Text(" " + c.createdAt, color = PhoneMuted, fontSize = 11.sp, maxLines = 1) } }
+                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.createdAt.isNotBlank()) { Text(" " + c.createdAt, color = SzjMuted, fontSize = 11.sp, maxLines = 1) } }
             }
-            if (c.likeCount > 0) Text("赞 ${c.likeCount}", color = PhoneMuted, fontSize = 11.sp)
+            if (c.likeCount > 0) Text("赞 ${c.likeCount}", color = SzjMuted, fontSize = 11.sp)
         }
         if (c.contentHtml.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
@@ -1058,15 +1142,17 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
         }
     }
 
-    ScreenFrame {
-        ScreenHeader("搜索", state, onBack = { pop() })
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("搜索", onBack = { pop() })
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(SzjCard)
+                .border(1.dp, SzjLine, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 // 类型切换与输入框融合在同一搜索栏内（左侧）
                 Box {
-                    Row(Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { typeMenu = true }.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(typeLabel, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("▾", color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp))
+                    Row(Modifier.clip(RoundedCornerShape(4.dp)).background(SzjCardRaised).border(1.dp, SzjLine, RoundedCornerShape(4.dp))
+                        .clickable { typeMenu = true }.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(typeLabel, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("▾", color = SzjMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp))
                     }
                     androidx.compose.material3.DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
                         listOf(
@@ -1076,7 +1162,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                             "幻化" to ShizhijiaApi.SEARCH_TYPE_GLAMOUR,
                         ).forEach { (label, id) ->
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(label, color = if (id == searchType.value) PhoneAccent else PhoneText) },
+                                text = { Text(label, color = if (id == searchType.value) SzjGold else SzjText) },
                                 onClick = { searchType.value = id; typeMenu = false },
                             )
                         }
@@ -1086,30 +1172,32 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                     value = query.value,
                     onValueChange = { query.value = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = PhoneText, fontSize = 15.sp),
+                    textStyle = TextStyle(color = SzjText, fontSize = 15.sp),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { doSearch() }),
                     decorationBox = { inner ->
                         Box {
-                            if (query.value.isEmpty()) Text("搜索$typeLabel", color = PhoneMuted, fontSize = 15.sp)
+                            if (query.value.isEmpty()) Text("搜索$typeLabel", color = SzjMuted, fontSize = 15.sp)
                             inner()
                         }
                     },
                     modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 12.dp),
                 )
                 // 放大镜图标替换原来的“搜索”文字按钮
-                Box(Modifier.size(34.dp).clip(CircleShape).background(PhoneAccentContainer).clickable { doSearch() }, contentAlignment = Alignment.Center) {
-                    Text("⌕", color = PhoneOnAccentContainer, fontSize = 18.sp)
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(4.dp)).background(SzjGoldSoft)
+                    .border(1.dp, SzjGold.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                    .clickable { doSearch() }, contentAlignment = Alignment.Center) {
+                    Text("⌕", color = SzjOnGoldSoft, fontSize = 18.sp)
                 }
             }
             if (postResults.value == null && userResults.value == null && glamourResults.value == null && !searching.value) {
                 if (history.value.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("搜索记录", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("搜索记录", color = SzjMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        Text("清空", color = PhoneMuted, fontSize = 11.sp,
-                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                        Text("清空", color = SzjMuted, fontSize = 11.sp,
+                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable {
                                 history.value.forEach { ShizhijiaSession.removeSearchHistory(context, it.first, it.second) }
                                 history.value = emptyList()
                             }.padding(horizontal = 6.dp, vertical = 2.dp))
@@ -1126,10 +1214,10 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                                         ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> "幻化"
                                         else -> "帖子"
                                     }
-                                    Text("$typeLabel2·$q", fontSize = 12.sp, color = PhoneText,
+                                    Text("$typeLabel2·$q", fontSize = 12.sp, color = SzjText,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(PhoneSurfaceRaised)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(SzjCardRaised)
                                             .pointerInput(q, t) {
                                                 detectTapGestures(
                                                     onTap = { query.value = q; searchType.value = t; doSearch() },
@@ -1146,7 +1234,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                     }
                     Spacer(Modifier.height(14.dp))
                 }
-                Text("热门搜索", color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("热门搜索", color = SzjMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     hotWords.value.take(6).forEach { word ->
@@ -1156,27 +1244,27 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
             } else {
                 Spacer(Modifier.height(8.dp))
                 when {
-                    searching.value -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
+                    searching.value -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(28.dp)) }
                     searchType.value == ShizhijiaApi.SEARCH_TYPE_USER -> {
-                        if (userResults.value.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关用户", color = PhoneMuted) }
+                        if (userResults.value.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关用户", color = SzjMuted) }
                         else LazyColumn(state = s.userListState, modifier = Modifier.fillMaxSize()) {
                             items(userResults.value.orEmpty(), key = { it.uuid }) { u ->
                                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { nav(SzjRoute.UserProfile(u.uuid)) }, verticalAlignment = Alignment.CenterVertically) {
                                     SzjAvatar(u.name, u.avatar, u.uuid, 44)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(u.name, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(u.name, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                                         val line = listOf(u.areaName, u.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                                        if (line.isNotBlank()) Text(line, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        if (u.profile.isNotBlank()) Text(u.profile, color = PhoneMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (line.isNotBlank()) Text(line, color = SzjMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (u.profile.isNotBlank()) Text(u.profile, color = SzjMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
-                                    Text("粉丝 ${u.fansNum}", color = PhoneMuted, fontSize = 11.sp)
+                                    Text("粉丝 ${u.fansNum}", color = SzjMuted, fontSize = 11.sp)
                                 }
                             }
                         }
                     }
                     searchType.value == ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
-                        if (glamourResults.value.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关幻化", color = PhoneMuted) }
+                        if (glamourResults.value.isNullOrEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关幻化", color = SzjMuted) }
                         else androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
                             state = s.glamourGridState,
                             columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
@@ -1189,13 +1277,13 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                             items(results.size, key = { results[it].id }) { idx ->
                                 val g = results[idx]
                                 // 一行三列，只显示头图，点击进入幻化详情（不是预览）
-                                Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable { nav(SzjRoute.GlamourDetail(g.id)) }) {
+                                Box(Modifier.clip(RoundedCornerShape(4.dp)).clickable { nav(SzjRoute.GlamourDetail(g.id)) }) {
                                     SzjGlamourImage(url = g.mainImage)
                                 }
                             }
                         }
                     }
-                    postResults.value.isNullOrEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关帖子", color = PhoneMuted) }
+                    postResults.value.isNullOrEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("未找到相关帖子", color = SzjMuted) }
                     else -> LazyColumn(state = s.postListState, modifier = Modifier.fillMaxSize()) {
                         items(postResults.value.orEmpty(), key = { it.postsId }) { post ->
                             SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) })
@@ -1218,7 +1306,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                 }
                 if (loadingMore.value) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
+                        CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -1235,22 +1323,23 @@ private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () 
     val context = LocalContext.current
     var d by remember { mutableStateOf<ShizhijiaDynamic?>(null) }
     LaunchedEffect(id) { d = ShizhijiaApi.getDynamicDetail(context, id) }
-    ScreenFrame {
-        ScreenHeader("动态详情", state, onBack = { pop() })
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("动态详情", onBack = { pop() })
         val item = d
-        if (item == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("加载中…", color = PhoneMuted) }; return@ScreenFrame }
+        if (item == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("加载中…", color = SzjMuted) }; return@ScreenFrame }
         LazyColumn(Modifier.fillMaxSize()) {
             item {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ShizhijiaRemoteImage(url = item.avatar, modifier = Modifier.size(40.dp).clip(CircleShape))
+                        ShizhijiaRemoteImage(url = item.avatar, modifier = Modifier.size(40.dp).clip(CircleShape)
+                            .border(1.dp, SzjLine, CircleShape))
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(item.characterName, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                            if (item.createdAt.isNotBlank()) Text(item.createdAt, color = PhoneMuted, fontSize = 12.sp)
+                            Text(item.characterName, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            if (item.createdAt.isNotBlank()) Text(item.createdAt, color = SzjMuted, fontSize = 12.sp)
                         }
                     }
-                    if (item.contentText.isNotBlank()) { Spacer(Modifier.height(12.dp)); Text(item.contentText, color = PhoneText, fontSize = 15.sp, lineHeight = 22.sp) }
+                    if (item.contentText.isNotBlank()) { Spacer(Modifier.height(12.dp)); Text(item.contentText, color = SzjText, fontSize = 15.sp, lineHeight = 22.sp) }
                 }
             }
             items(item.images) { img ->
@@ -1323,14 +1412,14 @@ private fun ShizhijiaLoginScreen(state: PhoneState, pop: () -> Unit) {
         }
     }
 
-    ScreenFrame {
-        ScreenHeader("登录", state, onBack = { pop() })
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("登录", onBack = { pop() })
         when (verified) {
             null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(30.dp))
+                CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(30.dp))
             }
             true -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("已登录石之家", color = PhoneText, fontSize = 16.sp)
+                Text("已登录石之家", color = SzjText, fontSize = 16.sp)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = {
                     // Drop the stored cookie and clear the WebView jar so the
@@ -1338,7 +1427,7 @@ private fun ShizhijiaLoginScreen(state: PhoneState, pop: () -> Unit) {
                     ShizhijiaSession.clear(context)
                     CookieManager.getInstance().removeAllCookies(null)
                     verified = false
-                }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("重新登录") }
+                }, colors = ButtonDefaults.buttonColors(containerColor = SzjGold, contentColor = SzjOnGold)) { Text("重新登录") }
             }
             false -> Box(Modifier.fillMaxSize()) {
                 AndroidView(
@@ -1399,8 +1488,12 @@ private fun ShizhijiaLoginScreen(state: PhoneState, pop: () -> Unit) {
             if (pageLoading) {
                 // Friendly hint over the WebView while the QQ page loads (slow on
                 // real devices), so it never looks like the app is stuck.
-                Box(Modifier.fillMaxSize().background(Color(0x66FFFFFF)), contentAlignment = Alignment.Center) {
-                    Text("正在加载登录页,请稍候…", color = PhoneMuted, fontSize = 14.sp)
+                Box(Modifier.fillMaxSize().background(SzjBg.copy(alpha = 0.88f)), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(26.dp))
+                        Spacer(Modifier.height(10.dp))
+                        Text("正在加载登录页，请稍候…", color = SzjMuted, fontSize = 14.sp)
+                    }
                 }
             }
         }
@@ -1442,14 +1535,18 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
     }
     val todayDay = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH)
 
-    ScreenFrame {
-        ScreenHeader("签到日历", state, onBack = pop)
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("签到日历", onBack = pop)
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             item {
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
-                    Text("本月已签到 ", fontSize = 14.sp, color = PhoneText)
-                    Text("${log?.count ?: 0}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PhoneAccent)
-                    Text(" 天", fontSize = 13.sp, color = PhoneMuted)
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp).clip(RoundedCornerShape(4.dp))
+                    .background(SzjCardRaised).border(1.dp, SzjLine, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.Bottom) {
+                    Text("本月已签到 ", fontSize = 14.sp, color = SzjText)
+                    Text("${log?.count ?: 0}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = SzjGold)
+                    Text(" 天", fontSize = 13.sp, color = SzjMuted)
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.size(6.dp).background(SzjGold))
                 }
                 // Day strip: 7 per row, signed days highlighted.
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1461,12 +1558,13 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                                 Text(
                                     day.toString(),
                                     fontSize = 12.sp,
-                                    color = if (signed) PhoneOnAccentContainer else if (today) PhoneAccent else PhoneMuted,
+                                    color = if (signed) SzjOnGoldSoft else if (today) SzjGold else SzjMuted,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier
                                         .size(34.dp)
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .background(if (signed) PhoneAccentContainer else PhoneSurfaceRaised)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (signed) SzjGoldSoft else SzjCardRaised)
+                                        .border(1.dp, if (today) SzjGold.copy(alpha = 0.8f) else SzjLine, RoundedCornerShape(4.dp))
                                         .wrapContentSize(Alignment.Center),
                                 )
                             }
@@ -1474,7 +1572,7 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Text("累计奖励", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = PhoneText)
+                Text("累计奖励", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = SzjText)
                 Spacer(Modifier.height(4.dp))
             }
             items(rewards.size) { i ->
@@ -1487,17 +1585,19 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                     ShizhijiaRemoteImage(url = r.itemPic, modifier = Modifier.size(46.dp), showPlaceholder = true)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(r.itemName, fontSize = 14.sp, color = PhoneText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("累计签到 ${r.rule} 天", fontSize = 12.sp, color = PhoneMuted)
+                        Text(r.itemName, fontSize = 14.sp, color = SzjText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("累计签到 ${r.rule} 天", fontSize = 12.sp, color = SzjMuted)
                     }
                     when {
-                        r.isGet == 1 -> Text("已领取", fontSize = 12.sp, color = PhoneMuted,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp, vertical = 5.dp))
-                        !claimable -> Text("未满足", fontSize = 12.sp, color = PhoneMuted,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp, vertical = 5.dp))
+                        r.isGet == 1 -> Text("已领取", fontSize = 12.sp, color = SzjMuted,
+                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                                .border(1.dp, SzjLine, RoundedCornerShape(4.dp)).padding(horizontal = 12.dp, vertical = 5.dp))
+                        !claimable -> Text("未满足", fontSize = 12.sp, color = SzjMuted,
+                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                                .border(1.dp, SzjLine, RoundedCornerShape(4.dp)).padding(horizontal = 12.dp, vertical = 5.dp))
                         else -> Text(if (claimingId == r.id) "…" else "领取", fontSize = 12.sp,
-                            color = PhoneOnAccentContainer, fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(PhoneAccentContainer)
+                            color = SzjOnGoldSoft, fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(SzjGoldSoft)
                                 .clickable(enabled = claimingId == null) {
                                     scope.launch {
                                         claimingId = r.id
@@ -1582,11 +1682,11 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
         }
     }
 
-    ScreenFrame {
-        ScreenHeader("玩家主页", state, onBack = pop)
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("玩家主页", onBack = pop)
         val p = profile
         if (p == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(28.dp)) }
             return@ScreenFrame
         }
         LazyColumn(Modifier.fillMaxSize()) {
@@ -1596,21 +1696,22 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         SzjAvatar(p.name, avatarUrl, p.uuid, 64)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(p.name, color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" "), color = PhoneMuted, fontSize = 12.sp) }
-                            Text("UID $uuid", color = PhoneMuted, fontSize = 11.sp)
+                            Text(p.name, color = SzjText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(p.areaName, p.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, fontSize = 12.sp) }
+                            Text("UID $uuid", color = SzjMuted, fontSize = 11.sp)
                         }
                     }
                     if (p.profile.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(p.profile, color = PhoneText, fontSize = 12.sp)
+                        Text(p.profile, color = SzjText, fontSize = 12.sp)
                     }
                     Spacer(Modifier.height(10.dp))
-                    Row(Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                        .border(1.dp, SzjLine, RoundedCornerShape(4.dp)).padding(vertical = 10.dp)) {
                         listOf("关注" to p.followNum, "粉丝" to p.fansNum, "获赞" to p.likedNum).forEach { (label, num) ->
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("$num", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text(label, color = PhoneMuted, fontSize = 11.sp)
+                                Text("$num", color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text(label, color = SzjMuted, fontSize = 11.sp)
                             }
                         }
                     }
@@ -1621,10 +1722,13 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     listOf("信息" to 0, "帖子" to 1).forEach { (label, id) ->
-                        Text(label, fontSize = 14.sp,
-                            color = if (tab == id) PhoneAccent else PhoneMuted,
-                            fontWeight = if (tab == id) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier = Modifier.clickable { tab = id }.padding(vertical = 4.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { tab = id }) {
+                            Text(label, fontSize = 14.sp,
+                                color = if (tab == id) SzjGold else SzjMuted,
+                                fontWeight = if (tab == id) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.padding(vertical = 4.dp))
+                            Box(Modifier.fillMaxWidth().height(2.dp).background(if (tab == id) SzjGold else Color.Transparent))
+                        }
                     }
                 }
             }
@@ -1635,7 +1739,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         val battle = p.careers.filter { it.type !in listOf("能工巧匠", "大地使者") }.sortedByDescending { it.level }
                         val craft = p.careers.filter { it.type in listOf("能工巧匠", "大地使者") }.sortedByDescending { it.level }
                         if (battle.isNotEmpty()) {
-                            Text("战斗精英 & 魔法导师", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("战斗精英 & 魔法导师", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(5.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 battle.chunked(5).forEach { row ->
@@ -1648,20 +1752,20 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                                 Box {
                                                     Column(horizontalAlignment = Alignment.CenterHorizontally,
                                                         modifier = Modifier.clickable { tipCareer = if (showTip) null else c.name }) {
-                                                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                                                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(4.dp)).background(SzjCardRaised), contentAlignment = Alignment.Center) {
                                                             if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                            else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                            else Text(abbr, color = SzjGold, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                                         }
-                                                        Text("${c.level}", fontSize = 10.sp, color = PhoneText)
+                                                        Text("${c.level}", fontSize = 10.sp, color = SzjText)
                                                     }
                                                     if (showTip) {
                                                         // Small bubble above the icon with the job name.
                                                         Box(Modifier.matchParentSize()) {
-                                                            Text(c.name, color = PhoneOnAccentContainer, fontSize = 10.sp,
+                                                            Text(c.name, color = SzjOnGoldSoft, fontSize = 10.sp,
                                                                 modifier = Modifier.align(Alignment.TopCenter)
                                                                     .offset(y = (-22).dp)
-                                                                    .clip(RoundedCornerShape(6.dp))
-                                                                    .background(PhoneAccentContainer)
+                                                                    .clip(RoundedCornerShape(4.dp))
+                                                                    .background(SzjGoldSoft)
                                                                     .padding(horizontal = 6.dp, vertical = 2.dp))
                                                         }
                                                     }
@@ -1674,7 +1778,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                             Spacer(Modifier.height(8.dp))
                         }
                         if (craft.isNotEmpty()) {
-                            Text("能工巧匠 & 大地使者", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("能工巧匠 & 大地使者", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(5.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 craft.chunked(5).forEach { row ->
@@ -1687,20 +1791,20 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                                 Box {
                                                     Column(horizontalAlignment = Alignment.CenterHorizontally,
                                                         modifier = Modifier.clickable { tipCareer = if (showTip) null else c.name }) {
-                                                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                                                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(4.dp)).background(SzjCardRaised), contentAlignment = Alignment.Center) {
                                                             if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                            else Text(abbr, color = PhoneAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                            else Text(abbr, color = SzjGold, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                                         }
-                                                        Text("${c.level}", fontSize = 10.sp, color = PhoneText)
+                                                        Text("${c.level}", fontSize = 10.sp, color = SzjText)
                                                     }
                                                     if (showTip) {
                                                         // Small bubble above the icon with the job name.
                                                         Box(Modifier.matchParentSize()) {
-                                                            Text(c.name, color = PhoneOnAccentContainer, fontSize = 10.sp,
+                                                            Text(c.name, color = SzjOnGoldSoft, fontSize = 10.sp,
                                                                 modifier = Modifier.align(Alignment.TopCenter)
                                                                     .offset(y = (-22).dp)
-                                                                    .clip(RoundedCornerShape(6.dp))
-                                                                    .background(PhoneAccentContainer)
+                                                                    .clip(RoundedCornerShape(4.dp))
+                                                                    .background(SzjGoldSoft)
                                                                     .padding(horizontal = 6.dp, vertical = 2.dp))
                                                         }
                                                     }
@@ -1730,16 +1834,16 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         ).forEach { (label, value) ->
                             if (value.isNotBlank()) {
                                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                                    Text(label + "：", color = PhoneMuted, fontSize = 12.sp)
+                                    Text(label + "：", color = SzjMuted, fontSize = 12.sp)
                                     Spacer(Modifier.width(4.dp))
-                                    Text(value, color = PhoneText, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                    Text(value, color = SzjText, fontSize = 12.sp, modifier = Modifier.weight(1f))
                                 }
                             }
                         }
                         Spacer(Modifier.height(8.dp))
                         // 特殊成就: medal icons + name/detail/time.
                         if (p.achievements.isNotEmpty()) {
-                            Text("特殊成就 (${p.achievements.size})", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("特殊成就 (${p.achievements.size})", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
                             p.achievements.take(20).forEach { a ->
                                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1748,19 +1852,19 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
 ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(36.dp), contentScale = ContentScale.Fit, showPlaceholder = false)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(a.name, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        if (a.detail.isNotBlank()) Text(a.detail, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        if (a.time.isNotBlank()) Text(a.time.take(10), color = PhoneMuted, fontSize = 10.sp)
+                                        Text(a.name, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (a.detail.isNotBlank()) Text(a.detail, color = SzjMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (a.time.isNotBlank()) Text(a.time.take(10), color = SzjMuted, fontSize = 10.sp)
                                     }
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
                         }
                         // 游戏近况: recent/r{typeId}.png + event text.
-                        Text("游戏近况", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("游戏近况", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
                         if (recents.isEmpty()) {
-                            Text(if (recentsPrivate) "对方设置了隐私，无法查看" else "暂无动态", color = PhoneMuted, fontSize = 12.sp)
+                            Text(if (recentsPrivate) "对方设置了隐私，无法查看" else "暂无动态", color = SzjMuted, fontSize = 12.sp)
                         } else {
                             recents.take(15).forEach { r ->
                                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1769,9 +1873,9 @@ ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(36.dp), contentSca
                                     ShizhijiaRemoteImage(url = recentUrl, modifier = Modifier.size(30.dp), showPlaceholder = false)
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(r.eventType, color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        if (r.detail.isNotBlank()) Text(r.detail, color = PhoneMuted, fontSize = 11.sp)
-                                        if (r.logTime.isNotBlank()) Text(r.logTime, color = PhoneMuted, fontSize = 10.sp)
+                                        Text(r.eventType, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        if (r.detail.isNotBlank()) Text(r.detail, color = SzjMuted, fontSize = 11.sp)
+                                        if (r.logTime.isNotBlank()) Text(r.logTime, color = SzjMuted, fontSize = 10.sp)
                                     }
                                 }
                             }
@@ -1781,7 +1885,7 @@ ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(36.dp), contentSca
             } else {
                 // ---- 帖子 tab ----
                 if (posts.isEmpty() && !postLoading) {
-                    item { Text("暂无帖子", color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
+                    item { Text("暂无帖子", color = SzjMuted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) }
                 } else {
                     items(posts, key = { it.postsId }) { post ->
                         SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) })
@@ -1789,7 +1893,7 @@ ShizhijiaRemoteImage(url = medalUrl, modifier = Modifier.size(36.dp), contentSca
                     if (!postEnded) {
                         item {
                             Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(20.dp))
+                                CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(20.dp))
                             }
                             LaunchedEffect(posts.size) {
                                 if (posts.isNotEmpty()) {
@@ -1824,11 +1928,11 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
     val leftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET", "GLASSES")
     val rightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT", "ORNAMENT")
 
-    ScreenFrame {
-        ScreenHeader("幻化详情", state, onBack = pop)
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("幻化详情", onBack = pop)
         val d = g
         if (d == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(28.dp)) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(28.dp)) }
             return@ScreenFrame
         }
         LazyColumn(Modifier.fillMaxSize()) {
@@ -1837,9 +1941,9 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     SzjAvatar(d.authorName, d.authorAvatar, d.authorUuid, 32)
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text(d.authorName, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(d.authorName, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         val line = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                        if (line.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(line, color = PhoneMuted, fontSize = 11.sp) }
+                        if (line.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(line, color = SzjMuted, fontSize = 11.sp) }
                     }
                 }
             }
@@ -1863,7 +1967,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     if (d.images.size > 1) {
                         Spacer(Modifier.height(6.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                            Text("${pagerState.currentPage + 1} / ${d.images.size}", color = PhoneMuted, fontSize = 11.sp)
+                            Text("${pagerState.currentPage + 1} / ${d.images.size}", color = SzjMuted, fontSize = 11.sp)
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -1871,22 +1975,22 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
             }
             item {
                 Column(Modifier.padding(horizontal = 16.dp)) {
-                    Text(d.title, color = PhoneText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(d.title, color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val genderText = when (d.gender) { 1 -> "男性"; 2 -> "女性"; else -> "" }
                         val rg = (d.races + listOfNotNull(genderText.takeIf { it.isNotBlank() })).joinToString(" / ")
-                        if (rg.isNotBlank()) Text(rg, color = PhoneAccent, fontSize = 13.sp)
+                        if (rg.isNotBlank()) Text(rg, color = SzjGold, fontSize = 13.sp)
                         Spacer(Modifier.width(10.dp))
-                        Text(d.createdAt.take(10), color = PhoneMuted, fontSize = 12.sp)
+                        Text(d.createdAt.take(10), color = SzjMuted, fontSize = 12.sp)
                     }
                     if (d.desc.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(d.desc, color = PhoneText, fontSize = 13.sp)
+                        Text(d.desc, color = SzjText, fontSize = 13.sp)
                     }
                     if (d.jobs.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
-                        Text("适用职业: ${d.jobs.joinToString("、")}", color = PhoneMuted, fontSize = 12.sp)
+                        Text("适用职业: ${d.jobs.joinToString("、")}", color = SzjMuted, fontSize = 12.sp)
                     }
                     Spacer(Modifier.height(10.dp))
                 }
@@ -1904,17 +2008,18 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                 val extraName = when (slot) { "GLASSES" -> d.glassesName; "ORNAMENT" -> d.ornamentName; else -> "" }
                                 val extraIcon = when (slot) { "GLASSES" -> d.glassesIconUrl; "ORNAMENT" -> d.ornamentIconUrl; else -> "" }
                                 Column {
-                                    Text(label, color = PhoneMuted, fontSize = 12.sp)
+                                    Text(label, color = SzjMuted, fontSize = 12.sp)
                                     Spacer(Modifier.height(4.dp))
                                     if (equip == null && extraName.isBlank()) {
-                                        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurfaceRaised))
+                                        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                                            .border(1.dp, SzjLine, RoundedCornerShape(4.dp)))
                                     } else {
                                         val eName = equip?.name ?: extraName
                                         val eIcon = equip?.iconUrl ?: extraIcon
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             if (eIcon.isNotBlank()) {
                                                 Box {
-                                                    ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)))
+                                                    ShizhijiaRemoteImage(url = eIcon, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)))
                                                         if (equip?.isMallItem == true) {
                                                             // 商城角标：预渲染的整图（黄底圆+购物袋），直接 Image 显示，密度无关。
                                                             val ctx = LocalContext.current
@@ -1939,7 +2044,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                 Spacer(Modifier.width(8.dp))
                                             }
                                             Column {
-                                                Text(eName, color = PhoneText, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                Text(eName, color = SzjText, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                 Spacer(Modifier.height(2.dp))
                                                 val holeCount = maxOf(equip?.dyeHoleCount ?: 0, 0)
                                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1947,14 +2052,14 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                         val dy = equip?.dyes?.getOrNull(hi)
                                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                                             if (dy != null) {
-                                                                val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: PhoneSurfaceRaised
-                                                                Box(Modifier.size(10.dp).clip(CircleShape).background(dyeColor).border(0.5.dp, PhoneMuted, CircleShape))
+                                                                val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: SzjCardRaised
+                                                                Box(Modifier.size(10.dp).clip(CircleShape).background(dyeColor).border(0.5.dp, SzjMuted, CircleShape))
                                                                 Spacer(Modifier.width(3.dp))
-                                                                Text(dy.name.removeSuffix("染剂"), color = PhoneMuted, fontSize = 10.sp, maxLines = 1)
+                                                                Text(dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 10.sp, maxLines = 1)
                                                             } else {
-                                                                Text("⊘", color = PhoneMuted, fontSize = 11.sp)
+                                                                Text("⊘", color = SzjMuted, fontSize = 11.sp)
                                                                 Spacer(Modifier.width(2.dp))
-                                                                Text("无染色", color = PhoneMuted, fontSize = 10.sp)
+                                                                Text("无染色", color = SzjMuted, fontSize = 10.sp)
                                                             }
                                                         }
                                                     }
@@ -1971,9 +2076,9 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
             item {
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.padding(horizontal = 16.dp)) {
-                    Text("♥ ${d.likes}", color = PhoneMuted, fontSize = 13.sp)
+                    Text("♥ ${d.likes}", color = SzjMuted, fontSize = 13.sp)
                     Spacer(Modifier.width(14.dp))
-                    Text("★ ${d.favorites}", color = PhoneMuted, fontSize = 13.sp)
+                    Text("★ ${d.favorites}", color = SzjMuted, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(20.dp))
             }
@@ -2028,27 +2133,30 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
                     Text("关注", fontSize = 15.sp,
-                        color = if (tab == 1) PhoneAccent else PhoneMuted,
+                        color = if (tab == 1) SzjGold else SzjMuted,
                         fontWeight = if (tab == 1) FontWeight.SemiBold else FontWeight.Normal,
                         modifier = Modifier.clickable { tab = 1 }.padding(horizontal = 12.dp, vertical = 6.dp))
                     Spacer(Modifier.width(18.dp))
                     Text("全部", fontSize = 15.sp,
-                        color = if (tab == 0) PhoneAccent else PhoneMuted,
+                        color = if (tab == 0) SzjGold else SzjMuted,
                         fontWeight = if (tab == 0) FontWeight.SemiBold else FontWeight.Normal,
                         modifier = Modifier.clickable { tab = 0 }.padding(horizontal = 12.dp, vertical = 6.dp))
                 }
-                Text("筛选", fontSize = 13.sp, color = PhoneMuted,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { filterOpen = !filterOpen }
-                        .padding(horizontal = 8.dp, vertical = 6.dp))
+                Text("筛选", fontSize = 13.sp, color = SzjOnGoldSoft,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(SzjGoldSoft)
+                        .border(1.dp, SzjGold.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                        .clickable { filterOpen = !filterOpen }
+                        .padding(horizontal = 10.dp, vertical = 6.dp))
             }
             if (tab == 0) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
-                    Row(Modifier.clip(RoundedCornerShape(14.dp)).background(PhoneSurfaceRaised)) {
+                    Row(Modifier.clip(RoundedCornerShape(4.dp)).background(SzjCardRaised)
+                        .border(1.dp, SzjLine, RoundedCornerShape(4.dp))) {
                         listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
                             Text(label, fontSize = 12.sp,
-                                color = if (sort == id) PhoneOnAccentContainer else PhoneMuted,
-                                modifier = Modifier.clip(RoundedCornerShape(14.dp))
-                                    .background(if (sort == id) PhoneAccentContainer else Color.Transparent)
+                                color = if (sort == id) SzjOnGoldSoft else SzjMuted,
+                                modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                                    .background(if (sort == id) SzjGoldSoft else Color.Transparent)
                                     .clickable { if (sort != id) { sort = id } }
                                     .padding(horizontal = 14.dp, vertical = 5.dp))
                         }
@@ -2056,7 +2164,7 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
                 }
             }
             if (tab == 1 && !loggedIn) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = PhoneMuted) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("登录后可查看关注的幻化", color = SzjMuted) }
                 return@Column
             }
             androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
@@ -2099,7 +2207,7 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
             }
             if (loading && items.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(24.dp))
                 }
             }
         }
@@ -2113,8 +2221,9 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
             ) {
                 Column(
                     Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(bottomEnd = 16.dp, bottomStart = 16.dp))
-                        .background(PhoneBackground)
+                        .clip(RoundedCornerShape(bottomEnd = 8.dp, bottomStart = 8.dp))
+                        .background(SzjBg)
+                        .border(1.dp, SzjLine, RoundedCornerShape(bottomEnd = 8.dp, bottomStart = 8.dp))
                         .clickable(interactionSource = noRipple, indication = null) { }
                         .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
@@ -2127,18 +2236,18 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = { raceId = -1; genderId = -1; createTimeIdx = 0 },
-                            colors = ButtonDefaults.buttonColors(containerColor = PhoneSurfaceRaised),
+                            colors = ButtonDefaults.buttonColors(containerColor = SzjCardRaised),
                             modifier = Modifier.weight(1f),
-                        ) { Text("重置", color = PhoneText) }
+                        ) { Text("重置", color = SzjText) }
                         Button(
                             onClick = {
                                 filterOpen = false
                                 gs.loadedKey.value = ""
                                 load(reset = true)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = PhoneAccentContainer),
+                            colors = ButtonDefaults.buttonColors(containerColor = SzjGoldSoft),
                             modifier = Modifier.weight(1f),
-                        ) { Text("确认", color = PhoneOnAccentContainer) }
+                        ) { Text("确认", color = SzjOnGoldSoft) }
                     }
                 }
             }
@@ -2149,17 +2258,18 @@ private fun ShizhijiaGlamourTab(nav: (SzjRoute) -> Unit, loggedIn: Boolean, gs: 
 @Composable
 private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, selected: Int, onSelect: (Int) -> Unit) {
     Column {
-        Text(label, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             options.chunked(4).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { (label2, id) ->
                         Text(label2, fontSize = 12.sp,
-                            color = if (selected == id) PhoneOnAccentContainer else PhoneText,
+                            color = if (selected == id) SzjOnGoldSoft else SzjText,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected == id) PhoneAccentContainer else PhoneSurfaceRaised)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (selected == id) SzjGoldSoft else SzjCardRaised)
+                                .border(1.dp, if (selected == id) SzjGold.copy(alpha = 0.55f) else SzjLine, RoundedCornerShape(4.dp))
                                 .clickable { onSelect(id) }
                                 .padding(horizontal = 12.dp, vertical = 6.dp))
                     }
@@ -2185,14 +2295,14 @@ private fun SzjGlamourImage(url: String) {
     }
     // 所有卡片用统一的 9:16 比例（实测移动端封面统一 9:16），保证间距均匀。
     Box(
-        Modifier.fillMaxWidth().aspectRatio(9f / 16f).background(PhoneSurfaceRaised),
+        Modifier.fillMaxWidth().aspectRatio(9f / 16f).background(SzjCardRaised),
         contentAlignment = Alignment.Center,
     ) {
         val b = bmp
         if (b != null) {
             Image(b.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else {
-            CircularProgressIndicator(color = PhoneAccent, modifier = Modifier.size(22.dp))
+            CircularProgressIndicator(color = SzjGold, modifier = Modifier.size(22.dp))
         }
     }
 }
@@ -2200,26 +2310,28 @@ private fun SzjGlamourImage(url: String) {
 /** 幻化瀑布流卡片：封面限高裁切 + 标题 + 作者/服务器 + 收藏/点赞。 */
 @Composable
 private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(12.dp)).background(PhoneSurface).clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
+    Column(Modifier.clip(RoundedCornerShape(4.dp)).background(SzjCard)
+        .border(1.dp, SzjLine, RoundedCornerShape(4.dp))
+        .clickable { nav(SzjRoute.GlamourDetail(card.id)) }) {
         SzjGlamourImage(url = card.mainImage)
         Column(Modifier.padding(8.dp)) {
-            Text(card.title, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(card.title, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(card.characterName, color = PhoneText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(card.characterName, color = SzjText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (card.groupName.isNotBlank()) {
                     Spacer(Modifier.width(3.dp))
                     SzjLocPin(14)
                     Spacer(Modifier.width(2.dp))
-                    Text(card.groupName, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(card.groupName, color = SzjMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.weight(1f))
             }
             Spacer(Modifier.height(3.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Text("★ ${card.favorites}", color = PhoneMuted, fontSize = 11.sp)
+                Text("★ ${card.favorites}", color = SzjMuted, fontSize = 11.sp)
                 Spacer(Modifier.width(10.dp))
-                Text("👍 ${card.likes}", color = PhoneMuted, fontSize = 11.sp)
+                Text("👍 ${card.likes}", color = SzjMuted, fontSize = 11.sp)
             }
         }
     }

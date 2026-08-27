@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -19,7 +21,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.quserh.eorzeaphone.ui.theme.PhoneText
 
 /**
  * Lightweight HTML -> Compose renderer for 石之家 article/comment bodies.
@@ -232,7 +233,8 @@ private fun handleTag(tag: String, p: RichParagraphBuilder, flush: () -> Unit, b
 /** Render parsed blocks as native Compose content (text + async images). */
 @Composable
 fun ShizhijiaRichContent(html: String, modifier: Modifier = Modifier, placeholder: Boolean = false, imgMaxWidth: androidx.compose.ui.unit.Dp? = null) {
-    val textColor = PhoneText
+    // 石之家专属正文色，跟随深/浅主题，避免富文本内容显示成全局主题色。
+    val textColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFF23201A) else Color(0xFFECEAE4)
     // Tight inter-block spacing keeps the article/comment body dense like a
     // forum thread; paragraphs already carry their own line structure.
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -251,7 +253,7 @@ fun ShizhijiaRichContent(html: String, modifier: Modifier = Modifier, placeholde
                             .then(if (imgMaxWidth != null) Modifier.widthIn(max = imgMaxWidth) else Modifier.fillMaxWidth())
                     },
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    placeholderColor = Color(0xFFE7E4EE),
+                    placeholderColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFEFE9DC) else Color(0xFF1D2127),
                     showPlaceholder = false,
                     collapseOnFail = true,
                     onClick = if (isEmo) null else { url -> SzjViewer.url = url },
