@@ -1030,7 +1030,8 @@ private fun ShizhijiaHomeScreen(
                                 }
                             }
                         }
-                        MAIN_RECRUIT -> ShizhijiaRecruitTab(nav, loggedIn, recruitState, brandRow)
+                        // bar 传下去：发布按钮跟底栏一起收起/放出。
+                        MAIN_RECRUIT -> ShizhijiaRecruitTab(nav, loggedIn, recruitState, brandRow, bar)
                         MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn, glamourState, brandRow)
                         else -> ShizhijiaMeTab(state, nav, loggedIn, loginUser, barHeightDp, barBottomDp, onBarHeightChange, onBarBottomChange, brandRow)
                     }
@@ -1973,6 +1974,8 @@ private fun ShizhijiaRecruitTab(
     loggedIn: Boolean,
     rs: SzjRecruitState,
     header: @Composable () -> Unit,
+    /** 底栏的显隐状态：发布按钮跟着它一起走。 */
+    bar: SzjBarVisibility,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -2135,9 +2138,27 @@ private fun ShizhijiaRecruitTab(
         // 发布按钮：浮在右下、底栏之上。RP 和部队招募的发布表单没做，
         // 那两类不给入口（点了也发不出去）。
         if (kind != ShizhijiaRecruitKind.Rp && kind != ShizhijiaRecruitKind.Guild) {
+            // 往下滑收起、往上滑放出，和悬浮底栏同一个信号源，两者动作一致。
+            // 收起方向朝右下（它在右下角），比单纯淡出更像"滑走了"。
+            val motion = szjMotionEnabled()
+            val hide = bar.hidden
+            val p by animateFloatAsState(
+                if (hide) 1f else 0f,
+                if (motion) tween(if (hide) 260 else 190, easing = FastOutSlowInEasing)
+                else tween(0),
+                label = "szjFabHide",
+            )
             SzjPressable(
                 onClick = { nav(SzjRoute.PublishRecruit(kind)) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 108.dp),
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 18.dp, bottom = 108.dp)
+                    .graphicsLayer {
+                        alpha = 1f - p
+                        translationX = p * 40f
+                        translationY = p * 24f
+                        scaleX = 1f - p * 0.2f
+                        scaleY = 1f - p * 0.2f
+                    },
                 shape = CircleShape,
             ) {
                 Row(
@@ -2218,24 +2239,28 @@ private fun SzjRecruitFilterPanel(
     // 面板是覆盖层：返回键先关它，别一路穿透到关掉石之家。
     BackHandler { onClose() }
 
-    Column(
+    Box(
         Modifier.fillMaxSize()
             .background(Color(0x73000000))
-            .pointerInput(Unit) { detectTapGestures { onClose() } }
+            .pointerInput(Unit) { detectTapGestures { onClose() } },
+        contentAlignment = Alignment.TopCenter,
     ) {
         androidx.compose.animation.AnimatedVisibility(
             visible = true,
             enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { -it },
         ) {
+            // 高度封到 72%：条件多的时候（副本那类有类型+副本+规模+位置+标签+大区）
+            // 面板会一直长到屏幕外，"看结果"被悬浮底栏盖住点不到。
+            // 现在选项区自己滚，两个按钮钉在面板底部。
             Column(
-                Modifier.fillMaxWidth()
+                Modifier.fillMaxWidth().fillMaxHeight(0.72f)
                     .shadow(12.dp, RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp), ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
                     .clip(RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp))
                     .background(SzjBg)
                     .clickable(interactionSource = noRipple, indication = null) { }
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
+              Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 when (kind) {
                     ShizhijiaRecruitKind.Fb -> {
                         val types = rs.fbConfig.value.map { it.fbType }.distinct().filter { it.isNotBlank() }
@@ -2338,7 +2363,8 @@ private fun SzjRecruitFilterPanel(
                         selected = setOf(draft.targetAreaId),
                     ) { draft = draft.copy(targetAreaId = it) }
                 }
-                Spacer(Modifier.height(18.dp))
+              }
+                Spacer(Modifier.height(14.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SzjPressable(
                         onClick = { draft = ShizhijiaRecruitFilter() },
@@ -2718,6 +2744,8 @@ private fun ShizhijiaRecruitDetailScreen(
 private fun SzjPublishFbFields(
     form: ShizhijiaRecruitForm,
     rs: SzjRecruitState,
+    /** 点了位置槽：("" 或 "A"/"B"/"C" 的小队, 位置名)。选择层由页面层画。 */
+    onPickSlot: (String, String) -> Unit,
     onChange: (ShizhijiaRecruitForm) -> Unit,
 ) {
     val types = rs.fbConfig.value.map { it.fbType }.distinct().filter { it.isNotBlank() }
@@ -2755,6 +2783,7 @@ private fun SzjPublishFbFields(
             slots = form.slots,
             jobs = rs.jobs.value,
             onSet = { k, v -> onChange(form.copy(slots = form.slots + (k to v))) },
+            onPick = { k -> onPickSlot("", k) },
         )
     } else if (form.teamComposition == "团队") {
         // 24 人：三个小队各一组
@@ -2768,6 +2797,7 @@ private fun SzjPublishFbFields(
                     val cur = form.alliance[g].orEmpty()
                     onChange(form.copy(alliance = form.alliance + (g to (cur + (k to v)))))
                 },
+                onPick = { k -> onPickSlot(g, k) },
             )
         }
     }
@@ -2806,8 +2836,14 @@ private fun SzjPublishSlotPicker(
     slots: Map<String, String>,
     jobs: Map<String, ShizhijiaJob>,
     onSet: (String, String) -> Unit,
+    /**
+     * 请求打开职业选择层。选择层不能画在这里——这个 composable 在
+     * LazyColumn 的 item 里，item 的高度是无界的，里面再放 fillMaxSize
+     * 会直接抛 infinite constraint 崩掉（0.7.219 点位置闪退就是这个）。
+     * 所以由页面层统一画，这里只上报"点了哪个位置"。
+     */
+    onPick: (String) -> Unit,
 ) {
-    var picking by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("我的位置", color = SzjText, style = SzjLabelStyle)
@@ -2820,7 +2856,7 @@ private fun SzjPublishSlotPicker(
                 val filled = jobId.isNotBlank() && jobId != "0"
                 val job = jobs[jobId]
                 SzjPressable(
-                    onClick = { if (filled) onSet(k, "0") else picking = k },
+                    onClick = { if (filled) onSet(k, "0") else onPick(k) },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(6.dp),
                 ) {
@@ -2844,43 +2880,52 @@ private fun SzjPublishSlotPicker(
             }
         }
     }
-    // 职业选择：按职能分组列出具体职业
-    val slot = picking
-    if (slot != null) {
-        val byRole = jobs.values.filter { it.type != "职能分类" }.groupBy { it.type }
-        SzjSheet(title = "$slot 位置的职业", onClose = { picking = null }) {
-            byRole.forEach { (role, list) ->
-                Text(role, color = SzjAccent, style = SzjLabelStyle, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    list.sortedBy { it.id.toIntOrNull() ?: 0 }.chunked(4).forEach { row ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.forEach { j ->
-                                SzjPressable(
-                                    onClick = { onSet(slot, j.id); picking = null },
-                                    modifier = Modifier.weight(1f),
-                                    shape = SzjChipShape,
+}
+
+/**
+ * 职业选择层。必须画在页面层（不能在 LazyColumn 的 item 里），
+ * 见 SzjPublishSlotPicker.onPick 的注释。
+ */
+@Composable
+private fun SzjJobPickerSheet(
+    slotName: String,
+    jobs: Map<String, ShizhijiaJob>,
+    onClose: () -> Unit,
+    onPicked: (String) -> Unit,
+) {
+    val byRole = jobs.values.filter { it.type != "职能分类" }.groupBy { it.type }
+    SzjSheet(title = "$slotName 位置的职业", onClose = onClose) {
+        byRole.forEach { (role, list) ->
+            Text(role, color = SzjAccent, style = SzjLabelStyle, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                list.sortedBy { it.id.toIntOrNull() ?: 0 }.chunked(4).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { j ->
+                            SzjPressable(
+                                onClick = { onPicked(j.id) },
+                                modifier = Modifier.weight(1f),
+                                shape = SzjChipShape,
+                            ) {
+                                Column(
+                                    Modifier.fillMaxWidth().clip(SzjChipShape).background(SzjCardRaised)
+                                        .padding(vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    Column(
-                                        Modifier.fillMaxWidth().clip(SzjChipShape).background(SzjCardRaised)
-                                            .padding(vertical = 8.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                    ) {
-                                        if (j.iconUrl.isNotBlank()) {
-                                            ShizhijiaRemoteImage(
-                                                url = j.iconUrl,
-                                                modifier = Modifier.size(26.dp),
-                                                contentScale = ContentScale.Fit,
-                                                showPlaceholder = false,
-                                            )
-                                            Spacer(Modifier.height(4.dp))
-                                        }
-                                        Text(j.name, color = SzjText, fontSize = 10.sp, maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                    if (j.iconUrl.isNotBlank()) {
+                                        ShizhijiaRemoteImage(
+                                            url = j.iconUrl,
+                                            modifier = Modifier.size(26.dp),
+                                            contentScale = ContentScale.Fit,
+                                            showPlaceholder = false,
+                                        )
+                                        Spacer(Modifier.height(4.dp))
                                     }
+                                    Text(j.name, color = SzjText, fontSize = 10.sp, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                                 }
                             }
-                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -2989,6 +3034,8 @@ private fun ShizhijiaPublishRecruitScreen(
     var form by remember(kind) { mutableStateOf(ShizhijiaRecruitForm()) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    // 正在给哪个位置选职业：(小队, 位置名)。小队为 "" 表示非团队。
+    var picking by remember { mutableStateOf<Pair<String, String>?>(null) }
     // 发布要登录：先确认，没登录就直接引导，别等填完一屏才报错。
     var loggedIn by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
@@ -3066,6 +3113,8 @@ private fun ShizhijiaPublishRecruitScreen(
             }
             return@ScreenFrame
         }
+        // 职业选择层要盖在整页上，所以列表和它同在一个 Box 里。
+        Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -3075,7 +3124,10 @@ private fun ShizhijiaPublishRecruitScreen(
             item(key = "fields") {
                 Column {
                     when (kind) {
-                        ShizhijiaRecruitKind.Fb -> SzjPublishFbFields(form, rs) { form = it }
+                        ShizhijiaRecruitKind.Fb -> SzjPublishFbFields(
+                            form, rs,
+                            onPickSlot = { g, k -> picking = g to k },
+                        ) { form = it }
                         ShizhijiaRecruitKind.Novice -> SzjPublishNoviceFields(form, rs) { form = it }
                         else -> SzjPublishOtherFields(form, rs) { form = it }
                     }
@@ -3137,6 +3189,23 @@ private fun ShizhijiaPublishRecruitScreen(
                     )
                 }
             }
+        }
+        picking?.let { (group, slot) ->
+            SzjJobPickerSheet(
+                slotName = slot,
+                jobs = rs.jobs.value,
+                onClose = { picking = null },
+                onPicked = { jobId ->
+                    form = if (group.isBlank()) {
+                        form.copy(slots = form.slots + (slot to jobId))
+                    } else {
+                        val cur = form.alliance[group].orEmpty()
+                        form.copy(alliance = form.alliance + (group to (cur + (slot to jobId))))
+                    }
+                    picking = null
+                },
+            )
+        }
         }
     }
 }
