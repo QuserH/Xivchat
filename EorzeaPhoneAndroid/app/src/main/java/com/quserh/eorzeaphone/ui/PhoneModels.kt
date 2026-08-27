@@ -413,6 +413,53 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         set(value) { _defaultChatListTab.value = value; prefs.edit().putString("defaultChatListTab", value).apply() }
     var openLocalRequest by mutableStateOf(0)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
+
+    /**
+     * 「借道」进石之家时记住从哪儿来的，返回时原样还回去。
+     *
+     * 用在联系人 → 好友详情 → 石之家主页：看完一按返回就回好友详情，不掉进
+     * 石之家自己的层级里，石之家原来停在哪一页也不受影响。
+     */
+    private data class ShizhijiaGuestOrigin(
+        val screen: PhoneScreen,
+        val app: PhoneAppItem?,
+        val friend: PhoneFriend?,
+        val messagesTab: Boolean,
+    )
+
+    private var shizhijiaGuestOrigin by mutableStateOf<ShizhijiaGuestOrigin?>(null)
+
+    /** 借道模式下为 true。石之家用它决定返回键把屏幕还给谁。 */
+    val inShizhijiaGuest: Boolean get() = shizhijiaGuestOrigin != null
+
+    /**
+     * 打开石之家看某个 uuid 的主页，返回时回到当前这一屏。
+     * 具体要看哪一页由 [onRoute] 回调压进石之家的借道栈。
+     */
+    fun openShizhijiaGuest(onRoute: () -> Unit) {
+        shizhijiaGuestOrigin = ShizhijiaGuestOrigin(screen, selectedApp, selectedFriend, messagesTab)
+        onRoute()
+        appInForeground = true
+        selectedApp = allApps["shizhijia"]
+        screen = PhoneScreen.App
+    }
+
+    /** 从借道模式退回来源那一屏。 */
+    fun leaveShizhijiaGuest() {
+        val origin = shizhijiaGuestOrigin ?: return
+        shizhijiaGuestOrigin = null
+        selectedFriend = origin.friend
+        messagesTab = origin.messagesTab
+        selectedApp = origin.app
+        screen = origin.screen
+    }
+
+    /** 借道作废（回桌面 / 开别的 App），不回来源屏，只把状态清干净。 */
+    private fun endShizhijiaGuest() {
+        if (shizhijiaGuestOrigin == null) return
+        shizhijiaGuestOrigin = null
+        clearShizhijiaGuest()
+    }
     var homePage by mutableStateOf(0)
     var launchPivotX by mutableStateOf(0.5f)
         private set
@@ -1530,6 +1577,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun open(app: PhoneAppItem, origin: Rect? = null) {
+        // 从桌面正常打开任何 App（包括石之家本身）都不算借道。
+        endShizhijiaGuest()
         if (origin != null) {
             launchPivotX = (origin.center.x / shellWidth).coerceIn(0.05f, 0.95f)
             launchPivotY = (origin.center.y / shellHeight).coerceIn(0.05f, 0.95f)
@@ -1555,6 +1604,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun home() {
         appInForeground = true
+        // 回桌面就不再是"借道"了。不清的话下次从桌面点石之家会落在别人主页上，
+        // 而且那一页的返回键还指着好友详情。
+        endShizhijiaGuest()
         screen = PhoneScreen.Home
         selectedApp = null
     }

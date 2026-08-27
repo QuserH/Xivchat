@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
@@ -281,66 +282,190 @@ fun FishingScreen(state: PhoneState) {
     }
 }
 
+/**
+ * 列表页头。
+ *
+ * 原来是三行堆叠（搜索 / 7 个版本 / 6 个筛选），一屏还没出鱼就吃掉 130dp；
+ * 6 个筛选还用 weight(1f) 平分，"可捕获""未捕获"挤成 11sp 勉强能认。
+ *
+ * 现在：搜索一行，筛选一行横滑（不再平分，按文字宽度），版本收进右边的下拉。
+ * 进度条把"已捕获 / 总数"变成看得见的一条，比一行小字直观。
+ */
 @Composable
-private fun FishingListHeader(query: String, onQuery: (String) -> Unit, versionFilter: Int?, onVersionFilter: (Int?) -> Unit, filter: FishingFilter, onFilter: (FishingFilter) -> Unit, caught: Int, total: Int, synced: Boolean, showCounts: Boolean = true) {
+private fun FishingListHeader(
+    query: String,
+    onQuery: (String) -> Unit,
+    versionFilter: Int?,
+    onVersionFilter: (Int?) -> Unit,
+    filter: FishingFilter,
+    onFilter: (FishingFilter) -> Unit,
+    caught: Int,
+    total: Int,
+    synced: Boolean,
+    showCounts: Boolean = true,
+) {
+    var versionMenu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(10.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp)) {
-            Text("⌕", color = PhoneMuted, fontSize = 20.sp)
+            ImageGlyph(R.drawable.ic_search, PhoneMuted, Modifier.size(17.dp))
             BasicTextField(query, onQuery, singleLine = true, textStyle = TextStyle(color = PhoneText, fontSize = 14.sp), modifier = Modifier.weight(1f).padding(horizontal = 9.dp), decorationBox = { field -> Box(contentAlignment = Alignment.CenterStart) { if (query.isBlank()) Text("搜索鱼类、钓场或地区", color = PhoneMuted, fontSize = 13.sp); field() } })
-            if (query.isNotEmpty()) Text("×", color = PhoneMuted, fontSize = 20.sp, modifier = Modifier.clickable { onQuery("") })
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 9.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            expansionTabs.forEach { tab ->
-                val selected = versionFilter == tab.version
-                Text(tab.label, color = if (selected) Color.White else PhoneMuted, fontSize = 12.sp, textAlign = TextAlign.Center,
-                    modifier = Modifier.clip(RoundedCornerShape(13.dp)).background(if (selected) PhoneAccent else PhoneSurface).clickable { onVersionFilter(tab.version) }.padding(horizontal = 13.dp, vertical = 6.dp))
+            if (query.isNotEmpty()) {
+                Box(Modifier.size(24.dp).clip(CircleShape).clickable { onQuery("") }, contentAlignment = Alignment.Center) {
+                    ImageGlyph(R.drawable.ic_close_circle, PhoneMuted, Modifier.size(16.dp))
+                }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FishingFilter.entries.forEach { item ->
-                Text(item.label, color = if (filter == item) Color.White else PhoneMuted, fontSize = 11.sp, textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(13.dp)).background(if (filter == item) PhoneAccent else PhoneSurface).clickable { onFilter(item) }.padding(vertical = 6.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FishingFilter.entries.forEach { item ->
+                    val on = filter == item
+                    Text(
+                        item.label,
+                        color = if (on) Color.White else PhoneMuted,
+                        fontSize = 12.sp,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        modifier = Modifier.clip(RoundedCornerShape(13.dp))
+                            .background(if (on) PhoneAccent else PhoneSurface)
+                            .clickable { onFilter(item) }
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                }
+            }
+            // 版本收进下拉：7 个资料片平铺要占满一整行，实际很少切。
+            Box {
+                val label = expansionTabs.firstOrNull { it.version == versionFilter }?.label ?: "全部"
+                Row(
+                    Modifier.padding(start = 8.dp).clip(RoundedCornerShape(13.dp))
+                        .background(if (versionFilter != null) PhoneAccent else PhoneSurface)
+                        .clickable { versionMenu = true }
+                        .padding(start = 11.dp, end = 7.dp, top = 7.dp, bottom = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(label, color = if (versionFilter != null) Color.White else PhoneMuted, fontSize = 12.sp, maxLines = 1)
+                    ImageGlyph(
+                        R.drawable.ic_chevron_down,
+                        if (versionFilter != null) Color.White else PhoneMuted,
+                        Modifier.size(14.dp),
+                    )
+                }
+                androidx.compose.material3.DropdownMenu(expanded = versionMenu, onDismissRequest = { versionMenu = false }) {
+                    expansionTabs.forEach { tab ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = {
+                                Text(
+                                    tab.label,
+                                    color = if (versionFilter == tab.version) PhoneAccent else PhoneText,
+                                    fontWeight = if (versionFilter == tab.version) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                            },
+                            onClick = { onVersionFilter(tab.version); versionMenu = false },
+                        )
+                    }
+                }
             }
         }
         if (showCounts) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("钓鱼笔记", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text(if (synced) "$caught / $total 已捕获" else "$total 条资料 · 等待游戏同步", color = PhoneMuted, fontSize = 11.sp)
+            Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                    Text("钓鱼笔记", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (synced) "$caught / $total" else "$total 条资料 · 等待游戏同步",
+                        color = if (synced) PhoneText else PhoneMuted,
+                        fontSize = 11.sp,
+                        fontWeight = if (synced) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+                if (synced && total > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(PhoneSurfaceRaised)) {
+                        Box(
+                            Modifier.fillMaxWidth((caught.toFloat() / total).coerceIn(0f, 1f))
+                                .height(4.dp).clip(RoundedCornerShape(2.dp)).background(PhoneGreen),
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+/**
+ * 列表一行。
+ *
+ * 这一屏最重要的信息是"现在能不能钓、还剩多久"，原来却是 10sp 灰字，
+ * 输给了 14sp 的鱼名。现在可捕获的行左边有一条绿色竖条，倒计时单独占右侧
+ * 一列并且是这一行最大的数字——扫一眼就知道该去钓哪条。
+ *
+ * 徽章原来一行能挂五个（含"版本 x.y"）。版本在右上角的下拉里已经能筛、
+ * 详情页也写着，行里再挂一遍纯属噪声，删掉；只留身份（鱼王/刺鱼）和
+ * 条件提示（ET/天气）。
+ */
 @Composable
 private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remainingMillis: Long?, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().background(PhoneSurface).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
-            ItemIcon(fish.icon, Modifier.fillMaxSize(), fish.name.take(2))
-            if (caught) Text("✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomEnd).size(18.dp).clip(CircleShape).background(PhoneGreen), textAlign = TextAlign.Center)
-        }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(fish.name, color = if (caught) PhoneText else PhoneText.copy(alpha = .82f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+    val available = remainingMillis != null
+    Row(
+        Modifier.fillMaxWidth().background(PhoneSurface).clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 可捕获的左侧竖条。不可捕获时留同宽的空位，图标才不会左右跳。
+        Box(Modifier.width(3.dp).height(62.dp).background(if (available) PhoneGreen else Color.Transparent))
+        Row(
+            Modifier.weight(1f).padding(start = 13.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+                ItemIcon(fish.icon, Modifier.fillMaxSize(), fish.name.take(2))
+                if (caught) {
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).size(17.dp).clip(CircleShape).background(PhoneGreen),
+                        contentAlignment = Alignment.Center,
+                    ) { ImageGlyph(R.drawable.ic_check_small, Color.White, Modifier.size(11.dp)) }
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        fish.name,
+                        color = if (caught) PhoneText else PhoneText.copy(alpha = .82f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (alarm) {
+                        Spacer(Modifier.width(5.dp))
+                        ImageGlyph(R.drawable.ic_alarm_bell, PhoneAccent, Modifier.size(12.dp))
+                    }
+                }
+                val place = fish.spots.firstOrNull()?.let { listOf(it.region, it.name).filter(String::isNotBlank).distinct().joinToString(" · ") }.orEmpty()
                 Text(
-                    if (remainingMillis != null) "可捕获 · 剩 ${formatRemainingSeconds(remainingMillis)}" else "暂不可捕获",
-                    color = if (remainingMillis != null) PhoneGreen else PhoneMuted.copy(alpha = .55f),
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    modifier = Modifier.padding(end = 5.dp),
+                    place.ifBlank { if (fish.method == "spear") "刺鱼笔记" else "钓鱼笔记" },
+                    color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
-                if (alarm) Text("◉", color = PhoneAccent, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 5.dp)) {
+                    if (fish.method == "spear") MiniBadge("刺鱼", Color(0xFF3E9BD6))
+                    if (fish.isBigFish) MiniBadge("鱼王", PhoneAccent)
+                    if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}", Color(0xFF8C7AFF))
+                    if (fish.weather.isNotEmpty()) MiniBadge("天气", Color(0xFFFFA149))
+                }
             }
-            val place = fish.spots.firstOrNull()?.let { listOf(it.region, it.name).filter(String::isNotBlank).distinct().joinToString(" · ") }.orEmpty()
-            Text(place.ifBlank { if (fish.method == "spear") "刺鱼笔记" else "钓鱼笔记" }, color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 4.dp)) {
-                if (fish.method == "spear") MiniBadge("刺鱼", Color(0xFF3E9BD6))
-                if (fish.isBigFish) MiniBadge("鱼王", PhoneAccent)
-                if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}", Color(0xFF8C7AFF))
-                if (fish.weather.isNotEmpty()) MiniBadge("天气", Color(0xFFFFA149))
-                MiniBadge("版本 ${formatPatch(fish.version)}", Color(0xFF35B865))
+            // 倒计时列：可捕获时是这一行最显眼的东西。
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
+                if (available) {
+                    Text("可捕获", color = PhoneGreen, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        formatRemainingSeconds(remainingMillis!!),
+                        color = PhoneGreen, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    )
+                } else {
+                    Text("暂不可钓", color = PhoneMuted.copy(alpha = .5f), fontSize = 11.sp, maxLines = 1)
+                }
             }
         }
-        Text("›", color = PhoneMuted, fontSize = 25.sp, modifier = Modifier.padding(start = 7.dp))
     }
 }
 
@@ -361,9 +486,20 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                         Text(fish.name, color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                         Text("版本 ${formatPatch(fish.version)} · ${if (fish.method == "spear") "刺鱼" else "钓鱼"} · ${if (caught) "已捕获" else "未捕获"}", color = if (caught) PhoneGreen else PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
-                    Text(if (caught) "✓" else "○", color = if (caught) PhoneGreen else PhoneMuted, fontSize = 26.sp)
+                    if (caught) {
+                        Box(Modifier.size(26.dp).clip(CircleShape).background(PhoneGreen), contentAlignment = Alignment.Center) {
+                            ImageGlyph(R.drawable.ic_check_small, Color.White, Modifier.size(16.dp))
+                        }
+                    } else {
+                        Box(
+                            Modifier.size(26.dp).clip(CircleShape)
+                                .border(1.5.dp, PhoneMuted.copy(alpha = .5f), CircleShape),
+                        )
+                    }
                 }
             }
+            // 窗口和提醒拆成两段：一段回答"什么时候能钓"，一段才是"要不要叫我"。
+            // 原来滑杆和闹钟按钮塞在窗口那段里，倒计时被推到很上面，两件事都说不清。
             item {
                 DetailSection("下次捕获窗口") {
                     var detailNow by remember(fish.id) { mutableLongStateOf(System.currentTimeMillis()) }
@@ -374,14 +510,48 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                         }
                     }
                     if (window == null) Text("暂未计算到可用窗口", color = PhoneMuted, fontSize = 13.sp) else {
-                        if (window.startMillis <= detailNow && window.endMillis > detailNow) {
-                            Text("可捕获 · 剩 ${formatRemainingSeconds(window.endMillis - detailNow)}", color = PhoneGreen, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        val openNow = window.startMillis <= detailNow && window.endMillis > detailNow
+                        val startingNow = window.startMillis <= detailNow + 1_000L
+                        if (openNow) {
+                            // 正在窗口里：把剩余时间做成这一屏最大的数字。
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    formatRemainingSeconds(window.endMillis - detailNow),
+                                    color = PhoneGreen, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    "后关闭",
+                                    color = PhoneGreen.copy(alpha = .75f), fontSize = 12.sp,
+                                    modifier = Modifier.padding(start = 6.dp, bottom = 5.dp),
+                                )
+                            }
+                            Text("现在可以捕获", color = PhoneGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 2.dp))
                         } else {
-                            Text(if (window.startMillis <= detailNow + 1_000L) "现在可以捕获" else formatWindow(window.startMillis, window.endMillis), color = if (window.startMillis <= detailNow + 1_000L) PhoneGreen else PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (startingNow) "现在可以捕获" else formatWindow(window.startMillis, window.endMillis),
+                                color = if (startingNow) PhoneGreen else PhoneText,
+                                fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                            )
+                            if (!startingNow) {
+                                Text(
+                                    "还有 ${formatRemainingSeconds(window.startMillis - detailNow)}",
+                                    color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp),
+                                )
+                            }
                         }
-                        window.spot?.let { Text("${it.region} · ${it.zone} · ${it.name}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+                        window.spot?.let { Text("${it.region} · ${it.zone} · ${it.name}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
                     }
-                    Text("提前提醒：${leadMinutes} 分钟", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 13.dp))
+                }
+            }
+            item {
+                DetailSection("捕鱼提醒") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("提前提醒", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text(
+                            if (leadMinutes == 0) "窗口出现时" else "提前 $leadMinutes 分钟",
+                            color = PhoneAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                     Slider(
                         value = leadMinutes.toFloat(),
                         onValueChange = { leadMinutes = it.roundToInt().coerceIn(0, 10) },
@@ -390,12 +560,20 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                         steps = 9,
                         modifier = Modifier.fillMaxWidth().height(32.dp),
                     )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("出现时", color = PhoneMuted, fontSize = 10.sp)
-                        Text("提前 10 分钟", color = PhoneMuted, fontSize = 10.sp)
-                    }
-                    Button(onClick = { onAlarm(!alarm) }, colors = ButtonDefaults.buttonColors(containerColor = if (alarm) PhoneSurfaceRaised else PhoneAccent, contentColor = if (alarm) PhoneText else Color.White), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                        Text(if (alarm) "取消闹钟" else "设置捕鱼提醒")
+                    Button(
+                        onClick = { onAlarm(!alarm) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (alarm) PhoneSurfaceRaised else PhoneAccent,
+                            contentColor = if (alarm) PhoneText else Color.White,
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    ) {
+                        ImageGlyph(
+                            R.drawable.ic_alarm_bell,
+                            if (alarm) PhoneText else Color.White,
+                            Modifier.size(15.dp),
+                        )
+                        Text(if (alarm) "取消闹钟" else "设置捕鱼提醒", modifier = Modifier.padding(start = 7.dp))
                     }
                 }
             }

@@ -157,6 +157,7 @@ import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.normalizedPlayerName
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendLink
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import java.time.Instant
 import java.time.LocalDate
@@ -356,7 +357,10 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back, trailing = {
             Box {
-                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.padding(horizontal = 8.dp).clickable { overflowOpen = true })
+                Box(
+                    Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { overflowOpen = true },
+                    contentAlignment = Alignment.Center,
+                ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
                     DropdownMenuItem(text = { Text("新建筛选器") }, onClick = { overflowOpen = false; editTab() })
                     DropdownMenuItem(text = { Text("默认打开的标签") }, onClick = { overflowOpen = false; showDefaultTabDialog = true })
@@ -894,7 +898,10 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
         }
         Column(Modifier.fillMaxSize().imePadding()) {
             LightHeader("本地", onBack) {
-                Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable { pushChatSub(ChatSub.LocalSettings) }.padding(horizontal = 10.dp))
+                Box(
+                    Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { pushChatSub(ChatSub.LocalSettings) },
+                    contentAlignment = Alignment.Center,
+                ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 labels.forEachIndexed { i, l ->
@@ -981,7 +988,15 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
                         .clickable(enabled = state.activeCharacterOnline && state.chatDraft.isNotBlank()) { send() },
                     contentAlignment = Alignment.Center,
-                ) { Text("↑", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+                ) {
+                    // 发送键用矢量箭头："↑" 字符的字重跟着系统字体走，在圆里压不准中线。
+                    val canSend = state.activeCharacterOnline && state.chatDraft.isNotBlank()
+                    ImageGlyph(
+                        R.drawable.ic_send_arrow,
+                        if (canSend) Color.White else AetherLightMuted,
+                        Modifier.size(19.dp),
+                    )
+                }
             }
         }
     }
@@ -1262,17 +1277,66 @@ private fun LightSegment(first: String, second: String, firstSelected: Boolean, 
 @Composable
 fun AetherphoneContactDetailScreen(state: PhoneState) {
     val friend = state.selectedFriend
+    val context = LocalContext.current
+    var menuOpen by remember { mutableStateOf(false) }
+    // 石之家账号：只在打开这一页时查这一个人，一次请求（搜索接口不需要登录）。
+    var link by remember(friend?.name, friend?.world) {
+        mutableStateOf(friend?.let { ShizhijiaFriendLink.peek(it.name, it.world) })
+    }
+    var linkLoading by remember(friend?.name, friend?.world) { mutableStateOf(false) }
+    LaunchedEffect(friend?.name, friend?.world) {
+        val f = friend ?: return@LaunchedEffect
+        if (link != null) return@LaunchedEffect
+        linkLoading = true
+        link = ShizhijiaFriendLink.find(context, f.name, f.world)
+        linkLoading = false
+    }
     LightFrame {
         Column(Modifier.fillMaxSize()) {
             LightHeader(
                 title = friend?.name ?: "联系人",
                 onBack = state::back,
                 trailing = {
-                    Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.padding(horizontal = 8.dp))
+                    Box {
+                        Box(
+                            Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menuOpen = true },
+                            contentAlignment = Alignment.Center,
+                        ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (friend != null) {
+                                DropdownMenuItem(
+                                    text = { Text("发送私聊") },
+                                    onClick = { menuOpen = false; state.startTell(friend) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("查看铭牌") },
+                                    onClick = { menuOpen = false; state.friendAction(friend, 1) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("更换头像") },
+                                    onClick = { menuOpen = false; state.setFriendAvatar(friend, "") },
+                                )
+                                val hit = (link as? ShizhijiaFriendLink.Result.Found)?.user
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (hit != null) "石之家主页" else "石之家主页（未注册）",
+                                            color = if (hit != null) AetherLightText else AetherLightMuted,
+                                        )
+                                    },
+                                    enabled = hit != null,
+                                    onClick = {
+                                        menuOpen = false
+                                        hit?.let { openShizhijiaProfile(state, it.uuid) }
+                                    },
+                                )
+                            }
+                        }
+                    }
                 },
             )
             if (friend == null) return@Column
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
                 Box(Modifier.size(94.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
                     SmallConversationIcon(state.friendAvatar(friend), friend.name.take(1), AetherPurple)
                 }
@@ -1290,7 +1354,60 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
                     LightInfoRow("位置", friend.location.ifBlank { "离线" })
                     LightInfoRow("职业", friend.job.ifBlank { "未读取" }, last = true)
                 }
+                ShizhijiaLinkCard(state, link, linkLoading)
+                Spacer(Modifier.height(20.dp))
             }
+        }
+    }
+}
+
+/**
+ * 好友的石之家入口。
+ *
+ * 石之家只能按角色名搜，同名跨服的要靠服务器名再确认一次，所以这里三种态度
+ * 分得很清：查到了就能点进主页；没查到就说没注册；请求失败要说清是没读到而
+ * 不是没注册，不然会冤枉人家。
+ */
+@Composable
+private fun ShizhijiaLinkCard(state: PhoneState, link: ShizhijiaFriendLink.Result?, loading: Boolean) {
+    val hit = (link as? ShizhijiaFriendLink.Result.Found)?.user
+    val clickable = hit != null
+    Column(
+        Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(10.dp))
+            .background(AetherLightSurface)
+            .then(if (clickable) Modifier.clickable { openShizhijiaProfile(state, hit!!.uuid) } else Modifier),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp))
+                    .background(if (clickable) Color(0xFF3E7BD6) else AetherLightControl),
+                contentAlignment = Alignment.Center,
+            ) {
+                ImageGlyph(R.drawable.app_news, if (clickable) Color.White else AetherLightMuted, Modifier.size(20.dp))
+            }
+            Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                Text(
+                    "石之家主页",
+                    color = if (clickable) AetherLightText else AetherLightMuted,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(3.dp))
+                val sub = when {
+                    loading || link == null -> "正在查找…"
+                    hit != null -> listOf(hit.areaName, hit.groupName).filter { it.isNotBlank() }
+                        .joinToString(" · ").ifBlank { "点击查看主页" }
+                    link is ShizhijiaFriendLink.Result.Ambiguous ->
+                        "有 ${link.candidates.size} 个同名角色，读到服务器后才能确认"
+                    link is ShizhijiaFriendLink.Result.Failed -> "没读到，检查一下网络"
+                    else -> "这个角色没有注册石之家"
+                }
+                Text(sub, color = AetherLightMuted, fontSize = 11.sp, maxLines = 2)
+            }
+            if (clickable) Text("›", color = AetherLightMuted, fontSize = 24.sp, modifier = Modifier.padding(start = 6.dp))
         }
     }
 }
@@ -1844,9 +1961,12 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 },
                 trailing = {
-                    Text("⋯", color = AetherLightMuted, fontSize = 25.sp, modifier = Modifier.clickable {
-                        if (conversation.key.startsWith("tab:")) pushChatSub(ChatSub.TabSettings) else pushChatSub(ChatSub.Settings)
-                    }.padding(horizontal = 10.dp))
+                    Box(
+                        Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                            if (conversation.key.startsWith("tab:")) pushChatSub(ChatSub.TabSettings) else pushChatSub(ChatSub.Settings)
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                 },
             )
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -1899,11 +2019,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                         LightSearchField(search, { search = it }, "搜索聊天内容", Modifier.weight(1f))
                         Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { jumpToMatch(-1) }, contentAlignment = Alignment.Center) {
-                            Text("⌃", color = AetherLightMuted, fontSize = 18.sp)
+                            ImageGlyph(R.drawable.ic_chevron_up, AetherLightMuted, Modifier.size(20.dp))
                         }
                         Spacer(Modifier.width(6.dp))
                         Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { jumpToMatch(1) }, contentAlignment = Alignment.Center) {
-                            Text("⌄", color = AetherLightMuted, fontSize = 18.sp)
+                            ImageGlyph(R.drawable.ic_chevron_down, AetherLightMuted, Modifier.size(20.dp))
                         }
                     }
                 }
@@ -1914,8 +2034,12 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
             ) {
                 if (conversation.key.startsWith("tab:")) {
                     Box {
+                        // 底色原来写死成 #FFE4F0（很浅的粉），深色模式下会变成一块
+                        // 刺眼的亮斑。改成在粉色强调色上叠很低的透明度，两种主题都成立。
+                        val lightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
                         Box(
-                            modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFFE4F0))
+                            modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp))
+                                .background(AetherPink.copy(alpha = if (lightTheme) 0.16f else 0.24f))
                                 .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
                         ) { Text(state.currentChannelName, color = AetherPink, fontSize = 11.sp, maxLines = 1) }
                         DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
@@ -1950,7 +2074,15 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
                         .clickable(enabled = state.activeCharacterOnline && state.chatDraft.isNotBlank()) { send() },
                     contentAlignment = Alignment.Center,
-                ) { Text("↑", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+                ) {
+                    // 发送键用矢量箭头："↑" 字符的字重跟着系统字体走，在圆里压不准中线。
+                    val canSend = state.activeCharacterOnline && state.chatDraft.isNotBlank()
+                    ImageGlyph(
+                        R.drawable.ic_send_arrow,
+                        if (canSend) Color.White else AetherLightMuted,
+                        Modifier.size(19.dp),
+                    )
+                }
             }
         }
     }
@@ -2651,7 +2783,10 @@ private fun AetherphoneJobRow(job: GameJob, state: PhoneState) {
             )
         }
         Box {
-            Text("⋯", color = Color(0xFF99ABC2), fontSize = 20.sp, modifier = Modifier.clickable { menu = true }.padding(10.dp))
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menu = true },
+                contentAlignment = Alignment.Center,
+            ) { ImageGlyph(R.drawable.ic_more_horiz, Color(0xFF99ABC2), Modifier.size(18.dp)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (job.active) "当前已装备" else if (job.gearsetId >= 0) "装备套装" else "没有装备套装") },

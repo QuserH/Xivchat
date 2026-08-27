@@ -626,8 +626,40 @@ private object SzjNav {
     val glamour = SzjGlamourState()
     val search = SzjSearchState()
 
-    fun push(r: SzjRoute) { stack = stack + r }
-    fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
+    /**
+     * 「借道」栈：别处（比如联系人里点好友的石之家主页）跳进来时走这条，
+     * 不碰上面那个 [stack]。
+     *
+     * 这样两件事同时成立：从好友跳进来看完一按返回就回好友详情；石之家自己
+     * 原来停在哪一页、滑到哪儿，下次从桌面点进来还是老样子。
+     */
+    var guestStack by mutableStateOf(listOf<SzjRoute>())
+        private set
+
+    /** 借道模式：栈非空就说明是别处跳进来的。 */
+    val isGuest: Boolean get() = guestStack.isNotEmpty()
+
+    /** 当前该显示哪一页。 */
+    val current: SzjRoute get() = guestStack.lastOrNull() ?: stack.last()
+
+    /** 开始借道，[route] 是要看的那一页。 */
+    fun enterGuest(route: SzjRoute) { guestStack = listOf(route) }
+
+    /** 退出借道，回到调用方那一屏。 */
+    fun leaveGuest() { guestStack = emptyList() }
+
+    fun push(r: SzjRoute) {
+        if (isGuest) guestStack = guestStack + r else stack = stack + r
+    }
+
+    fun pop() {
+        if (isGuest) {
+            // 借道栈只剩一页时不在这里弹空——由 ShizhijiaScreen 决定退回哪一屏。
+            if (guestStack.size > 1) guestStack = guestStack.dropLast(1)
+        } else if (stack.size > 1) {
+            stack = stack.dropLast(1)
+        }
+    }
 
     fun selectTab(tab: Int) { mainTab.value = tab }
 
@@ -635,8 +667,11 @@ private object SzjNav {
      * 返回键只在栈里还有上一页时被石之家吃掉。
      * 已经回到底部导航那一层（上面也没有覆盖层）时就穿透出去关掉石之家——
      * 不在四个分区之间回溯，那样要按好几次才出得去。
+     *
+     * 借道模式下一直吃掉：借道栈见底时也要由石之家自己收尾（退出借道并把
+     * 屏幕还给调用方），不能穿透到桌面。
      */
-    val canGoBack: Boolean get() = stack.size > 1
+    val canGoBack: Boolean get() = isGuest || stack.size > 1
 
     fun back() { pop() }
 }
@@ -834,12 +869,23 @@ fun ShizhijiaScreen(state: PhoneState) {
     var barHeight by remember { mutableStateOf(56f) }
     var barBottom by remember { mutableStateOf(ShizhijiaSession.bottomBarBottom(context)) }
     LaunchedEffect(Unit) { barHeight = ShizhijiaSession.bottomBarHeight(context) }
+    // 借道模式（从联系人里点好友的石之家主页进来）：借道栈见底时不是穿透到
+    // 桌面，而是把屏幕还给来源那一屏。
+    val leaveGuest: () -> Unit = {
+        SzjNav.leaveGuest()
+        state.leaveShizhijiaGuest()
+    }
     // 有上一页、或者分区有来路时吃掉返回键；都没有才穿透到桌面。
-    BackHandler(enabled = SzjNav.canGoBack) { SzjNav.back() }
-    val route = SzjNav.stack.last()
+    BackHandler(enabled = SzjNav.canGoBack) {
+        if (SzjNav.isGuest && SzjNav.guestStack.size == 1) leaveGuest() else SzjNav.back()
+    }
+    val route = SzjNav.current
     // nav pushes a destination; pop returns to the previous one (login success uses pop).
     val nav: (SzjRoute) -> Unit = { SzjNav.push(it) }
-    val pop: () -> Unit = { SzjNav.pop() }
+    // 借道栈见底时，"返回"意味着离开石之家回到来源屏，而不是弹栈。
+    val pop: () -> Unit = {
+        if (SzjNav.isGuest && SzjNav.guestStack.size == 1) leaveGuest() else SzjNav.pop()
+    }
     Box(Modifier.fillMaxSize()) {
         when (route) {
 SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recruitState, glamourState, homeMainTab, homeSubTab, barHeightDp = barHeight, barBottomDp = barBottom, onBarHeightChange = { barHeight = it }, onBarBottomChange = { barBottom = it })
@@ -865,6 +911,24 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
         }
     }
 }
+
+/**
+ * 从别处（联系人里的好友详情）跳进石之家看某人的主页。
+ *
+ * 走借道栈：看完一按返回就回到调用处那一屏，石之家自己原来停在哪一页不受影响。
+ */
+fun openShizhijiaProfile(state: PhoneState, uuid: String) {
+    if (uuid.isBlank()) return
+    state.openShizhijiaGuest { SzjNav.enterGuest(SzjRoute.UserProfile(uuid)) }
+}
+
+/**
+ * 丢掉借道栈。
+ *
+ * 回桌面或者打开别的 App 时要调：否则借道栈还留着，下次从桌面点石之家会直接
+ * 落在别人的主页上，而且那一页的返回键还指着好友详情。
+ */
+fun clearShizhijiaGuest() = SzjNav.leaveGuest()
 
 /** Full-screen image viewer: dark scrim, fitted image, X (top-left) or back closes. */
 @Composable
