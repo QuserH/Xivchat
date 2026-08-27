@@ -1401,9 +1401,10 @@ private fun SzjDataCenterProbeCard() {
             Text("抓取专项数据结构", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "开发用：请求 43 个专项数据接口，把字段名和类型写到文件，用来接入 7 个分类。" +
-                    "不记录任何登录凭证。",
-                color = SzjMuted, style = SzjMetaStyle,
+                "开发用：请求专项数据的全部接口，把字段名和类型写到文件。" +
+                    "绝境战和朝圣交错路的字段是从官网代码里读的、还没拿真实数据验过，" +
+                    "所以这张卡先留着。不记录任何登录凭证。",
+                color = SzjMuted, style = SzjMetaStyle, lineHeight = 16.sp,
             )
             Spacer(Modifier.height(12.dp))
             SzjPressable(

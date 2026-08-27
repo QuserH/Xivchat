@@ -662,6 +662,224 @@ object ShizhijiaSavageTable {
         territory.toIntOrNull()?.let { NAMES[it] } ?: "副本 $territory"
 }
 
+// ---------------------------------------------------------------------------
+// 朝圣交错路 + 绝境战
+//
+// 这两屏的字段名不是从响应里看出来的——用户没通绝、朝圣交错路也只进过一次，
+// 两轮探测这些接口都回空数组。字段名是从官网 DeepDungeon / Ultimate chunk 的
+// 视图代码里扒的（那里读的键名是明文），所以解析一律"取不到就给 0/空"，
+// 别因为某个字段没对上就整屏崩掉。
+// ---------------------------------------------------------------------------
+
+/**
+ * 官网把两个字段打包成了字符串，格式 `"id:次数,id:次数"`：
+ *
+ * - `job_clear_times` 的 id 是职业 id
+ * - `annihilation_num` 的 id 是 TerritoryType（朝圣路段）
+ *
+ * 拆出来给界面用。
+ */
+internal fun parsePackedPairs(raw: String): List<Pair<String, Int>> =
+    raw.split(",").mapNotNull { part ->
+        val kv = part.split(":")
+        if (kv.size < 2) return@mapNotNull null
+        val k = kv[0].trim()
+        val v = kv[1].trim().toIntOrNull() ?: return@mapNotNull null
+        if (k.isEmpty()) null else k to v
+    }
+
+/** 秒 -> "1小时23分45秒"，和官网一致（0 小时不显示"0小时"）。 */
+internal fun fmtElapsed(seconds: Int): String {
+    if (seconds <= 0) return "-"
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    val s = seconds % 60
+    return buildString {
+        if (h > 0) append("${h}小时")
+        append("${m}分")
+        append("${s}秒")
+    }
+}
+
+/**
+ * 朝圣交错路的十个路段。抄自官网 DeepDungeon chunk 的静态表。
+ * `annihilation_num` 里的 id 就是这里的 TerritoryType。
+ */
+object ShizhijiaDeepDungeon {
+    /** dataCenter 只做了这一个深宫。 */
+    const val DD_TYPE = "dd4"
+    const val TERRITORY = 1311
+    const val LABEL = "朝圣交错路"
+
+    /** TerritoryType -> 路段名（已去掉"朝圣交错路 "前缀，和官网显示一致）。 */
+    val SEGMENTS: Map<Int, String> = mapOf(
+        1281 to "第1～10朝圣路",
+        1282 to "第11～20朝圣路",
+        1283 to "第21～30朝圣路",
+        1284 to "第31～40朝圣路",
+        1285 to "第41～50朝圣路",
+        1286 to "第51～60朝圣路",
+        1287 to "第61～70朝圣路",
+        1288 to "第71～80朝圣路",
+        1289 to "第81～90朝圣路",
+        1290 to "第91～100朝圣路",
+    )
+
+    fun segment(id: String): String =
+        id.toIntOrNull()?.let { SEGMENTS[it] } ?: "路段 $id"
+}
+
+/**
+ * getDDTerr1 的一行。官网按 `is_solo` 把结果分成单人/组队两块显示。
+ *
+ * `clear_elapsed_time` 是秒；`annihilation_num` 和 `job_clear_times` 是打包字符串。
+ */
+data class ShizhijiaDdProgress(
+    val solo: Boolean,
+    val totalClearTime: Int,
+    val clearElapsedTime: Int,
+    val failedTimes: Int,
+    val totalDeadNum: Int,
+    val armorLevel: Int,
+    val weaponLevel: Int,
+    /** 路段 -> 团灭次数。 */
+    val annihilation: List<Pair<String, Int>>,
+    /** 职业 id -> 通关次数。 */
+    val jobClears: List<Pair<String, Int>>,
+) {
+    companion object {
+        fun fromArray(a: JSONArray?): List<ShizhijiaDdProgress> = a.map {
+            ShizhijiaDdProgress(
+                solo = it.str("is_solo") == "1",
+                totalClearTime = it.int("total_clear_time"),
+                clearElapsedTime = it.int("clear_elapsed_time"),
+                failedTimes = it.int("failed_times"),
+                totalDeadNum = it.int("total_dead_num"),
+                armorLevel = it.int("armor_level"),
+                weaponLevel = it.int("weapon_level"),
+                annihilation = parsePackedPairs(it.str("annihilation_num")),
+                jobClears = parsePackedPairs(it.str("job_clear_times")),
+            )
+        }
+    }
+}
+
+/**
+ * getDDGaoNan2 / gaoNanFirst1 共用的"高难通关"形状。
+ *
+ * 官网对 getDDGaoNan2 只取 `data[0]`（单条），绝境战那边是 7 个位置一组。
+ */
+data class ShizhijiaHardClear(
+    val logTime: String,
+    val classJob: String,
+    val clearTimes: Int,
+    val deadTimes: Int,
+    val elapsedTime: Int,
+    val enterBeforeClear: Int,
+    val jobClears: List<Pair<String, Int>>,
+) {
+    companion object {
+        fun fromJson(o: JSONObject?): ShizhijiaHardClear? {
+            if (o == null) return null
+            return ShizhijiaHardClear(
+                logTime = o.str("log_time"),
+                classJob = o.str("class_job"),
+                clearTimes = o.int("clear_times"),
+                deadTimes = o.int("dead_times"),
+                elapsedTime = o.int("elapsed_time"),
+                enterBeforeClear = o.int("enter_before_clear"),
+                jobClears = parsePackedPairs(o.str("job_clear_times")),
+            )
+        }
+
+        fun fromArray(a: JSONArray?): List<ShizhijiaHardClear> = a.map { fromJson(it)!! }
+    }
+}
+
+/** 队伍成员一行（gaoNanTeam2 / getDDFirstTeam7 同形）。 */
+data class ShizhijiaTeamMember(
+    /** 注意官网模板里写的是 `character_namee`（多一个 e，是他们的笔误），两个都收。 */
+    val characterName: String,
+    val groupName: String,
+    val areaName: String,
+    /**
+     * 这个字段名叫 job_name，但**装的是职业 id**——官网是
+     * `jobs.find(j => j.id == row.job_name)` 这么用的。
+     */
+    val jobId: String,
+    val classJob: String,
+) {
+    companion object {
+        fun fromArray(a: JSONArray?): List<ShizhijiaTeamMember> = a.map {
+            ShizhijiaTeamMember(
+                characterName = it.str("character_name").ifBlank { it.str("character_namee") },
+                groupName = it.str("group_name"),
+                areaName = it.str("area_name"),
+                jobId = it.str("job_name"),
+                classJob = it.str("class_job"),
+            )
+        }
+    }
+}
+
+/** gaoNanJob3：各职业通关次数。这里的 job_name 是真名字。 */
+data class ShizhijiaJobTimes(val jobName: String, val times: Int) {
+    companion object {
+        fun fromArray(a: JSONArray?): List<ShizhijiaJobTimes> = a.map {
+            ShizhijiaJobTimes(it.str("job_name"), it.int("job_times"))
+        }
+    }
+}
+
+/** gaoNanFriend4：一起通关最多的队友。 */
+data class ShizhijiaFriendTimes(
+    val characterName: String,
+    val groupName: String,
+    val times: Int,
+) {
+    companion object {
+        fun fromArray(a: JSONArray?): List<ShizhijiaFriendTimes> = a.map {
+            ShizhijiaFriendTimes(
+                characterName = it.str("character_name").ifBlank { it.str("team_chara_name") },
+                groupName = it.str("group_name"),
+                times = it.int("friend_times"),
+            )
+        }
+    }
+}
+
+/**
+ * 一条道具获取记录（getDDHistory4 / getMKDIHistory6）。
+ *
+ * 和 [ShizhijiaMkdItem] 的区别是这里没有 `get_num`——一行就是一次获取，
+ * 只带 `log_time`。实测形状：catalog_id / catalog_name / catalog_type /
+ * dd_type / log_time。
+ */
+data class ShizhijiaItemLog(
+    val id: String,
+    val name: String,
+    val type: String,
+    val logTime: String,
+) {
+    companion object {
+        fun fromArray(a: JSONArray?): List<ShizhijiaItemLog> = a.map {
+            ShizhijiaItemLog(
+                id = it.str("catalog_id"), name = it.str("catalog_name"),
+                type = it.str("catalog_type"), logTime = it.str("log_time"),
+            )
+        }
+    }
+}
+
+/** 团灭坐标（gaoNanDeadPoint5 / getDDDeadPoint6）。官网画成热点图。 */
+data class ShizhijiaDeadPoint(val x: Double, val y: Double) {
+    companion object {
+        fun fromArray(a: JSONArray?): List<ShizhijiaDeadPoint> = a.map {
+            ShizhijiaDeadPoint(it.num("point_x"), it.num("point_y"))
+        }
+    }
+}
+
 /**
  * 7 个绝境战。territory_type 来自官网 Ultimate.js 的枚举，
  * medal_id 是成就里的奖章序号（1 = 绝巴哈）。

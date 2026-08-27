@@ -45,6 +45,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaImageLoader
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDataOpen
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDdProgress
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDeadPoint
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDeepDungeon
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendTimes
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaHardClear
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaItemLog
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaJobTimes
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaTeamMember
+import com.quserh.eorzeaphone.data.shizhijia.fmtElapsed
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDressDicts
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDressFullset
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaIcons
@@ -547,8 +556,8 @@ private fun SzjFishPane(onLogin: () -> Unit) {
             }
             item("nums") {
                 SzjStatListCard {
-                    val show = if (allNums) nums else nums.sortedByDescending { it.num }.take(20)
-                    (if (allNums) nums.sortedByDescending { it.num } else show).forEachIndexed { i, f ->
+                    val sorted = nums.sortedByDescending { it.num }
+                    (if (allNums) sorted else sorted.take(20)).forEachIndexed { i, f ->
                         SzjStatRow(f.name, "${f.num}", meta = f.type, rank = i + 1)
                     }
                     if (nums.size > 20) SzjStatMoreRow(allNums, nums.size) { allNums = !allNums }
@@ -1037,12 +1046,13 @@ private fun SzjMkdPane(onLogin: () -> Unit) {
             }
         }
         if (gets.isNotEmpty()) {
-            item("get_h") { SzjStatSection("道具获取", "共 ${gets.size} 种") }
-            item("get") {
-                SzjStatListCard {
-                    gets.sortedByDescending { it.num }.forEach { m ->
-                        SzjStatRow(m.name, "${m.num}", meta = "${m.type} · 首次 ${m.firstTime.take(10)}")
-                    }
+            // 按 catalog_type 分组，点分类可以展开该分类的获取记录
+            // （getMKDIHistory6 就是按 catalog_type 查的）。
+            val byType = gets.groupBy { it.type }
+            item("get_h") { SzjStatSection("道具获取", "共 ${gets.size} 种，点分类看获取记录") }
+            byType.forEach { (type, list) ->
+                item("get_$type") {
+                    SzjMkdCategoryCard(type, list)
                 }
             }
         }
@@ -1052,6 +1062,70 @@ private fun SzjMkdPane(onLogin: () -> Unit) {
                 SzjStatListCard {
                     uses.sortedByDescending { it.num }.forEach { m ->
                         SzjStatRow(m.name, "${m.num}", meta = m.type)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 新月岛的一个道具分类。点开拉该分类的获取记录（getMKDIHistory6 的
+ * catalog_type 就是这个分类名，实测"半魂晶"能返回 16 条）。
+ */
+@Composable
+private fun SzjMkdCategoryCard(type: String, list: List<ShizhijiaMkdItem>) {
+    val context = LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf<List<ShizhijiaItemLog>?>(null) }
+    var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(open) {
+        if (open && history == null && !loading) {
+            loading = true
+            history = (ShizhijiaStatsApi.mkdItemHistory(context, type) as? ShizhijiaApi.Res.Ok)
+                ?.value.orEmpty()
+            loading = false
+        }
+    }
+
+    Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
+        SzjCardSurface(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(vertical = 4.dp)) {
+                SzjPressable(onClick = { open = !open }, modifier = Modifier.fillMaxWidth(), shape = SzjInnerShape) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SzjShard(widthDp = 3, heightDp = 13)
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            type.ifBlank { "未分类" },
+                            color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text("${list.size} 种", color = SzjMuted, style = SzjMetaStyle)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (open) "收起" else "记录 ›", color = SzjAccent, style = SzjLabelStyle)
+                    }
+                }
+                list.sortedByDescending { it.num }.forEach { m ->
+                    SzjStatRow(m.name, "${m.num}", meta = "首次 ${m.firstTime.take(10)}")
+                }
+                if (open) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 6.dp)) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                    }
+                    when {
+                        loading -> SzjStatLoading()
+                        history.isNullOrEmpty() -> Text(
+                            "这个分类没有获取记录",
+                            color = SzjMuted, style = SzjMetaStyle,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
+                        )
+                        else -> history!!.sortedByDescending { it.logTime }.take(30).forEach { h ->
+                            SzjStatRow(h.name, h.logTime.take(10), meta = h.logTime.drop(11).ifBlank { null })
+                        }
                     }
                 }
             }
@@ -1073,7 +1147,9 @@ private fun SzjMkdPane(onLogin: () -> Unit) {
 @Composable
 private fun SzjUltimatePane(open: ShizhijiaDataOpen?, onLogin: () -> Unit) {
     val context = LocalContext.current
-    var firsts by remember { mutableStateOf<ShizhijiaApi.Res<List<org.json.JSONObject?>>?>(null) }
+    var firsts by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaHardClear?>>?>(null) }
+    // 展开哪一个绝的明细。明细要 territory_type，一次只拉一个。
+    var picked by remember { mutableStateOf<ShizhijiaUltimate?>(null) }
 
     LaunchedEffect(Unit) { firsts = ShizhijiaStatsApi.ultimateFirsts(context) }
 
@@ -1085,28 +1161,35 @@ private fun SzjUltimatePane(open: ShizhijiaDataOpen?, onLogin: () -> Unit) {
     }
 
     val ults = ShizhijiaUltimate.entries
-    val cleared = ults.filterIndexed { i, _ -> rows.getOrNull(i) != null }
+    val clearedCount = ults.indices.count { rows.getOrNull(it) != null }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item("head") {
-            SzjStatSection("首通进度", "${cleared.size} / ${ults.size} 个绝")
+            SzjStatSection("首通进度", "$clearedCount / ${ults.size} 个绝")
         }
         item("list") {
             SzjStatListCard {
                 ults.forEachIndexed { i, u ->
                     val row = rows.getOrNull(i)
                     val opened = open?.ultimates?.getOrNull(i) ?: true
-                    SzjUltimateRow(u, row, opened)
+                    SzjUltimateRow(
+                        u, row, opened,
+                        expanded = picked == u,
+                        onClick = if (row != null) ({ picked = if (picked == u) null else u }) else null,
+                    )
                 }
             }
         }
-        if (cleared.isEmpty()) {
+        picked?.let { u ->
+            item("detail_${u.territory}") { SzjUltimateDetail(u) }
+        }
+        if (clearedCount == 0) {
             item("empty") {
                 Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     SzjStatCard {
                         Text(
-                            "还没有通关记录。绝境战的队伍构成、团灭点和阶段推进要通关之后才有数据；" +
-                                "官网也提到巴哈姆特绝境战因为原始数据缺失，不展示进度记录。",
+                            "还没有通关记录。队伍构成、团灭点和阶段推进都要通关之后才有数据。" +
+                                "另外官网自己也说明：巴哈姆特绝境战因为原始数据缺失，不展示进度记录。",
                             color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
                         )
                     }
@@ -1116,38 +1199,133 @@ private fun SzjUltimatePane(open: ShizhijiaDataOpen?, onLogin: () -> Unit) {
     }
 }
 
+/** 一个绝一行。通了的可以点开看明细。 */
+@Composable
+private fun SzjUltimateRow(
+    u: ShizhijiaUltimate,
+    row: ShizhijiaHardClear?,
+    opened: Boolean,
+    expanded: Boolean,
+    onClick: (() -> Unit)?,
+) {
+    val done = row != null
+    val content: @Composable () -> Unit = {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(8.dp).clip(RoundedCornerShape(4.dp))
+                    .background(if (done) SzjAccent else SzjCardRaised),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(u.label, color = SzjText, fontSize = 13.sp)
+                val meta = when {
+                    done -> row?.logTime?.takeIf { it.isNotBlank() }?.let { "首通 ${it.take(10)}" } ?: "已通关"
+                    !opened -> "后端还没开放这个绝的数据"
+                    else -> "未通关"
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(meta, color = SzjMuted, style = SzjMetaStyle)
+            }
+            Text(
+                if (done) (if (expanded) "收起" else "明细 ›") else "—",
+                color = if (done) SzjAccent else SzjMuted,
+                style = SzjLabelStyle,
+            )
+        }
+    }
+    if (onClick != null) SzjPressable(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = SzjInnerShape) { content() }
+    else content()
+}
+
 /**
- * 一个绝一行。首通那条 JSON 的字段名还没实测（要有人通了才返回内容），
- * 所以这里只取几个大概率存在的键，取不到就只显示"已通关"。
+ * 单个绝的明细：队伍 / 职业 / 队友 / 团灭点。
+ *
+ * 五个明细接口都要 territory_type，所以只在展开时拉。字段名来自官网
+ * Ultimate chunk 的视图代码。
  */
 @Composable
-private fun SzjUltimateRow(u: ShizhijiaUltimate, row: org.json.JSONObject?, opened: Boolean) {
-    val done = row != null
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(8.dp).clip(RoundedCornerShape(4.dp))
-                .background(if (done) SzjAccent else SzjCardRaised),
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(u.label, color = SzjText, fontSize = 13.sp)
-            val meta = when {
-                done -> row?.optString("log_time")?.takeIf { it.isNotBlank() && it != "null" }
-                    ?.let { "首通 ${it.take(10)}" } ?: "已通关"
-                !opened -> "后端还没开放这个绝的数据"
-                else -> "未通关"
-            }
-            Spacer(Modifier.height(2.dp))
-            Text(meta, color = SzjMuted, style = SzjMetaStyle)
+private fun SzjUltimateDetail(u: ShizhijiaUltimate) {
+    val context = LocalContext.current
+    var team by remember(u) { mutableStateOf<List<ShizhijiaTeamMember>>(emptyList()) }
+    var jobs by remember(u) { mutableStateOf<List<ShizhijiaJobTimes>>(emptyList()) }
+    var friends by remember(u) { mutableStateOf<List<ShizhijiaFriendTimes>>(emptyList()) }
+    var deaths by remember(u) { mutableStateOf<List<ShizhijiaDeadPoint>>(emptyList()) }
+    var loading by remember(u) { mutableStateOf(true) }
+    var jobNames by remember { mutableStateOf(mapOf<String, String>()) }
+
+    LaunchedEffect(u) {
+        loading = true
+        team = (ShizhijiaStatsApi.ultimateTeam(context, u.territory) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        jobs = (ShizhijiaStatsApi.ultimateJob(context, u.territory) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        friends = (ShizhijiaStatsApi.ultimateFriend(context, u.territory) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        deaths = (ShizhijiaStatsApi.ultimateDeadPoint(context, u.territory) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        if (jobNames.isEmpty()) jobNames = ShizhijiaApi.getJobConfig(context).mapValues { it.value.name }
+        loading = false
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        if (loading) {
+            SzjStatLoading()
+            return@Column
         }
-        Text(
-            if (done) "已通关" else "—",
-            color = if (done) SzjAccent else SzjMuted,
-            style = SzjLabelStyle,
-        )
+        if (team.isEmpty() && jobs.isEmpty() && friends.isEmpty() && deaths.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                SzjStatCard {
+                    Text(
+                        "${u.label}没有明细数据。石之家对这一项返回了空结果——" +
+                            "多数情况是后端还没开放（数据中心的开关里这个绝是关的）。",
+                        color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
+                    )
+                }
+            }
+            return@Column
+        }
+        if (team.isNotEmpty()) {
+            SzjStatSection("${u.label} · 首通队伍")
+            SzjStatListCard {
+                team.forEach { m ->
+                    SzjStatRow(
+                        m.characterName.ifBlank { "队员" },
+                        jobNames[m.jobId] ?: "职业 ${m.jobId}",
+                        meta = listOf(m.groupName, m.areaName).filter { it.isNotBlank() }
+                            .joinToString(" · ").ifBlank { null },
+                    )
+                }
+            }
+        }
+        if (jobs.isNotEmpty()) {
+            SzjStatSection("${u.label} · 职业通关")
+            SzjStatListCard {
+                jobs.sortedByDescending { it.times }.forEach { j ->
+                    SzjStatRow(j.jobName.ifBlank { "未知职业" }, "${j.times} 次")
+                }
+            }
+        }
+        if (friends.isNotEmpty()) {
+            SzjStatSection("${u.label} · 常见队友")
+            SzjStatListCard {
+                friends.sortedByDescending { it.times }.forEach { f ->
+                    SzjStatRow(
+                        f.characterName.ifBlank { "队友" },
+                        "${f.times} 次",
+                        meta = f.groupName.ifBlank { null },
+                    )
+                }
+            }
+        }
+        if (deaths.isNotEmpty()) {
+            SzjStatSection("${u.label} · 团灭点", "共 ${deaths.size} 次，官网画成场地热点图")
+            SzjStatCard {
+                Text(
+                    "记录了 ${deaths.size} 个团灭坐标。热点图要用副本地图底图，" +
+                        "这里先只给次数。",
+                    color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
+                )
+            }
+        }
     }
 }
 
@@ -1157,71 +1335,149 @@ private fun SzjUltimateRow(u: ShizhijiaUltimate, row: org.json.JSONObject?, open
 
 /**
  * 朝圣交错路。官网数据中心只做了这一个深宫（dd_type = "dd4"），
- * 老的三个（死者宫殿/天动之城/常暗之厅）没有接口。
+ * 老的三个（死者宫殿/天动之城/常暗之厅）没有接口，所以不列。
  *
- * 这几个接口的字段名还没实测到（第一轮探测漏了参数，全部 10003），
- * 所以这里先按"总览 + 原始键值"显示：能拿到什么就列什么，不硬猜字段名
- * 编一套假的表头。第二轮探测拿到形状之后再排版。
+ * 字段名是从官网 DeepDungeon chunk 的视图代码扒的，不是从响应里看的——
+ * 用户只进过一次，多数接口回空数组。所以解析全部容错，拿不到就显示 0。
  */
 @Composable
 private fun SzjDeepDungeonPane(onLogin: () -> Unit) {
     val context = LocalContext.current
-    var terr by remember { mutableStateOf<ShizhijiaApi.Res<org.json.JSONArray?>?>(null) }
-    var items by remember { mutableStateOf<org.json.JSONArray?>(null) }
-    var achieves by remember { mutableStateOf<org.json.JSONArray?>(null) }
+    var prog by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaDdProgress>>?>(null) }
+    var hard by remember { mutableStateOf<ShizhijiaHardClear?>(null) }
+    var items by remember { mutableStateOf<List<ShizhijiaMkdItem>>(emptyList()) }
+    var history by remember { mutableStateOf<List<ShizhijiaItemLog>>(emptyList()) }
+    var achieves by remember { mutableStateOf<List<ShizhijiaFishAchieve>>(emptyList()) }
+    var team by remember { mutableStateOf<List<ShizhijiaTeamMember>>(emptyList()) }
+    var jobNames by remember { mutableStateOf(mapOf<String, String>()) }
 
     LaunchedEffect(Unit) {
-        terr = ShizhijiaStatsApi.ddTerritories(context)
-        items = (ShizhijiaStatsApi.ddItems(context) as? ShizhijiaApi.Res.Ok)?.value
-        achieves = (ShizhijiaStatsApi.ddAchieves(context) as? ShizhijiaApi.Res.Ok)?.value
+        prog = ShizhijiaStatsApi.ddProgress(context)
+        hard = (ShizhijiaStatsApi.ddHardClear(context) as? ShizhijiaApi.Res.Ok)?.value
+        items = (ShizhijiaStatsApi.ddItems(context) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        history = (ShizhijiaStatsApi.ddHistory(context, "item") as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        achieves = (ShizhijiaStatsApi.ddAchieves(context) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        team = (ShizhijiaStatsApi.ddFirstTeam(context) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+        jobNames = ShizhijiaApi.getJobConfig(context).mapValues { it.value.name }
     }
 
-    val t = (terr as? ShizhijiaApi.Res.Ok)?.value
-    if (t == null) {
-        if (terr == null) SzjStatLoading()
-        else SzjStatState(terr, "还没有朝圣交错路记录", "进过朝圣交错路之后，这里会显示层数进度和道具", onLogin)
+    val rows = (prog as? ShizhijiaApi.Res.Ok)?.value
+    // 进度空但道具有记录也要显示——这正是用户当前的情况（进过但没通关）。
+    if (rows == null && items.isEmpty() && history.isEmpty()) {
+        if (prog == null) SzjStatLoading()
+        else SzjStatState(prog, "还没有朝圣交错路记录", "进过朝圣交错路之后，这里会显示朝圣路进度、团灭点和道具", onLogin)
         return
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item("terr_h") { SzjStatSection("朝圣路进度", "共 ${t.length()} 段记录") }
-        szjJsonRows("terr", t)
-        if ((items?.length() ?: 0) > 0) {
-            item("item_h") { SzjStatSection("道具") }
-            szjJsonRows("item", items!!)
-        }
-        if ((achieves?.length() ?: 0) > 0) {
-            item("ach_h") { SzjStatSection("成就") }
-            szjJsonRows("ach", achieves!!)
-        }
-    }
-}
-
-/**
- * 把一段还没定型的 JSON 数组按"键: 值"列出来。
- *
- * 用在朝圣交错路：字段名还没实测，与其编一套可能对不上的表头，不如先把
- * 真实键值原样显示——数据是对的，排版之后再改。
- */
-private fun LazyListScope.szjJsonRows(prefix: String, arr: org.json.JSONArray) {
-    val n = minOf(arr.length(), 30)
-    items(n, key = { "$prefix$it" }) { i ->
-        val o = arr.optJSONObject(i) ?: return@items
-        Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
-            SzjCardSurface(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    o.keys().asSequence().sorted().forEach { k ->
-                        // character_id 是自己的角色 id，没信息量，占地方。
-                        if (k == "character_id") return@forEach
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text(k, color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.width(120.dp))
-                            Text(
-                                o.optString(k),
-                                color = SzjText, fontSize = 12.sp,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
+        val solo = rows?.find { it.solo }
+        val party = rows?.find { !it.solo }
+        listOfNotNull(
+            solo?.let { "单人" to it },
+            party?.let { "组队" to it },
+        ).forEach { (label, p) ->
+            item("prog_$label") {
+                SzjStatSection(label, "装备等级 武器 ${p.weaponLevel} · 防具 ${p.armorLevel}")
+                SzjStatCard {
+                    Column {
+                        SzjStatGrid(listOf(
+                            "通关次数" to p.totalClearTime.toString(),
+                            "失败次数" to p.failedTimes.toString(),
+                            "阵亡" to p.totalDeadNum.toString(),
+                        ))
+                        if (p.clearElapsedTime > 0) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("最快通关", color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.weight(1f))
+                                Text(fmtElapsed(p.clearElapsedTime), color = SzjAccent, style = SzjLabelStyle)
+                            }
                         }
+                    }
+                }
+            }
+            if (p.jobClears.isNotEmpty()) {
+                item("job_$label") {
+                    SzjStatSection("$label · 职业通关")
+                    SzjStatListCard {
+                        p.jobClears.sortedByDescending { it.second }.forEach { (jid, n) ->
+                            SzjStatRow(jobNames[jid] ?: "职业 $jid", "$n 次")
+                        }
+                    }
+                }
+            }
+            if (p.annihilation.isNotEmpty()) {
+                item("anni_$label") {
+                    SzjStatSection("$label · 团灭路段", "哪一段栽得最多")
+                    SzjStatListCard {
+                        p.annihilation.sortedByDescending { it.second }.forEach { (seg, n) ->
+                            SzjStatRow(ShizhijiaDeepDungeon.segment(seg), "$n 次")
+                        }
+                    }
+                }
+            }
+        }
+        hard?.let { h ->
+            item("hard") {
+                SzjStatSection("朝圣交错路本体", if (h.logTime.isNotBlank()) "首通 ${h.logTime.take(10)}" else null)
+                SzjStatCard {
+                    Column {
+                        SzjStatGrid(listOf(
+                            "通关" to h.clearTimes.toString(),
+                            "阵亡" to h.deadTimes.toString(),
+                            "通关前进入" to h.enterBeforeClear.toString(),
+                        ))
+                        if (h.elapsedTime > 0) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("用时", color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.weight(1f))
+                                Text(fmtElapsed(h.elapsedTime), color = SzjAccent, style = SzjLabelStyle)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (team.isNotEmpty()) {
+            item("team_h") { SzjStatSection("首通队伍") }
+            item("team") {
+                SzjStatListCard {
+                    team.forEach { m ->
+                        SzjStatRow(
+                            m.characterName.ifBlank { "队员" },
+                            jobNames[m.jobId] ?: "职业 ${m.jobId}",
+                            meta = listOf(m.groupName, m.areaName).filter { it.isNotBlank() }.joinToString(" · ")
+                                .ifBlank { null },
+                        )
+                    }
+                }
+            }
+        }
+        if (items.isNotEmpty()) {
+            item("item_h") { SzjStatSection("道具获取", "共 ${items.size} 种") }
+            item("item") {
+                SzjStatListCard {
+                    items.sortedByDescending { it.num }.forEach { m ->
+                        SzjStatRow(m.name, "${m.num}", meta = "首次 ${m.firstTime.take(10)}")
+                    }
+                }
+            }
+        }
+        if (history.isNotEmpty()) {
+            item("hist_h") { SzjStatSection("获取记录", "共 ${history.size} 条") }
+            item("hist") {
+                SzjStatListCard {
+                    history.sortedByDescending { it.logTime }.take(30).forEach { h ->
+                        SzjStatRow(h.name, h.logTime.take(10), meta = h.logTime.drop(11).ifBlank { null })
+                    }
+                }
+            }
+        }
+        if (achieves.isNotEmpty()) {
+            item("ach_h") { SzjStatSection("成就") }
+            item("ach") {
+                SzjStatListCard {
+                    achieves.forEach { a ->
+                        SzjStatRow(a.name, a.logTime.take(10), meta = a.detail.ifBlank { null })
                     }
                 }
             }

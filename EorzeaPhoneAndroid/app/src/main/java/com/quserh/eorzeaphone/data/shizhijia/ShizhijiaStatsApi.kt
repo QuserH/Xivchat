@@ -152,10 +152,13 @@ object ShizhijiaStatsApi {
     suspend fun mkdLights(context: Context) =
         arr(context, "getMKDLight8") { a -> (0 until (a?.length() ?: 0)).mapNotNull { a!!.optJSONObject(it) } }
 
-    /** 道具历史，要 `catalog_type`（分类名，比如"半魂晶"）。 */
+    /**
+     * 道具获取历史，要 `catalog_type`（分类名，比如"半魂晶"，取值来自
+     * getMKDItemGet4 每行的 catalog_type）。一行一次，只带 log_time。
+     */
     suspend fun mkdItemHistory(context: Context, catalogType: String) =
         arr(context, "getMKDIHistory6", mapOf("catalog_type" to catalogType)) {
-            ShizhijiaMkdItem.fromArray(it, "get_num")
+            ShizhijiaItemLog.fromArray(it)
         }
 
     // ---- 零式 -------------------------------------------------------------
@@ -169,55 +172,69 @@ object ShizhijiaStatsApi {
     // ---- 绝境战 -----------------------------------------------------------
 
     /**
-     * 7 个绝的首通情况。实测返回 7 个 null（没打过的位置就是 null），
-     * 所以这里保留原始 JSONObject，让界面自己判断非空。
+     * 7 个绝的首通情况：一次返回 7 个位置，没通的位置是 null。
+     * 位置顺序和 [ShizhijiaUltimate] 的声明顺序一致（就是 medal_id 1..7）。
      */
     suspend fun ultimateFirsts(context: Context) =
         arr(context, "gaoNanFirst1") { a ->
-            (0 until (a?.length() ?: 0)).map { a?.optJSONObject(it) }
+            (0 until (a?.length() ?: 0)).map { ShizhijiaHardClear.fromJson(a?.optJSONObject(it)) }
         }
 
     /** 以下 5 个都要 territory_type，取 [ShizhijiaUltimate.territory]。 */
+    private fun terr(territory: Int) = mapOf("territory_type" to territory.toString())
+
     suspend fun ultimateTeam(context: Context, territory: Int) =
-        arr(context, "gaoNanTeam2", mapOf("territory_type" to territory.toString())) { it }
+        arr(context, "gaoNanTeam2", terr(territory)) { ShizhijiaTeamMember.fromArray(it) }
 
     suspend fun ultimateJob(context: Context, territory: Int) =
-        arr(context, "gaoNanJob3", mapOf("territory_type" to territory.toString())) { it }
+        arr(context, "gaoNanJob3", terr(territory)) { ShizhijiaJobTimes.fromArray(it) }
 
     suspend fun ultimateFriend(context: Context, territory: Int) =
-        arr(context, "gaoNanFriend4", mapOf("territory_type" to territory.toString())) { it }
+        arr(context, "gaoNanFriend4", terr(territory)) { ShizhijiaFriendTimes.fromArray(it) }
 
     suspend fun ultimateDeadPoint(context: Context, territory: Int) =
-        arr(context, "gaoNanDeadPoint5", mapOf("territory_type" to territory.toString())) { it }
+        arr(context, "gaoNanDeadPoint5", terr(territory)) { ShizhijiaDeadPoint.fromArray(it) }
 
+    /** 阶段推进。字段名只从视图代码看到 log_time，所以保留原始数组。 */
     suspend fun ultimatePhase(context: Context, territory: Int) =
-        arr(context, "gaoNanPhase6", mapOf("territory_type" to territory.toString())) { it }
+        arr(context, "gaoNanPhase6", terr(territory)) { it }
 
     // ---- 朝圣交错路 -------------------------------------------------------
     // 官网只做了 dd4（朝圣交错路），老的三个深宫不在数据中心里。
 
-    const val DD_TYPE = "dd4"
-    const val DD_TERRITORY = 1311
+    private val ddType = mapOf("dd_type" to ShizhijiaDeepDungeon.DD_TYPE)
 
-    suspend fun ddTerritories(context: Context) =
-        arr(context, "getDDTerr1", mapOf("dd_type" to DD_TYPE)) { it }
+    /** 层数进度，按 is_solo 分单人/组队。 */
+    suspend fun ddProgress(context: Context) =
+        arr(context, "getDDTerr1", ddType) { ShizhijiaDdProgress.fromArray(it) }
 
     suspend fun ddItems(context: Context) =
-        arr(context, "getDDItem3", mapOf("dd_type" to DD_TYPE)) { it }
+        arr(context, "getDDItem3", ddType) { ShizhijiaMkdItem.fromArray(it, "get_num") }
 
     suspend fun ddAchieves(context: Context) =
-        arr(context, "getDDAchieve5", mapOf("dd_type" to DD_TYPE)) { it }
+        arr(context, "getDDAchieve5", ddType) { ShizhijiaFishAchieve.fromArray(it) }
 
     suspend fun ddDeadPoints(context: Context) =
-        arr(context, "getDDDeadPoint6", mapOf("dd_type" to DD_TYPE)) { it }
+        arr(context, "getDDDeadPoint6", ddType) { ShizhijiaDeadPoint.fromArray(it) }
 
-    /** catalog_type 取 item / treasure。 */
+    /**
+     * 道具获取历史。catalog_type 取 item / treasure（实测 item 有数据、
+     * treasure 为空）。这个接口只有 log_time，没有 get_num——一行就是一次。
+     */
     suspend fun ddHistory(context: Context, catalogType: String) =
-        arr(context, "getDDHistory4", mapOf("dd_type" to DD_TYPE, "catalog_type" to catalogType)) { it }
+        arr(
+            context, "getDDHistory4",
+            ddType + mapOf("catalog_type" to catalogType),
+        ) { ShizhijiaItemLog.fromArray(it) }
 
-    suspend fun ddGaoNan(context: Context) =
-        arr(context, "getDDGaoNan2", mapOf("territory_type" to DD_TERRITORY.toString())) { it }
+    /** 高难（=朝圣交错路本体）通关信息。官网只取 data[0]。 */
+    suspend fun ddHardClear(context: Context) =
+        arr(context, "getDDGaoNan2", terr(ShizhijiaDeepDungeon.TERRITORY)) { a ->
+            ShizhijiaHardClear.fromJson(a?.optJSONObject(0))
+        }
 
     suspend fun ddFirstTeam(context: Context) =
-        arr(context, "getDDFirstTeam7", mapOf("territory_type" to DD_TERRITORY.toString())) { it }
+        arr(context, "getDDFirstTeam7", terr(ShizhijiaDeepDungeon.TERRITORY)) {
+            ShizhijiaTeamMember.fromArray(it)
+        }
 }
