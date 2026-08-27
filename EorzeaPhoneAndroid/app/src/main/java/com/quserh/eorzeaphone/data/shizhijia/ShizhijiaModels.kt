@@ -628,6 +628,162 @@ enum class ShizhijiaRecruitKind(val label: String) {
     Rp("RP 俱乐部"),
 }
 
+/** 副本字典项（recruit/getFbConfigList）。 */
+data class ShizhijiaFbConfig(
+    val id: String,
+    val fbType: String,
+    val fbName: String,
+    val teamComposition: String,
+) {
+    companion object {
+        fun fromArray(arr: JSONArray): List<ShizhijiaFbConfig> = buildList(arr.length()) {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                add(
+                    ShizhijiaFbConfig(
+                        o.optString("id"),
+                        o.optString("fb_type"),
+                        o.optString("fb_name"),
+                        cleanField(o.optString("team_composition")),
+                    )
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 招募子分类筛选条件。
+ *
+ * 一个类装五类的条件，各类只用自己那几个字段——分开写会有五个几乎一样的类。
+ * toParams 按分类挑字段，空值不传（官方对空串处理不一致，少传更稳）。
+ */
+data class ShizhijiaRecruitFilter(
+    // 副本组队
+    val fbType: String = "",
+    val fbName: String = "",
+    val positions: List<String> = emptyList(),
+    val labelIds: List<String> = emptyList(),
+    /** 队伍规模：""=不限，"满编小队"/"轻锐小队"/"团队"/"其他"。 */
+    val teamComposition: String = "",
+    // 新人招待：identity 1=找豆芽(导师发的) 2=找导师(豆芽发的)
+    val identity: Int = 0,
+    val styleIds: List<String> = emptyList(),
+    // 其他招募
+    val categoryIds: List<String> = emptyList(),
+    // RP：rpTypes 0..3 = 无/轻/中/重 RP 元素；actStatus 1=进行中 0=即将 -1=未举行
+    val rpTypes: List<String> = emptyList(),
+    val actStatus: List<String> = emptyList(),
+    // 通用
+    val targetAreaId: String = "",
+    val targetGroupId: String = "",
+) {
+    /** 这个分类下有没有生效的筛选，用来给"筛选"按钮加实心态。 */
+    fun activeFor(kind: ShizhijiaRecruitKind): Boolean = toParams(kind).isNotEmpty()
+
+    fun toParams(kind: ShizhijiaRecruitKind): Map<String, String> {
+        val m = mutableMapOf<String, String>()
+        fun put(k: String, v: String) { if (v.isNotBlank()) m[k] = v }
+        fun putList(k: String, v: List<String>) { if (v.isNotEmpty()) m[k] = v.joinToString(",") }
+        when (kind) {
+            ShizhijiaRecruitKind.Fb -> {
+                put("fb_type", fbType)
+                put("fb_name", fbName)
+                putList("position", positions)
+                putList("label", labelIds)
+                put("team_composition", teamComposition)
+                // 副本组队的大区参数也是 target_area_id（前端 "0" 当不限，
+                // "-1" 是国际服）。
+                put("target_area_id", targetAreaId)
+            }
+            ShizhijiaRecruitKind.Novice -> {
+                if (identity != 0) put("identity", identity.toString())
+                putList("style", styleIds)
+                put("target_area_id", targetAreaId)
+                put("target_group_id", targetGroupId)
+            }
+            ShizhijiaRecruitKind.Other -> {
+                putList("category", categoryIds)
+                put("target_area_id", targetAreaId)
+                put("target_group_id", targetGroupId)
+            }
+            ShizhijiaRecruitKind.Rp -> {
+                putList("rp_type", rpTypes)
+                putList("act_status", actStatus)
+            }
+            // 部队招募列表没有公开的筛选参数
+            ShizhijiaRecruitKind.Guild -> Unit
+        }
+        return m
+    }
+
+    companion object {
+        /** 副本组队的位置。官方顺序：坦克两个、奶妈两个、DPS 四个。 */
+        val FB_POSITIONS = listOf("MT", "ST", "H1", "H2", "D1", "D2", "D3", "D4")
+
+        /** RP 元素浓度（来自前端 RpProps）。 */
+        val RP_TYPES = listOf("0" to "无RP元素", "1" to "轻RP元素", "2" to "中RP元素", "3" to "重RP元素")
+
+        /** 队伍规模。值就是接口要的字符串（前端内部用 8/4/24/0 转换）。 */
+        val TEAM_COMPOSITIONS = listOf(
+            "满编小队" to "满编小队",
+            "轻锐小队" to "轻锐小队",
+            "团队" to "团队",
+            "其他" to "其他",
+        )
+
+        /** RP 活动状态。前端把"未举行活动"从筛选里过滤掉了，这里保持一致。 */
+        val RP_ACT_STATUS = listOf("1" to "活动进行中", "0" to "即将举行活动")
+
+        /** 新人招待身份。1/2 的含义见 RecruitMiniView 的 `1==identity?"找豆芽":"找导师"`。 */
+        val NOVICE_IDENTITY = listOf(1 to "找豆芽", 2 to "找导师")
+    }
+}
+
+/**
+ * 职业/职能字典项（recruit/getJobConfigList，公开接口）。
+ * 响应是 `{职能分类:[...], 防护职业:[...], ...}`，前端把所有分组拍平成一个数组，
+ * 再用 id 反查——这里照做。
+ */
+data class ShizhijiaJob(
+    val id: String,
+    val name: String,
+    val iconUrl: String,
+    val type: String,
+) {
+    companion object {
+        /** 拍平 `data` 下的所有分组。 */
+        fun fromGrouped(data: JSONObject?): List<ShizhijiaJob> {
+            data ?: return emptyList()
+            return buildList {
+                val keys = data.keys()
+                while (keys.hasNext()) {
+                    val g = keys.next()
+                    val arr = data.optJSONArray(g) ?: continue
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val id = o.optString("id")
+                        if (id.isBlank()) continue
+                        add(
+                            ShizhijiaJob(
+                                id = id,
+                                name = cleanField(o.optString("value")),
+                                iconUrl = cleanField(o.optString("job_pic_url")),
+                                type = cleanField(o.optString("job_type")).ifBlank { g },
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 招募卡上的一个位置槽。jobId 为空/"0" 表示位置还空着。 */
+data class ShizhijiaSlot(val name: String, val jobId: String) {
+    val filled: Boolean get() = jobId.isNotBlank() && jobId != "0"
+}
+
 data class ShizhijiaRecruit(
     val id: String,
     val kind: ShizhijiaRecruitKind,
@@ -649,47 +805,122 @@ data class ShizhijiaRecruit(
     /** 已报名人数，没有这个概念时为 -1。 */
     val responseNum: Int,
     val createdAt: String,
+    /**
+     * 标题前缀。副本组队是副本类型（"[绝境战]"那一段），官网就是这么排的：
+     * 类型用主色，紧跟着副本名。其他分类没有前缀。
+     */
+    val titlePrefix: String = "",
+    /** 键值行（进度/攻略/时间…）。键用主色，值用正文色，和移动端一致。 */
+    val infoRows: List<Pair<String, String>> = emptyList(),
+    /**
+     * 位置槽。name 是 MT/ST/H1/H2/D1..D4（轻锐小队是 T/H/D1/D2），
+     * jobId 为 "0"/空表示这个位置还空着——空位显示位置名，占了就显示职业图标。
+     */
+    val slots: List<ShizhijiaSlot> = emptyList(),
+    /** 团队（24 人）的三个小队，每队各 8 个位置。非团队时为空。 */
+    val alliances: List<Pair<String, List<ShizhijiaSlot>>> = emptyList(),
+    /** 招募面向的职能（防护/治疗/近战…），带图标。 */
+    val needJobs: List<ShizhijiaJob> = emptyList(),
 ) {
     companion object {
-        /** 副本组队：fb_type/fb_name/进度/时间 + 各位置报名数。 */
+        /**
+         * 副本组队。排版照移动端：标题是 `[副本类型]副本名`，下面三行
+         * 进度/攻略/时间，然后是标签，最后是位置槽。
+         *
+         * 位置槽的形状取自前端 RecruitMiniView：team_composition 决定用哪几个字段——
+         *   满编小队(8) → MT/ST/H1/H2/D1..D4 直接挂在行上
+         *   轻锐小队(4) → T/H/D1/D2
+         *   团队(24)    → team_position.{A,B,C} 各 8 个
+         *   其他(0)     → 没有位置槽
+         * 每个字段的值是职业 id，0 表示这个位置还空着。
+         */
         fun fromFb(o: JSONObject): ShizhijiaRecruit {
-            val lines = buildList {
-                listOf(o.optString("fb_type"), o.optString("fb_name"))
-                    .filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
-                    ?.let { add(it.joinToString(" · ")) }
-                val time = cleanField(o.optString("fb_time"))
-                val comp = cleanField(o.optString("team_composition"))
-                listOf(comp, time).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
-                    ?.let { add(it.joinToString(" · ")) }
-                cleanField(o.optString("progress")).takeIf { it.isNotBlank() }?.let { add("进度 $it") }
+            val comp = cleanField(o.optString("team_composition"))
+            fun slot(name: String, key: String = name) = ShizhijiaSlot(name, o.optString(key, "0"))
+            val slots = when (comp) {
+                "满编小队" -> FULL_PARTY.map { slot(it) }
+                "轻锐小队" -> LIGHT_PARTY.map { slot(it) }
+                else -> emptyList()
+            }
+            // 团队的三个小队。team_position 可能是对象，也可能是 JSON 字符串。
+            val alliances = if (comp == "团队") {
+                val tp = when (val v = o.opt("team_position")) {
+                    is JSONObject -> v
+                    is String -> runCatching { JSONObject(v) }.getOrNull()
+                    else -> null
+                }
+                listOf("A", "B", "C").mapNotNull { g ->
+                    val sub = tp?.optJSONObject(g) ?: return@mapNotNull null
+                    g to FULL_PARTY.map { ShizhijiaSlot(it, sub.optString(it, "0")) }
+                }
+            } else emptyList()
+
+            val rows = buildList {
+                cleanField(o.optString("progress")).takeIf { it.isNotBlank() }?.let { add("进度" to it) }
+                cleanField(o.optString("strategy")).takeIf { it.isNotBlank() }?.let { add("攻略" to it) }
+                cleanField(o.optString("fb_time")).takeIf { it.isNotBlank() }?.let { add("时间" to it) }
             }
             return ShizhijiaRecruit(
                 id = o.optString("id"),
                 kind = ShizhijiaRecruitKind.Fb,
                 uuid = o.optString("uuid"),
-                // 副本组队没有 title 字段，用副本名当标题。
-                title = listOf(o.optString("fb_name"), o.optString("fb_type"))
-                    .firstOrNull { it.isNotBlank() }.orEmpty().ifBlank { "副本组队" },
+                // 副本组队没有 title 字段，副本名就是标题，类型作前缀。
+                title = cleanField(o.optString("fb_name")).ifBlank { "副本组队" },
                 characterName = o.optString("character_name"),
                 areaName = o.optString("area_name"),
                 groupName = o.optString("group_name"),
                 targetServer = cleanField(o.optString("target_area_name")),
                 avatar = cleanAvatar(o.optString("avatar")),
                 coverPic = "",
-                summary = cleanField(o.optString("strategy")).takeIf { it.isNotBlank() }?.let { "攻略参考：$it" }.orEmpty(),
-                lines = lines,
+                summary = "",
+                lines = emptyList(),
                 tags = namesOf(o.optJSONArray("labelInfo"), "name") +
                     splitPictures(cleanField(o.optString("custom_label"))),
                 responseNum = o.optInt("response_num", -1),
                 createdAt = o.optString("created_at"),
+                titlePrefix = cleanField(o.optString("fb_type")),
+                infoRows = rows,
+                slots = slots,
+                alliances = alliances,
+                needJobs = jobsOf(o.optJSONArray("jobInfo")),
             )
         }
 
-        /** 新人招待：identity 决定是豆芽找导师还是导师找学员。 */
+        /** 满编小队的位置顺序：坦克两个、奶两个、DPS 四个。 */
+        private val FULL_PARTY = listOf("MT", "ST", "H1", "H2", "D1", "D2", "D3", "D4")
+
+        /** 轻锐小队（4 人）：一坦一奶两 DPS。 */
+        private val LIGHT_PARTY = listOf("T", "H", "D1", "D2")
+
+        /** 招募自带的 jobInfo（职能分类，带图标）。 */
+        private fun jobsOf(arr: JSONArray?): List<ShizhijiaJob> {
+            arr ?: return emptyList()
+            return buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optString("id")
+                    if (id.isBlank()) continue
+                    add(
+                        ShizhijiaJob(
+                            id = id,
+                            name = cleanField(o.optString("value")),
+                            iconUrl = cleanField(o.optString("job_pic_url")),
+                            type = cleanField(o.optString("job_type")),
+                        )
+                    )
+                }
+            }
+        }
+
+        /**
+         * 新人招待：identity 决定这条是导师在招学员还是豆芽在找导师。
+         * 映射按官网前端 `1 == identity ? "找豆芽" : "找导师"`（RecruitMiniView）——
+         * 之前这里写反了。
+         */
         fun fromNovice(o: JSONObject): ShizhijiaRecruit {
             val identity = when (o.optInt("identity")) {
-                1 -> "找导师"
-                2 -> "找学员"
+                1 -> "找豆芽"
+                2 -> "找导师"
                 else -> ""
             }
             val lines = buildList {
@@ -762,8 +993,9 @@ data class ShizhijiaRecruit(
                 coverPic = cleanField(o.optString("cover_h5_pic")).ifBlank { cleanField(o.optString("cover_pic")) },
                 summary = stripHtml(o.optString("profile")),
                 lines = lines,
-                // rp_type 是数组，自定义标签是逗号串。
-                tags = stringsOf(o.optJSONArray("rp_type")) +
+                // rp_type 是 id 数组（0..3），直接显示会是 "0""1"，要换成中文。
+                // 自定义标签是逗号串。
+                tags = rpTypeNames(o.optJSONArray("rp_type")) +
                     splitPictures(cleanField(o.optString("custom_label"))),
                 responseNum = -1,
                 createdAt = o.optString("created_at"),
@@ -886,6 +1118,94 @@ data class ShizhijiaBoundCharacter(
     }
 }
 
+// ---------------------------------------------------------------------------
+// 部队（guild/*）
+// 形状取自官网前端各子页组件，见 memory 里的接口笔记。
+// ---------------------------------------------------------------------------
+
+/** 部队成员。未注册石之家的成员没有 uuid，点不进主页。 */
+data class ShizhijiaGuildMember(
+    val uuid: String,
+    val name: String,
+    val avatar: String,
+    /** 部队职位（团长/干部/成员之类），字段名不确定所以多试几个。 */
+    val rank: String,
+    val registered: Boolean,
+) {
+    companion object {
+        fun fromArray(arr: JSONArray?, registered: Boolean = true): List<ShizhijiaGuildMember> {
+            arr ?: return emptyList()
+            return buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    fun pick(vararg keys: String): String =
+                        keys.firstNotNullOfOrNull { k -> cleanField(o.optString(k)).takeIf { it.isNotBlank() } }.orEmpty()
+                    val name = pick("character_name", "characterName", "name")
+                    if (name.isBlank()) continue
+                    add(
+                        ShizhijiaGuildMember(
+                            uuid = pick("uuid"),
+                            name = name,
+                            avatar = cleanAvatar(pick("avatar", "face")),
+                            rank = pick("rank_name", "rankName", "position", "rank", "fc_rank"),
+                            registered = registered,
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 成员列表的两组：注册过站点的 / 没注册的。 */
+data class ShizhijiaGuildMembers(
+    val registered: List<ShizhijiaGuildMember>,
+    val unregistered: List<ShizhijiaGuildMember>,
+) {
+    val total: Int get() = registered.size + unregistered.size
+}
+
+/** 部队相册照片。photo_url 是逗号分隔的多图。 */
+data class ShizhijiaGuildPhoto(
+    val id: String,
+    val urls: List<String>,
+    val uploaderName: String,
+    val uploaderUuid: String,
+    val uploaderAvatar: String,
+    val desc: String,
+    val likeCount: Int,
+    val commentCount: Int,
+    val createdAt: String,
+) {
+    companion object {
+        fun fromArray(arr: JSONArray?): List<ShizhijiaGuildPhoto> {
+            arr ?: return emptyList()
+            return buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    fun pick(vararg keys: String): String =
+                        keys.firstNotNullOfOrNull { k -> cleanField(o.optString(k)).takeIf { it.isNotBlank() } }.orEmpty()
+                    val urls = splitPictures(pick("photo_url", "photoUrl", "url"))
+                    if (urls.isEmpty()) continue
+                    add(
+                        ShizhijiaGuildPhoto(
+                            id = pick("id", "photo_id"),
+                            urls = urls,
+                            uploaderName = pick("character_name", "characterName"),
+                            uploaderUuid = pick("uuid"),
+                            uploaderAvatar = cleanAvatar(pick("avatar")),
+                            desc = stripHtml(pick("content", "desc", "photo_desc")),
+                            likeCount = o.optInt("like_count"),
+                            commentCount = o.optInt("comment_count"),
+                            createdAt = pick("created_at", "create_time"),
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** 大区 + 其下服务器（groupAndRole/getAreaAndGroupList，公开）。 */
 data class ShizhijiaArea(
     val areaId: Int,
@@ -917,6 +1237,20 @@ internal fun namesOf(arr: JSONArray?, key: String): List<String> {
             arr.optJSONObject(i)?.optString(key)?.takeIf { it.isNotBlank() }?.let { add(it) }
         }
     }
+}
+
+/**
+ * rp_type 的 id 数组换成中文名。
+ * 前端会把多个合成一个标签（"轻/中RP元素"），这里同样合并，
+ * 免得一张卡上挂三四个只差一个字的标签。
+ */
+internal fun rpTypeNames(arr: JSONArray?): List<String> {
+    val ids = stringsOf(arr)
+    if (ids.isEmpty()) return emptyList()
+    val names = ShizhijiaRecruitFilter.RP_TYPES
+        .filter { it.first in ids }
+        .map { it.second.removeSuffix("RP元素") }
+    return if (names.isEmpty()) emptyList() else listOf(names.joinToString("/") + "RP元素")
 }
 
 /** 取纯字符串数组（rp_type 这种）。 */

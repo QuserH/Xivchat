@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -103,7 +104,17 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaComment
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruit
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitFilter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitKind
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFbConfig
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaJob
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSlot
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGuildMember
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGuildMembers
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGuildPhoto
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDynamic
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaLoginUser
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaPostCard
@@ -411,6 +422,45 @@ private fun SzjShimmerBox(modifier: Modifier, shape: RoundedCornerShape = SzjInn
 }
 
 /**
+ * 按接口返回的状态码给出对应的空态。
+ *
+ * 这解决了一个真实的 bug：以前所有失败都被压成空列表，所以已经登录的人
+ * 打开收藏/招募管理也会看到"请登录"。现在只有服务端真的回 10403 才说未登录。
+ *
+ * @param onLogin 未登录时的登录入口
+ * @param emptyTitle / emptyHint 请求成功但列表为空时的说法
+ */
+@Composable
+private fun <T> SzjResState(
+    res: ShizhijiaApi.Res<T>?,
+    emptyTitle: String,
+    emptyHint: String? = null,
+    onLogin: (() -> Unit)? = null,
+    inline: Boolean = false,
+) {
+    val empty: @Composable (String, String?, (@Composable () -> Unit)?) -> Unit =
+        if (inline) { t, h, a -> SzjEmptyInline(t, h, a) } else { t, h, a -> SzjEmpty(t, h, a) }
+    when (res) {
+        null -> empty("正在读取", null, null)
+        is ShizhijiaApi.Res.NeedLogin -> empty(
+            "需要登录石之家账号",
+            "登录后这里会显示你的内容",
+        ) { if (onLogin != null) SzjPrimaryButton("登录", onClick = onLogin) }
+        is ShizhijiaApi.Res.NeedCharacter -> empty(
+            "账号还没绑定角色",
+            "石之家要求先绑定一个 FF14 角色，才会返回这部分数据",
+            null,
+        )
+        is ShizhijiaApi.Res.Failed -> empty(
+            "没读取到",
+            res.msg.ifBlank { if (res.code == null) "网络没通，检查一下连接" else "服务端返回 ${res.code}" },
+            null,
+        )
+        is ShizhijiaApi.Res.Ok -> empty(emptyTitle, emptyHint, null)
+    }
+}
+
+/**
  * 空态：一句说明现状，一句给下一步。空屏是邀请动作的地方，
  * 不是只写"暂无内容"的地方。棱条在这里当一个安静的锚点。
  */
@@ -631,13 +681,41 @@ private class SzjStrategyState {
 private class SzjRecruitState {
     val kind = mutableStateOf(ShizhijiaRecruitKind.Fb)
     val items = mutableStateOf(mapOf<ShizhijiaRecruitKind, List<ShizhijiaRecruit>>())
+    /** 每类最后一次请求的结果状态，用来区分未登录 / 空 / 失败。 */
+    val status = mutableStateOf(mapOf<ShizhijiaRecruitKind, ShizhijiaApi.Res<List<ShizhijiaRecruit>>>())
     val pages = mutableStateOf(mapOf<ShizhijiaRecruitKind, Int>())
     val ended = mutableStateOf(setOf<ShizhijiaRecruitKind>())
     val loading = mutableStateOf(false)
     val listState = androidx.compose.foundation.lazy.LazyListState()
 
+    /** 各类各自的筛选条件，切回来时保留。 */
+    val filters = mutableStateOf(mapOf<ShizhijiaRecruitKind, ShizhijiaRecruitFilter>())
+    val filterOpen = mutableStateOf(false)
+
+    // 筛选面板要用的字典，只拉一次
+    val fbConfig = mutableStateOf(listOf<ShizhijiaFbConfig>())
+    val styles = mutableStateOf(listOf<Pair<String, String>>())
+    val categories = mutableStateOf(listOf<Pair<String, String>>())
+    val fbLabels = mutableStateOf(listOf<Pair<String, String>>())
+    /** 职业字典，招募卡的位置图标按 id 反查。 */
+    val jobs = mutableStateOf(mapOf<String, ShizhijiaJob>())
+    /** 大区字典，招募大区筛选用。 */
+    val areas = mutableStateOf(listOf<ShizhijiaArea>())
+    val dictLoaded = mutableStateOf(false)
+
     fun listFor(k: ShizhijiaRecruitKind): List<ShizhijiaRecruit> = items.value[k].orEmpty()
     fun pageFor(k: ShizhijiaRecruitKind): Int = pages.value[k] ?: 0
+    fun filterFor(k: ShizhijiaRecruitKind): ShizhijiaRecruitFilter =
+        filters.value[k] ?: ShizhijiaRecruitFilter()
+
+    fun setFilter(k: ShizhijiaRecruitKind, f: ShizhijiaRecruitFilter) {
+        filters.value = filters.value + (k to f)
+        // 条件变了，缓存的列表和分页作废
+        items.value = items.value - k
+        pages.value = pages.value - k
+        ended.value = ended.value - k
+        status.value = status.value - k
+    }
 }
 
 /** Hoisted glamour feed state so it survives detail push/pop. */
@@ -1677,14 +1755,29 @@ private fun ShizhijiaRecruitTab(
     val scope = rememberCoroutineScope()
     val kind = rs.kind.value
     val items = rs.listFor(kind)
+    val filter = rs.filterFor(kind)
+
+    // 筛选面板的字典一次性拉齐（都是公开接口）
+    LaunchedEffect(Unit) {
+        if (!rs.dictLoaded.value) {
+            rs.dictLoaded.value = true
+            rs.fbConfig.value = ShizhijiaApi.getFbConfig(context)
+            rs.styles.value = ShizhijiaApi.getStyleConfig(context)
+            rs.categories.value = ShizhijiaApi.getOtherCategories(context)
+            rs.fbLabels.value = ShizhijiaApi.getFbLabels(context)
+            rs.jobs.value = ShizhijiaApi.getJobConfig(context)
+            rs.areas.value = ShizhijiaApi.getAreaList(context)
+        }
+    }
 
     fun load(reset: Boolean) {
         if (rs.loading.value) return
         rs.loading.value = true
         scope.launch {
-            val next = rs.pageFor(kind) + 1
-            val page = if (reset) 1 else next
-            val rows = ShizhijiaApi.getRecruitList(context, kind, page = page)
+            val page = if (reset) 1 else rs.pageFor(kind) + 1
+            val res = ShizhijiaApi.getRecruitList(context, kind, page = page, filter = rs.filterFor(kind))
+            rs.status.value = rs.status.value + (kind to res)
+            val rows = (res as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
             val merged = if (reset) rows else rs.listFor(kind) + rows
             rs.items.value = rs.items.value + (kind to merged)
             rs.pages.value = rs.pages.value + (kind to page)
@@ -1693,8 +1786,8 @@ private fun ShizhijiaRecruitTab(
         }
     }
 
-    // 首次进入某个分类时拉第一页；已经有数据就不动（切回来保留列表和滚动位置）。
-    LaunchedEffect(kind, loggedIn) {
+    // 首次进入某个分类（或改了筛选）时拉第一页；已有数据就不动。
+    LaunchedEffect(kind, filter, loggedIn) {
         if (rs.listFor(kind).isEmpty() && !rs.ended.value.contains(kind)) load(reset = true)
     }
     val nearEnd by remember { derivedStateOf {
@@ -1705,49 +1798,341 @@ private fun ShizhijiaRecruitTab(
         if (nearEnd && !rs.loading.value && !rs.ended.value.contains(kind)) load(reset = false)
     }
 
-    SzjFeedScaffold(
-        listState = rs.listState,
-        header = header,
-        sticky = {
-            Column(Modifier.fillMaxWidth().background(SzjBg).padding(bottom = 6.dp)) {
-                LazyRow(
-                    Modifier.fillMaxWidth(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(ShizhijiaRecruitKind.entries, key = { it.name }) { k ->
-                        SzjPartChip(k.label, kind == k) { rs.kind.value = k }
+    Box(Modifier.fillMaxSize()) {
+        SzjFeedScaffold(
+            listState = rs.listState,
+            header = header,
+            sticky = {
+                Column(Modifier.fillMaxWidth().background(SzjBg).padding(bottom = 6.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        LazyRow(
+                            Modifier.weight(1f),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(ShizhijiaRecruitKind.entries, key = { it.name }) { k ->
+                                SzjPartChip(k.label, kind == k) { rs.kind.value = k }
+                            }
+                        }
+                        // 部队招募列表没有公开筛选参数，所以那一类不给筛选入口。
+                        if (kind != ShizhijiaRecruitKind.Guild) {
+                            val on = filter.activeFor(kind)
+                            SzjPressable(onClick = { rs.filterOpen.value = true }, shape = SzjChipShape) {
+                                Text(
+                                    "筛选",
+                                    style = SzjLabelStyle,
+                                    color = if (on) SzjOnAccent else SzjMuted,
+                                    modifier = Modifier.clip(SzjChipShape)
+                                        .background(if (on) SzjAccent else SzjCardRaised)
+                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(14.dp))
+                        }
+                    }
+                    // 生效的条件在 Tab 下面列一行，不用打开面板也知道筛了什么
+                    val chips = szjFilterSummary(kind, filter, rs)
+                    if (chips.isNotEmpty()) {
+                        LazyRow(
+                            Modifier.fillMaxWidth().padding(top = 6.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(chips) { c ->
+                                Text(
+                                    c, color = SzjOnAccentSoft, style = SzjMetaStyle,
+                                    modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(SzjAccentSoft)
+                                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                                )
+                            }
+                            item {
+                                SzjPressable(onClick = { rs.setFilter(kind, ShizhijiaRecruitFilter()) }, shape = SzjChipShape) {
+                                    Text("清空", color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        ) {
+            val status = rs.status.value[kind]
+            when {
+                rs.loading.value && items.isEmpty() -> item(key = "skeleton") { SzjFeedSkeleton() }
+                items.isEmpty() -> item(key = "empty") {
+                    SzjResState(
+                        res = status,
+                        emptyTitle = if (filter.activeFor(kind)) "没有符合条件的招募" else "这个分类暂时没有招募",
+                        emptyHint = if (filter.activeFor(kind)) "放宽筛选条件试试" else "换个分类，或者稍后再来看看",
+                        onLogin = { nav(SzjRoute.Login) },
+                        inline = true,
+                    )
+                }
+                else -> {
+                    itemsIndexed(items, key = { _, it -> it.kind.name + it.id }) { index, r ->
+                        SzjRise(index) { SzjRecruitRow(r, nav, rs.jobs.value) }
+                    }
+                    item(key = "footer") {
+                        if (rs.loading.value) {
+                            Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                            }
+                        } else if (rs.ended.value.contains(kind)) {
+                            Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+                                Text("到底了", color = SzjHairline, style = SzjMetaStyle)
+                            }
+                        }
                     }
                 }
             }
-        },
+        }
+        if (rs.filterOpen.value) {
+            SzjRecruitFilterPanel(
+                kind = kind,
+                rs = rs,
+                onClose = { rs.filterOpen.value = false },
+            )
+        }
+    }
+}
+
+/** 把生效的筛选条件转成一行短标签，显示在分类 Tab 下方。 */
+@Composable
+private fun szjFilterSummary(
+    kind: ShizhijiaRecruitKind,
+    f: ShizhijiaRecruitFilter,
+    rs: SzjRecruitState,
+): List<String> = buildList {
+    fun nameOf(pairs: List<Pair<String, String>>, id: String) = pairs.firstOrNull { it.first == id }?.second ?: id
+    when (kind) {
+        ShizhijiaRecruitKind.Fb -> {
+            if (f.fbType.isNotBlank()) add(f.fbType)
+            if (f.fbName.isNotBlank()) add(f.fbName)
+            if (f.teamComposition.isNotBlank()) add(f.teamComposition)
+            f.positions.forEach { add(it) }
+            f.labelIds.forEach { add(nameOf(rs.fbLabels.value, it)) }
+        }
+        ShizhijiaRecruitKind.Novice -> {
+            ShizhijiaRecruitFilter.NOVICE_IDENTITY.firstOrNull { it.first == f.identity }?.let { add(it.second) }
+            f.styleIds.forEach { add(nameOf(rs.styles.value, it)) }
+        }
+        ShizhijiaRecruitKind.Other -> f.categoryIds.forEach { add(nameOf(rs.categories.value, it)) }
+        ShizhijiaRecruitKind.Rp -> {
+            f.rpTypes.forEach { id -> ShizhijiaRecruitFilter.RP_TYPES.firstOrNull { it.first == id }?.let { add(it.second) } }
+            f.actStatus.forEach { id -> ShizhijiaRecruitFilter.RP_ACT_STATUS.firstOrNull { it.first == id }?.let { add(it.second) } }
+        }
+        ShizhijiaRecruitKind.Guild -> Unit
+    }
+    // 大区是三类共用的条件，放最后一枚。
+    if (f.targetAreaId.isNotBlank()) {
+        add(
+            if (f.targetAreaId == "-1") "国际服"
+            else rs.areas.value.firstOrNull { it.areaId.toString() == f.targetAreaId }?.areaName ?: "大区 ${f.targetAreaId}"
+        )
+    }
+}
+
+/**
+ * 招募筛选面板。四类各有自己的条件（部队招募没有公开筛选参数，不进这里）：
+ *   副本组队  副本类型 → 具体副本 → 位置 → 标签
+ *   新人招待  身份 → 玩法风格
+ *   其他      分类
+ *   RP        RP 元素浓度 → 活动状态
+ * 从顶部滑下，改完点"看结果"才发请求——边选边刷会打很多次接口。
+ */
+@Composable
+private fun SzjRecruitFilterPanel(
+    kind: ShizhijiaRecruitKind,
+    rs: SzjRecruitState,
+    onClose: () -> Unit,
+) {
+    // 面板里改的是草稿，确认后才写回 state 触发重新加载
+    var draft by remember(kind) { mutableStateOf(rs.filterFor(kind)) }
+    val noRipple = remember { MutableInteractionSource() }
+
+    Column(
+        Modifier.fillMaxSize()
+            .background(Color(0x73000000))
+            .pointerInput(Unit) { detectTapGestures { onClose() } }
     ) {
-        when {
-            rs.loading.value && items.isEmpty() -> item(key = "skeleton") { SzjFeedSkeleton() }
-            // 部队招募是唯一需要登录的分类，空列表要区分"没登录"和"真没有"。
-            items.isEmpty() && kind == ShizhijiaRecruitKind.Guild && !loggedIn -> item(key = "guild-login") {
-                SzjEmptyInline(
-                    "部队招募需要登录才能看",
-                    "官方接口对未登录用户不返回这一类",
-                ) { SzjPrimaryButton("登录", onClick = { nav(SzjRoute.Login) }) }
-            }
-            items.isEmpty() -> item(key = "empty") {
-                SzjEmptyInline("这个分类暂时没有招募", "换个分类，或者稍后再来看看")
-            }
-            else -> {
-                itemsIndexed(items, key = { _, it -> it.kind.name + it.id }) { index, r ->
-                    SzjRise(index) { SzjRecruitRow(r, nav) }
-                }
-                item(key = "footer") {
-                    if (rs.loading.value) {
-                        Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+        androidx.compose.animation.AnimatedVisibility(
+            visible = true,
+            enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { -it },
+        ) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .shadow(12.dp, RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp), ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                    .clip(RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp))
+                    .background(SzjBg)
+                    .clickable(interactionSource = noRipple, indication = null) { }
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                when (kind) {
+                    ShizhijiaRecruitKind.Fb -> {
+                        val types = rs.fbConfig.value.map { it.fbType }.distinct().filter { it.isNotBlank() }
+                        SzjFilterChips(
+                            "副本类型",
+                            listOf("" to "全部") + types.map { it to it },
+                            selected = setOf(draft.fbType),
+                        ) { id ->
+                            // 换类型时把具体副本清掉，否则会出现类型和副本不匹配
+                            draft = draft.copy(fbType = id, fbName = "")
                         }
-                    } else if (rs.ended.value.contains(kind)) {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
-                            Text("到底了", color = SzjHairline, style = SzjMetaStyle)
+                        // 选了类型才列具体副本，全部类型下 84 个副本铺满屏没法用
+                        if (draft.fbType.isNotBlank()) {
+                            val names = rs.fbConfig.value.filter { it.fbType == draft.fbType }
+                                .map { it.fbName }.distinct().filter { it.isNotBlank() }
+                            if (names.isNotEmpty()) {
+                                Spacer(Modifier.height(14.dp))
+                                SzjFilterChips(
+                                    "具体副本",
+                                    listOf("" to "不限") + names.map { it to it },
+                                    selected = setOf(draft.fbName),
+                                ) { draft = draft.copy(fbName = it) }
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        SzjFilterChips(
+                            "队伍规模",
+                            listOf("" to "不限") + ShizhijiaRecruitFilter.TEAM_COMPOSITIONS,
+                            selected = setOf(draft.teamComposition),
+                        ) { draft = draft.copy(teamComposition = it) }
+                        Spacer(Modifier.height(14.dp))
+                        SzjFilterChips(
+                            "位置（可多选）",
+                            ShizhijiaRecruitFilter.FB_POSITIONS.map { it to it },
+                            selected = draft.positions.toSet(),
+                            multi = true,
+                        ) { id -> draft = draft.copy(positions = draft.positions.toggle(id)) }
+                        if (rs.fbLabels.value.isNotEmpty()) {
+                            Spacer(Modifier.height(14.dp))
+                            SzjFilterChips(
+                                "标签（可多选）",
+                                rs.fbLabels.value,
+                                selected = draft.labelIds.toSet(),
+                                multi = true,
+                            ) { id -> draft = draft.copy(labelIds = draft.labelIds.toggle(id)) }
                         }
                     }
+                    ShizhijiaRecruitKind.Novice -> {
+                        SzjFilterChips(
+                            "身份",
+                            listOf("0" to "全部") + ShizhijiaRecruitFilter.NOVICE_IDENTITY.map { it.first.toString() to it.second },
+                            selected = setOf(draft.identity.toString()),
+                        ) { draft = draft.copy(identity = it.toIntOrNull() ?: 0) }
+                        if (rs.styles.value.isNotEmpty()) {
+                            Spacer(Modifier.height(14.dp))
+                            SzjFilterChips(
+                                "玩法风格（可多选）",
+                                rs.styles.value,
+                                selected = draft.styleIds.toSet(),
+                                multi = true,
+                            ) { id -> draft = draft.copy(styleIds = draft.styleIds.toggle(id)) }
+                        }
+                    }
+                    ShizhijiaRecruitKind.Other -> {
+                        SzjFilterChips(
+                            "分类（可多选）",
+                            rs.categories.value,
+                            selected = draft.categoryIds.toSet(),
+                            multi = true,
+                        ) { id -> draft = draft.copy(categoryIds = draft.categoryIds.toggle(id)) }
+                    }
+                    ShizhijiaRecruitKind.Rp -> {
+                        SzjFilterChips(
+                            "RP 元素（可多选）",
+                            ShizhijiaRecruitFilter.RP_TYPES,
+                            selected = draft.rpTypes.toSet(),
+                            multi = true,
+                        ) { id -> draft = draft.copy(rpTypes = draft.rpTypes.toggle(id)) }
+                        Spacer(Modifier.height(14.dp))
+                        SzjFilterChips(
+                            "活动状态（可多选）",
+                            ShizhijiaRecruitFilter.RP_ACT_STATUS,
+                            selected = draft.actStatus.toSet(),
+                            multi = true,
+                        ) { id -> draft = draft.copy(actStatus = draft.actStatus.toggle(id)) }
+                    }
+                    ShizhijiaRecruitKind.Guild -> Unit
+                }
+                // 招募大区：副本/新人/其他三类都吃 target_area_id，放在最后共用一段。
+                // RP 和部队招募没有这个参数。
+                if (kind != ShizhijiaRecruitKind.Rp && kind != ShizhijiaRecruitKind.Guild &&
+                    rs.areas.value.isNotEmpty()
+                ) {
+                    Spacer(Modifier.height(14.dp))
+                    SzjFilterChips(
+                        "招募大区",
+                        listOf("" to "不限大区") +
+                            rs.areas.value.map { it.areaId.toString() to it.areaName } +
+                            listOf("-1" to "国际服"),
+                        selected = setOf(draft.targetAreaId),
+                    ) { draft = draft.copy(targetAreaId = it) }
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SzjPressable(
+                        onClick = { draft = ShizhijiaRecruitFilter() },
+                        modifier = Modifier.weight(1f),
+                        shape = SzjInnerShape,
+                    ) {
+                        Text("重置", color = SzjMuted, style = SzjLabelStyle, textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().clip(SzjInnerShape)
+                                .border(1.dp, SzjHairline, SzjInnerShape).padding(vertical = 11.dp))
+                    }
+                    SzjPressable(
+                        onClick = { rs.setFilter(kind, draft); onClose() },
+                        modifier = Modifier.weight(1f),
+                        shape = SzjInnerShape,
+                    ) {
+                        Text("看结果", color = SzjOnAccent, style = SzjLabelStyle, textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjAccent).padding(vertical = 11.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 多选列表里加/减一项。 */
+private fun List<String>.toggle(id: String): List<String> =
+    if (contains(id)) this - id else this + id
+
+/** 一组筛选 chip。multi=true 时是多选（选中项各自高亮），否则单选。 */
+@Composable
+private fun SzjFilterChips(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: Set<String>,
+    multi: Boolean = false,
+    onPick: (String) -> Unit,
+) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SzjShard(widthDp = 2, heightDp = 11)
+            Spacer(Modifier.width(7.dp))
+            Text(label, color = SzjText, style = SzjLabelStyle)
+        }
+        Spacer(Modifier.height(9.dp))
+        // 每行 4 个，多了换行——横向滚动的话看不到后面还有多少
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            options.chunked(4).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    row.forEach { (id, name) ->
+                        val on = selected.contains(id)
+                        val bg by animateColorAsState(if (on) SzjAccent else SzjCardRaised, tween(180), label = "fchipBg")
+                        val fg by animateColorAsState(if (on) SzjOnAccent else SzjMuted, tween(180), label = "fchipFg")
+                        SzjPressable(onClick = { onPick(id) }, shape = SzjChipShape) {
+                            Text(
+                                name, fontSize = 12.sp, maxLines = 1,
+                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                                color = fg,
+                                modifier = Modifier.clip(SzjChipShape).background(bg)
+                                    .padding(horizontal = 11.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                    repeat(4 - row.size) { Spacer(Modifier.weight(1f, fill = false)) }
                 }
             }
         }
@@ -1760,7 +2145,7 @@ private fun ShizhijiaRecruitTab(
  * 写操作没做，只读详情的价值不大，先让列表信息尽量完整。
  */
 @Composable
-private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit) {
+private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit, jobs: Map<String, ShizhijiaJob>) {
     SzjCardSurface(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
         onClick = if (r.uuid.isNotBlank()) ({ nav(SzjRoute.UserProfile(r.uuid)) }) else null,
@@ -1776,20 +2161,45 @@ private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit) {
             }
         }
         Column(Modifier.padding(14.dp)) {
-            // 眉标：招募面向的服务器。这是招募最关键的筛选信息，放最前。
-            if (r.targetServer.isNotBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
-                    SzjShard(widthDp = 2, heightDp = 10)
-                    Spacer(Modifier.width(6.dp))
-                    Text(r.targetServer, color = SzjAccent, style = SzjMetaStyle)
+            // 标题行：`[副本类型]副本名` + 右侧面向服务器的角标。
+            // 移动端就是这个排法——类型用主色方括号贴在名字前面，不占独立一行。
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    buildAnnotatedString {
+                        if (r.titlePrefix.isNotBlank()) {
+                            withStyle(SpanStyle(color = SzjAccent, fontWeight = FontWeight.SemiBold)) {
+                                append("[${r.titlePrefix}]")
+                            }
+                        }
+                        append(r.title)
+                    },
+                    color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (r.targetServer.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        r.targetServer, color = SzjOnAccentSoft, style = SzjMetaStyle, maxLines = 1,
+                        modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft)
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                    )
                 }
             }
-            Text(
-                r.title,
-                color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            )
-            // 分类特有的信息行（副本/时间/进度、在线时段、营业时间…）
+            // 键值行：键用主色，值用正文色。进度/攻略/时间这种一眼要扫到的信息。
+            if (r.infoRows.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                r.infoRows.forEach { (k, v) ->
+                    Row(Modifier.padding(vertical = 2.dp)) {
+                        Text(k, color = SzjAccent, fontSize = 12.sp, modifier = Modifier.width(34.dp))
+                        Text(
+                            v, color = SzjText, fontSize = 12.sp, lineHeight = 18.sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            // 分类特有的信息行（在线时段、营业时间…）
             if (r.lines.isNotEmpty()) {
                 Spacer(Modifier.height(7.dp))
                 r.lines.forEach { line ->
@@ -1813,6 +2223,19 @@ private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit) {
                     }
                 }
             }
+            // 位置槽：空位显示 MT/ST/H1… 的位置名，占了的显示职业图标。
+            if (r.slots.isNotEmpty()) {
+                Spacer(Modifier.height(11.dp))
+                SzjSlotRow(r.slots, jobs)
+            }
+            // 团队（24 人）：A/B/C 三队各一行。
+            r.alliances.forEach { (g, slots) ->
+                Spacer(Modifier.height(9.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(g, color = SzjMuted, style = SzjLabelStyle, modifier = Modifier.width(16.dp))
+                    SzjSlotRow(slots, jobs, modifier = Modifier.weight(1f))
+                }
+            }
             Spacer(Modifier.height(11.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SzjAvatar(r.characterName, r.avatar, r.uuid, 22)
@@ -1826,6 +2249,48 @@ private fun SzjRecruitRow(r: ShizhijiaRecruit, nav: (SzjRoute) -> Unit) {
                 }
                 Spacer(Modifier.weight(1f))
                 if (r.responseNum >= 0) Text("${r.responseNum} 报名", color = SzjMuted, style = SzjMetaStyle)
+            }
+        }
+    }
+}
+
+/**
+ * 位置槽一行。空位是一个浅色方块 + 位置名（MT/ST/H1…），
+ * 有人报名的位置换成那个人的职业图标——一眼能看出还缺什么。
+ * 8 个格子平分宽度，窄屏上也不会挤出边。
+ */
+@Composable
+private fun SzjSlotRow(
+    slots: List<ShizhijiaSlot>,
+    jobs: Map<String, ShizhijiaJob>,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        slots.forEach { s ->
+            val job = jobs[s.jobId]
+            Box(
+                Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(6.dp))
+                    .background(if (s.filled) SzjAccentSoft else SzjCardRaised),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (s.filled && job != null && job.iconUrl.isNotBlank()) {
+                    ShizhijiaRemoteImage(
+                        url = job.iconUrl,
+                        modifier = Modifier.fillMaxSize().padding(2.dp),
+                        contentScale = ContentScale.Fit,
+                        showPlaceholder = false,
+                        collapseOnFail = false,
+                    )
+                } else {
+                    // 图标还没到、或者字典里没这个 id：退回位置名，别留白格。
+                    Text(
+                        s.name,
+                        color = if (s.filled) SzjOnAccentSoft else SzjMuted,
+                        fontSize = 11.sp,
+                        fontWeight = if (s.filled) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
@@ -2716,6 +3181,7 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
 private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
     val context = LocalContext.current
     var posts by remember { mutableStateOf<List<ShizhijiaPostCard>?>(null) }
+    var status by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaPostCard>>?>(null) }
     var page by remember { mutableStateOf(1) }
     var ended by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -2723,7 +3189,9 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
 
     LaunchedEffect(Unit) {
         loading = true
-        posts = ShizhijiaApi.getMyStarPosts(context, 1)
+        val res = ShizhijiaApi.getMyStarPosts(context, 1)
+        status = res
+        posts = (res as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
         loading = false
     }
     val nearEnd by remember { derivedStateOf {
@@ -2734,7 +3202,7 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
     LaunchedEffect(nearEnd) {
         if (nearEnd && !loading && !ended) {
             loading = true
-            val next = ShizhijiaApi.getMyStarPosts(context, page + 1)
+            val next = (ShizhijiaApi.getMyStarPosts(context, page + 1) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
             if (next.isEmpty()) ended = true else { posts = posts.orEmpty() + next; page += 1 }
             loading = false
         }
@@ -2745,10 +3213,12 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
         val list = posts
         when {
             list == null && loading -> SzjFeedSkeleton()
-            list.isNullOrEmpty() -> SzjEmpty(
-                "收藏夹是空的",
-                "在帖子详情点收藏，之后就能在这里找回来。没登录的话先登录",
-            ) { SzjPrimaryButton("去登录", onClick = { nav(SzjRoute.Login) }) }
+            list.isNullOrEmpty() -> SzjResState(
+                res = status,
+                emptyTitle = "收藏夹是空的",
+                emptyHint = "在帖子详情点收藏，之后就能在这里找回来",
+                onLogin = { nav(SzjRoute.Login) },
+            )
             else -> LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -2786,14 +3256,21 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
     )
     var kind by remember { mutableStateOf(ShizhijiaRecruitKind.Fb) }
     var items by remember { mutableStateOf<List<ShizhijiaRecruit>?>(null) }
+    var status by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaRecruit>>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var polishing by remember { mutableStateOf(false) }
+    // 招募卡的位置图标要用职业字典（公开接口，拉一次）。
+    var jobs by remember { mutableStateOf(mapOf<String, ShizhijiaJob>()) }
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) { jobs = ShizhijiaApi.getJobConfig(context) }
 
     LaunchedEffect(kind) {
         loading = true
         items = null
-        items = ShizhijiaApi.getMyRecruitList(context, kind)
+        val res = ShizhijiaApi.getMyRecruitList(context, kind)
+        status = res
+        items = (res as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
         loading = false
     }
 
@@ -2813,7 +3290,9 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
                         ).show()
                         // 擦亮后排序变了，重新拉一次当前分类。
                         loading = true
-                        items = ShizhijiaApi.getMyRecruitList(context, kind)
+                        val again = ShizhijiaApi.getMyRecruitList(context, kind)
+                        status = again
+                        items = (again as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
                         loading = false
                     }
                 },
@@ -2836,9 +3315,11 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
         val list = items
         when {
             loading && list == null -> SzjFeedSkeleton()
-            list.isNullOrEmpty() -> SzjEmpty(
-                "这一类你还没发过招募",
-                "发布要在石之家网页或官方 App 里做，这里只看和擦亮",
+            list.isNullOrEmpty() -> SzjResState(
+                res = status,
+                emptyTitle = "这一类你还没发过招募",
+                emptyHint = "发布要在石之家网页或官方 App 里做，这里只看和擦亮",
+                onLogin = { nav(SzjRoute.Login) },
             )
             else -> LazyColumn(
                 state = listState,
@@ -2846,7 +3327,7 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp),
             ) {
                 itemsIndexed(list, key = { _, it -> it.kind.name + it.id }) { index, r ->
-                    SzjRise(index) { SzjRecruitRow(r, nav) }
+                    SzjRise(index) { SzjRecruitRow(r, nav, jobs) }
                 }
             }
         }
@@ -2867,6 +3348,7 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var current by remember { mutableStateOf<ShizhijiaBoundCharacter?>(null) }
+    var currentStatus by remember { mutableStateOf<ShizhijiaApi.Res<ShizhijiaBoundCharacter?>?>(null) }
     var loadingCurrent by remember { mutableStateOf(true) }
     var areas by remember { mutableStateOf(listOf<ShizhijiaArea>()) }
     var areaId by remember { mutableStateOf(-1) }
@@ -2874,7 +3356,9 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
     var switching by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        current = ShizhijiaApi.getCurrentCharacter(context)
+        val res = ShizhijiaApi.getCurrentCharacter(context)
+        currentStatus = res
+        current = (res as? ShizhijiaApi.Res.Ok)?.value
         loadingCurrent = false
         areas = ShizhijiaApi.getAreaList(context)
     }
@@ -2901,9 +3385,17 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
                         loadingCurrent -> SzjShimmerBox(Modifier.fillMaxWidth().height(76.dp), SzjCardShape)
                         current == null -> SzjCardSurface(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(15.dp)) {
-                                Text("没读到绑定角色", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                // 分清"没登录"和"登录了但没绑角色"，别一律说要登录
+                                val s = currentStatus
+                                val (t, h) = when (s) {
+                                    is ShizhijiaApi.Res.NeedLogin -> "还没登录" to "登录后这里显示你当前绑定的角色"
+                                    is ShizhijiaApi.Res.NeedCharacter -> "账号还没绑定角色" to "在石之家网页或官方 App 里绑一个角色"
+                                    is ShizhijiaApi.Res.Failed -> "读不到角色" to s.msg.ifBlank { "服务端返回 ${s.code ?: "网络错误"}" }
+                                    else -> "没有绑定角色" to "在石之家绑定一个 FF14 角色后再回来"
+                                }
+                                Text(t, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                 Spacer(Modifier.height(5.dp))
-                                Text("需要先登录并在石之家绑定一个角色", color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp)
+                                Text(h, color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp)
                             }
                         }
                         else -> SzjCharacterCard(current!!, isCurrent = true, busy = false, onSwitch = null)
@@ -2979,7 +3471,9 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
                                             // 否则顶栏还显示旧角色。
                                             ShizhijiaSession.clearCachedUser(context)
                                             loadingCurrent = true
-                                            current = ShizhijiaApi.getCurrentCharacter(context)
+                                            val again = ShizhijiaApi.getCurrentCharacter(context)
+                                            currentStatus = again
+                                            current = (again as? ShizhijiaApi.Res.Ok)?.value
                                             loadingCurrent = false
                                         }
                                     }
@@ -3008,13 +3502,39 @@ private fun ShizhijiaMyGuildScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
     val context = LocalContext.current
     var fcId by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    // 角色/部队两步都可能因为未登录而失败，各自的状态要留着，
+    // 否则"没登录"和"没部队"会显示成同一句话。
+    var charRes by remember { mutableStateOf<ShizhijiaApi.Res<ShizhijiaBoundCharacter?>?>(null) }
+    var infoRes by remember { mutableStateOf<ShizhijiaApi.Res<org.json.JSONObject>?>(null) }
     var loading by remember { mutableStateOf(true) }
+    // 子页：资料 / 成员 / 动态 / 照片墙
+    var tab by remember { mutableStateOf(GUILD_PROFILE) }
+    // 三个子页各自的数据，切到才拉，切回来不重复请求。
+    var members by remember { mutableStateOf<ShizhijiaApi.Res<ShizhijiaGuildMembers>?>(null) }
+    var dynamics by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaDynamic>>?>(null) }
+    var photos by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaGuildPhoto>>?>(null) }
 
     LaunchedEffect(Unit) {
         val cur = ShizhijiaApi.getCurrentCharacter(context)
-        fcId = cur?.fcId.orEmpty()
-        if (!fcId.isNullOrBlank()) info = ShizhijiaApi.getGuildInfo(context, fcId!!)
+        charRes = cur
+        fcId = (cur as? ShizhijiaApi.Res.Ok)?.value?.fcId.orEmpty()
+        if (!fcId.isNullOrBlank()) {
+            val res = ShizhijiaApi.getGuildInfo(context, fcId!!)
+            infoRes = res
+            info = (res as? ShizhijiaApi.Res.Ok)?.value
+        }
         loading = false
+    }
+
+    // 子页数据按需加载：切到那一页才发请求，已经有结果就不再发。
+    LaunchedEffect(tab, fcId) {
+        val id = fcId ?: return@LaunchedEffect
+        if (id.isBlank()) return@LaunchedEffect
+        when (tab) {
+            GUILD_MEMBERS -> if (members == null) members = ShizhijiaApi.getGuildMembers(context, id)
+            GUILD_DYNAMICS -> if (dynamics == null) dynamics = ShizhijiaApi.getGuildDynamics(context, id)
+            GUILD_PHOTOS -> if (photos == null) photos = ShizhijiaApi.getGuildPhotos(context, id)
+        }
     }
 
     /** 在返回的 JSON 里按多个候选键名取字符串。 */
@@ -3035,14 +3555,26 @@ private fun ShizhijiaMyGuildScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 SzjShimmerBox(Modifier.fillMaxWidth().height(140.dp), SzjCardShape)
             }
+            charRes is ShizhijiaApi.Res.NeedLogin -> SzjEmpty(
+                "需要登录石之家账号",
+                "部队信息跟着当前绑定的角色走，登录后才能读到",
+            ) { SzjPrimaryButton("登录", onClick = { nav(SzjRoute.Login) }) }
             fcId.isNullOrBlank() -> SzjEmpty(
                 "你的角色没有加入部队",
-                "部队信息跟着当前绑定的角色走。换个角色再看看，或者先登录",
+                "部队信息跟着当前绑定的角色走。换个角色再看看",
             ) { SzjPrimaryButton("我的角色", onClick = { nav(SzjRoute.Characters) }) }
-            info == null -> SzjEmpty(
-                "读不到部队信息",
-                "接口返回了空。如果你确实有部队，把控制台里 guild/getGuildInfo 的字段名发我，我来对",
-            )
+            info == null -> {
+                val r = infoRes
+                SzjEmpty(
+                    "读不到部队信息",
+                    when (r) {
+                        is ShizhijiaApi.Res.NeedLogin -> "登录状态过期了，重新登录一次"
+                        is ShizhijiaApi.Res.Failed ->
+                            r.msg.ifBlank { if (r.code == null) "网络没通，检查一下连接" else "服务端返回 ${r.code}" }
+                        else -> "接口返回了空"
+                    },
+                )
+            }
             else -> {
                 val name = pick("guild_name", "guildName", "name", "fc_name")
                 val tag = pick("guild_tag", "guildTag", "tag")
@@ -3071,13 +3603,22 @@ private fun ShizhijiaMyGuildScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
                                         Spacer(Modifier.width(12.dp))
                                     }
                                     Column(Modifier.weight(1f)) {
-                                        Text(
-                                            name.ifBlank { "未命名部队" },
-                                            color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                                        )
-                                        if (tag.isNotBlank()) {
-                                            Spacer(Modifier.height(2.dp))
-                                            Text("«$tag»", color = SzjAccent, style = SzjMetaStyle)
+                                        // 部队简称跟在昵称后面（官网就是 名字 «TAG» 这个排法），
+                                        // 不另起一行。名字长了先省略名字，简称始终留住。
+                                        Row(verticalAlignment = Alignment.Bottom) {
+                                            Text(
+                                                name.ifBlank { "未命名部队" },
+                                                color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false),
+                                            )
+                                            if (tag.isNotBlank()) {
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    "«$tag»", color = SzjAccent, style = SzjMetaStyle,
+                                                    modifier = Modifier.padding(bottom = 2.dp),
+                                                )
+                                            }
                                         }
                                         val srv = listOf(area, group).filter { it.isNotBlank() }.joinToString(" ")
                                         if (srv.isNotBlank()) {
@@ -3092,35 +3633,206 @@ private fun ShizhijiaMyGuildScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
                             }
                         }
                     }
-                    val rows = listOf(
-                        "部队 ID" to fcId.orEmpty(),
-                        "团长" to master,
-                        "成员" to memberNum,
-                        "成立" to formed,
-                    ).filter { it.second.isNotBlank() }
-                    if (rows.isNotEmpty()) {
-                        item(key = "rows") {
-                            SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                Column(Modifier.padding(14.dp)) {
-                                    rows.forEachIndexed { i, (k, v) ->
-                                        if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
-                                        Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                                            Text(k, color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.width(70.dp))
-                                            Text(v, color = SzjText, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.weight(1f))
+                    item(key = "tabs") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            SzjPartChip("资料", tab == GUILD_PROFILE) { tab = GUILD_PROFILE }
+                            SzjPartChip("成员", tab == GUILD_MEMBERS) { tab = GUILD_MEMBERS }
+                            SzjPartChip("动态", tab == GUILD_DYNAMICS) { tab = GUILD_DYNAMICS }
+                            SzjPartChip("照片墙", tab == GUILD_PHOTOS) { tab = GUILD_PHOTOS }
+                        }
+                    }
+                    when (tab) {
+                        GUILD_PROFILE -> {
+                            val rows = listOf(
+                                "部队 ID" to fcId.orEmpty(),
+                                "团长" to master,
+                                "成员" to memberNum,
+                                "成立" to formed,
+                            ).filter { it.second.isNotBlank() }
+                            if (rows.isNotEmpty()) {
+                                item(key = "rows") {
+                                    SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                        Column(Modifier.padding(14.dp)) {
+                                            rows.forEachIndexed { i, (k, v) ->
+                                                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                                                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                                                    Text(k, color = SzjMuted, style = SzjMetaStyle, modifier = Modifier.width(70.dp))
+                                                    Text(v, color = SzjText, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.weight(1f))
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                        GUILD_MEMBERS -> szjGuildMemberItems(members, nav)
+                        GUILD_DYNAMICS -> szjGuildDynamicItems(dynamics, nav)
+                        else -> szjGuildPhotoItems(photos)
                     }
-                    item(key = "note") {
-                        Text(
-                            "成员、相册、部队动态这几个子页还没接",
-                            color = SzjMuted, style = SzjMetaStyle,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-                            textAlign = TextAlign.Center,
-                        )
+                }
+            }
+        }
+    }
+}
+
+private const val GUILD_PROFILE = 0
+private const val GUILD_MEMBERS = 1
+private const val GUILD_DYNAMICS = 2
+private const val GUILD_PHOTOS = 3
+
+/**
+ * 子页的载入/失败/空态。三个子页共用，省得每个都写一遍 when。
+ * 返回 true 表示已经画了占位，调用方不用再画列表。
+ */
+private fun LazyListScope.szjGuildPlaceholder(
+    res: ShizhijiaApi.Res<*>?,
+    isEmpty: Boolean,
+    emptyTitle: String,
+    key: String,
+): Boolean {
+    when {
+        res == null -> item(key = "$key-load") { SzjFeedSkeleton() }
+        res is ShizhijiaApi.Res.Ok && isEmpty -> item(key = "$key-empty") { SzjEmptyInline(emptyTitle) }
+        res is ShizhijiaApi.Res.NeedLogin -> item(key = "$key-login") { SzjEmptyInline("登录状态过期了", "重新登录一次") }
+        res is ShizhijiaApi.Res.Failed -> item(key = "$key-fail") {
+            SzjEmptyInline("没读取到", res.msg.ifBlank { if (res.code == null) "网络没通" else "服务端返回 ${res.code}" })
+        }
+        else -> return false
+    }
+    return true
+}
+
+/** 成员子页：注册过石之家的能点进主页，未注册的只有名字。 */
+private fun LazyListScope.szjGuildMemberItems(
+    res: ShizhijiaApi.Res<ShizhijiaGuildMembers>?,
+    nav: (SzjRoute) -> Unit,
+) {
+    val v = (res as? ShizhijiaApi.Res.Ok)?.value
+    if (szjGuildPlaceholder(res, v == null || v.total == 0, "还没读到成员", "gm")) return
+    val m = v ?: return
+    if (m.registered.isNotEmpty()) {
+        item(key = "gm-h1") { SzjGuildGroupLabel("石之家成员", m.registered.size) }
+        itemsIndexed(m.registered, key = { _, it -> "r-${it.uuid.ifBlank { it.name }}" }) { i, mem ->
+            SzjRise(i) { SzjGuildMemberRow(mem, onClick = { nav(SzjRoute.UserProfile(mem.uuid)) }.takeIf { mem.uuid.isNotBlank() }) }
+        }
+    }
+    if (m.unregistered.isNotEmpty()) {
+        item(key = "gm-h2") { SzjGuildGroupLabel("未注册石之家", m.unregistered.size) }
+        items(m.unregistered, key = { "u-${it.name}" }) { mem -> SzjGuildMemberRow(mem, onClick = null) }
+    }
+}
+
+/** 分组小标题：棱条 + 名字 + 人数。 */
+@Composable
+private fun SzjGuildGroupLabel(label: String, count: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SzjShard(widthDp = 3, heightDp = 13)
+        Spacer(Modifier.width(7.dp))
+        Text(label, color = SzjText, style = SzjLabelStyle)
+        Spacer(Modifier.width(6.dp))
+        Text("$count", color = SzjMuted, style = SzjMetaStyle)
+    }
+}
+
+@Composable
+private fun SzjGuildMemberRow(m: ShizhijiaGuildMember, onClick: (() -> Unit)?) {
+    SzjCardSurface(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        onClick = onClick,
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            SzjAvatar(m.name, m.avatar, m.uuid, 36)
+            Spacer(Modifier.width(11.dp))
+            Text(m.name, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            if (m.rank.isNotBlank()) {
+                Text(
+                    m.rank, color = SzjOnAccentSoft, style = SzjMetaStyle,
+                    modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft).padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 动态子页：直接复用社区那套动态卡。 */
+private fun LazyListScope.szjGuildDynamicItems(
+    res: ShizhijiaApi.Res<List<ShizhijiaDynamic>>?,
+    nav: (SzjRoute) -> Unit,
+) {
+    val v = (res as? ShizhijiaApi.Res.Ok)?.value
+    if (szjGuildPlaceholder(res, v.isNullOrEmpty(), "部队成员还没发动态", "gd")) return
+    itemsIndexed(v ?: return, key = { _, it -> it.id }) { i, d ->
+        SzjRise(i) { SzjDynamicRow(d, onClick = { nav(SzjRoute.DynamicDetail(d.id)) }) }
+    }
+}
+
+/** 照片墙子页。一条记录可能带多张图，点开进全屏查看器。 */
+private fun LazyListScope.szjGuildPhotoItems(res: ShizhijiaApi.Res<List<ShizhijiaGuildPhoto>>?) {
+    val v = (res as? ShizhijiaApi.Res.Ok)?.value
+    if (szjGuildPlaceholder(res, v.isNullOrEmpty(), "照片墙还是空的", "gp")) return
+    itemsIndexed(v ?: return, key = { _, it -> it.id }) { i, p -> SzjRise(i) { SzjGuildPhotoCard(p) } }
+}
+
+@Composable
+private fun SzjGuildPhotoCard(p: ShizhijiaGuildPhoto) {
+    SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SzjAvatar(p.uploaderName, p.uploaderAvatar, p.uploaderUuid, 32)
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    p.uploaderName.ifBlank { "光之战士" }, color = SzjText, fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f),
+                )
+                if (p.createdAt.isNotBlank()) Text(p.createdAt.take(10), color = SzjMuted, style = SzjMetaStyle)
+            }
+            if (p.desc.isNotBlank()) {
+                Spacer(Modifier.height(9.dp))
+                Text(p.desc, color = SzjMuted, fontSize = 12.sp, lineHeight = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(10.dp))
+            // 一张时整宽，多张时三列方格——和帖子卡的缩略图同一套排法。
+            if (p.urls.size == 1) {
+                ShizhijiaRemoteImage(
+                    url = p.urls[0],
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).clip(SzjInnerShape),
+                    contentScale = ContentScale.Crop,
+                    collapseOnFail = true,
+                    onClick = { SzjViewer.url = it },
+                )
+            } else {
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val cell = (maxWidth - 12.dp) / 3
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        p.urls.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                row.forEach { url ->
+                                    ShizhijiaRemoteImage(
+                                        url = url,
+                                        modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape),
+                                        contentScale = ContentScale.Crop,
+                                        showPlaceholder = false,
+                                        collapseOnFail = true,
+                                        onClick = { SzjViewer.url = it },
+                                    )
+                                }
+                            }
+                        }
                     }
+                }
+            }
+            if (p.likeCount > 0 || p.commentCount > 0) {
+                Spacer(Modifier.height(9.dp))
+                Row {
+                    if (p.likeCount > 0) Text("赞 ${p.likeCount}", color = SzjMuted, style = SzjMetaStyle)
+                    if (p.likeCount > 0 && p.commentCount > 0) Text("   ", style = SzjMetaStyle)
+                    if (p.commentCount > 0) Text("评论 ${p.commentCount}", color = SzjMuted, style = SzjMetaStyle)
                 }
             }
         }
