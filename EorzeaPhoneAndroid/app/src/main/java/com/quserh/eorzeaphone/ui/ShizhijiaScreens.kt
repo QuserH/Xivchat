@@ -3051,7 +3051,9 @@ private fun ShizhijiaRecruitDetailScreen(
                         if (d.updatedAt.isNotBlank()) add("更新" to d.updatedAt)
                         // 和帖子/评论用同一个说法。之前这里叫"发布地"，
                         // 同一个字段两个名字，看起来像两种东西。
-                        if (d.ipLocation.isNotBlank()) add("IP属地" to d.ipLocation.removePrefix("中国").ifBlank { d.ipLocation })
+                        // 这里是键值表（有独立的标签列），所以用完整的"IP属地"；
+                        // 帖子/评论那种挤在一行里的用"属地"。裁"中国"前缀共用同一个函数。
+                        szjIpShort(d.ipLocation).takeIf { it.isNotBlank() }?.let { add("IP属地" to it) }
                     }
                     if (rows.isNotEmpty()) {
                         SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
@@ -3864,11 +3866,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(d.characterName, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis); if (d.createdAt.isNotBlank()) { Text(" " + d.createdAt, color = SzjMuted, style = SzjMetaStyle, maxLines = 1) } }
-                                // IP 属地。接口一直在给，只是之前没显示。
-                                // 单独一行：上一行说的是游戏里的区服，这行说的是现实地区，
-                                // 混在一起容易被当成同一件事。
-                                SzjIpTag(d.ipLocation)
+                                SzjMetaLine(d.areaName, d.groupName, d.createdAt, d.ipLocation)
                             }
                         }
                         // 四个计数排成一行小标签，用点分隔而不是各自留白。
@@ -4303,9 +4301,7 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
                             modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(SzjAccentSoft).padding(horizontal = 5.dp, vertical = 1.dp))
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.createdAt.isNotBlank()) { Text(" " + c.createdAt, color = SzjMuted, style = SzjMetaStyle, maxLines = 1) } }
-                // 每条评论各带一个 IP 属地，接口一直在给。
-                SzjIpTag(c.ipLocation)
+                SzjMetaLine(c.areaName, c.groupName, c.createdAt, c.ipLocation)
             }
             // 点赞：评论走 posts/like 的 type=2（和帖子同一个端点）。
             // 状态和计数在本地跟着切换接口的返回值走，不重拉整页评论。
@@ -5270,24 +5266,82 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
 }
 
 /**
- * IP 属地标签。空就整个不画（不少记录是空的）。
+ * IP 属地的显示值。空就返回空（不少记录是空的，空就整个不显示）。
  *
  * 值是**省级地区名**，不是 IP 地址——实测形如"中国上海市"、"中国浙江省"。
- * 显示时把开头的"中国"去掉：一屏全是"中国"没有信息量，
- * 真是境外的会留着国名（"日本"），那时候这个前缀才有用。
+ * 去掉开头的"中国"：一屏全是"中国"没有信息量，
+ * 境外的会留着国名（"日本"），那时候这个前缀才有用。
+ */
+internal fun szjIpShort(ipLocation: String): String {
+    val v = ipLocation.trim()
+    if (v.isBlank()) return ""
+    return v.removePrefix("中国").ifBlank { v }
+}
+
+/**
+ * 元信息行里的时间。原来直接打整串 `2026-08-28 21:03:00`——
+ * 19 个字符，把一行的横向空间吃光了，这也是 IP 属地挤不进同一行的原因。
+ *
+ * 列表里没人需要秒，也没人需要"今年"这个信息：
+ * 今天的给 `21:03`，今年的给 `08-28 21:03`，更早的给日期。
+ * 形状不对（不是 `yyyy-MM-dd HH:mm:ss`）就原样返回，不猜。
+ */
+internal fun szjShortTime(raw: String): String {
+    val s = raw.trim()
+    if (s.length < 16 || s[4] != '-' || s[10] != ' ') return s
+    val date = s.substring(0, 10)
+    val hm = s.substring(11, 16)
+    val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA)
+        .format(java.util.Date())
+    return when {
+        date == today -> hm
+        date.take(4) == today.take(4) -> "${date.substring(5)} $hm"
+        else -> date
+    }
+}
+
+/**
+ * 作者/评论的元信息行：`📍区服 · 时间 · 属地X`，一行装完。
+ *
+ * 为什么不给 IP 属地单开一行（我上一版就是那么干的，难看在这儿）：
+ * 头像是 30~36dp，名字 + 元信息刚好两行填满它；加第三行文字块就比头像高，
+ * 头像顶在上面、右侧点赞按钮居中对齐整行，三者全错开。
+ * 元信息本来就是同一类东西（都在回答"谁、什么时候、在哪"），
+ * 挤成三行不是信息更清楚，是把一件事拆成三份。
+ *
+ * 定位针只领"游戏区服"那一段：属地是现实地区，跟区服不是一回事，
+ * 靠"属地"这个词区分，不再多给一个图标（一行两个图标就开始像工具栏了）。
  */
 @Composable
-private fun SzjIpTag(ipLocation: String) {
-    val v = ipLocation.trim()
-    if (v.isBlank()) return
-    val shown = v.removePrefix("中国").ifBlank { v }
-    Text(
-        "IP属地 $shown",
-        color = SzjMuted,
-        style = SzjMetaStyle,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+private fun SzjMetaLine(
+    areaName: String,
+    groupName: String,
+    createdAt: String,
+    ipLocation: String,
+) {
+    val server = listOf(areaName, groupName).filter { it.isNotBlank() }.joinToString(" ")
+    val time = szjShortTime(createdAt)
+    val ip = szjIpShort(ipLocation)
+    if (server.isBlank() && time.isBlank() && ip.isBlank()) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (server.isNotBlank()) {
+            SzjLocPin()
+            // 区服可能很长，只让它被压缩，后面的时间和属地是定长的、不该被吃掉。
+            Text(
+                server, color = SzjMuted, style = SzjMetaStyle,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
+        // 分隔点只出现在两段**之间**：没有区服时第一段前面不能挂一个点。
+        var first = server.isBlank()
+        listOf(time, if (ip.isNotBlank()) "属地 $ip" else "")
+            .filter { it.isNotBlank() }
+            .forEach { t ->
+                if (first) first = false else Text(" · ", color = SzjLine, style = SzjMetaStyle)
+                Text(t, color = SzjMuted, style = SzjMetaStyle, maxLines = 1)
+            }
+    }
 }
 
 /** 列表底部的翻页转圈。四个收藏标签共用，别再各写一遍。 */
