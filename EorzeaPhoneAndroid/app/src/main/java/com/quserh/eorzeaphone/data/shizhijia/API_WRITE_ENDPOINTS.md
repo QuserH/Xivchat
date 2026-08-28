@@ -112,3 +112,41 @@ Vite 分包，共 155 个 chunk，公开静态资源，不带 cookie 即可读�
   行结构和幻化列表同构（`GlamourItem` 复用）。
 - `uuid` 只在看**别人**的收藏时才带；看自己的官网传的是 `undefined`。
 - 同组还有 `glamour/deleteFavorites`（DELETE `{id}`）建/删收藏夹，没做。
+
+### 收藏夹里的幻化行：主键是 `glamour_id`，不是 `id`
+
+`glamour/myFavoriteItemsList` 的行**和幻化列表不同构**，别复用同一个解析：
+
+| 字段 | 说明 |
+|---|---|
+| `glamour_id` | 幻化 id。**查详情要用这个**，官网链接是 `/glamour/detail/{glamour_id}` |
+| `id` | 收藏记录自己的 id（拿它查详情查不到） |
+| `title` / `main_image` / `uuid` | 有 |
+| `is_valid` | 0 = 原作已删。官网这时不让点，标"已失效" |
+| `added_at` | 收藏时间 |
+
+**没有** `likes` / `favorites` / `character_name` / `area_name` / `group_name`
+——所以卡片上的计数和作者行要按"没有这个数"处理，不能画 0。
+
+（实测踩过：用 `id` 建卡片，列表能画出来但点进去详情是空的。）
+
+## IP 属地：`ip_location`
+
+**是省级地区名，不是 IP 地址。** 实测值：`中国上海市` / `中国浙江省` /
+`中国广西壮族自治区`。
+
+| 接口 | 有没有 |
+|---|---|
+| `posts/postsDetail` | **有**（`data.ip_location`） |
+| `posts/postsCommentDetail` | **有**，每条评论各一个 |
+| `posts/postsList` | 没有 |
+| 招募详情 | 有 |
+| `userInfo/getUserInfo` | 需登录，没验证 |
+
+- 有些记录是空字符串，空就别显示。
+- **没有"常驻 IP"这种字段。** 帖子详情里内嵌的 `userInfo` 里一个 IP 相关的
+  字段都没有，只有一堆 `*_publish` 开关（`washing_num_publish`、
+  `house_info_publish` …，那些是资料页各项的可见性开关）。
+- 官网 PC 端 155 个 chunk 里 `ip_location` **一次都没出现**，移动端只在
+  "发完评论本地先插一条"的占位对象里写了 `ip_location:""`。
+  也就是说两端都拿到了这个字段但都没显示出来 —— 我们显示它是主动选择。

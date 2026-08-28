@@ -3049,7 +3049,9 @@ private fun ShizhijiaRecruitDetailScreen(
                         if (d.dueDay >= 0) add("有效期" to "还剩 ${d.dueDay} 天")
                         if (d.card.responseNum >= 0) add("报名" to "${d.card.responseNum} 人")
                         if (d.updatedAt.isNotBlank()) add("更新" to d.updatedAt)
-                        if (d.ipLocation.isNotBlank()) add("发布地" to d.ipLocation)
+                        // 和帖子/评论用同一个说法。之前这里叫"发布地"，
+                        // 同一个字段两个名字，看起来像两种东西。
+                        if (d.ipLocation.isNotBlank()) add("IP属地" to d.ipLocation.removePrefix("中国").ifBlank { d.ipLocation })
                     }
                     if (rows.isNotEmpty()) {
                         SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
@@ -3863,6 +3865,10 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                             Column(Modifier.weight(1f)) {
                                 Text(d.characterName, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis); if (d.createdAt.isNotBlank()) { Text(" " + d.createdAt, color = SzjMuted, style = SzjMetaStyle, maxLines = 1) } }
+                                // IP 属地。接口一直在给，只是之前没显示。
+                                // 单独一行：上一行说的是游戏里的区服，这行说的是现实地区，
+                                // 混在一起容易被当成同一件事。
+                                SzjIpTag(d.ipLocation)
                             }
                         }
                         // 四个计数排成一行小标签，用点分隔而不是各自留白。
@@ -4298,6 +4304,8 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.createdAt.isNotBlank()) { Text(" " + c.createdAt, color = SzjMuted, style = SzjMetaStyle, maxLines = 1) } }
+                // 每条评论各带一个 IP 属地，接口一直在给。
+                SzjIpTag(c.ipLocation)
             }
             // 点赞：评论走 posts/like 的 type=2（和帖子同一个端点）。
             // 状态和计数在本地跟着切换接口的返回值走，不重拉整页评论。
@@ -5259,6 +5267,27 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
             }
         }
     }
+}
+
+/**
+ * IP 属地标签。空就整个不画（不少记录是空的）。
+ *
+ * 值是**省级地区名**，不是 IP 地址——实测形如"中国上海市"、"中国浙江省"。
+ * 显示时把开头的"中国"去掉：一屏全是"中国"没有信息量，
+ * 真是境外的会留着国名（"日本"），那时候这个前缀才有用。
+ */
+@Composable
+private fun SzjIpTag(ipLocation: String) {
+    val v = ipLocation.trim()
+    if (v.isBlank()) return
+    val shown = v.removePrefix("中国").ifBlank { v }
+    Text(
+        "IP属地 $shown",
+        color = SzjMuted,
+        style = SzjMetaStyle,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** 列表底部的翻页转圈。四个收藏标签共用，别再各写一遍。 */
@@ -7406,30 +7435,73 @@ private fun SzjGlamourBannerCard() {
     }
 }
 
-/** 幻化瀑布流卡片：封面限高裁切 + 标题 + 作者/服务器 + 收藏/点赞。 */
+/**
+ * 幻化瀑布流卡片：封面限高裁切 + 标题 + 作者/服务器 + 收藏/点赞。
+ *
+ * 收藏夹里的行字段少（没有计数、没有作者），失效的还不能点，
+ * 所以这几处都按"有就画、没有就不占位"处理，而不是画一堆 0。
+ */
 @Composable
 private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Unit) {
-    SzjCardSurface(onClick = { nav(SzjRoute.GlamourDetail(card.id)) }) {
+    val context = LocalContext.current
+    SzjCardSurface(
+        onClick = {
+            // 原作已删：官网这时直接不响应。这里给一句话，
+            // 不然点了没反应会让人以为是卡了。
+            if (!card.valid || card.id.isBlank()) {
+                android.widget.Toast.makeText(context, "这套幻化已经不在了", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                nav(SzjRoute.GlamourDetail(card.id))
+            }
+        },
+    ) {
         // 封面顶部跟着卡片圆角裁一下，不然图片方角会顶出卡片边缘。
         Box(Modifier.clip(RoundedCornerShape(topStart = 13.dp, topEnd = 13.dp))) {
             SzjGlamourImage(url = card.mainImage)
-        }
-        Column(Modifier.padding(horizontal = 9.dp, vertical = 9.dp)) {
-            Text(card.title, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(card.characterName, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (card.groupName.isNotBlank()) {
-                    Spacer(Modifier.width(2.dp))
-                    SzjLocPin(12)
-                    Text(card.groupName, color = SzjMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!card.valid) {
+                // 失效的压一层暗罩 + 角标：比只把文字变灰更容易一眼扫到。
+                Box(
+                    Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "已失效",
+                        color = Color.White,
+                        style = SzjLabelStyle,
+                        modifier = Modifier.clip(SzjChipShape)
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    )
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                SzjCountMeta(R.drawable.ic_star_filled, card.favorites.toLong())
-                Spacer(Modifier.width(10.dp))
-                SzjCountMeta(R.drawable.ic_heart, card.likes.toLong())
+        }
+        Column(Modifier.padding(horizontal = 9.dp, vertical = 9.dp)) {
+            Text(
+                card.title.ifBlank { "无题" },
+                color = if (card.valid) SzjText else SzjMuted,
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            // 收藏行不带作者，那一行整个省掉，别留个空行撑高卡片。
+            if (card.characterName.isNotBlank() || card.groupName.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(card.characterName, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (card.groupName.isNotBlank()) {
+                        Spacer(Modifier.width(2.dp))
+                        SzjLocPin(12)
+                        Text(card.groupName, color = SzjMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            // 计数为 -1 = 接口没给这个数（收藏行），不画 0。
+            if (card.favorites >= 0 || card.likes >= 0) {
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (card.favorites >= 0) SzjCountMeta(R.drawable.ic_star_filled, card.favorites.toLong())
+                    if (card.favorites >= 0 && card.likes >= 0) Spacer(Modifier.width(10.dp))
+                    if (card.likes >= 0) SzjCountMeta(R.drawable.ic_heart, card.likes.toLong())
+                }
             }
         }
     }

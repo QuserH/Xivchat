@@ -995,7 +995,8 @@ object ShizhijiaApi {
         return rowsRes(
             context, HOME_BASE, "glamour/myFavoriteItemsList",
             mapOf("favorite_id" to folder, "page" to page.toString(), "limit" to limit.toString()),
-        ) { ShizhijiaGlamourCard.fromArray(it) }
+            // 收藏行的字段和幻化列表不一样（主键是 glamour_id），必须走专用解析。
+        ) { ShizhijiaGlamourCard.fromFavoriteArray(it) }
     }
 
     /**

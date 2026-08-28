@@ -119,6 +119,12 @@ data class ShizhijiaPostDetail(
     val isLike: Boolean,
     /** 我收藏过没有。官网的详情里是 is_star，和 is_like 并列。 */
     val isStar: Boolean,
+    /**
+     * IP 属地。**是省级地区名不是 IP 地址**，实测值形如"中国上海市"、
+     * "中国浙江省"、"中国广西壮族自治区"。评论行也各带一个（见
+     * [ShizhijiaComment.ipLocation]）。有些记录是空的，空就不显示。
+     */
+    val ipLocation: String,
 ) {
     val hasCover: Boolean get() = coverPics.isNotEmpty()
     companion object {
@@ -145,6 +151,7 @@ data class ShizhijiaPostDetail(
                 partName = part?.optString("name").orEmpty().ifBlank { o.optString("part_name") },
                 isLike = o.optInt("is_like") == 1,
                 isStar = o.optInt("is_star") == 1,
+                ipLocation = cleanField(o.optString("ip_location")),
             )
         }
     }
@@ -307,6 +314,12 @@ data class ShizhijiaGlamourCard(
     val characterName: String,
     val areaName: String,
     val groupName: String,
+    /**
+     * 原作是否还在。只有收藏夹里的行会给 `is_valid`：收藏之后原帖被删了
+     * 就是 0，官网这时不让点（点了也没有详情可看），标"已失效"。
+     * 其他列表不带这个字段，默认 true。
+     */
+    val valid: Boolean = true,
 ) {
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaGlamourCard = ShizhijiaGlamourCard(
@@ -323,6 +336,32 @@ data class ShizhijiaGlamourCard(
 
         fun fromArray(arr: JSONArray): List<ShizhijiaGlamourCard> =
             buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(fromJson(it)) } }
+
+        /**
+         * 收藏夹里的一行（glamour/myFavoriteItemsList）。
+         *
+         * **不能用 [fromJson]**：收藏行的字段是另一套。
+         * 主键叫 `glamour_id`（`id` 是收藏记录自己的 id，拿它去查详情查不到——
+         * 我第一版就是这么错的，卡片能画出来但点进去是空的），
+         * 而且**不带** likes / favorites / character_name / area_name / group_name。
+         * 官网详情页链接用的就是 `/glamour/detail/{glamour_id}`。
+         */
+        fun fromFavoriteJson(o: JSONObject): ShizhijiaGlamourCard = ShizhijiaGlamourCard(
+            id = o.opt("glamour_id")?.toString().orEmpty(),
+            title = o.optString("title"),
+            mainImage = cleanAvatar(o.optString("main_image")),
+            // 收藏行没有计数，给 -1 让卡片知道"不是 0，是没这个数"。
+            likes = -1,
+            favorites = -1,
+            uuid = o.optString("uuid"),
+            characterName = "",
+            areaName = "",
+            groupName = "",
+            valid = o.optInt("is_valid", 1) != 0,
+        )
+
+        fun fromFavoriteArray(arr: JSONArray): List<ShizhijiaGlamourCard> =
+            buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(fromFavoriteJson(it)) } }
     }
 }
 
