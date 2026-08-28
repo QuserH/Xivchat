@@ -5339,7 +5339,7 @@ private fun SzjMetaLine(
             .filter { it.isNotBlank() }
             .forEach { t ->
                 if (first) first = false else Text(" · ", color = SzjLine, style = SzjMetaStyle)
-                Text(t, color = SzjMuted, style = SzjMetaStyle, maxLines = 1)
+                Text(t, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
     }
 }

@@ -193,7 +193,20 @@ data class AccentPalette(
             ),
         )
 
-        val default: AccentPalette = presets.first()
+        /**
+         * 默认是**水晶青**，不是列表第一个的石之家金。
+         *
+         * 石之家金放在第一位是因为它是站点自己的品牌色（想和网页一致就选它），
+         * 但它不该是默认：这个模块的设计体系定的是板岩 + 水晶青，
+         * 而金色和紫色都是明确说过不喜欢的两支。默认值等于"没选之前给什么"，
+         * 给一支被否过的颜色不合适——摆在预设里让人主动选是另一回事。
+         *
+         * 0.7.236 我把默认写成了 presets.first()（金），是个错。
+         */
+        val default: AccentPalette = byIdOrFirst("crystal_teal")
+
+        private fun byIdOrFirst(id: String): AccentPalette =
+            presets.firstOrNull { it.id == id } ?: presets.first()
 
         fun byId(id: String): AccentPalette? = presets.firstOrNull { it.id == id }
     }
