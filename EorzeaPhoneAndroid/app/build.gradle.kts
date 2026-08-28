@@ -13,8 +13,8 @@ android {
         applicationId = "com.quserh.eorzeaphone"
         minSdk = 24
         targetSdk = 36
-        versionCode = 258
-        versionName = "0.7.236"
+        versionCode = 259
+        versionName = "0.7.237"
     }
 
     buildFeatures {

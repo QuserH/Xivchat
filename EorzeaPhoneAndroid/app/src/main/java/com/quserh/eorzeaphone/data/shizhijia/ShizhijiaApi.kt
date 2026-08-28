@@ -935,12 +935,68 @@ object ShizhijiaApi {
         ) { ShizhijiaComment.fromArray(it) }
     }
 
-    /** 我收藏的帖子。需登录——未登录返回 Res.NeedLogin，界面据此区分空列表和未登录。 */
-    suspend fun getMyStarPosts(context: Context, page: Int = 1, limit: Int = 15): Res<List<ShizhijiaPostCard>> =
+    /**
+     * 我收藏的帖子/攻略。需登录——未登录返回 Res.NeedLogin，
+     * 界面据此区分空列表和未登录。
+     *
+     * **`type` 是必填的**，漏了服务端直接回 "Type不正确"（我之前就漏了，
+     * 所以收藏页一直是空的）。取值来自官网 MeCollections 页的两个分页函数：
+     * `{type:1}` = 帖子，`{type:2}` = 攻略，和 postsList 的 type 一致。
+     */
+    suspend fun getMyStarPosts(
+        context: Context,
+        type: String = "1",
+        page: Int = 1,
+        limit: Int = 15,
+    ): Res<List<ShizhijiaPostCard>> =
         rowsRes(
             context, HOME_BASE, "userInfo/myStarPosts",
-            mapOf("page" to page.toString(), "limit" to limit.toString()),
+            mapOf("type" to type, "page" to page.toString(), "limit" to limit.toString()),
         ) { ShizhijiaPostCard.fromArray(it) }
+
+    /**
+     * 我收藏的 RP 招募。和上面不是一套接口：官网 MeCollections 的 rp 标签
+     * 走 `recruit/homePageStarRecruitRp`，**不带任何参数**（没有分页），
+     * 一次把收藏的 RP 全给你。所以这里也不做分页。
+     *
+     * 官网拿到 rows 之后自己补了 `is_star: true`（收藏列表里的必然已收藏，
+     * 接口不重复告诉你），这里同样不依赖行里的收藏字段。
+     */
+    suspend fun getMyStarRecruitRp(context: Context): Res<List<ShizhijiaRecruit>> =
+        rowsRes(context, HOME_BASE, "recruit/homePageStarRecruitRp", emptyMap()) {
+            ShizhijiaRecruit.fromArray(it, ShizhijiaRecruitKind.Rp)
+        }
+
+    /**
+     * 我收藏的幻化。**两层**：收藏必须落在某个收藏夹里，所以先 myFavoritesList
+     * 拿夹子，再 myFavoriteItemsList 拿夹子里的内容。之前我只实现了第一层
+     * （而且只当作收藏时的选择器用），所以"收藏"页里一套幻化都看不到。
+     *
+     * [favoriteId] 为空时取默认夹（没有默认夹就取第一个）。
+     * uuid 只在看别人的收藏时才需要，看自己的不带——官网也是 undefined。
+     */
+    suspend fun getMyStarGlamours(
+        context: Context,
+        favoriteId: String = "",
+        page: Int = 1,
+        limit: Int = 16,
+    ): Res<List<ShizhijiaGlamourCard>> {
+        val folder = favoriteId.ifBlank {
+            when (val folders = glamourFavorites(context, 1, 50)) {
+                is Res.Ok -> folders.value.firstOrNull { it.third }?.first
+                    ?: folders.value.firstOrNull()?.first
+                    // 没有收藏夹 = 没收藏过任何幻化，这是空而不是错。
+                    ?: return Res.Ok(emptyList())
+                is Res.NeedLogin -> return Res.NeedLogin
+                is Res.NeedCharacter -> return Res.NeedCharacter
+                is Res.Failed -> return Res.Failed(folders.code, folders.msg)
+            }
+        }
+        return rowsRes(
+            context, HOME_BASE, "glamour/myFavoriteItemsList",
+            mapOf("favorite_id" to folder, "page" to page.toString(), "limit" to limit.toString()),
+        ) { ShizhijiaGlamourCard.fromArray(it) }
+    }
 
     /**
      * 我发布的招募。需登录。四类各有自己的"我的"接口，

@@ -3809,13 +3809,13 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
             SzjEmpty("这篇帖子没能打开", "可能已被删除，或者网络断了一下。返回再试一次")
             return@ScreenFrame
         }
-        // 正文和评论还是**一条流**（评论接在正文后面），右滑只是"跳到评论那一行"。
+        // 正文和评论还是**一条流**（评论接在正文后面），左滑只是"跳到评论那一行"。
         //
         // 上一版我把它切成了横滑两页——那样评论区变成独立的一页，跳过去之后
         // 往上滑看到的是评论区的顶，看不到帖子内容了。分页解决了"够不着"，
         // 却把"看完评论顺手往上翻正文"这件事弄没了。
         //
-        // 现在：一条 LazyColumn，右滑 = animateScrollToItem(评论区那个 item)。
+        // 现在：一条 LazyColumn，左滑 = animateScrollToItem(评论区那个 item)。
         // 跳过去之后正文就在上面，往上滑就能看，位置关系没有断。
         val jumpScope = rememberCoroutineScope()
         // 评论区第一个 item 在这条流里的下标 = 正文部分的 item 个数。
@@ -3831,9 +3831,12 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         LazyColumn(
             state = articleState,
             modifier = Modifier.fillMaxWidth().weight(1f)
-                // 右滑跳评论。只认横向占优、且确实是往右的手势，
+                // 左滑跳评论。只认横向占优、且确实是往左的手势，
                 // 竖向滚动照常（判定交给 detectHorizontalDragGestures 自己的
                 // 方向锁：它只在横向位移先越过触摸阈值时才接管）。
+                //
+                // 方向定左不定右还有个实际好处：安卓手势导航下，从屏幕左缘
+                // 往右划是系统返回手势，会被系统先吃掉。往左划没这个冲突。
                 .pointerInput(commentAnchor) {
                     var dx = 0f
                     val threshold = 56.dp.toPx()
@@ -3841,7 +3844,8 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                         onDragStart = { dx = 0f },
                         onDragEnd = {
                             // 阈值取 56dp：比误触大，比"翻页"手势小。
-                            if (dx > threshold) jumpToComments()
+                            // dx 往右为正，所以往左划是负的。
+                            if (dx < -threshold) jumpToComments()
                         },
                         onHorizontalDrag = { _, amount -> dx += amount },
                     )
@@ -3892,7 +3896,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 }
             }
             // 评论区：接在正文后面，同一条流。这个 item 的下标就是 commentAnchor，
-            // 右滑跳到的就是它。
+            // 左滑跳到的就是它。
             szjCommentSection(
                 comments = comments,
                 commentLoading = commentLoading,
@@ -4173,9 +4177,9 @@ private fun SzjActionCell(
  * 评论区 —— 接在正文后面，**同一条 LazyColumn 里**。
  *
  * 写成 LazyListScope 的扩展而不是一个独立的屏：评论和正文必须在一条流上，
- * 右滑跳过去之后往上滑还要能看到帖子内容。拆成两页会把这个关系弄断。
+ * 左滑跳过去之后往上滑还要能看到帖子内容。拆成两页会把这个关系弄断。
  *
- * 第一个 item 的下标就是调用方的 commentAnchor（右滑的落点）。
+ * 第一个 item 的下标就是调用方的 commentAnchor（左滑的落点）。
  */
 private fun LazyListScope.szjCommentSection(
     comments: List<ShizhijiaComment>,
@@ -5019,64 +5023,249 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
 // 我的：收藏 / 招募管理 / 角色
 // ---------------------------------------------------------------------------
 
-/** 我收藏的帖子。接口需登录，未登录时服务端返回 10403 → 这里显示登录引导。 */
+/**
+ * 收藏页的四个分类。官网 MeCollections 就是这四个标签，
+ * 但**四类各走各的接口**，参数和行结构都不一样：
+ *
+ * - 帖子 / 攻略：`userInfo/myStarPosts`，同一个接口靠 `type` 区分（1 / 2）
+ * - RP：`recruit/homePageStarRecruitRp`，不带参数、没有分页
+ * - 幻化：`glamour/myFavoriteItemsList`，要先有收藏夹 id
+ *
+ * 之前这一页只有帖子，而且漏了 `type` —— 服务端回 "Type不正确"，
+ * 所以点进来永远是空的；幻化那一层压根没实现。
+ */
+private enum class SzjFavTab(val label: String) {
+    Posts("帖子"), Strats("攻略"), Rp("RP"), Glamour("幻化")
+}
+
+/** 我的收藏。接口需登录，未登录时服务端返回 10403 → 这里显示登录引导。 */
 @Composable
 private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
     val context = LocalContext.current
-    var posts by remember { mutableStateOf<List<ShizhijiaPostCard>?>(null) }
-    var status by remember { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaPostCard>>?>(null) }
-    var page by remember { mutableStateOf(1) }
-    var ended by remember { mutableStateOf(false) }
-    var loading by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+    var tab by remember { mutableStateOf(SzjFavTab.Posts) }
 
-    LaunchedEffect(Unit) {
-        loading = true
-        val res = ShizhijiaApi.getMyStarPosts(context, 1)
-        status = res
-        posts = (res as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
-        loading = false
+    // 每类各存一份，切回来不用重新拉。
+    class Feed<T> {
+        var items by mutableStateOf<List<T>?>(null)
+        var status by mutableStateOf<ShizhijiaApi.Res<List<T>>?>(null)
+        var page by mutableStateOf(1)
+        var ended by mutableStateOf(false)
+        var loading by mutableStateOf(false)
     }
+    val posts = remember { Feed<ShizhijiaPostCard>() }
+    val strats = remember { Feed<ShizhijiaPostCard>() }
+    val rp = remember { Feed<ShizhijiaRecruit>() }
+    val glam = remember { Feed<ShizhijiaGlamourCard>() }
+
+    // RP 卡要职业字典画位置图标，和招募管理页一样拉一次。
+    var jobs by remember { mutableStateOf(mapOf<String, ShizhijiaJob>()) }
+    LaunchedEffect(Unit) { jobs = ShizhijiaApi.getJobConfig(context) }
+
+    // 幻化收藏夹：多于一个才给切换条，只有一个就没必要占一行。
+    var folders by remember { mutableStateOf<List<Triple<String, String, Boolean>>>(emptyList()) }
+    var folderId by remember { mutableStateOf("") }
+
+    val listState = rememberLazyListState()
+    val gridState = remember { androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState() }
+
+    // 首次进入某个标签才拉；之后切回来用缓存。
+    LaunchedEffect(tab, folderId) {
+        when (tab) {
+            SzjFavTab.Posts -> if (posts.items == null) {
+                posts.loading = true
+                val r = ShizhijiaApi.getMyStarPosts(context, type = "1", page = 1)
+                posts.status = r
+                posts.items = (r as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+                posts.loading = false
+            }
+            SzjFavTab.Strats -> if (strats.items == null) {
+                strats.loading = true
+                val r = ShizhijiaApi.getMyStarPosts(context, type = "2", page = 1)
+                strats.status = r
+                strats.items = (r as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+                strats.loading = false
+            }
+            SzjFavTab.Rp -> if (rp.items == null) {
+                rp.loading = true
+                val r = ShizhijiaApi.getMyStarRecruitRp(context)
+                rp.status = r
+                rp.items = (r as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+                // 这个接口不分页，一次给完。
+                rp.ended = true
+                rp.loading = false
+            }
+            SzjFavTab.Glamour -> {
+                if (folders.isEmpty()) {
+                    (ShizhijiaApi.glamourFavorites(context, 1, 50) as? ShizhijiaApi.Res.Ok)?.let { res ->
+                        folders = res.value
+                        if (folderId.isBlank()) {
+                            folderId = res.value.firstOrNull { it.third }?.first
+                                ?: res.value.firstOrNull()?.first.orEmpty()
+                        }
+                    }
+                }
+                if (glam.items == null) {
+                    glam.loading = true
+                    val r = ShizhijiaApi.getMyStarGlamours(context, favoriteId = folderId, page = 1)
+                    glam.status = r
+                    glam.items = (r as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+                    glam.loading = false
+                }
+            }
+        }
+    }
+
+    // 翻页：RP 不分页，跳过。
     val nearEnd by remember { derivedStateOf {
-        val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-        val n = posts?.size ?: 0
-        n > 0 && last >= n - 3
+        if (tab == SzjFavTab.Glamour) {
+            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val n = glam.items?.size ?: 0
+            n > 0 && last >= n - 3
+        } else {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val n = when (tab) {
+                SzjFavTab.Posts -> posts.items?.size
+                SzjFavTab.Strats -> strats.items?.size
+                else -> 0
+            } ?: 0
+            n > 0 && last >= n - 3
+        }
     } }
-    LaunchedEffect(nearEnd) {
-        if (nearEnd && !loading && !ended) {
-            loading = true
-            val next = (ShizhijiaApi.getMyStarPosts(context, page + 1) as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
-            if (next.isEmpty()) ended = true else { posts = posts.orEmpty() + next; page += 1 }
-            loading = false
+    LaunchedEffect(nearEnd, tab) {
+        if (!nearEnd) return@LaunchedEffect
+        when (tab) {
+            SzjFavTab.Posts, SzjFavTab.Strats -> {
+                val f = if (tab == SzjFavTab.Posts) posts else strats
+                val type = if (tab == SzjFavTab.Posts) "1" else "2"
+                if (!f.loading && !f.ended) {
+                    f.loading = true
+                    val next = (ShizhijiaApi.getMyStarPosts(context, type, f.page + 1) as? ShizhijiaApi.Res.Ok)
+                        ?.value.orEmpty()
+                    if (next.isEmpty()) f.ended = true else { f.items = f.items.orEmpty() + next; f.page += 1 }
+                    f.loading = false
+                }
+            }
+            SzjFavTab.Glamour -> if (!glam.loading && !glam.ended) {
+                glam.loading = true
+                val next = (ShizhijiaApi.getMyStarGlamours(context, folderId, glam.page + 1) as? ShizhijiaApi.Res.Ok)
+                    ?.value.orEmpty()
+                if (next.isEmpty()) glam.ended = true else { glam.items = glam.items.orEmpty() + next; glam.page += 1 }
+                glam.loading = false
+            }
+            SzjFavTab.Rp -> Unit
         }
     }
 
     ScreenFrame(background = SzjBg) {
         SzjHeader("我的收藏", onBack = pop)
-        val list = posts
-        when {
-            list == null && loading -> SzjFeedSkeleton()
-            list.isNullOrEmpty() -> SzjResState(
-                res = status,
-                emptyTitle = "收藏夹是空的",
-                emptyHint = "在帖子详情点收藏，之后就能在这里找回来",
-                onLogin = { nav(SzjRoute.Login) },
-            )
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 20.dp),
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SzjFavTab.entries.forEach { t -> SzjSubTab(t.label, tab == t) { tab = t } }
+        }
+        Spacer(Modifier.height(4.dp))
+        // 幻化有多个收藏夹时给一条切换；只有一个夹子不占这一行。
+        if (tab == SzjFavTab.Glamour && folders.size > 1) {
+            LazyRow(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                itemsIndexed(list, key = { _, it -> it.postsId }) { index, post ->
-                    SzjRise(index) { SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) }) }
-                }
-                item(key = "footer") {
-                    if (loading) Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                items(folders, key = { it.first }) { f ->
+                    SzjPartChip(f.second.ifBlank { "收藏夹" }, folderId == f.first) {
+                        if (folderId != f.first) {
+                            folderId = f.first
+                            // 换夹子就是换列表，清掉重拉。
+                            glam.items = null
+                            glam.page = 1
+                            glam.ended = false
+                        }
                     }
                 }
             }
         }
+        when (tab) {
+            SzjFavTab.Posts, SzjFavTab.Strats -> {
+                val f = if (tab == SzjFavTab.Posts) posts else strats
+                val list = f.items
+                when {
+                    list == null && f.loading -> SzjFeedSkeleton()
+                    list.isNullOrEmpty() -> SzjResState(
+                        res = f.status,
+                        emptyTitle = if (tab == SzjFavTab.Posts) "还没收藏过帖子" else "还没收藏过攻略",
+                        emptyHint = "在详情页点收藏，之后就能在这里找回来",
+                        onLogin = { nav(SzjRoute.Login) },
+                    )
+                    else -> LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 20.dp),
+                    ) {
+                        itemsIndexed(list, key = { _, it -> it.postsId }) { index, post ->
+                            SzjRise(index) { SzjPostRow(post, onClick = { nav(SzjRoute.PostDetail(post.postsId)) }) }
+                        }
+                        item(key = "footer") { SzjFooterSpinner(f.loading) }
+                    }
+                }
+            }
+            SzjFavTab.Rp -> {
+                val list = rp.items
+                when {
+                    list == null && rp.loading -> SzjFeedSkeleton()
+                    list.isNullOrEmpty() -> SzjResState(
+                        res = rp.status,
+                        emptyTitle = "还没收藏过 RP 招募",
+                        emptyHint = "在 RP 招募详情点收藏",
+                        onLogin = { nav(SzjRoute.Login) },
+                    )
+                    else -> LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 20.dp),
+                    ) {
+                        itemsIndexed(list, key = { _, it -> it.kind.name + it.id }) { index, r ->
+                            SzjRise(index) { SzjRecruitRow(r, nav, jobs) }
+                        }
+                    }
+                }
+            }
+            SzjFavTab.Glamour -> {
+                val list = glam.items
+                when {
+                    list == null && glam.loading -> SzjFeedSkeleton()
+                    list.isNullOrEmpty() -> SzjResState(
+                        res = glam.status,
+                        emptyTitle = "收藏夹里还没有幻化",
+                        emptyHint = "在幻化详情点收藏，收藏会落在你的默认收藏夹里",
+                        onLogin = { nav(SzjRoute.Login) },
+                    )
+                    // 幻化是竖图，和幻化频道一样走两列瀑布流，别塞进单列列表里。
+                    else -> androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid(
+                        columns = androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(2),
+                        state = gridState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 12.dp, end = 12.dp, top = 6.dp, bottom = 20.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalItemSpacing = 10.dp,
+                    ) {
+                        items(list.size, key = { list[it].id }) { idx ->
+                            SzjRise(idx) { SzjGlamourCardItem(list[idx], nav) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 列表底部的翻页转圈。四个收藏标签共用，别再各写一遍。 */
+@Composable
+private fun SzjFooterSpinner(loading: Boolean) {
+    if (loading) Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
     }
 }
 

@@ -88,3 +88,27 @@ Vite 分包，共 155 个 chunk，公开静态资源，不带 cookie 即可读�
 - `posts/vote` `{posts_id, options}`：帖子投票。
 - `sysMsg/*`：站内消息（`commentMsg` / `likeMyMsg` / `atMyMsg` /
   `myRecruitResponse` …），整块都没做。
+
+## 收藏列表（四类，各走各的接口）
+
+官网 `MeCollections.BT2oNOnP.js` / `MeGlamourCollections.Bv6Lmh2v.js`。
+四个标签是 `posts` / `strats` / `rp` / `glamour`，但**不是一个接口切参数**：
+
+| 标签 | 方法 | 路径 | 参数 |
+|---|---|---|---|
+| 帖子 | GET | `userInfo/myStarPosts` | `{type:1, page, limit}` |
+| 攻略 | GET | `userInfo/myStarPosts` | `{type:2, page, limit}` |
+| RP | GET | `recruit/homePageStarRecruitRp` | 无 |
+| 幻化 | GET | `glamour/myFavoriteItemsList` | `{favorite_id, page, limit, uuid?}` |
+
+- **`type` 是必填的。** 漏了服务端回 `"Type不正确"`，不是空列表 ——
+  之前我的实现就漏了这个，所以收藏页一直显示"没读取到 / Type不正确"。
+  取值和 `posts/postsList` 的 type 一致（1 帖子 / 2 攻略）。
+- RP 那条**不带任何参数、没有分页**，一次返回全部。官网拿到 rows 之后
+  自己补 `is_star:true`（收藏列表里的必然已收藏，接口不重复说）。
+- 幻化收藏是**两层**：先 `glamour/myFavoritesList` `{page, limit, uuid?}`
+  拿收藏夹（`rows[].id / name / is_default`），再用夹子 id 查
+  `myFavoriteItemsList`。没有收藏夹就是没收藏过，是空不是错。
+  行结构和幻化列表同构（`GlamourItem` 复用）。
+- `uuid` 只在看**别人**的收藏时才带；看自己的官网传的是 `undefined`。
+- 同组还有 `glamour/deleteFavorites`（DELETE `{id}`）建/删收藏夹，没做。
