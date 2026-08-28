@@ -101,6 +101,10 @@ object ShizhijiaSession {
     fun clear(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY_COOKIE).remove(KEY_TIME).apply()
+        // 名册是账号相关的数据，换账号/退登必须清掉，
+        // 否则联系人列表还挂着上一个账号看到的头像和 uuid。
+        ShizhijiaFriendRoster.clear(context)
+        ShizhijiaFriendLink.clear()
     }
 
     /** Persist the resolved profile so the top bar renders instantly on next entry (no 已登录→昵称 flash). */

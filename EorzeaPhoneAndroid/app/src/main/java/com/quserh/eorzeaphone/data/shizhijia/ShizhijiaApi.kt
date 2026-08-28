@@ -328,6 +328,25 @@ object ShizhijiaApi {
         }
     }
 
+    /**
+     * 名册的一页。给 [ShizhijiaFriendRoster] 用。
+     *
+     * 两个来源的 `data` 形状不一样（getUnFollowFriend 是裸数组、followList 大概是
+     * `{rows:[...]}`），[rowsRes] 两种都认，所以这里不用分开写。
+     */
+    internal suspend fun friendRosterPage(
+        context: Context,
+        path: String,
+        params: Map<String, String> = emptyMap(),
+    ): Res<List<ShizhijiaFriendRoster.Entry>> =
+        rowsRes(context, HOME_BASE, path, params) { arr ->
+            buildList(arr.length()) {
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { add(ShizhijiaFriendRoster.Entry.fromApi(it)) }
+                }
+            }
+        }
+
     /** Glamour search - rows carry main_image + like/favorite counts. */
     suspend fun searchGlamours(context: Context, keywords: String, page: Int = 1, limit: Int = 20): List<ShizhijiaSearchGlamour> {
         if (keywords.isBlank()) return emptyList()

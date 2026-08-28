@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.horizontalScroll
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendRoster
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -94,6 +96,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.snapshotFlow
@@ -170,6 +173,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val AetherLightBackground: Color @Composable get() = MaterialTheme.colorScheme.background
 private val AetherLightSurface: Color @Composable get() = MaterialTheme.colorScheme.surface
@@ -953,11 +957,24 @@ private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
         }
     }
 }
+/**
+ * 会话/联系人行的小头像。
+ *
+ * [icon] 支持四种：内置图标 id、本地文件路径（用户自己设的）、
+ * `http(s)` 远端 URL（石之家头像，走 ShizhijiaImageLoader：内存 → 磁盘 → 网络，
+ * 下载过一次就不再请求），其他一律退到首字。
+ */
 @Composable
 private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor: Color = Color.White) {
     val builtin = (builtinConversationIcons + defaultConversationIcons).firstOrNull { it.id == icon }
     when {
         builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        icon.startsWith("http") -> ShizhijiaRemoteImage(
+            url = icon,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            showPlaceholder = false,
+        )
         icon.startsWith("/") -> {
             var bmp by remember(icon) { mutableStateOf<android.graphics.Bitmap?>(null) }
             LaunchedEffect(icon) { bmp = runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull() }
@@ -1332,8 +1349,19 @@ private fun AetherphoneContactsList(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var friendsOnly by remember { mutableStateOf(true) }
     val shown = (if (friendsOnly) state.friends else state.party).filter { it.name.contains(query, true) || it.world.contains(query, true) }
+    val context = LocalContext.current
     LaunchedEffect(Unit) { state.refreshParty() }
     LaunchedEffect(friendsOnly) { if (!friendsOnly) state.refreshParty() }
+    // 石之家名册：一天拉一次。拉回来之后好友匹配直接查表（不用一个个按名字搜），
+    // 头像也能直接用他的石之家头像。没登录石之家就静默跳过——
+    // 匹配还能退回按名字搜那条路，只是慢一点、跨服同名时会放弃。
+    var rosterTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        if (ShizhijiaFriendRoster.isStale(context)) {
+            val res = ShizhijiaFriendRoster.refresh(context)
+            if (res is ShizhijiaApi.Res.Ok) rosterTick++
+        }
+    }
     var avatarFriend by remember { mutableStateOf<PhoneFriend?>(null) }
     var avatarShowLibrary by remember { mutableStateOf(false) }
     val pickFriendAvatar = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -1345,8 +1373,20 @@ private fun AetherphoneContactsList(state: PhoneState) {
         }
     }
     Column(Modifier.fillMaxSize()) {
+        val rosterScope = rememberCoroutineScope()
         LightHeader("联系人", state::back) {
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { state.refreshFriends(); state.refreshParty() }, contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                    state.refreshFriends()
+                    state.refreshParty()
+                    // 刷新按钮也强制重拉一次石之家名册（绕过一天的 TTL）：
+                    // 好友刚注册石之家时，用户会想立刻看到。
+                    rosterScope.launch {
+                        if (ShizhijiaFriendRoster.refresh(context) is ShizhijiaApi.Res.Ok) rosterTick++
+                    }
+                },
+                contentAlignment = Alignment.Center,
+            ) {
                 LightRefreshIcon(AetherPurple, Modifier.size(17.dp))
             }
         }
@@ -1367,12 +1407,12 @@ private fun AetherphoneContactsList(state: PhoneState) {
             val offline = shown.filter { !it.online }
             if (online.isNotEmpty()) {
                 item("online-label") { Text("在线 · ${formatCount(online.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
-                item("online-card") { LightContactCard(online, state, onChangeAvatar = { avatarFriend = it }) }
+                item("online-card") { LightContactCard(online, state, rosterTick, onChangeAvatar = { avatarFriend = it }) }
                 item("online-gap") { Spacer(Modifier.height(18.dp)) }
             }
             if (offline.isNotEmpty()) {
                 item("offline-label") { Text("离线 · ${formatCount(offline.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
-                item("offline-card") { LightContactCard(offline, state, onChangeAvatar = { avatarFriend = it }) }
+                item("offline-card") { LightContactCard(offline, state, rosterTick, onChangeAvatar = { avatarFriend = it }) }
             }
             if (shown.isEmpty()) {
                 item("empty") {
@@ -1445,11 +1485,18 @@ private fun friendStatusIcon(status: Long): Int? {
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onChangeAvatar: (PhoneFriend) -> Unit = {}) {
+private fun LightContactCard(
+    friends: List<PhoneFriend>,
+    state: PhoneState,
+    /** 名册版本号。名册拉回来后 +1，让下面的头像重新查表。 */
+    rosterTick: Int = 0,
+    onChangeAvatar: (PhoneFriend) -> Unit = {},
+) {
     // 原来这里是"白卡片包一叠行"，而会话列表是扁平的——同一个 App 两种列表形态。
     // 现在统一成扁平 + 发丝线，和会话/筛选器列表一致。
     // 行本身走 LightListRow：头像从 44dp 降到 38dp、间距 16→13dp、
     // 标题 16sp Bold → 15sp SemiBold，全部对齐会话行。
+    val context = LocalContext.current
     Column(Modifier.fillMaxWidth()) {
         friends.forEachIndexed { index, friend ->
             LightListRow(
@@ -1457,8 +1504,16 @@ private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onCh
                 onLongPress = { onChangeAvatar(friend) },
                 icon = {
                     // 好友是"人"，圆头像。
+                    // 用户自己设过就用自己设的；没设过而这人在石之家名册里，
+                    // 就用他的石之家头像（走磁盘缓存，第二次不再下载）。
+                    val own = state.friendAvatar(friend)
+                    val shown = remember(own, friend.name, friend.homeWorld, rosterTick) {
+                        own.ifBlank {
+                            ShizhijiaFriendRoster.avatarOf(context, friend.name, friend.homeWorld).orEmpty()
+                        }
+                    }
                     LightRowIcon(circle = true) {
-                        SmallConversationIcon(state.friendAvatar(friend), friend.name.take(1), if (friend.online) AetherPurple else AetherLightMuted)
+                        SmallConversationIcon(shown, friend.name.take(1), if (friend.online) AetherPurple else AetherLightMuted)
                     }
                 },
                 title = friend.name,
@@ -1511,16 +1566,30 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
     val friend = state.selectedFriend
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
-    // 石之家账号：只在打开这一页时查这一个人，一次请求（搜索接口不需要登录）。
-    var link by remember(friend?.name, friend?.world) {
-        mutableStateOf(friend?.let { ShizhijiaFriendLink.peek(it.name, it.world) })
+    // 石之家账号。
+    // key 用 homeWorld（原服）而不是 world（当前所在服）：好友跨界传送时 world 是
+    // 访问服，拿它去比石之家的 group_name 必然对不上，会把注册过的人报成没注册。
+    val linkKey = remember(friend?.name, friend?.homeWorld, friend?.world) {
+        friend?.let {
+            ShizhijiaFriendLink.PhoneFriendKey(
+                name = it.name,
+                homeWorld = it.homeWorld,
+                currentWorld = it.world,
+            )
+        }
     }
-    var linkLoading by remember(friend?.name, friend?.world) { mutableStateOf(false) }
-    LaunchedEffect(friend?.name, friend?.world) {
-        val f = friend ?: return@LaunchedEffect
+    var link by remember(linkKey) { mutableStateOf(linkKey?.let { ShizhijiaFriendLink.peek(it) }) }
+    var linkLoading by remember(linkKey) { mutableStateOf(false) }
+    // 名册有没有内容。没有的话匹配只能退回按名字搜，"没搜到"就不能说成"没注册"。
+    var rosterReady by remember { mutableStateOf(false) }
+    LaunchedEffect(linkKey) {
+        val k = linkKey ?: return@LaunchedEffect
+        rosterReady = withContext(Dispatchers.IO) {
+            ShizhijiaFriendRoster.entries(context).isNotEmpty()
+        }
         if (link != null) return@LaunchedEffect
         linkLoading = true
-        link = ShizhijiaFriendLink.find(context, f.name, f.world)
+        link = ShizhijiaFriendLink.find(context, k)
         linkLoading = false
     }
     LightFrame {
@@ -1586,7 +1655,7 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
                     LightInfoRow("位置", friend.location.ifBlank { "离线" })
                     LightInfoRow("职业", friend.job.ifBlank { "未读取" }, last = true)
                 }
-                ShizhijiaLinkCard(state, link, linkLoading)
+                ShizhijiaLinkCard(state, link, linkLoading, rosterReady = rosterReady)
                 Spacer(Modifier.height(20.dp))
             }
         }
@@ -1596,12 +1665,23 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
 /**
  * 好友的石之家入口。
  *
- * 石之家只能按角色名搜，同名跨服的要靠服务器名再确认一次，所以这里三种态度
- * 分得很清：查到了就能点进主页；没查到就说没注册；请求失败要说清是没读到而
- * 不是没注册，不然会冤枉人家。
+ * 几种态度分得很清，因为"没注册"这个结论会冤枉人：
+ * - 查到了 → 能点进主页，副行显示大区 + 原服
+ * - 同名多个分不清 → 说清是分不清，不是没有
+ * - 请求失败 → 说没读到，不是没注册
+ * - 没名册（没登录石之家）→ 只能按名字搜，措辞留余地
+ * - 有名册还是没有 → 才敢说没注册
+ *
+ * @param rosterReady 名册是否可用。名册（登录后拉的好友名册）比按名字搜准，
+ *   没有它的时候"没搜到"不等于"没注册"。
  */
 @Composable
-private fun ShizhijiaLinkCard(state: PhoneState, link: ShizhijiaFriendLink.Result?, loading: Boolean) {
+private fun ShizhijiaLinkCard(
+    state: PhoneState,
+    link: ShizhijiaFriendLink.Result?,
+    loading: Boolean,
+    rosterReady: Boolean,
+) {
     val hit = (link as? ShizhijiaFriendLink.Result.Found)?.user
     val clickable = hit != null
     Column(
@@ -1613,12 +1693,23 @@ private fun ShizhijiaLinkCard(state: PhoneState, link: ShizhijiaFriendLink.Resul
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 找到了就直接显示对方的石之家头像（走磁盘缓存），比一个通用图标有信息量。
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp))
                     .background(if (clickable) AetherPurple else AetherLightControl),
                 contentAlignment = Alignment.Center,
             ) {
-                ImageGlyph(R.drawable.app_news, if (clickable) Color.White else AetherLightMuted, Modifier.size(20.dp))
+                val avatar = hit?.avatar.orEmpty()
+                if (avatar.isNotBlank()) {
+                    ShizhijiaRemoteImage(
+                        url = avatar,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        showPlaceholder = false,
+                    )
+                } else {
+                    ImageGlyph(R.drawable.app_news, if (clickable) Color.White else AetherLightMuted, Modifier.size(20.dp))
+                }
             }
             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                 Text(
@@ -1633,8 +1724,11 @@ private fun ShizhijiaLinkCard(state: PhoneState, link: ShizhijiaFriendLink.Resul
                     hit != null -> listOf(hit.areaName, hit.groupName).filter { it.isNotBlank() }
                         .joinToString(" · ").ifBlank { "点击查看主页" }
                     link is ShizhijiaFriendLink.Result.Ambiguous ->
-                        "有 ${link.candidates.size} 个同名角色，读到服务器后才能确认"
+                        "有 ${link.candidates.size} 个同名角色，读到原服后才能确认"
                     link is ShizhijiaFriendLink.Result.Failed -> "没读到，检查一下网络"
+                    // 没登录石之家时只能按名字搜，比对名册差一档，
+                    // 所以这里不把"没搜到"说成板上钉钉的"没注册"。
+                    !rosterReady -> "没搜到。登录石之家后可以按好友名册精确匹配"
                     else -> "这个角色没有注册石之家"
                 }
                 Text(sub, color = AetherLightMuted, fontSize = 11.sp, maxLines = 2)
