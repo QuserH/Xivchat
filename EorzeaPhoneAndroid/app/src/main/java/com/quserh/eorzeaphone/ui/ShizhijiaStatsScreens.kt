@@ -174,8 +174,6 @@ private fun SzjStatTabRow(selected: Int, onSelect: (Int) -> Unit) {
 private fun SzjStatSection(title: String, hint: String? = null) {
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SzjShard(widthDp = 4, heightDp = 17)
-            Spacer(Modifier.width(7.dp))
             Text(title, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp)
         }
         if (hint != null) {
@@ -1098,8 +1096,6 @@ private fun SzjMkdCategoryCard(type: String, list: List<ShizhijiaMkdItem>) {
                         Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SzjShard(widthDp = 4, heightDp = 16)
-                        Spacer(Modifier.width(7.dp))
                         Text(
                             type.ifBlank { "未分类" },
                             color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,

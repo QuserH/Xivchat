@@ -31,7 +31,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
@@ -276,8 +275,10 @@ private fun LightRowIcon(
 private val LightCardShape = RoundedCornerShape(14.dp)
 /** 卡片之间的间距。 */
 private val LightCardGap = 8.dp
-/** 频道色条宽度。 */
+/** 频道色标宽度。 */
 private val LightSpineWidth = 3.dp
+/** 频道色标高度。见 [LightListRow] 里关于"短标而不是长条"的说明。 */
+private val LightSpineHeight = 20.dp
 
 /**
  * 列表行骨架 —— 一行一张卡。
@@ -290,7 +291,13 @@ private val LightSpineWidth = 3.dp
  * "标题宽度 + 剩余的一半"，标题多长时间就往哪挪，一列看下来像锯齿。
  * 现在时间在外层 Row 的最后一列，永远贴右边。
  *
- * [spine] 是卡左侧的频道色条，null 表示不画（联系人卡不需要频道）。
+ * [spine] 是频道色标，null 表示不画（联系人卡不需要频道）。
+ *
+ * 它原来是撑满卡高的硬边长条。问题是**每一张卡都有一条**：十行会话就是十条
+ * 齐头齐尾的竖杠，颜色还各不相同——最响的元素出现在每一行上，就等于没有区分
+ * 任何东西，只是把列表搞吵。现在收成 20dp 的圆角短标、竖直居中：
+ * 颜色这条信息一个不少（老玩家照样扫一眼认出私聊/部队），但它退回到"标记"的
+ * 音量，不再是"边框"。
  */
 @Composable
 private fun LightListRow(
@@ -328,18 +335,22 @@ private fun LightListRow(
                     onTap = { onClick() },
                     onLongPress = onLongPress?.let { cb -> { offset -> cb(offset) } },
                 )
-            }
-            // 色条要撑满卡高，所以外层 Row 按最小固有高度measure。
-            .height(IntrinsicSize.Min),
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (spine != null) {
-            Box(Modifier.width(LightSpineWidth).fillMaxHeight().background(spine))
+            // 竖直居中的圆角短标，不再撑满卡高。左边留 7dp，让它离卡边有呼吸。
+            Box(
+                Modifier.padding(start = 7.dp)
+                    .width(LightSpineWidth).height(LightSpineHeight)
+                    .clip(RoundedCornerShape(LightSpineWidth / 2))
+                    .background(spine),
+            )
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f).padding(
-                start = if (spine != null) 11.dp else 12.dp,
+                start = if (spine != null) 9.dp else 12.dp,
                 end = 12.dp,
                 top = LightRowPadV,
                 bottom = LightRowPadV,
@@ -380,23 +391,82 @@ private fun LightListRow(
     }
 }
 
-/** 列表分段标题（置顶 / 最近 / 在线 / 离线）。卡片之间的分组靠它，不靠分隔线。 */
+/**
+ * 二选一开关：一个凹槽，里面一块滑块。
+ *
+ * "消息 / 筛选器"原来是两颗独立的胶囊 chip，装在一个 horizontalScroll 里
+ * （两项永远滚不动）。两颗平级的胶囊读起来是"两个可以各自开关的东西"，
+ * 而这里实际是**互斥的二选一**——一次只能站在一边。凹槽 + 滑块一眼就说清
+ * 这件事：滑块在哪边，你就在哪边，而且整体是一个控件而不是两个。
+ *
+ * [counts] 是每一档右边的数字（未读数），0 不画。
+ */
 @Composable
-private fun LightSectionLabel(text: String, iconRes: Int? = null, modifier: Modifier = Modifier) {
+private fun LightSegmented(
+    options: List<Pair<String, String>>,
+    selected: String,
+    counts: Map<String, Int> = emptyMap(),
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp),
+        modifier.clip(RoundedCornerShape(11.dp)).background(AetherLightControl).padding(3.dp),
     ) {
-        if (iconRes != null) {
-            ImageGlyph(iconRes, AetherLightMuted, Modifier.size(12.dp).padding(end = 0.dp))
-            Spacer(Modifier.width(5.dp))
+        options.forEach { (key, label) ->
+            val active = key == selected
+            val bg by animateColorAsState(
+                if (active) AetherLightSurface else Color.Transparent,
+                tween(180), label = "segBg",
+            )
+            val fg by animateColorAsState(
+                if (active) AetherPurple else AetherLightMuted,
+                tween(180), label = "segFg",
+            )
+            Row(
+                Modifier.weight(1f)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(bg)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onSelect(key) }
+                    .padding(vertical = 7.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    color = fg,
+                    fontSize = 13.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                )
+                val n = counts[key] ?: 0
+                if (n > 0) {
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        if (n > 99) "99+" else "$n",
+                        color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(7.dp))
+                            .background(PhoneDanger)
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    )
+                }
+            }
         }
-        Text(
-            text,
-            color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.4.sp,
-        )
     }
+}
+
+/**
+ * 列表分段标题（在线 / 离线）。卡片之间的分组靠它，不靠分隔线。
+ *
+ * 只有字，没有图标前缀。骨架和工具屏的 SectionLabel 一致。
+ */
+@Composable
+private fun LightSectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.4.sp,
+        modifier = modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp),
+    )
 }
 
 /**
@@ -505,13 +575,13 @@ private fun LightHeader(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, PhonePressSpring, label = "lightBack")
-    // 三个模块的页头现在完全同构：
+    // 三个模块的页头完全同构：
     //   石之家 SzjHeader / 工具屏 ScreenHeader / 聊天 LightHeader
     // 都是「左返回(30dp 矢量, 按压 0.86 缩放) + 居中 20sp SemiBold 标题 + 右 trailing」，
-    // 上下 12dp。原来这里标题是 Bold（比另两个重一档）、返回键没有按压反馈，
-    // 也没有自己的签名。
-    // 石之家的签名是水晶棱条；聊天这边用通讯贝（linkpearl）——
-    // 一个实心圆点外面一圈环，就是游戏里那颗贝的样子。
+    // 上下 12dp。
+    //
+    // 标题左边原来有一枚通讯贝当"签名"。去掉了：它每页都是同一枚、不带信息，
+    // 纯装饰顶在标题前面反而把标题的重心拽偏。三个页头现在都只有字。
     Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
             ImageGlyph(
@@ -527,7 +597,6 @@ private fun LightHeader(
         // 标题限定在返回键与右侧按钮之间，避免窄屏/大边距时与右侧按钮重叠
         Box(Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 54.dp), contentAlignment = Alignment.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                LightLinkpearl()
                 Text(
                     title,
                     color = AetherLightText,
@@ -537,7 +606,7 @@ private fun LightHeader(
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 8.dp).offset(y = titleOffsetY),
+                    modifier = Modifier.offset(y = titleOffsetY),
                 )
                 if (titleIcon != null) {
                     Box(Modifier.padding(start = 6.dp)) { titleIcon() }
@@ -545,20 +614,6 @@ private fun LightHeader(
             }
         }
         Row(Modifier.align(Alignment.CenterEnd).widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
-    }
-}
-
-/**
- * 聊天模块的签名：通讯贝。实心圆 + 一圈环，10dp。
- * 和石之家的水晶棱条（SzjShard）对位——每个"App"有自己的一个记号，
- * 出现在页头标题左边。
- */
-@Composable
-private fun LightLinkpearl(size: Dp = 10.dp, color: Color = AetherPurple) {
-    Canvas(Modifier.size(size)) {
-        val r = this.size.minDimension / 2f
-        drawCircle(color, radius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(width = r * 0.34f))
-        drawCircle(color, radius = r * 0.42f)
     }
 }
 
@@ -649,33 +704,43 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
         }
     }
     val messagesExpanded = state.chatListTab == "messages"
-    val tabsExpanded = state.chatListTab != "messages"
     var showDefaultTabDialog by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天", state::back, trailing = {
+            // 搜索从溢出菜单里提出来，放成页头上一个直接可点的图标：
+            // 它是这一屏最常用的动作，藏进"⋯"要两步，而且第一步看不出里面有搜索。
+            // 开着搜索时图标变 accent，等于告诉你"现在在搜索态"。
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                    searching = !searching
+                    if (!searching) query = ""
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                ImageGlyph(
+                    R.drawable.ic_search,
+                    if (searching) AetherPurple else AetherLightMuted,
+                    Modifier.size(19.dp),
+                )
+            }
             Box {
                 Box(
                     Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { overflowOpen = true },
                     contentAlignment = Alignment.Center,
                 ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                    // 搜索框（下面那个 AnimatedVisibility）本来一直没有入口——
-                    // searching 全文没有任何地方设成 true，功能白写。放在菜单第一项。
-                    DropdownMenuItem(
-                        text = { Text(if (searching) "关闭搜索" else "搜索") },
-                        onClick = {
-                            overflowOpen = false
-                            searching = !searching
-                            if (!searching) query = ""
-                        },
-                    )
                     DropdownMenuItem(text = { Text("新建筛选器") }, onClick = { overflowOpen = false; editTab() })
                     DropdownMenuItem(text = { Text("默认打开的标签") }, onClick = { overflowOpen = false; showDefaultTabDialog = true })
                 }
             }
         })
         AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            LightSearchField(query, { query = it }, "搜索消息和联系人", Modifier.padding(horizontal = 42.dp))
+            // 边距跟列表走。原来写死 42dp，比下面的卡片缩进一大截，
+            // 搜索框和列表看着不在同一栏里。
+            LightSearchField(
+                query, { query = it }, "搜索消息和联系人",
+                Modifier.padding(horizontal = LocalContentMargin.current.dp, vertical = 2.dp),
+            )
         }
         val myName = state.profile?.name.orEmpty().normalizedPlayerName()
         val rows = state.conversations.filter { c ->
@@ -690,25 +755,27 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             compareByDescending<ChatConversation> { state.isConversationPinned(it) }
                 .thenByDescending { it.lastTimestamp ?: 0L },
         )
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                .padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val messagesFirst = state.defaultChatListTab == "messages"
-            val chips = if (messagesFirst) listOf("messages" to "消息", "tabs" to "筛选器") else listOf("tabs" to "筛选器", "messages" to "消息")
-            chips.forEach { (key, label) ->
-                val active = if (key == "messages") messagesExpanded else tabsExpanded
-                val unread = if (key == "messages") state.badgeUnread() else 0
-                LightChip(label, active, onClick = { state.chatListTab = key }, unread = unread)
-            }
-        }
+        val messagesFirst = state.defaultChatListTab == "messages"
+        LightSegmented(
+            options = if (messagesFirst) listOf("messages" to "消息", "tabs" to "筛选器")
+            else listOf("tabs" to "筛选器", "messages" to "消息"),
+            selected = if (messagesExpanded) "messages" else "tabs",
+            counts = mapOf("messages" to state.badgeUnread()),
+            onSelect = { state.chatListTab = it },
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = LocalContentMargin.current.dp)
+                .padding(top = 2.dp, bottom = 8.dp),
+        )
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp),
             verticalArrangement = Arrangement.spacedBy(LightCardGap),
         ) {
-            if (messagesExpanded && !state.localHidden) {
-                item("local-entry") {
+            // 只有"本地"这一行受 localHidden 控制，整个消息列表不受它控制。
+            // 原来条件是 `messagesExpanded && !state.localHidden`：把本地那行
+            // 移出列表之后，这个 if 整体不成立，于是站在"消息"标签上却渲染出
+            // 筛选器列表——一个开关顺手换掉了整屏内容。
+            if (messagesExpanded) {
+                if (!state.localHidden) item("local-entry") {
                     // 本地行原来是自己手写的第五套：20dp 裸图标、没有图标底座、
                     // 副标题挤在标题右边、置顶标 9sp。现在和会话行同一套骨架。
                     LightListRow(
@@ -738,9 +805,16 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key })
                     }
                 }
-                if (rows.isEmpty() && !state.connected) item("empty") {
+                // 空态原来是 `rows.isEmpty() && !state.connected`——连着游戏但还没有
+                // 任何会话时两个条件都不满足，于是整屏纯白，没有一个字。
+                // 现在连着也给话，并且分三种情况说实话：搜不到 / 还没有消息 / 没连。
+                if (rows.isEmpty()) item("empty") {
                     Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
-                        PhoneEmpty("还没有聊天消息", "连接游戏后，私聊和群聊会出现在这里", R.drawable.app_messages)
+                        when {
+                            query.isNotBlank() -> PhoneEmpty("没有匹配的会话", "换个词试试，或者从菜单里关掉搜索", R.drawable.app_messages)
+                            state.connected -> PhoneEmpty("还没有聊天消息", "游戏里收到私聊或群聊后，会话会出现在这里", R.drawable.app_messages)
+                            else -> PhoneEmpty("还没有聊天消息", "连接游戏后，私聊和群聊会出现在这里", R.drawable.app_messages)
+                        }
                     }
                 }
             } else {
@@ -1213,6 +1287,10 @@ private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor:
 private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneState, fallback: String) {
     val icon = state.conversationIcon(conversation.key, conversation.category)
     val builtin = (builtinConversationIcons + defaultConversationIcons).firstOrNull { it.id == icon }
+    // 首字母的颜色原来写死 Color.White，而底座（LightRowIcon）只有 selected 时才是
+    // 紫色，平时是 surfaceVariant —— 浅色主题下那是浅灰。于是所有"没设过图标的群聊"
+    // 首字母都是白字落在浅灰上，等于看不见。底座不是深色就用文字色。
+    val onControl = AetherLightText
     when {
         builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         icon.startsWith("/") -> {
@@ -1222,10 +1300,10 @@ private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneStat
             if (current != null) {
                 Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             } else {
-                Text(fallback.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(fallback.take(1), color = onControl, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
         }
-        else -> Text(fallback.take(1), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        else -> Text(fallback.take(1), color = onControl, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 private fun channelDefaultColor(channel: Int): Color = when (channel) {

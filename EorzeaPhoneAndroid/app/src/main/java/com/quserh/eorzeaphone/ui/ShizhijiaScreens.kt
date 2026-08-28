@@ -150,7 +150,9 @@ import kotlinx.coroutines.launch
 // 结构上抛弃"细线描边的平面板"，改成有厚度的石板：柔和分层阴影 + 顶边高光，
 // 描边只在浅色模式做极淡的一层，负责在白底上收边。
 //
-// 签名元素是 SzjShard——锥形水晶棱条，用在选中态和分区标记上，替代通用下划线。
+// SzjShard（锥形水晶棱条）只留在**选中态**上——那里它是在回答"你在哪一档"。
+// 分区标题前面的那一枚已经全部去掉：每个标题前顶一枚同样的小图形不带任何信息，
+// 只是把标题的重心拽偏。分区靠字重和间距分，不靠装饰。
 // ---------------------------------------------------------------------------
 
 // 深色：板岩夜。近黑但偏蓝，卡片逐层抬升。
@@ -233,10 +235,10 @@ private const val SZJ_ENTER_MS = 260
 private const val SZJ_STAGGER_MS = 26
 
 /**
- * 锥形水晶棱条——石之家的签名标记。
+ * 锥形水晶棱条。两头收尖的细长六边形，取自银泪湖水晶阵的形状。
  *
- * 两头收尖的细长六边形，取自银泪湖水晶阵的形状。用在选中态和分区标记，
- * 比通用下划线更能标出"你在这里"，也是整套设计里唯一的装饰性笔画。
+ * **只用在选中态**——在那里它回答"你在哪一档"，是带信息的。
+ * 不要拿它当分区标题的前缀装饰：每个标题前一枚同样的图形不说明任何事情。
  */
 @Composable
 internal fun SzjShard(
@@ -549,18 +551,17 @@ private fun SzjFeedSkeleton() {
 }
 
 /**
- * 子页页头：返回箭头 + 水晶棱条 + 标题。棱条把标题和返回键分开，
- * 顺便把签名元素带进每一个子页面，不用再画分割线。
+ * 子页页头：返回箭头 + 标题。
+ *
+ * 标题左边原来有一枚水晶棱条当"签名"。它不带任何信息——每一页都是同一枚，
+ * 只是装饰，而且四字标题前面顶一个小图形，重心被拽偏。已经去掉。
+ * 现在和工具屏的 ScreenHeader 完全一样：左返回 + 居中 20sp SemiBold 标题。
  */
 @Composable
 internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, SzjPressSpring, label = "szjBack")
-    // 骨架和工具屏的 ScreenHeader / 聊天的 LightHeader 统一：
-    // 左返回（矢量，30dp 触控区）+ 居中 20sp SemiBold 标题 + 右 trailing。
-    // 原来这里是文字"‹"（34sp）+ 左对齐 17sp 标题，三个模块像三个 App 拼的。
-    // 石之家自己的签名（水晶青棱条）保留，但挪进居中的标题组里。
     Box(Modifier.fillMaxWidth().background(SzjBg).padding(horizontal = 14.dp, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart)) {
             ImageGlyph(
@@ -578,7 +579,6 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SzjShard(widthDp = 4, heightDp = 17)
             Text(
                 title,
                 color = SzjText,
@@ -588,7 +588,6 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 8.dp),
             )
         }
         Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.End) {
@@ -606,7 +605,7 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
  * 自成一套设计语言：**冷调板岩 + 水晶青**（摩杜纳/银泪湖的水晶阵意象）——
  * 深色是板岩夜（近黑偏蓝的底 + 逐层抬升的石板卡片 + 顶边受光高光 + 屏顶一层
  * 极淡的青色环境光），浅色是晨雾（薄雾冷底 + 白石板 + 深水晶青）。
- * 签名元素是水晶青棱条（`SzjShard`），只用在一级分区标题和选中态。
+ * 水晶青棱条（`SzjShard`）只用在选中态，不再当分区标题的装饰前缀。
  * 页头骨架、字号、返回键和全局的 `ScreenHeader` 一致，配色是自己的。
  * Internal navigation uses a simple back stack so the system back button walks
  * out level-by-level.
@@ -1367,8 +1366,6 @@ private fun ShizhijiaMeTab(
         if (showSettings) {
             // ---- 设置页 ----
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SzjShard(widthDp = 4, heightDp = 19)
-                Spacer(Modifier.width(8.dp))
                 Text("设置", color = SzjText, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
             }
             Spacer(Modifier.height(14.dp))
@@ -1470,32 +1467,40 @@ private fun ShizhijiaMeTab(
                         if (myUuid.isNotBlank()) ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.size(18.dp))
                     }
                     // 计数条：数字大、标签小，中间用竖棱条分隔。
-                    // 真数没到之前整行不占位——宁可没有，也不摆一排 0。
-                    myCounts?.let { c ->
-                        Spacer(Modifier.height(16.dp))
-                        // 关注/粉丝可以点进名单，和玩家主页那张卡一致。自己的这两份
-                        // 名单是登录后能读的，所以这里比看别人的更靠得住。
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            val cells: List<Triple<String, Int, (() -> Unit)?>> = listOf(
-                                Triple("关注", c.followNum) { nav(SzjRoute.RelationList(myUuid, fans = false, who = p?.name.orEmpty())) },
-                                Triple("粉丝", c.fansNum) { nav(SzjRoute.RelationList(myUuid, fans = true, who = p?.name.orEmpty())) },
-                                Triple("获赞", c.likedNum, null),
-                            )
-                            cells.forEachIndexed { i, (label, num, onClick) ->
-                                if (i > 0) Box(Modifier.width(1.dp).height(22.dp).background(SzjLine))
-                                Column(
-                                    Modifier.weight(1f)
-                                        .let { if (onClick != null) it.clip(SzjChipShape).clickable(onClick = onClick) else it }
-                                        .padding(vertical = 3.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
+                    //
+                    // 这一行从第一帧就占满最终高度，数字没到之前用占位条。
+                    // 原来是 myCounts?.let —— 真数没回来时整行高度为 0，
+                    // 一两秒后接口返回，行突然长出来把下面的宫格整体顶下去，
+                    // 每次进"我"都要看一次这个跳动。宁可先占位，也不要抽搐。
+                    Spacer(Modifier.height(16.dp))
+                    // 关注/粉丝可以点进名单，和玩家主页那张卡一致。自己的这两份
+                    // 名单是登录后能读的，所以这里比看别人的更靠得住。
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val c = myCounts
+                        val cells: List<Triple<String, Int?, (() -> Unit)?>> = listOf(
+                            Triple("关注", c?.followNum) { nav(SzjRoute.RelationList(myUuid, fans = false, who = p?.name.orEmpty())) },
+                            Triple("粉丝", c?.fansNum) { nav(SzjRoute.RelationList(myUuid, fans = true, who = p?.name.orEmpty())) },
+                            Triple("获赞", c?.likedNum, null),
+                        )
+                        cells.forEachIndexed { i, (label, num, onClick) ->
+                            if (i > 0) Box(Modifier.width(1.dp).height(22.dp).background(SzjLine))
+                            Column(
+                                Modifier.weight(1f)
+                                    .let { if (onClick != null && c != null) it.clip(SzjChipShape).clickable(onClick = onClick) else it }
+                                    .padding(vertical = 3.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                if (num == null) {
+                                    // 占位条的高度对齐 18sp 数字的行高，换成真数时行不动。
+                                    SzjShimmerBox(Modifier.width(30.dp).height(21.dp), RoundedCornerShape(4.dp))
+                                } else {
                                     Text("$num", color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.height(2.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(label, color = SzjMuted, style = SzjMetaStyle)
-                                        if (onClick != null) {
-                                            ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.padding(start = 1.dp).size(11.dp))
-                                        }
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label, color = SzjMuted, style = SzjMetaStyle)
+                                    if (onClick != null) {
+                                        ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.padding(start = 1.dp).size(11.dp))
                                     }
                                 }
                             }
@@ -2966,8 +2971,6 @@ private fun ShizhijiaRecruitDetailScreen(
                     SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
                         Column(Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                SzjShard(widthDp = 4, heightDp = 16)
-                                Spacer(Modifier.width(7.dp))
                                 Text(label, color = SzjText, style = SzjLabelStyle)
                             }
                             Spacer(Modifier.height(9.dp))
@@ -3220,8 +3223,6 @@ private fun SzjSheet(title: String, onClose: () -> Unit, content: @Composable Co
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
-                SzjShard(widthDp = 4, heightDp = 18)
-                Spacer(Modifier.width(8.dp))
                 Text(title, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 SzjPressable(onClick = onClose, shape = CircleShape) {
                     ImageGlyph(R.drawable.ic_close, SzjMuted, Modifier.padding(6.dp).size(16.dp))
@@ -3634,12 +3635,14 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 }
             }
             item {
-                // 正文也收进石板。原来它直接躺在背景上，四周全是卡片、
-                // 只有正文没有承载，看着像误插进来的一段消息。
-                SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
-                    Column(Modifier.padding(horizontal = 15.dp, vertical = 14.dp)) {
-                        ShizhijiaRichContent(d.contentHtml)
-                    }
+                // 正文直接落在底色上，**不**再套第二张石板。
+                //
+                // 0.7.22x 那版给正文也包了一张卡，于是"作者"一张卡、"正文"另一张卡，
+                // 中间一道沟——同一篇帖子被切成两块，这就是割裂感的来源。
+                // 上面那张卡是这篇文章的"头"（标题+署名+计数），正文是文章本身，
+                // 它不需要自己的容器。
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    ShizhijiaRichContent(d.contentHtml)
                 }
             }
             item {
@@ -3651,8 +3654,6 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                   Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
                   Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SzjShard(widthDp = 4, heightDp = 18)
-                        Spacer(Modifier.width(8.dp))
                         Text("全部评论", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                         // 只看楼主: client-side filter on the loaded comment list.
                         SzjPressable(onClick = { onlyAuthor = !onlyAuthor }, shape = SzjChipShape) {
@@ -4368,8 +4369,6 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                 }
                 Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SzjShard(widthDp = 4, heightDp = 16)
-                    Spacer(Modifier.width(7.dp))
                     Text("累计奖励", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = SzjText)
                 }
                 Spacer(Modifier.height(8.dp))
@@ -4655,8 +4654,6 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
             item(key = "current") {
                 Column(Modifier.padding(horizontal = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
-                        SzjShard(widthDp = 4, heightDp = 16)
-                        Spacer(Modifier.width(7.dp))
                         Text("当前角色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                     when {
@@ -4683,8 +4680,6 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
             item(key = "switch-title") {
                 Column(Modifier.padding(horizontal = 14.dp).padding(top = 20.dp, bottom = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SzjShard(widthDp = 4, heightDp = 16)
-                        Spacer(Modifier.width(7.dp))
                         Text("换一个角色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Spacer(Modifier.height(4.dp))
@@ -5010,8 +5005,6 @@ private fun SzjGuildGroupLabel(label: String, count: Int) {
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SzjShard(widthDp = 4, heightDp = 16)
-        Spacer(Modifier.width(7.dp))
         Text(label, color = SzjText, style = SzjLabelStyle)
         Spacer(Modifier.width(6.dp))
         Text("$count", color = SzjMuted, style = SzjMetaStyle)
@@ -5220,8 +5213,6 @@ private fun ShizhijiaGuildPhotoDetailScreen(photoId: String, pop: () -> Unit, na
                             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SzjShard(widthDp = 4, heightDp = 16)
-                        Spacer(Modifier.width(7.dp))
                         Text("评论", color = SzjText, style = SzjLabelStyle)
                     }
                 }
@@ -5403,10 +5394,34 @@ private val SzjRoleJobs: List<Pair<String, List<String>>> = listOf(
 )
 
 /**
- * 一个职能一行：左边职能名，右边这一职能的全部职业。
+ * 职能在 FFXIV 里是有颜色的，而且是全体玩家共识的那三个：
+ * 坦克蓝、治疗绿、输出红——排本、招募、队列面板全用这一套。
+ * 生产/采集没有官定颜色，用石之家自己的水晶青和一档暖褐区分开。
  *
- * 没练的职业也要显示（用户明确要求"有没有等级的都要显示出来"）——
- * 图标压到 38% 透明、等级写"—"，一眼能看出哪些还没开。
+ * 这三个色只画一条 2dp 短杠在职能名下面，不铺底、不上图标。
+ * 用途是让"这一段是坦克"在扫视时先于文字被认出来，不是装饰。
+ */
+private val SzjRoleAccents: Map<String, Color> = mapOf(
+    "坦克" to Color(0xFF4B7BE5),
+    "治疗" to Color(0xFF4FA96A),
+    "近战" to Color(0xFFC8574B),
+    "远敏" to Color(0xFFC8574B),
+    "法系" to Color(0xFFC8574B),
+)
+
+/**
+ * 一个职能一段：职能名单独占一行（下面一条职能色短杠），职业图标铺满整宽。
+ *
+ * 原来是「30dp 的职能名 + 右边 chunked(6) 的图标」：
+ *   - 30dp 装不下"能工巧匠"四个字；
+ *   - 超过 6 个的职能会换行，而职能名只和第一行对齐，第二行整段悬空。
+ * 现在职能名自己一行，图标固定 8 列——巧匠正好占满一行，坦克占一半，
+ * 各职能的列位在竖直方向对齐，是一个真的网格。
+ *
+ * 等级不再写在图标下面，改成压在图标右下角的小角标：
+ *   - 满级（100）用水晶青，扫一眼就知道练满了几个；
+ *   - 没练的职业**不画角标**，图标压到 30% 透明。
+ *     "没有角标"本身就是"还没开"，不用再印一个"—"占位。
  *
  * [known] 是石之家职业图标表的 key。用它过一遍，国服还没实装的职业
  * 不会凭空多出几个永远填不上的灰位。
@@ -5423,66 +5438,90 @@ private fun SzjCareerRoleRow(
 ) {
     val shown = jobNames.filter { it in known || it in byName }
     if (shown.isEmpty()) return
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            role,
-            color = SzjMuted, fontSize = 11.sp, lineHeight = 14.sp,
-            modifier = Modifier.width(30.dp).padding(end = 6.dp),
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            shown.chunked(6).forEach { chunk ->
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    val accent = SzjRoleAccents[role] ?: SzjAccent
+    val leveled = shown.count { (byName[it]?.level ?: 0) > 0 }
+    val maxed = shown.count { (byName[it]?.level ?: 0) >= 100 }
+    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+        // 职能名 + 右侧进度。进度是真信息：练了几个 / 共几个，满级几个。
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Column {
+                Text(role, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
+                Spacer(Modifier.height(4.dp))
+                Box(Modifier.width(18.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(accent))
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                buildString {
+                    append(leveled); append('/'); append(shown.size)
+                    if (maxed > 0) { append("  满级 "); append(maxed) }
+                },
+                color = SzjMuted, fontSize = 10.sp,
+            )
+        }
+        Spacer(Modifier.height(9.dp))
+        // 固定 8 列：巧匠正好一整行，其他职能占前几格，列位在竖直方向对齐。
+        val columns = 8
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            shown.chunked(columns).forEach { chunk ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     chunk.forEach { name ->
-                        val career = byName[name]
-                        val level = career?.level ?: 0
+                        val level = byName[name]?.level ?: 0
                         val has = level > 0
                         val icon = jobIcons[name].orEmpty()
                         val showTip = tipCareer == name
-                        Box {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.clickable { onTip(if (showTip) null else name) },
+                        Box(Modifier.weight(1f)) {
+                            Box(
+                                Modifier.fillMaxWidth().aspectRatio(1f)
+                                    .clip(SzjChipShape)
+                                    .background(if (has) SzjCardRaised else SzjCardRaised.copy(alpha = .45f))
+                                    .clickable { onTip(if (showTip) null else name) },
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Box(
-                                    Modifier.size(31.dp).clip(SzjChipShape).background(SzjCardRaised),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (icon.isNotBlank()) {
-                                        ShizhijiaRemoteImage(
-                                            url = icon,
-                                            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (has) 1f else 0.38f },
-                                            contentScale = ContentScale.Fit,
-                                            showPlaceholder = false,
-                                        )
-                                    } else {
-                                        Text(
-                                            szjCrafterAbbr(name),
-                                            color = if (has) SzjAccent else SzjMuted.copy(alpha = .55f),
-                                            fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                }
-                                Text(
-                                    if (has) "$level" else "—",
-                                    fontSize = 9.sp,
-                                    color = if (has) SzjText else SzjMuted.copy(alpha = .6f),
-                                )
-                            }
-                            if (showTip) {
-                                Box(Modifier.matchParentSize()) {
+                                if (icon.isNotBlank()) {
+                                    ShizhijiaRemoteImage(
+                                        url = icon,
+                                        modifier = Modifier.fillMaxSize().padding(2.dp)
+                                            .graphicsLayer { alpha = if (has) 1f else 0.30f },
+                                        contentScale = ContentScale.Fit,
+                                        showPlaceholder = false,
+                                    )
+                                } else {
                                     Text(
-                                        name, color = SzjOnAccentSoft, fontSize = 10.sp,
-                                        maxLines = 1,
-                                        modifier = Modifier.align(Alignment.TopCenter)
-                                            .offset(y = (-20).dp)
-                                            .clip(SzjChipShape)
-                                            .background(SzjAccentSoft)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        szjCrafterAbbr(name),
+                                        color = if (has) SzjText else SzjMuted.copy(alpha = .45f),
+                                        fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                // 等级角标压在右下角。没练的不画——"没有角标"就是"还没开"。
+                                if (has) {
+                                    Text(
+                                        "$level",
+                                        color = if (level >= 100) SzjOnAccentSoft else SzjText,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.align(Alignment.BottomEnd)
+                                            .padding(1.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(if (level >= 100) SzjAccentSoft else SzjCard.copy(alpha = .92f))
+                                            .padding(horizontal = 3.dp),
                                     )
                                 }
                             }
+                            if (showTip) {
+                                Text(
+                                    name, color = SzjOnAccentSoft, fontSize = 10.sp,
+                                    maxLines = 1, softWrap = false,
+                                    modifier = Modifier.align(Alignment.TopCenter)
+                                        .offset(y = (-19).dp)
+                                        .clip(SzjChipShape)
+                                        .background(SzjAccentSoft)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
                         }
                     }
+                    // 最后一行不足 8 格时补空位，图标尺寸才不会被拉大。
+                    repeat(columns - chunk.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
@@ -5622,8 +5661,12 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         val known = remember(jobIcons) { jobIcons.keys.toSet() }
                         Column(Modifier.fillMaxWidth()) {
                             SzjRoleJobs.forEachIndexed { index, (role, names) ->
-                                // 生产采集和战斗职业中间隔一档，两段各自成组。
-                                if (role == "能工巧匠") Spacer(Modifier.height(6.dp))
+                                // 战斗职业和生产采集之间一道发丝线：这是两类完全不同的东西，
+                                // 中间只留白的话读起来还是一长串。
+                                if (role == "能工巧匠") {
+                                    Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                                    Spacer(Modifier.height(14.dp))
+                                }
                                 SzjCareerRoleRow(
                                     role = role,
                                     jobNames = names,
@@ -5671,8 +5714,6 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         // 特殊成就: medal icons + name/detail/time.
                         if (p.achievements.isNotEmpty()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                SzjShard(widthDp = 4, heightDp = 16)
-                                Spacer(Modifier.width(7.dp))
                                 Text("特殊成就", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(6.dp))
                                 Text("${p.achievements.size}", color = SzjMuted, style = SzjMetaStyle)
@@ -5697,8 +5738,6 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         }
                         // 游戏近况: recent/r{typeId}.png + event text.
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SzjShard(widthDp = 4, heightDp = 16)
-                            Spacer(Modifier.width(7.dp))
                             Text("游戏近况", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -5872,8 +5911,6 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SzjShard(widthDp = 4, heightDp = 16)
-                    Spacer(Modifier.width(7.dp))
                     Text("装备与染色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(8.dp))
