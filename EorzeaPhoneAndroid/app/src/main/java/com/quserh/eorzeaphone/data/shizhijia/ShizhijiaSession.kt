@@ -106,6 +106,8 @@ object ShizhijiaSession {
         ShizhijiaFriendRoster.clear(context)
         ShizhijiaFriendLink.clear()
         ShizhijiaAvatarStore.clear(context)
+        // 「我」页那三个计数也是账号相关的，不清会看到上一个账号的数字。
+        com.quserh.eorzeaphone.ui.SzjMyCountsCache.clear()
     }
 
     /** Persist the resolved profile so the top bar renders instantly on next entry (no 已登录→昵称 flash). */

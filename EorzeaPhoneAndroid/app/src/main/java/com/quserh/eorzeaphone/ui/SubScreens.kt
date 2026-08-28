@@ -158,13 +158,18 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
 fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, onBack: (() -> Unit)? = null, showBack: Boolean = true) {
     val margin = LocalContentMargin.current
     val sidePad = (margin.coerceAtLeast(2) - 2).dp
-    Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
-        Box(Modifier.align(Alignment.CenterStart)) {
+    // 三栏 Row。原来是 Box + 三个 alignment 叠，标题靠写死的 horizontal 50dp
+    // 躲开两边按钮——右边按钮一多就重合（聊天页头栽过这个）。
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(42.dp), contentAlignment = Alignment.CenterStart) {
             if (showBack) ImageGlyph(
                 R.drawable.ic_back,
                 PhoneAccent,
                 Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
-            ) else Spacer(Modifier.width(12.dp))
+            )
         }
         Text(
             title,
@@ -174,9 +179,13 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 50.dp),
+            modifier = Modifier.weight(1f),
         )
-        Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.End) {
+        Row(
+            Modifier.widthIn(min = 42.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             trailing?.invoke()
         }
     }

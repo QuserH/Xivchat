@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -562,8 +563,13 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, SzjPressSpring, label = "szjBack")
-    Box(Modifier.fillMaxWidth().background(SzjBg).padding(horizontal = 14.dp, vertical = 12.dp)) {
-        Box(Modifier.align(Alignment.CenterStart)) {
+    // 三栏 Row，不是"Box + 三个 alignment 互相叠"。后者的标题靠写死的
+    // horizontal padding 躲开两边的按钮，右边一多按钮就重合（聊天页头栽过）。
+    Row(
+        Modifier.fillMaxWidth().background(SzjBg).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(42.dp), contentAlignment = Alignment.CenterStart) {
             ImageGlyph(
                 R.drawable.ic_back,
                 SzjAccent,
@@ -574,11 +580,7 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
                     .padding(horizontal = 2.dp, vertical = 6.dp),
             )
         }
-        Row(
-            Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 50.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             Text(
                 title,
                 color = SzjText,
@@ -590,7 +592,11 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.End) {
+        Row(
+            Modifier.widthIn(min = 42.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             trailing?.invoke()
         }
     }
@@ -1331,6 +1337,31 @@ private fun SzjSubTab(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 
+/**
+ * 「我」页那三个计数（关注/粉丝/获赞）的进程内缓存。
+ *
+ * 从玩家主页返回时「我」这个 composable 会被重建。结果挂在 remember 上的话
+ * 每次回来都要重新请求一次，三个数字重新转一圈——而这三个数变化很慢。
+ * 退出登录时由 ShizhijiaSession.clear 一起清掉，否则换账号会看到上一个人的数。
+ */
+internal object SzjMyCountsCache {
+    private var uuid: String = ""
+    private var value: ShizhijiaUserProfile? = null
+
+    fun valueFor(forUuid: String): ShizhijiaUserProfile? =
+        if (forUuid.isNotBlank() && forUuid == uuid) value else null
+
+    fun put(forUuid: String, profile: ShizhijiaUserProfile) {
+        uuid = forUuid
+        value = profile
+    }
+
+    fun clear() {
+        uuid = ""
+        value = null
+    }
+}
+
 @Composable
 private fun ShizhijiaMeTab(
     state: PhoneState,
@@ -1353,11 +1384,28 @@ private fun ShizhijiaMeTab(
     BackHandler(enabled = showSettings) { showSettings = false }
     val p = loginUser
     // 关注/粉丝/获赞原来是硬编码的三个 0——自己主页明明有真数，摆一排假 0
-    // 是最显眼的半成品。这里按 uuid 拉一次真资料；没拉到就整行不显示。
-    var myCounts by remember { mutableStateOf<ShizhijiaUserProfile?>(null) }
+    // 是最显眼的半成品。这里按 uuid 拉一次真资料；没拉到就显示占位条。
+    //
+    // 结果进 SzjMyCountsCache：从玩家主页返回时这个 composable 会被重建，
+    // 挂在 remember 上的话每次回来都重新打一次接口、三个数字重新转一圈。
+    // 这三个数变化很慢，进程内缓存一次就够。
+    var myCounts by remember {
+        mutableStateOf(SzjMyCountsCache.valueFor(p?.uuid.orEmpty()))
+    }
     LaunchedEffect(p?.uuid) {
         val uuid = p?.uuid.orEmpty()
-        myCounts = if (uuid.isBlank()) null else ShizhijiaApi.getUserProfile(context, uuid)
+        if (uuid.isBlank()) {
+            myCounts = null
+            return@LaunchedEffect
+        }
+        val cached = SzjMyCountsCache.valueFor(uuid)
+        if (cached != null) {
+            myCounts = cached
+            return@LaunchedEffect
+        }
+        val fresh = ShizhijiaApi.getUserProfile(context, uuid)
+        if (fresh != null) SzjMyCountsCache.put(uuid, fresh)
+        myCounts = fresh
     }
     Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState())) {
       // 品牌行随内容滑走，和其他分区一致。它自带左右 16dp，所以放在内边距外面。
@@ -5444,10 +5492,12 @@ private fun SzjCareerRoleRow(
                             val has = level > 0
                             val icon = jobIcons[name].orEmpty()
                             val showTip = tipCareer == name
-                            Box {
+                            // 外层锁死 cell 宽：职业名那个气泡不能参与测量，
+                            // 否则它比格子宽，会把这一行后面的图标全顶开。
+                            Box(Modifier.width(cell)) {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.width(cell)
+                                    modifier = Modifier.fillMaxWidth()
                                         .clickable { onTip(if (showTip) null else name) },
                                 ) {
                                     Box(
@@ -5484,15 +5534,29 @@ private fun SzjCareerRoleRow(
                                     )
                                 }
                                 if (showTip) {
-                                    Text(
-                                        name, color = SzjOnAccentSoft, fontSize = 10.sp,
-                                        maxLines = 1, softWrap = false,
-                                        modifier = Modifier.align(Alignment.TopCenter)
-                                            .offset(y = (-18).dp)
-                                            .clip(SzjChipShape)
-                                            .background(SzjAccentSoft)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                                    )
+                                    // 气泡装在一个 0 宽的容器里向两边溢出。
+                                    // unbounded = true 允许子节点超出父约束，并且
+                                    // **不**把子节点的宽度算回父节点——所以气泡再长
+                                    // 也不会挤到旁边的职业图标。
+                                    //
+                                    // 之前只写 offset 是错的：offset 只挪绘制位置，
+                                    // 测量阶段这个 Text 仍然按自己的完整宽度参与，
+                                    // Box 于是被撑宽，兄弟节点被推走。
+                                    // 和会话列表时间戳那个锯齿是同一类错误。
+                                    Box(
+                                        Modifier.align(Alignment.TopCenter)
+                                            .width(0.dp)
+                                            .wrapContentSize(unbounded = true),
+                                    ) {
+                                        Text(
+                                            name, color = SzjOnAccentSoft, fontSize = 10.sp,
+                                            maxLines = 1, softWrap = false,
+                                            modifier = Modifier.offset(y = (-18).dp)
+                                                .clip(SzjChipShape)
+                                                .background(SzjAccentSoft)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -5622,6 +5686,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SzjSubTab("信息", tab == 0) { tab = 0 }
+                    SzjSubTab("游戏近况", tab == 2) { tab = 2 }
                     SzjSubTab("帖子", tab == 1) { tab = 1 }
                 }
             }
@@ -5666,11 +5731,18 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                             "最近登录" to p.lastLoginTime,
                             "游戏时长" to p.playTime,
                             "房屋信息" to p.houseInfo,
-                            "幻理模板使用" to if (p.washingNum > 0) p.washingNum.toString() else "",
-                            "伪零击败数" to if (p.killTimes > 0) p.killTimes.toString() else "",
-                            "水晶沙段位" to p.crystalRank,
-                            "钓鱼抛竿" to if (p.fishTimes > 0) p.fishTimes.toString() else "",
-                            "宝物击败数" to if (p.treasureTimes > 0) p.treasureTimes.toString() else "",
+                            // washing_num 在幻化总览接口里和 投影次数/染色次数/套装
+                            // 并列，那边我已经译成"漂白"（把染色洗掉），是同一个字段。
+                            // 原来这里写"幻理模板使用"，是我编的，和字段无关。
+                            "漂白次数" to if (p.washingNum > 0) p.washingNum.toString() else "",
+                            "水晶冲突段位" to p.crystalRank,
+                            "钓鱼次数" to if (p.fishTimes > 0) p.fishTimes.toString() else "",
+                            // kill_times / treasure_times 这两行删了。
+                            // 原来写的"伪零击败数""宝物击败数"都是我编的中文名——
+                            // characterDetail 里这两个字段官网没有对应栏目，
+                            // 别的接口里的同名字段是 PvP 击杀，是另一回事。
+                            // 编一个像真的名字比不显示更糟：你会当成真的去读。
+                            // 字段仍在 ShizhijiaUserProfile 里，确认了真实说法再加回来。
                             "无人岛等级" to if (p.newrank > 0) p.newrank.toString() else "",
                         ).filter { it.second.isNotBlank() }
                         if (rows.isNotEmpty()) {
@@ -5712,35 +5784,42 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                             }
                             Spacer(Modifier.height(14.dp))
                         }
-                        // 游戏近况: recent/r{typeId}.png + event text.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("游戏近况", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        if (recents.isEmpty()) {
-                            Text(
-                                if (recentsPrivate) "这位玩家把近况设为了私密" else "最近没有可展示的记录",
-                                color = SzjMuted, style = SzjMetaStyle,
-                                modifier = Modifier.padding(vertical = 8.dp),
-                            )
-                        } else {
-                            recents.take(15).forEach { r ->
-                                SzjCardSurface(Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = SzjInnerShape) {
-                                    Row(Modifier.padding(horizontal = 11.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        val recentUrl = if (r.typeId.isNotBlank())
-                                            "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/recent/r${r.typeId}.png" else ""
-                                        ShizhijiaRemoteImage(url = recentUrl, modifier = Modifier.size(30.dp), showPlaceholder = false)
-                                        Spacer(Modifier.width(11.dp))
-                                        Column(Modifier.weight(1f)) {
-                                            Text(r.eventType, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                            if (r.detail.isNotBlank()) Text(r.detail, color = SzjMuted, fontSize = 11.sp, lineHeight = 16.sp)
-                                            if (r.logTime.isNotBlank()) Text(r.logTime, color = SzjMuted, fontSize = 10.sp)
-                                        }
-                                    }
+                    }
+                }
+            } else if (tab == 2) {
+                // ---- 游戏近况 tab ----
+                // 原来这一段挂在 信息 tab 的最后面：资料明细 + 特殊成就 + 近况
+                // 三块堆在一屏里，近况在最底下要滑很久才看到。
+                // 它本来就是一份独立的时间线，给它自己的标签。
+                if (recents.isEmpty()) {
+                    // 用 Inline 版：SzjEmpty 是 fillMaxSize 的，塞进 LazyColumn 的
+                    // item 里会去抢整个视口的高度。
+                    item {
+                        SzjEmptyInline(
+                            if (recentsPrivate) "这位玩家把近况设为了私密" else "最近没有可展示的记录",
+                            if (recentsPrivate) "他在石之家上关掉了近况展示" else "打本、钓鱼、采集这些记录会出现在这里",
+                        )
+                    }
+                } else {
+                    items(recents.take(15)) { r ->
+                        SzjCardSurface(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            shape = SzjInnerShape,
+                        ) {
+                            Row(Modifier.padding(horizontal = 11.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                val recentUrl = if (r.typeId.isNotBlank())
+                                    "https://static.web.sdo.com/jijiamobile/pic/ff14/ffstones/recent/r${r.typeId}.png" else ""
+                                ShizhijiaRemoteImage(url = recentUrl, modifier = Modifier.size(30.dp), showPlaceholder = false)
+                                Spacer(Modifier.width(11.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(r.eventType, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    if (r.detail.isNotBlank()) Text(r.detail, color = SzjMuted, fontSize = 11.sp, lineHeight = 16.sp)
+                                    if (r.logTime.isNotBlank()) Text(r.logTime, color = SzjMuted, fontSize = 10.sp)
                                 }
                             }
                         }
                     }
+                    item { Spacer(Modifier.height(10.dp)) }
                 }
             } else {
                 // ---- 帖子 tab ----

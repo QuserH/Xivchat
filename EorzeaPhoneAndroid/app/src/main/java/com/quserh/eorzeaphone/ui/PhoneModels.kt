@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -413,6 +414,17 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         set(value) { _defaultChatListTab.value = value; prefs.edit().putString("defaultChatListTab", value).apply() }
     var openLocalRequest by mutableStateOf(0)
     var selectedFriend by mutableStateOf<PhoneFriend?>(null)
+
+    /**
+     * 联系人列表滚到哪儿了。
+     *
+     * 存在这里而不是屏内 `rememberLazyListState`：导航是 AnimatedContent + when，
+     * 进好友详情时联系人这个 composable 整个被拆掉，`rememberSaveable` 也活不过来
+     * （每屏没有各自的 SaveableStateHolder）。所以退出来会回到顶部。
+     * 挂在 PhoneState 上就跟着 App 的生命周期，返回时原位。
+     */
+    var contactsScrollIndex by mutableIntStateOf(0)
+    var contactsScrollOffset by mutableIntStateOf(0)
 
     /**
      * 「借道」进石之家时记住从哪儿来的，返回时原样还回去。

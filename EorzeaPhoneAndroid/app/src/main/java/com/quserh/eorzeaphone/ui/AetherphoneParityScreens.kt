@@ -554,8 +554,19 @@ private fun LightHeader(
     //
     // 标题左边原来有一枚通讯贝当"签名"。去掉了：它每页都是同一枚、不带信息，
     // 纯装饰顶在标题前面反而把标题的重心拽偏。三个页头现在都只有字。
-    Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
-        Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
+    //
+    // 骨架是**三栏 Row**，不是"Box + 三个 alignment 互相叠"。
+    // 原来那种写法里返回键(CenterStart)、标题(Center, 写死 horizontal 54dp)、
+    // trailing(CenterEnd) 全铺在同一个 Box 上，谁宽了就压谁——而 54dp 是按
+    // 一个 38dp 按钮算出来的。联系人页加第二个按钮之后就重合了。
+    // 加宽那个 padding 只是把同一个坑往后挪一个按钮；改成三栏之后，
+    // 标题吃 weight(1f)，右边加几个按钮都不用动别处。
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 左栏固定 46dp，和右栏的下限对称——标题才真的在屏幕正中。
+        Box(Modifier.width(46.dp), contentAlignment = Alignment.CenterStart) {
             ImageGlyph(
                 R.drawable.ic_back,
                 AetherPurple,
@@ -566,8 +577,7 @@ private fun LightHeader(
                     .padding(horizontal = 6.dp, vertical = 4.dp),
             )
         }
-        // 标题限定在返回键与右侧按钮之间，避免窄屏/大边距时与右侧按钮重叠
-        Box(Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 54.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     title,
@@ -585,7 +595,12 @@ private fun LightHeader(
                 }
             }
         }
-        Row(Modifier.align(Alignment.CenterEnd).widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
+        Row(
+            Modifier.widthIn(min = 46.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+            content = trailing,
+        )
     }
 }
 
@@ -1710,7 +1725,23 @@ private fun AetherphoneContactsList(state: PhoneState) {
         // 一条流，一人一张卡，和会话列表同一个骨架和同一个间距。
         // 原来在线/离线各收进一个 LightContactCard（一个 item 里塞整组人），
         // 于是这一屏的"卡"是组，会话列表的"卡"是行——两屏的卡片不是一个意思。
+        //
+        // 滚动位置存在 PhoneState 里：进好友详情时这个 composable 会被整个拆掉
+        // （导航是 AnimatedContent + when），屏内的 remember 活不过来，
+        // 所以原来退出来总是回到顶部。
+        val listState = rememberLazyListState(
+            initialFirstVisibleItemIndex = state.contactsScrollIndex,
+            initialFirstVisibleItemScrollOffset = state.contactsScrollOffset,
+        )
+        LaunchedEffect(listState) {
+            snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+                .collect { (i, o) ->
+                    state.contactsScrollIndex = i
+                    state.contactsScrollOffset = o
+                }
+        }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
             verticalArrangement = Arrangement.spacedBy(LightCardGap),
         ) {
