@@ -29,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,7 +36,6 @@ import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
-import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 
@@ -48,39 +46,17 @@ import com.quserh.eorzeaphone.ui.theme.PhoneText
 // 这个项目的字号阶梯已经有 39 个值了，再随手加只会更乱。
 // ---------------------------------------------------------------------------
 
-private val StoreCardShape = RoundedCornerShape(16.dp)
+// 卡片圆角由 PhoneCard 决定（14dp），这里只留图标块自己的圆角。
+// chip 用公共的 PhoneChipShape，不再自己定一个 9dp。
 private val StoreTileShape = RoundedCornerShape(12.dp)
-private val StoreChipShape = RoundedCornerShape(9.dp)
 
 private const val StoreDisplaySp = 26      // 英雄区的数字
 private const val StoreTitleSp = 15        // 应用名
 private const val StoreBodySp = 12         // 介绍
 private const val StoreMetaSp = 11         // 状态、分类提示
 
-/**
- * 壳层缺一个卡片原语——石之家那边有 SzjCardSurface，外面这层一直是
- * 手写 clip+background。补一个，商店先用上，其余界面以后可以跟。
- *
- * 浅色下加一道极淡描边：白卡落在近白底上，只靠阴影会糊成一片。
- */
-@Composable
-private fun StoreCard(
-    modifier: Modifier = Modifier,
-    shape: Shape = StoreCardShape,
-    onClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit,
-) {
-    val body: @Composable () -> Unit = {
-        Box(
-            Modifier.fillMaxWidth()
-                .clip(shape)
-                .background(PhoneSurface)
-                .border(1.dp, PhoneMuted.copy(alpha = 0.10f), shape),
-        ) { content() }
-    }
-    if (onClick == null) Box(modifier) { body() }
-    else PhonePressable(onClick = onClick, modifier = modifier, shape = shape, pressedScale = 0.985f) { body() }
-}
+// 卡片用公共的 PhoneCard（SubScreens.kt）。这里原来有个私有的 StoreCard，
+// 现在壳层有了正式的卡片原语就不留第二份——那正是"每个界面自己写一套"的开头。
 
 /**
  * 英雄区：桌面的实况地图。
@@ -105,7 +81,7 @@ private fun StoreShelfMap(state: PhoneState) {
     // 下一个装的会落在这一页（和 installApp 里的规则一致：格子最少的那页）。
     val nextPage = pages.indices.minByOrNull { pages[it].size }
 
-    StoreCard(Modifier.fillMaxWidth()) {
+    PhoneCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
@@ -187,9 +163,9 @@ private fun StoreFilterRow(selected: Int, counts: List<Int>, onSelect: (Int) -> 
             val fg by animateColorAsState(
                 if (on) Color.White else PhoneMuted, tween(180), label = "storeFilterFg",
             )
-            PhonePressable(onClick = { onSelect(i) }, shape = StoreChipShape, pressedScale = 0.96f) {
+            PhonePressable(onClick = { onSelect(i) }, shape = PhoneChipShape, pressedScale = 0.96f) {
                 Row(
-                    Modifier.clip(StoreChipShape).background(bg).padding(horizontal = 12.dp, vertical = 7.dp),
+                    Modifier.clip(PhoneChipShape).background(bg).padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(label, color = fg, fontSize = StoreMetaSp.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
@@ -215,7 +191,7 @@ private fun StoreAppRow(
     onToggle: () -> Unit,
 ) {
     val implemented = AppStoreCatalog.isImplemented(app.id)
-    StoreCard(Modifier.fillMaxWidth()) {
+    PhoneCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -288,22 +264,22 @@ private fun StoreActionButton(installed: Boolean, isSystem: Boolean, onClick: ()
             "系统",
             color = PhoneMuted,
             fontSize = StoreMetaSp.sp,
-            modifier = Modifier.clip(StoreChipShape)
+            modifier = Modifier.clip(PhoneChipShape)
                 .background(PhoneSurfaceRaised)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         )
         return
     }
     val label = if (installed) "移除" else "安装"
-    PhonePressable(onClick = onClick, shape = StoreChipShape, pressedScale = 0.94f) {
+    PhonePressable(onClick = onClick, shape = PhoneChipShape, pressedScale = 0.94f) {
         if (installed) {
             Text(
                 label,
                 color = PhoneMuted,
                 fontSize = StoreMetaSp.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.clip(StoreChipShape)
-                    .border(1.dp, PhoneMuted.copy(alpha = 0.35f), StoreChipShape)
+                modifier = Modifier.clip(PhoneChipShape)
+                    .border(1.dp, PhoneMuted.copy(alpha = 0.35f), PhoneChipShape)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         } else {
@@ -312,7 +288,7 @@ private fun StoreActionButton(installed: Boolean, isSystem: Boolean, onClick: ()
                 color = Color.White,
                 fontSize = StoreMetaSp.sp,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(StoreChipShape)
+                modifier = Modifier.clip(PhoneChipShape)
                     .background(PhoneAccent)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )

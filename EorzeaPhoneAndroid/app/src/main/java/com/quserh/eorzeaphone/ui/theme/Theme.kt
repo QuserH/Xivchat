@@ -116,6 +116,29 @@ val PhoneText: Color @Composable get() = MaterialTheme.colorScheme.onBackground
 val PhoneMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 val PhoneOutline = Color(0xFF79747E)
 
+/** 当前是浅色模式。判据和石之家那边一致（看背景亮度，不看系统开关）。 */
+val phoneLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
+
+// ---- 线与边 ----
+// 壳层以前**没有**这三个 token，所有分割线和描边都是就地写一个灰或者
+// PhoneMuted.copy(alpha=…)，同一条线在不同界面粗细深浅都不一样。
+// 取值和石之家同源（它是从官网 app.css 读的），这样两边的线看着是一套。
+private val PhoneLineLight = Color(0xFFE5E5E5)
+private val PhoneLineDark = Color(0xFF322D24)
+private val PhoneHairlineLight = Color(0xFFC2C2C2)
+private val PhoneHairlineDark = Color(0xFF443D31)
+private val PhoneEdgeLight = Color(0x0A000000)
+private val PhoneEdgeDark = Color(0x24FFFFFF)
+
+/** 分割线：同层内容之间的分界（列表行之间、卡内分组之间）。 */
+val PhoneLine: Color @Composable get() = if (phoneLight) PhoneLineLight else PhoneLineDark
+
+/** 描边：比分割线重一档，用来给控件收边（chip、输入框）。 */
+val PhoneHairline: Color @Composable get() = if (phoneLight) PhoneHairlineLight else PhoneHairlineDark
+
+/** 卡片顶边高光。深色下是那一线反光，浅色下是一道极淡的压边。 */
+val PhoneEdge: Color @Composable get() = if (phoneLight) PhoneEdgeLight else PhoneEdgeDark
+
 // 中性色跟着石之家走：#f2f2f2 页底、#fff 卡片、#f5f5f5 抬升层、
 // #1f1f1f 正文、#e5e5e5 分割线、#c2c2c2 描边——都是从它的 app.css 里读的。
 // 原来是蓝灰一套（配水晶青），底色偏冷，配金会显脏。现在中性色也退到中性偏暖。

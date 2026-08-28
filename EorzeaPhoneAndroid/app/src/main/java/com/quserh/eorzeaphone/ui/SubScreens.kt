@@ -15,13 +15,13 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -60,15 +60,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -91,6 +88,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Brush
@@ -119,6 +117,10 @@ import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
+import com.quserh.eorzeaphone.ui.theme.PhoneLine
+import com.quserh.eorzeaphone.ui.theme.PhoneEdge
+import com.quserh.eorzeaphone.ui.theme.phoneLight
+import com.quserh.eorzeaphone.ui.theme.BrandOnFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -278,21 +280,23 @@ fun SettingsScreen(state: PhoneState) {
                 // 连接钮原来写死 #AE62DA——M3 模板紫的余党，全局品牌色换过一轮它漏了。
                 // 断开是破坏性操作，改成描边 + PhoneDanger；连接才是实心主色。
                 val connected = state.connected
+                // 改用 PhoneButton：原来是 M3 的 Button/OutlinedButton，带 ripple，
+                // 和这个 App 里其他所有可按的东西（PhonePressable 的按压回弹）手感不同。
+                // 这是整个壳层最重要的一个按钮，不该是唯一手感不一样的那个。
                 if (connected) {
-                    OutlinedButton(
+                    PhoneButton(
+                        "断开游戏连接",
                         onClick = { state.disconnect() },
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, PhoneDanger),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PhoneDanger),
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                    ) { Text("断开游戏连接", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                        kind = PhoneButtonKind.Secondary,
+                        size = PhoneButtonSize.Wide,
+                        danger = true,
+                    )
                 } else {
-                    Button(
+                    PhoneButton(
+                        "连接游戏",
                         onClick = { state.connect() },
-                        colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent, contentColor = Color.White),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                    ) { Text("连接游戏", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                        size = PhoneButtonSize.Wide,
+                    )
                 }
                 val connHint = buildString {
                     val online = state.onlineCharacterName
@@ -397,10 +401,10 @@ private val SettingsRowPad = 16.dp
 
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface),
-        content = content,
-    )
+    // 原来是就地 clip+background：同样是 14dp 圆角，但没有阴影、没有顶边高光、
+    // 浅色下没有收边——所以设置页的"卡"比石之家的卡薄一层，两边观感不一致。
+    // 换成 PhoneCard 之后这 13 处一起有了厚度，不用逐个改。
+    PhoneCard(Modifier.fillMaxWidth(), content = content)
 }
 
 /** 组内分隔线。缩进到文字起点，不横穿图标那一列。 */
@@ -409,7 +413,9 @@ private fun SettingsDivider() {
     Box(
         Modifier.fillMaxWidth()
             .padding(start = SettingsRowPad + SettingsIconSize + 14.dp)
-            .height(1.dp).background(MaterialTheme.colorScheme.outlineVariant),
+            // 改用 PhoneLine：分割线全 App 一个值，别一处 outlineVariant、
+            // 一处 PhoneMuted.copy(alpha)、一处随手一个灰。
+            .height(1.dp).background(PhoneLine),
     )
 }
 
@@ -1504,18 +1510,22 @@ fun PhoneFilterPanel(
                     content = content,
                 )
                 Spacer(Modifier.height(14.dp))
+                // 同样换掉 M3 Button：Wide 传 weight 就能各占一份宽度。
+                // "应用"占 1.4 份、"重置"占 1 份——主操作更宽是有意的。
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
+                    PhoneButton(
+                        "重置",
                         onClick = onReset,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(44.dp),
-                    ) { Text("重置", fontSize = 14.sp) }
-                    Button(
+                        modifier = Modifier.weight(1f),
+                        kind = PhoneButtonKind.Secondary,
+                        size = PhoneButtonSize.Wide,
+                    )
+                    PhoneButton(
+                        applyLabel,
                         onClick = onApply,
-                        colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent, contentColor = Color.White),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1.4f).height(44.dp),
-                    ) { Text(applyLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                        modifier = Modifier.weight(1.4f),
+                        size = PhoneButtonSize.Wide,
+                    )
                 }
             }
         }
@@ -1593,6 +1603,150 @@ fun PhoneFilterBar(
 
 /** 按压弹簧。阻尼 0.62 / 刚度 420——按下去有回弹但不晃。 */
 val PhonePressSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
+
+// 形状阶梯。chip 的那一档（PhoneChipShape）早就在下面筛选面板那节定义了，
+// 这里只补卡片和卡内元素两档，不重复定义——值也不去改它，
+// 那个 10dp 已经被 PhoneChipGroup 用着，改了会动到现有界面。
+/** 卡片圆角。和石之家的 SzjCardShape 同值（14dp）。 */
+val PhoneCardShape = RoundedCornerShape(14.dp)
+
+/** 卡内元素圆角（按钮、输入框、内嵌块）。 */
+val PhoneInnerShape = RoundedCornerShape(10.dp)
+
+/**
+ * 卡片。**壳层以前没有这个**——石之家里所有卡都走 SzjCardSurface，
+ * 出了石之家全是就地 `clip(RoundedCornerShape(x)).background(y)`
+ * （壳层里数了 148 处），圆角、底色、有没有描边各写各的。
+ * "石之家里像设计过、外面像默认长相"的根源就在这儿。
+ *
+ * 构造和 SzjCardSurface 一致，只是颜色走 Phone token：
+ * 柔和阴影撑厚度 → 顶边 1dp 高光 → 浅色模式才加收边（白卡落在近白底上
+ * 只靠阴影会糊）→ 按下时下沉（缩放 + 阴影收窄）。
+ *
+ * 卡片按压用 0.978 而不是控件的 0.94：面积越大，同样比例看着越夸张。
+ */
+@Composable
+fun PhoneCard(
+    modifier: Modifier = Modifier,
+    shape: RoundedCornerShape = PhoneCardShape,
+    onClick: (() -> Unit)? = null,
+    raised: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val motion = phoneMotionEnabled()
+    val scale by animateFloatAsState(
+        if (pressed && motion && onClick != null) 0.978f else 1f,
+        PhonePressSpring,
+        label = "phoneCardPress",
+    )
+    val elevation by animateDpAsState(
+        if (pressed && onClick != null) 1.dp else if (raised) 6.dp else 3.dp,
+        tween(140),
+        label = "phoneCardElev",
+    )
+    val light = phoneLight
+    Column(
+        modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .shadow(elevation, shape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+            .clip(shape)
+            .background(if (raised) PhoneSurfaceRaised else PhoneSurface)
+            .then(if (light) Modifier.border(1.dp, PhoneLine, shape) else Modifier)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                } else Modifier
+            ),
+    ) {
+        // 顶边高光：打磨过的石面反的那一线，1dp，深色模式下最明显。
+        Box(
+            Modifier.fillMaxWidth().height(1.dp).background(
+                Brush.horizontalGradient(
+                    listOf(Color.Transparent, PhoneEdge, PhoneEdge, Color.Transparent)
+                )
+            )
+        )
+        content()
+    }
+}
+
+/**
+ * 按钮。壳层散着 5 个 M3 Button、5 个 TextButton、1 个 OutlinedButton，
+ * 每处自己配 ButtonDefaults.buttonColors，手感和圆角都不统一，
+ * 而石之家那边全是 SzjPressable。这里给三档，覆盖那些用法：
+ *
+ * - [PhoneButtonKind.Primary]  实心，一屏只该有一个（"建议你做的事"）
+ * - [PhoneButtonKind.Secondary] 描边，同等重要的备选
+ * - [PhoneButtonKind.Ghost]    无底，次要动作（"取消"这类）
+ *
+ * 破坏性动作传 `danger = true`：红只有 PhoneDanger 一个值。
+ */
+enum class PhoneButtonKind { Primary, Secondary, Ghost }
+
+/**
+ * 按钮有两种尺寸，因为这个 App 里确实存在两种用法，不是为了参数化而参数化：
+ *
+ * - [Compact]：卡片里、行尾的动作（商店的"安装"、对话框的"取消"）
+ * - [Wide]：一屏的主操作，整宽 50dp（"连接游戏"这种）
+ *
+ * 别再加第三档。要更大更小说明那个位置的层级没想清楚。
+ */
+enum class PhoneButtonSize { Compact, Wide }
+
+@Composable
+fun PhoneButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    kind: PhoneButtonKind = PhoneButtonKind.Primary,
+    size: PhoneButtonSize = PhoneButtonSize.Compact,
+    enabled: Boolean = true,
+    danger: Boolean = false,
+) {
+    // accent 是文字/描边用的（够对比度），fill 是实心底用的（鲜艳）。
+    // 这两个分工在 Theme.kt 里有说明，别混用。
+    val accent = if (danger) PhoneDanger else PhoneAccent
+    val fill = if (danger) PhoneDanger else BrandFill
+    val wide = size == PhoneButtonSize.Wide
+    // Wide 用卡片圆角（14dp）而不是内元素圆角：它本身就是一块，不是嵌在卡里的。
+    val shape = if (wide) PhoneCardShape else PhoneInnerShape
+    // Wide 的语义是"填满给它的宽度"，不是硬性 fillMaxWidth——
+    // 这样单独放（在 Column 里）会占满整宽，放在 Row 里传 weight 也能各占一份。
+    // 实现上靠里面那层 fillMaxWidth 去撑，外层不写死，否则 weight 会被覆盖。
+    PhonePressable(
+        onClick = onClick,
+        modifier = modifier,
+        shape = shape,
+        enabled = enabled,
+        // 整宽的块跟卡片一样，按压幅度要小；小控件才用默认的 0.94。
+        pressedScale = if (wide) 0.985f else 0.94f,
+    ) {
+        val base = Modifier.clip(shape).then(if (wide) Modifier.fillMaxWidth() else Modifier)
+        val boxed = when (kind) {
+            PhoneButtonKind.Primary -> base.background(if (enabled) fill else PhoneSurfaceRaised)
+            PhoneButtonKind.Secondary -> base.border(1.dp, if (enabled) accent.copy(alpha = 0.55f) else PhoneLine, shape)
+            PhoneButtonKind.Ghost -> base
+        }
+        Text(
+            label,
+            color = when {
+                !enabled -> PhoneMuted
+                kind == PhoneButtonKind.Primary -> if (danger) Color.White else BrandOnFill
+                else -> accent
+            },
+            fontSize = if (wide) 15.sp else 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            textAlign = if (wide) TextAlign.Center else null,
+            modifier = boxed.padding(
+                horizontal = if (kind == PhoneButtonKind.Ghost) 10.dp else 16.dp,
+                vertical = if (wide) 15.dp else 10.dp,
+            ),
+        )
+    }
+}
 
 /** 系统关掉动画时（开发者选项 / 省电）不做缩放，只保留点击。 */
 @Composable
