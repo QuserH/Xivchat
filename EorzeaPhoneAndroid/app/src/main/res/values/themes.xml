@@ -5,7 +5,8 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">#08070D</item>
+        <!-- 暖墨，和深色底 #14120D 同族。原来是 #08070D，偏紫的近黑。 -->
+        <item name="android:navigationBarColor">#14120D</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

@@ -15,23 +15,52 @@ import androidx.compose.ui.unit.dp
 /** Adjustable global horizontal inset for feature screens (外观 -> 内容边距). */
 val LocalContentMargin = staticCompositionLocalOf { 16 }
 
-// ---- 品牌色：以太水晶蓝青 ----
-// 原来这里是 M3 模板原封不动的紫（#6750A4 / #D0BCFF），全套工具屏都跟着它，
-// 结果整台"手机"一眼就是没设计过的模板 App。换成水晶蓝青：和石之家的水晶青
-// (#5FD2C8) 同族但更深一档，白底上够 4.5:1，深色底上够亮。
-// 聊天保留 AetherPurple（那是对 FFXIV-Aetherphone 的复刻，不是品牌色），
-// 石之家保留自己的水晶青——每个"App"可以有自己的主题色，但全局工具必须是
-// 刻意选的品牌色。
-private val BrandLight = Color(0xFF0E7C86)          // 白底 4.9:1
-private val BrandOnLight = Color.White
-private val BrandContainerLight = Color(0xFFB6ECEF)
-private val BrandOnContainerLight = Color(0xFF00363B)
-private val BrandDark = Color(0xFF6FD8DE)           // 深底 9.7:1
-private val BrandOnDark = Color(0xFF00363B)
-private val BrandContainerDark = Color(0xFF004F55)
-private val BrandOnContainerDark = Color(0xFF9CF1F7)
+// ---- 品牌色：石之家的金 ----
+//
+// 取值不是挑的，是从石之家自己的样式表里读出来的
+// （https://ff14risingstones.web.sdo.com/mob/static/css/app.*.css）：
+// #c4a86a 在那份 CSS 里出现 177 次，是全站唯一的强调色。
+//   .active{background-color:#c4a86a;color:#fff}
+//   .is-selected{background-color:#fbf9f4;border-color:#c4a86a}
+//   .van-tabs__line{background-color:#c4a86a}
+// 配套的中性色：#fff 卡片、#f2f2f2 页底、#1f1f1f/#4b4b4b 文字、
+// #a69162 按下态的深金、#fbf9f4/#f0e9da 金的浅色底、#b54545 危险色。
+//
+// 之前这里是三套色：全局"以太水晶蓝青"、聊天的 AetherPurple（Aetherphone 复刻）、
+// 石之家自己的水晶青。理由是"每个 App 可以有自己的主题色"——但结果就是同一台
+// 手机里三种强调色，看着不像一个东西。现在统一到石之家这一套。
+//
+// **金不能直接当文字色**：#c4a86a 在白底上只有 2.17:1。官网自己也只把它用作
+// 填充（金底白字），个别地方拿它写小字是官网的无障碍问题，不该照抄。
+// 所以分成两个角色：
+//   AccentFill —— 填充（按钮、选中态的底），配白字，和官网完全一致
+//   AccentInk  —— 文字/图标用的深金，白底 5.2:1
+private val AccentFill = Color(0xFFC4A86A)          // 石之家金（填充）
+private val AccentFillPressed = Color(0xFFA69162)   // 按下态
+private val AccentInkLight = Color(0xFF7D6229)      // 白底上的金字（5.2:1）
+private val AccentInkDark = Color(0xFFD8BE85)       // 深底上的金字
+private val AccentSoftLight = Color(0xFFFBF9F4)     // 金的浅色底
+private val AccentSoftDark = Color(0xFF2E2921)
 
-// 亮/暗两档都要用，所以做成 composable。深色模式下用亮青，浅色下用深青。
+/**
+ * 石之家金 —— 填充用（按钮底、选中态底），上面配白字。
+ * 深浅两档同一个值：这个金在两种底上都能当填充。
+ */
+val BrandFill: Color = AccentFill
+
+/** 按下态的深金。 */
+val BrandFillPressed: Color = AccentFillPressed
+private val BrandLight = AccentInkLight             // 白底 5.2:1
+private val BrandOnLight = Color.White
+private val BrandContainerLight = AccentSoftLight
+private val BrandOnContainerLight = Color(0xFF4A3A15)
+private val BrandDark = AccentInkDark               // 深底 8.6:1
+private val BrandOnDark = Color(0xFF2A2110)
+private val BrandContainerDark = AccentSoftDark
+private val BrandOnContainerDark = Color(0xFFE8D5A8)
+
+// 亮/暗两档都要用，所以做成 composable。
+// 这是**文字/图标**用的金（够对比度）；实心填充用 BrandFill（官网原值）。
 val PhoneAccent: Color @Composable get() =
     if (MaterialTheme.colorScheme.background.luminance() > 0.5f) BrandLight else BrandDark
 val PhoneAccentContainer: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer
@@ -75,59 +104,61 @@ val PhoneText: Color @Composable get() = MaterialTheme.colorScheme.onBackground
 val PhoneMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 val PhoneOutline = Color(0xFF79747E)
 
-// 中性色也从紫灰拧成蓝灰（surfaceVariant / outline 原来带紫底），
-// 不然品牌色换了、底色还是紫的，反而更脏。
+// 中性色跟着石之家走：#f2f2f2 页底、#fff 卡片、#f5f5f5 抬升层、
+// #1f1f1f 正文、#e5e5e5 分割线、#c2c2c2 描边——都是从它的 app.css 里读的。
+// 原来是蓝灰一套（配水晶青），底色偏冷，配金会显脏。现在中性色也退到中性偏暖。
 private val LightPhoneColors = lightColorScheme(
     primary = BrandLight,
     onPrimary = BrandOnLight,
     primaryContainer = BrandContainerLight,
     onPrimaryContainer = BrandOnContainerLight,
-    secondary = Color(0xFF4C6268),
+    secondary = Color(0xFF6B6252),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFCFE7EC),
-    onSecondaryContainer = Color(0xFF081F23),
-    tertiary = Color(0xFF515D7D),
+    secondaryContainer = Color(0xFFF0E9DA),   // 官网 #f0e9da
+    onSecondaryContainer = Color(0xFF252014),
+    tertiary = Color(0xFF5C5B57),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFDBE1FF),
-    onTertiaryContainer = Color(0xFF0C1A38),
-    error = DangerLight,
-    errorContainer = Color(0xFFFFDAD9),
-    onErrorContainer = Color(0xFF410006),
-    background = Color(0xFFEFF2F4),
-    onBackground = Color(0xFF181C1E),
+    tertiaryContainer = Color(0xFFE8E6E1),
+    onTertiaryContainer = Color(0xFF1F1E1B),
+    error = Color(0xFFB54545),                 // 官网 #b54545
+    errorContainer = Color(0xFFFBE4E4),
+    onErrorContainer = Color(0xFF4A1212),
+    background = Color(0xFFF2F2F2),            // 官网页底
+    onBackground = Color(0xFF1F1F1F),          // 官网正文
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF181C1E),
-    surfaceVariant = Color(0xFFE3E9EC),
-    onSurfaceVariant = Color(0xFF444B4E),
-    outline = Color(0xFF74797C),
-    outlineVariant = Color(0xFFC5CBCE),
+    onSurface = Color(0xFF1F1F1F),
+    surfaceVariant = Color(0xFFF5F5F5),        // 官网 #f5f5f5
+    onSurfaceVariant = Color(0xFF4B4B4B),      // 官网次要文字
+    outline = Color(0xFF9C9C9C),               // 官网 #9c9c9c
+    outlineVariant = Color(0xFFE5E5E5),        // 官网 #e5e5e5
     scrim = Color(0xFF000000),
 )
 
+// 官网只有浅色一套，深色这边按同一个金推暖灰（冷灰配金显脏）。
 private val DarkPhoneColors = darkColorScheme(
     primary = BrandDark,
     onPrimary = BrandOnDark,
     primaryContainer = BrandContainerDark,
     onPrimaryContainer = BrandOnContainerDark,
-    secondary = Color(0xFFB3CBD1),
-    onSecondary = Color(0xFF1D3439),
-    secondaryContainer = Color(0xFF344A50),
-    onSecondaryContainer = Color(0xFFCFE7EC),
-    tertiary = Color(0xFFB9C5EA),
-    onTertiary = Color(0xFF232F4D),
-    tertiaryContainer = Color(0xFF3A4664),
-    onTertiaryContainer = Color(0xFFDBE1FF),
-    error = DangerDark,
-    errorContainer = Color(0xFF8C1521),
-    onErrorContainer = Color(0xFFFFDAD9),
-    background = Color(0xFF101416),
-    onBackground = Color(0xFFDFE3E6),
-    surface = Color(0xFF1D2225),
-    onSurface = Color(0xFFDFE3E6),
-    surfaceVariant = Color(0xFF3F484B),
-    onSurfaceVariant = Color(0xFFBFC8CB),
-    outline = Color(0xFF899295),
-    outlineVariant = Color(0xFF3F484B),
+    secondary = Color(0xFFD3C9B4),
+    onSecondary = Color(0xFF352F22),
+    secondaryContainer = Color(0xFF4A4132),
+    onSecondaryContainer = Color(0xFFF0E9DA),
+    tertiary = Color(0xFFCAC7BF),
+    onTertiary = Color(0xFF32302B),
+    tertiaryContainer = Color(0xFF494740),
+    onTertiaryContainer = Color(0xFFE8E6E1),
+    error = Color(0xFFFF9C9C),
+    errorContainer = Color(0xFF7A2626),
+    onErrorContainer = Color(0xFFFBE4E4),
+    background = Color(0xFF14120D),
+    onBackground = Color(0xFFECE7DD),
+    surface = Color(0xFF201D16),
+    onSurface = Color(0xFFECE7DD),
+    surfaceVariant = Color(0xFF453F33),
+    onSurfaceVariant = Color(0xFFC9C2B4),
+    outline = Color(0xFF938C7E),
+    outlineVariant = Color(0xFF3A352B),
     scrim = Color(0xFF000000),
 )
 

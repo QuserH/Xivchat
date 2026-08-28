@@ -166,7 +166,9 @@ import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.normalizedPlayerName
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendLink
+import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
+import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import java.time.Instant
 import java.time.LocalDate
@@ -185,7 +187,19 @@ private val AetherLightText: Color @Composable get() = MaterialTheme.colorScheme
 private val AetherLightMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val AetherLightSeparator: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
 private val AetherLightControl: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
-private val AetherPurple = Color(0xFF8669F2)
+/**
+ * 聊天/联系人的强调色 —— 已经**不是紫的了**，跟全局品牌色（石之家金）走。
+ *
+ * 原来是 #8669F2，理由是"这是对 FFXIV-Aetherphone 的复刻"。但结果是同一台手机
+ * 里三种强调色（工具屏青、聊天紫、石之家青），看着不像一个东西。
+ * 现在这个名字只是历史包袱，指向的是全局 accent，40 处调用点不用逐个改。
+ *
+ * 文字/图标用它（够对比度）；实心填充用 [AetherFill]。
+ */
+private val AetherPurple: Color @Composable get() = PhoneAccent
+
+/** 实心填充用的金（官网原值 #c4a86a），上面配白字。 */
+private val AetherFill: Color = BrandFill
 private val EmoteChatColor = Color(0xFFBEFFF1) // 情感动作文字颜色（游戏内 190,255,241）
 private val AetherPink = Color(0xFFF46DAA)
 private val AetherNavyTop = Color(0xFF12335E)
@@ -266,7 +280,7 @@ private fun LightRowIcon(
     Box(
         Modifier.size(LightRowIconSize)
             .clip(if (circle) CircleShape else RoundedCornerShape(11.dp))
-            .background(if (selected) AetherPurple else AetherLightControl),
+            .background(if (selected) AetherFill else AetherLightControl),
         contentAlignment = Alignment.Center,
     ) { content() }
 }
@@ -507,7 +521,7 @@ private fun LightChip(
                 fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
                 modifier = Modifier.clip(RoundedCornerShape(15.dp))
-                    .background(if (active) AetherPurple else AetherLightControl)
+                    .background(if (active) AetherFill else AetherLightControl)
                     .padding(horizontal = 13.dp, vertical = 7.dp),
             )
         }
@@ -822,7 +836,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 onClick = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
                                 onLongPress = { offset -> tabPress = offset; longPressedTabId = filter.id },
                                 // 筛选器的色条用它收的第一个频道的颜色；选中时换成 accent。
-                                spine = if (selected) AetherPurple else {
+                                spine = if (selected) AetherFill else {
                                     themeAdjustedChannelColor(
                                         channelDefaultColor(
                                             when (filter.categories.firstOrNull()) {
@@ -1217,7 +1231,7 @@ private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
                     else -> cat
                 }
                 Text(label, color = if (libraryTab == cat) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(13.dp)).background(if (libraryTab == cat) AetherPurple else AetherLightControl).clickable { libraryTab = cat }.padding(horizontal = 12.dp, vertical = 6.dp))
+                    modifier = Modifier.clip(RoundedCornerShape(13.dp)).background(if (libraryTab == cat) AetherFill else AetherLightControl).clickable { libraryTab = cat }.padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
         Column(Modifier.fillMaxWidth().height(220.dp).verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
@@ -1498,7 +1512,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 )
                 Box(
                     Modifier.padding(start = 7.dp).size(38.dp).clip(CircleShape)
-                        .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
+                        .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherFill else AetherLightControl)
                         .clickable(enabled = state.activeCharacterOnline && state.chatDraft.isNotBlank()) { send() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1665,63 +1679,92 @@ private fun AetherphoneContactsList(state: PhoneState) {
     var searching by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         val rosterScope = rememberCoroutineScope()
-        // 页头和会话列表同构：搜索是可点图标（开着变 accent），刷新在它右边。
-        // 原来搜索框常驻在列表第一行，等于把一个不常用的输入框永久钉在最显眼的位置，
-        // 而会话列表那边是藏在图标后面的——同一个 App 的两屏，两套规矩。
-        LightHeader("联系人", state::back) {
-            Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
-                    searching = !searching
-                    if (!searching) query = ""
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                ImageGlyph(
-                    R.drawable.ic_search,
-                    if (searching) AetherPurple else AetherLightMuted,
-                    Modifier.size(19.dp),
-                )
-            }
-            Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
-                    state.refreshFriends()
-                    state.refreshParty()
-                    // 刷新按钮也强制重拉一次石之家名册（绕过一天的 TTL）：
-                    // 好友刚注册石之家时，用户会想立刻看到。
-                    rosterScope.launch {
-                        // 头像的"查过没有"结论也一起清掉：好友刚注册石之家时，
-                        // 不清的话会一直记着那条空结论。
-                        withContext(Dispatchers.IO) { ShizhijiaAvatarStore.clear(context) }
-                        ShizhijiaFriendLink.clear()
-                        ShizhijiaFriendRoster.refresh(context)
-                        rosterTick++
-                    }
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                LightRefreshIcon(AetherPurple, Modifier.size(17.dp))
-            }
-        }
-        AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            LightSearchField(
-                query, { query = it }, "搜索名字或服务器",
-                Modifier.padding(horizontal = LocalContentMargin.current.dp, vertical = 2.dp),
-            )
-        }
         val online = shown.filter { it.online }
         val offline = shown.filter { !it.online }
-        // 好友/小队用会话列表那同一个凹槽滑块。原来这里是另一套（LightSegment：
-        // 40dp、整圆、实心紫填充、12sp），和会话列表那套的几何完全不一样。
-        // 右边的数字挂在线人数——这是这一屏真正想知道的事。
-        LightSegmented(
-            options = listOf("friends" to "好友", "party" to "小队"),
-            selected = if (friendsOnly) "friends" else "party",
-            counts = mapOf((if (friendsOnly) "friends" else "party") to online.size),
-            onSelect = { friendsOnly = it == "friends" },
-            modifier = Modifier.fillMaxWidth()
-                .padding(horizontal = LocalContentMargin.current.dp)
-                .padding(top = 2.dp, bottom = 8.dp),
-        )
+        val margin = LocalContentMargin.current.dp
+        // 顶部重做过。
+        //
+        // 之前用的是通用 LightHeader（居中标题 + 右侧按钮）。它的居中是"左栏定宽
+        // 46dp、中栏 weight(1f)、右栏至少 46dp"——右边挂两个 38dp 按钮之后右栏
+        // 变 76dp，中栏因此左移 15dp，标题**看着就是没对正**。第一次是两个按钮
+        // 直接重合，我改成三栏解决了重合，但没解决"标题不在正中"，所以还是老问题。
+        //
+        // 这次不修对称了，直接不要居中：标题左对齐，右边挂动作。左对齐没有"两边
+        // 要一样宽"这个前提，右边加几个按钮都不会把标题推歪。
+        // 顺带把三条横带（页头 / 搜索框 / 分段器）压成两条——搜索打开时占用标题
+        // 那一行，而不是在下面再长出一条。
+        Column(Modifier.fillMaxWidth().padding(horizontal = margin)) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (searching) {
+                    // 搜索态：输入框吃满这一行，右边一个"完成"收起。
+                    LightSearchField(
+                        query, { query = it }, "搜索名字或服务器",
+                        Modifier.weight(1f),
+                    )
+                    Text(
+                        "完成",
+                        color = AetherPurple, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clip(RoundedCornerShape(9.dp))
+                            .clickable { searching = false; query = "" }
+                            .padding(start = 10.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
+                    )
+                } else {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "联系人",
+                            color = AetherLightText, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.2.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        // 副行说"现在有几个人在线"——这是这一屏唯一真正会变的事实，
+                        // 原来它挤在分段器右边当一个小数字。
+                        val sub = when {
+                            !state.connected -> "未连接游戏"
+                            shown.isEmpty() -> if (friendsOnly) "好友列表是空的" else "现在没有小队"
+                            online.isEmpty() -> "${formatCount(shown.size)} 人 · 都不在线"
+                            else -> "${formatCount(shown.size)} 人 · ${formatCount(online.size)} 在线"
+                        }
+                        Text(sub, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    Box(
+                        Modifier.size(38.dp).clip(RoundedCornerShape(9.dp))
+                            .clickable { searching = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ImageGlyph(R.drawable.ic_search, AetherLightMuted, Modifier.size(19.dp))
+                    }
+                    Box(
+                        Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                            state.refreshFriends()
+                            state.refreshParty()
+                            // 刷新也强制重拉一次石之家名册（绕过一天的 TTL）：
+                            // 好友刚注册石之家时，用户会想立刻看到。
+                            rosterScope.launch {
+                                // 头像的"查过没有"结论也一起清掉，否则会一直记着那条空结论。
+                                withContext(Dispatchers.IO) { ShizhijiaAvatarStore.clear(context) }
+                                ShizhijiaFriendLink.clear()
+                                ShizhijiaFriendRoster.refresh(context)
+                                rosterTick++
+                            }
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        LightRefreshIcon(AetherLightMuted, Modifier.size(17.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            // 好友/小队用会话列表那同一个凹槽滑块。人数已经写在副行了，
+            // 这里不再重复挂数字。
+            LightSegmented(
+                options = listOf("friends" to "好友", "party" to "小队"),
+                selected = if (friendsOnly) "friends" else "party",
+                onSelect = { friendsOnly = it == "friends" },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            )
+        }
         // 一条流，一人一张卡，和会话列表同一个骨架和同一个间距。
         // 原来在线/离线各收进一个 LightContactCard（一个 item 里塞整组人），
         // 于是这一屏的"卡"是组，会话列表的"卡"是行——两屏的卡片不是一个意思。
@@ -2115,7 +2158,7 @@ private fun ShizhijiaLinkCard(
             // 找到了就直接显示对方的石之家头像（走磁盘缓存），比一个通用图标有信息量。
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp))
-                    .background(if (clickable) AetherPurple else AetherLightControl),
+                    .background(if (clickable) AetherFill else AetherLightControl),
                 contentAlignment = Alignment.Center,
             ) {
                 val avatar = hit?.avatar.orEmpty()
@@ -2442,7 +2485,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
         }
         Box(
             Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 22.dp).size(54.dp).clip(CircleShape)
-                .background(AetherPurple).clickable(onClick = onOpenCalendar),
+                .background(AetherFill).clickable(onClick = onOpenCalendar),
             contentAlignment = Alignment.Center,
         ) {
             ImageGlyph(R.drawable.ic_calendar, Color.White, Modifier.size(23.dp))
@@ -2696,7 +2739,7 @@ private fun ChatCalendarScreen(conversation: ChatConversation, onBack: () -> Uni
                             val firstTs = dayFirstMessage[key]
                             Box(
                                 Modifier.weight(1f).height(42.dp).padding(3.dp).clip(CircleShape)
-                                    .background(if (has) AetherPurple.copy(alpha = .22f) else Color.Transparent)
+                                    .background(if (has) AetherFill.copy(alpha = .28f) else Color.Transparent)
                                     .clickable(enabled = has && firstTs != null) { firstTs?.let(onOpenDay) },
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -2874,7 +2917,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 )
                 Box(
                     Modifier.padding(start = 7.dp).size(38.dp).clip(CircleShape)
-                        .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherPurple else AetherLightControl)
+                        .background(if (state.activeCharacterOnline && state.chatDraft.isNotBlank()) AetherFill else AetherLightControl)
                         .clickable(enabled = state.activeCharacterOnline && state.chatDraft.isNotBlank()) { send() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -3130,13 +3173,17 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val cleaned = remember(rawText, author) { cleanChatText(rawText, if (selfEmoteFull) "" else author).ifBlank { " " } }
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val timeText = lightClock(message.timestamp)
-    val timeColor = if (self) Color.White.copy(alpha = .72f) else AetherLightMuted
+    // 自己气泡里的时间也跟着走深墨（气泡底是金），白字在金上读不出来。
+    val timeColor = if (self) Color(0xFF2A2110).copy(alpha = .70f) else AetherLightMuted
     val baseColor = when {
         message.category == ChatCategory.Emote -> themeAdjustedChannelColor(EmoteChatColor)
-        self -> Color.White
+        // 自己发的气泡是金底。**深字不是白字**：白字落在 #c4a86a 上只有 2.0:1,
+        // 官网拿金底白字做的是按钮短标签，一整段聊天正文照抄就不能读了。
+        // 深墨落在同一个金上约 8:1。
+        self -> Color(0xFF2A2110)
         else -> AetherLightText
     }
-    val bubbleBg = if (self) AetherPurple else AetherLightSurface
+    val bubbleBg = if (self) AetherFill else AetherLightSurface
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) {
@@ -3467,7 +3514,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                                         ) {
                                             Box(
                                                 Modifier.size(25.dp).clip(CircleShape)
-                                                    .background(if (reminder.done) AetherPurple else Color.Transparent),
+                                                    .background(if (reminder.done) AetherFill else Color.Transparent),
                                                 contentAlignment = Alignment.Center,
                                             ) {
                                                 ImageGlyph(
@@ -3565,7 +3612,7 @@ private fun ReminderEditor(state: PhoneState, reminder: LocalReminder?, close: (
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().clip(CircleShape).background(if (title.isBlank()) Color(0x668669F2) else AetherPurple)
+                    modifier = Modifier.fillMaxWidth().clip(CircleShape).background(if (title.isBlank()) AetherFill.copy(alpha = .40f) else AetherFill)
                         .clickable(enabled = title.isNotBlank()) { state.upsertReminder(reminder?.id, title, if (remind) dueAt else null); close() }.padding(vertical = 15.dp),
                 )
                 Spacer(Modifier.height(8.dp))

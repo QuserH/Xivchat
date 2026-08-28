@@ -30,6 +30,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -45,9 +46,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,8 +88,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.draw
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -162,31 +170,37 @@ import kotlinx.coroutines.launch
 // 卡片明度是调过的：原来 #1A1F26 和底 #12161B 只差 ~4%，而 3dp 阴影在近黑底上
 // 根本看不见，结果深色模式糊成一整块灰板，"石板卡片"这个概念只在浅色模式成立。
 // 现在拉到 ~9%，靠明度本身分层，不指望阴影。
-private val SzjDarkBg = Color(0xFF12161B)          // 板岩底
-private val SzjDarkCard = Color(0xFF212730)        // 石板
-private val SzjDarkCardRaised = Color(0xFF2B333E)  // 抬升层
-private val SzjDarkAccent = Color(0xFF5FD2C8)      // 水晶青
-private val SzjDarkAccentSoft = Color(0xFF14312F)  // 青光残留
-private val SzjDarkOnAccentSoft = Color(0xFF8FE3DB)
-private val SzjDarkText = Color(0xFFE8EDF2)
-private val SzjDarkMuted = Color(0xFF8A94A2)
-private val SzjDarkLine = Color(0xFF2A313A)
-private val SzjDarkHairline = Color(0xFF39414C)
+// 深色偏暖：官网只有浅色，深色这套是按同一个金推的暖灰，
+// 不再是冷调板岩——冷灰配金会显脏。
+private val SzjDarkBg = Color(0xFF17150F)          // 暖墨底
+private val SzjDarkCard = Color(0xFF232019)        // 石板
+private val SzjDarkCardRaised = Color(0xFF2E2A21)  // 抬升层
+private val SzjDarkAccent = Color(0xFFD8BE85)      // 金（深底上的字色，8.6:1）
+private val SzjDarkAccentSoft = Color(0xFF332C1E)  // 金光残留
+private val SzjDarkOnAccentSoft = Color(0xFFE8D5A8)
+private val SzjDarkText = Color(0xFFF0EBE1)
+private val SzjDarkMuted = Color(0xFF9C9486)
+private val SzjDarkLine = Color(0xFF322D24)
+private val SzjDarkHairline = Color(0xFF443D31)
 // 顶边高光原来 0x14（8%），在提亮后的卡片上等于没有。石面受光要看得见才算受光。
 private val SzjDarkEdge = Color(0x24FFFFFF)        // 石板顶边高光
 
-// 浅色：晨雾。冷调薄雾底 + 纯白卡片 + 深青。
-private val SzjLightBg = Color(0xFFEEF1F4)         // 薄雾底
-private val SzjLightCard = Color(0xFFFFFFFF)       // 白石板
-private val SzjLightCardRaised = Color(0xFFE3E8ED) // 抬升层
-private val SzjLightAccent = Color(0xFF10736C)     // 深水晶青（白底 5.2:1）
-private val SzjLightAccentSoft = Color(0xFFD8EDEB)
-private val SzjLightOnAccentSoft = Color(0xFF0B4F4A)
-private val SzjLightText = Color(0xFF1B2129)
-// #66707C 在薄雾底上只有 4.44:1，元信息用的是 11sp 小字，压到 5.0 才安全。
-private val SzjLightMuted = Color(0xFF5E6874)
-private val SzjLightLine = Color(0xFFDDE3E9)
-private val SzjLightHairline = Color(0xFFC6CFD8)
+// 浅色：直接照官网的中性色。#f2f2f2 页底、#fff 卡片、#1f1f1f/#4b4b4b 文字、
+// #9c9c9c 次要、#fbf9f4 金的浅底——全部取自 mob 的 app.css。
+private val SzjLightBg = Color(0xFFF2F2F2)         // 官网页底
+private val SzjLightCard = Color(0xFFFFFFFF)       // 白卡
+private val SzjLightCardRaised = Color(0xFFF5F5F5) // 抬升层（官网 #f5f5f5）
+// 官网把 #c4a86a 也拿来写小字（白底 2.17:1），那是它的无障碍问题，不照抄。
+// 文字用的金压深到 5.2:1；实心填充仍用官网原值 SzjAccentFill。
+private val SzjLightAccent = Color(0xFF7D6229)     // 金字（白底 5.2:1）
+private val SzjLightAccentSoft = Color(0xFFFBF9F4) // 官网 .is-selected 的底
+private val SzjLightOnAccentSoft = Color(0xFF5C4718)
+private val SzjLightText = Color(0xFF1F1F1F)       // 官网正文
+// 官网次要色 #9c9c9c 在 #f2f2f2 上只有 2.6:1，元信息是 11sp 小字，
+// 用官网的另一档 #4b4b4b 系推到 5.0 以上。
+private val SzjLightMuted = Color(0xFF6B6B6B)
+private val SzjLightLine = Color(0xFFE5E5E5)       // 官网 #e5e5e5
+private val SzjLightHairline = Color(0xFFC2C2C2)   // 官网 #c2c2c2
 private val SzjLightEdge = Color(0x0A000000)
 
 internal val szjLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -202,7 +216,17 @@ internal val SzjMuted: Color @Composable get() = if (szjLight) SzjLightMuted els
 internal val SzjLine: Color @Composable get() = if (szjLight) SzjLightLine else SzjDarkLine
 internal val SzjHairline: Color @Composable get() = if (szjLight) SzjLightHairline else SzjDarkHairline
 internal val SzjEdge: Color @Composable get() = if (szjLight) SzjLightEdge else SzjDarkEdge
-internal val SzjOnAccent: Color @Composable get() = if (szjLight) Color(0xFFFFFFFF) else Color(0xFF07211F)
+/**
+ * 实心填充用的金 —— 官网原值 #c4a86a，深浅两档同一个。
+ *
+ * 和 [SzjAccent] 分工：那个是**文字/图标**用的（压深过，够对比度），
+ * 这个是**底色**用的（按钮、选中态），上面配白字。官网就是这么用的：
+ * `.active{background-color:#c4a86a;color:#fff}`。
+ */
+internal val SzjAccentFill: Color = Color(0xFFC4A86A)
+
+/** 落在 [SzjAccentFill] 上的字色。官网是纯白。 */
+internal val SzjOnAccent: Color = Color(0xFFFFFFFF)
 
 // ---- 形状：卡片舒展，控件收紧。三档而不是一档，层级靠圆角区分。 ----
 internal val SzjCardShape = RoundedCornerShape(14.dp)
@@ -520,7 +544,7 @@ private fun SzjEmptyBody(
     }
 }
 
-/** 主按钮：实心水晶青，按下缩一下。石之家里所有确认动作都用它。 */
+/** 主按钮：实心金 + 白字（官网 `.active` 就是这一对），按下缩一下。 */
 @Composable
 internal fun SzjPrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     SzjPressable(onClick = onClick, modifier = modifier, shape = SzjInnerShape) {
@@ -528,7 +552,7 @@ internal fun SzjPrimaryButton(label: String, onClick: () -> Unit, modifier: Modi
             label,
             color = SzjOnAccent,
             style = SzjLabelStyle,
-            modifier = Modifier.clip(SzjInnerShape).background(SzjAccent).padding(horizontal = 22.dp, vertical = 10.dp),
+            modifier = Modifier.clip(SzjInnerShape).background(SzjAccentFill).padding(horizontal = 22.dp, vertical = 10.dp),
         )
     }
 }
@@ -1747,7 +1771,7 @@ private fun SzjPostFilterCard() {
                                         overflow = TextOverflow.Ellipsis,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.fillMaxWidth().clip(SzjChipShape)
-                                            .background(if (on) SzjAccent else SzjCardRaised)
+                                            .background(if (on) SzjAccentFill else SzjCardRaised)
                                             .padding(vertical = 9.dp, horizontal = 4.dp),
                                     )
                                 }
@@ -2472,7 +2496,7 @@ private fun ShizhijiaRecruitTab(
             ) {
                 Row(
                     Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
-                        .clip(SzjChipShape).background(SzjAccent)
+                        .clip(SzjChipShape).background(SzjAccentFill)
                         .padding(horizontal = 15.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -2690,7 +2714,7 @@ private fun SzjRecruitFilterPanel(
                         shape = SzjInnerShape,
                     ) {
                         Text("看结果", color = SzjOnAccent, style = SzjLabelStyle, textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjAccent).padding(vertical = 11.dp))
+                            modifier = Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjAccentFill).padding(vertical = 11.dp))
                     }
                 }
             }
@@ -2781,7 +2805,7 @@ private fun SzjFormChips(
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().clip(SzjChipShape)
-                                    .background(if (on) SzjAccent else SzjCardRaised)
+                                    .background(if (on) SzjAccentFill else SzjCardRaised)
                                     .padding(vertical = 9.dp, horizontal = 4.dp),
                             )
                         }
@@ -3601,7 +3625,7 @@ private fun ShizhijiaPublishRecruitScreen(
                     ) {
                         Box(
                             Modifier.fillMaxWidth().clip(SzjInnerShape)
-                                .background(if (submitting) SzjCardRaised else SzjAccent)
+                                .background(if (submitting) SzjCardRaised else SzjAccentFill)
                                 .padding(vertical = 13.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -3782,40 +3806,45 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
             SzjEmpty("这篇帖子没能打开", "可能已被删除，或者网络断了一下。返回再试一次")
             return@ScreenFrame
         }
-        // 正文 / 评论 分成两页，横滑切换。
-        // 内容长的帖子里评论区实际上是够不着的：它排在正文后面，要一路滑到底。
-        // Tab 用主页那套棱条（SzjSubTab），不另起一套样式。
-        val pager = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 2 })
-        val pagerScope = rememberCoroutineScope()
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            SzjSubTab("正文", pager.currentPage == 0) { pagerScope.launch { pager.animateScrollToPage(0) } }
-            // 评论数用详情里的 commentCount（不是已加载条数）：分页只拉回来一部分，
-            // 写已加载的数会随着滑动往上跳。
-            val commentTab = if (d.commentCount > 0) "评论 ${d.commentCount}" else "评论"
-            SzjSubTab(commentTab, pager.currentPage == 1) { pagerScope.launch { pager.animateScrollToPage(1) } }
+        // 正文和评论还是**一条流**（评论接在正文后面），右滑只是"跳到评论那一行"。
+        //
+        // 上一版我把它切成了横滑两页——那样评论区变成独立的一页，跳过去之后
+        // 往上滑看到的是评论区的顶，看不到帖子内容了。分页解决了"够不着"，
+        // 却把"看完评论顺手往上翻正文"这件事弄没了。
+        //
+        // 现在：一条 LazyColumn，右滑 = animateScrollToItem(评论区那个 item)。
+        // 跳过去之后正文就在上面，往上滑就能看，位置关系没有断。
+        val jumpScope = rememberCoroutineScope()
+        // 评论区第一个 item 在这条流里的下标 = 正文部分的 item 个数。
+        // 写成这两个 key 的列表而不是字面量 2：正文再加一段的时候，
+        // 忘了改这里就会滑到错的地方，而那种错很难看出来。
+        // 下面 LazyColumn 里正文那些 item 用的就是这些 key，顺序一致。
+        val articleKeys = listOf("post-header", "post-body")
+        val commentAnchor = articleKeys.size
+        val jumpToComments: () -> Unit = {
+            jumpScope.launch { articleState.animateScrollToItem(commentAnchor) }
+            Unit
         }
-        androidx.compose.foundation.pager.HorizontalPager(
-            state = pager,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-        ) { page ->
-            if (page == 1) {
-                SzjPostComments(
-                    state = commentState,
-                    comments = comments,
-                    commentLoading = commentLoading,
-                    onlyAuthor = onlyAuthor,
-                    onToggleAuthor = { onlyAuthor = !onlyAuthor },
-                    commentOrder = commentOrder,
-                    onOrder = { commentOrder = it },
-                    nav = nav,
-                )
-                return@HorizontalPager
-            }
-        LazyColumn(state = articleState, modifier = Modifier.fillMaxSize()) {
-            item {
+        LazyColumn(
+            state = articleState,
+            modifier = Modifier.fillMaxWidth().weight(1f)
+                // 右滑跳评论。只认横向占优、且确实是往右的手势，
+                // 竖向滚动照常（判定交给 detectHorizontalDragGestures 自己的
+                // 方向锁：它只在横向位移先越过触摸阈值时才接管）。
+                .pointerInput(commentAnchor) {
+                    var dx = 0f
+                    val threshold = 56.dp.toPx()
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            // 阈值取 56dp：比误触大，比"翻页"手势小。
+                            if (dx > threshold) jumpToComments()
+                        },
+                        onHorizontalDrag = { _, amount -> dx += amount },
+                    )
+                },
+        ) {
+            item(key = articleKeys[0]) {
                 // 标题和作者收进一张石板：正文是长内容，先给它一个明确的"头"。
                 SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
                     Column(Modifier.padding(15.dp)) {
@@ -3848,7 +3877,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                     }
                 }
             }
-            item {
+            item(key = articleKeys[1]) {
                 // 正文直接落在底色上，**不**再套第二张石板。
                 //
                 // 0.7.22x 那版给正文也包了一张卡，于是"作者"一张卡、"正文"另一张卡，
@@ -3859,33 +3888,17 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                     ShizhijiaRichContent(d.contentHtml)
                 }
             }
-            // 正文末尾给一句指路：横滑这件事本身看不出来，Tab 在最上面，
-            // 长帖滑到底的时候它已经不在视野里了。
-            item(key = "to-comments") {
-                Column(Modifier.fillMaxWidth()) {
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
-                    SzjPressable(
-                        onClick = { pagerScope.launch { pager.animateScrollToPage(1) } },
-                        shape = SzjInnerShape,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCardRaised)
-                                .padding(horizontal = 14.dp, vertical = 13.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                if (d.commentCount > 0) "看 ${d.commentCount} 条评论" else "看评论",
-                                color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text("向左滑 →", color = SzjMuted, style = SzjMetaStyle)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
+            // 评论区：接在正文后面，同一条流。这个 item 的下标就是 commentAnchor，
+            // 右滑跳到的就是它。
+            szjCommentSection(
+                comments = comments,
+                commentLoading = commentLoading,
+                onlyAuthor = onlyAuthor,
+                onToggleAuthor = { onlyAuthor = !onlyAuthor },
+                commentOrder = commentOrder,
+                onOrder = { commentOrder = it },
+                nav = nav,
+            )
         }
         // 底部动作条：赞 / 收藏 / 评论。三个都是真请求。
         SzjPostActionBar(
@@ -3932,7 +3945,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
     }
     if (composerOpen) {
         SzjCommentComposer(
-            title = "回帖",
+            hint = "说点什么…",
             onDismiss = { composerOpen = false },
             onSend = { text, done ->
                 actionScope.launch {
@@ -4031,56 +4044,99 @@ private fun SzjPostActionBar(
 }
 
 /**
- * 发评论/回复的输入框。
+ * 发评论 / 回复。
  *
- * 用对话框而不是钉在底部的常驻输入条：这一屏底部已经有动作条了，
- * 再加一条常驻输入框会把两页内容都往上挤，而发评论不是高频动作。
+ * 上一版是 AlertDialog 套一个 SzjFormField（带"内容"标签、外描边框、
+ * 独立的取消/发送按钮行）。那是**表单**的样子，套在一句话的输入上就是
+ * 一堆和内容无关的边框和标签：标签"内容"没有信息（这里只可能输内容）、
+ * 系统对话框的内边距把输入框挤成一条窄缝、发送按钮离输入框很远。
+ *
+ * 现在是从底部升起的一层：正文区就是文本本身（无标签、无外框），
+ * 发送是右下角一个圆形图标钮，跟着有没有内容亮/暗。字数只在接近上限时出现。
  *
  * @param onSend 发送回调。第二个参数是"我这边结束了"的通知，
  *   请求成功与否都要调，否则按钮一直停在"发送中"。
  */
 @Composable
 private fun SzjCommentComposer(
-    title: String,
+    hint: String,
     onDismiss: () -> Unit,
     onSend: (String, () -> Unit) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
-    AlertDialog(
+    val focus = remember { FocusRequester() }
+    val maxLen = 500
+    // 一进来就聚焦并弹键盘：这一层唯一的用途就是打字，还要人再点一下才起键盘
+    // 等于白占一步。
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = { if (!sending) onDismiss() },
-        title = { Text(title, color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-        text = {
-            SzjFormField(
-                label = "内容",
-                value = text,
-                placeholder = "说点什么",
-                lines = 4,
-                maxLen = 500,
-                onChange = { text = it },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            // 点空白处收起。
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f))
+                    .clickable(enabled = !sending) { onDismiss() },
             )
-        },
-        confirmButton = {
-            SzjPrimaryButton(
-                if (sending) "发送中…" else "发送",
-                onClick = {
-                    if (sending || text.isBlank()) return@SzjPrimaryButton
-                    sending = true
-                    onSend(text.trim()) { sending = false }
-                },
-            )
-        },
-        dismissButton = {
-            Text(
-                "取消",
-                color = SzjMuted, fontSize = 14.sp,
-                modifier = Modifier.clip(SzjInnerShape)
-                    .clickable(enabled = !sending) { onDismiss() }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-            )
-        },
-        containerColor = SzjCardRaised,
-    )
+            Column(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .background(SzjCard)
+                    .windowInsetsPadding(WindowInsets.ime)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                BasicTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= maxLen) text = it },
+                    textStyle = TextStyle(color = SzjText, fontSize = 15.sp, lineHeight = 23.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(SzjAccent),
+                    enabled = !sending,
+                    decorationBox = { inner ->
+                        Box(Modifier.fillMaxWidth().heightIn(min = 76.dp)) {
+                            // 占位符就是提示，不再另起一行"内容"标签。
+                            if (text.isEmpty()) Text(hint, color = SzjMuted, fontSize = 15.sp)
+                            inner()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 字数只在快满时才出现——一直显示 0/500 是噪音。
+                    if (text.length > maxLen - 100) {
+                        Text("${text.length}/$maxLen", color = SzjMuted, style = SzjMetaStyle)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    val canSend = text.isNotBlank() && !sending
+                    Box(
+                        Modifier.size(38.dp).clip(CircleShape)
+                            .background(if (canSend) SzjAccentFill else SzjCardRaised)
+                            .clickable(enabled = canSend) {
+                                sending = true
+                                onSend(text.trim()) { sending = false }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (sending) {
+                            CircularProgressIndicator(
+                                color = SzjOnAccent, strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        } else {
+                            ImageGlyph(
+                                R.drawable.ic_send_arrow,
+                                if (canSend) SzjOnAccent else SzjMuted,
+                                Modifier.size(17.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -4111,15 +4167,14 @@ private fun SzjActionCell(
 }
 
 /**
- * 帖子详情的评论页。
+ * 评论区 —— 接在正文后面，**同一条 LazyColumn 里**。
  *
- * 从正文那一页里拆出来的：原来评论接在正文后面共用一条 LazyColumn，
- * 内容长的帖子要一路滑到底才见得到第一条评论。现在是横滑的第二页，
- * 自己一条滚动、自己的分页加载。
+ * 写成 LazyListScope 的扩展而不是一个独立的屏：评论和正文必须在一条流上，
+ * 右滑跳过去之后往上滑还要能看到帖子内容。拆成两页会把这个关系弄断。
+ *
+ * 第一个 item 的下标就是调用方的 commentAnchor（右滑的落点）。
  */
-@Composable
-private fun SzjPostComments(
-    state: LazyListState,
+private fun LazyListScope.szjCommentSection(
     comments: List<ShizhijiaComment>,
     commentLoading: Boolean,
     onlyAuthor: Boolean,
@@ -4128,12 +4183,16 @@ private fun SzjPostComments(
     onOrder: (String) -> Unit,
     nav: (SzjRoute) -> Unit,
 ) {
-    LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
+    run {
         item(key = "comments-head") {
             // 评论区头部。
             // 原来这一整块（含下面的评论）铺一层灰底 CommentAreaBg，评论卡片再浮在
             // 灰底上——灰套白两层容器，很重。现在灰底去掉，靠标题和发丝线区隔。
             Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp)) {
+                // 正文和评论之间要有一道明确的界，否则一条流看下来分不清
+                // 哪里结束、哪里开始。
+                Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("全部评论", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     // 只看楼主: client-side filter on the loaded comment list.
@@ -4942,7 +5001,7 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                                 shape = SzjChipShape,
                             ) {
                                 Text(if (claimingId == r.id) "领取中" else "领取", style = SzjLabelStyle, color = SzjOnAccent,
-                                    modifier = Modifier.clip(SzjChipShape).background(SzjAccent).padding(horizontal = 14.dp, vertical = 7.dp))
+                                    modifier = Modifier.clip(SzjChipShape).background(SzjAccentFill).padding(horizontal = 14.dp, vertical = 7.dp))
                             }
                         }
                     }
@@ -5082,7 +5141,7 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
                 Text(
                     if (polishing) "擦亮中" else "一键擦亮",
                     color = SzjOnAccent, style = SzjLabelStyle,
-                    modifier = Modifier.clip(SzjChipShape).background(SzjAccent).padding(horizontal = 12.dp, vertical = 7.dp),
+                    modifier = Modifier.clip(SzjChipShape).background(SzjAccentFill).padding(horizontal = 12.dp, vertical = 7.dp),
                 )
             }
         })
@@ -5790,7 +5849,7 @@ private fun SzjCharacterCard(
                 onSwitch != null -> SzjPressable(onClick = onSwitch, shape = SzjChipShape) {
                     Text(
                         "切换", color = SzjOnAccent, style = SzjLabelStyle,
-                        modifier = Modifier.clip(SzjChipShape).background(SzjAccent).padding(horizontal = 13.dp, vertical = 7.dp),
+                        modifier = Modifier.clip(SzjChipShape).background(SzjAccentFill).padding(horizontal = 13.dp, vertical = 7.dp),
                     )
                 }
             }
@@ -6352,6 +6411,8 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
     var busy by remember(glamourId) { mutableStateOf(false) }
     // 收藏夹超过一个时要选一个：(id, 名字, 是否默认)。
     var folderPick by remember(glamourId) { mutableStateOf<List<Triple<String, String, Boolean>>?>(null) }
+    // 分享卡预览。和移动端一样：先给人看一眼生成的图，再决定发不发。
+    var shareCardOpen by remember(glamourId) { mutableStateOf(false) }
     val actionScope = rememberCoroutineScope()
     LaunchedEffect(glamourId) {
         val detail = ShizhijiaApi.getGlamourDetail(context, glamourId)
@@ -6388,7 +6449,10 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
             }
             return@ScreenFrame
         }
-        LazyColumn(Modifier.fillMaxSize()) {
+        // weight(1f) 而不是 fillMaxSize()：这是在 ScreenFrame 的 Column 里，
+        // fillMaxSize 会把剩余高度全吃掉，下面的动作条被挤成 0 高——
+        // 上一版就是这样，赞/收藏做了但根本看不见。
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             item {
                 SzjCardSurface(
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
@@ -6435,7 +6499,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                     Modifier.padding(horizontal = 2.5.dp)
                                         .width(w.dp).height(5.dp)
                                         .clip(RoundedCornerShape(2.5.dp))
-                                        .background(if (on) SzjAccent else SzjHairline)
+                                        .background(if (on) SzjAccentFill else SzjHairline)
                                 )
                             }
                         }
@@ -6621,21 +6685,16 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                     busy = false
                 }
             },
-            onShare = {
-                // 分享**没有接口**——官网的"分享"就是把页面链接复制到剪贴板。
-                // 这里给系统分享，比复制多一步能直接发出去。
-                val url = "https://ff14risingstones.web.sdo.com/pc/index.html#/glamour/detail/$glamourId"
-                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(android.content.Intent.EXTRA_SUBJECT, d.title)
-                    putExtra(android.content.Intent.EXTRA_TEXT, listOf(d.title, url).filter { it.isNotBlank() }.joinToString("\n"))
-                }
-                runCatching { context.startActivity(android.content.Intent.createChooser(send, "分享这套幻化")) }
-                    .onFailure {
-                        android.widget.Toast.makeText(context, "没有可以分享的应用", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-            },
+            // 分享**生成图片**，和石之家移动端一致（它把详情里的预览节点交给
+            // html2canvas 栅格化，没有服务端接口）。上一版我发的是一条链接文本，
+            // 是我没去看移动端就下的结论。
+            onShare = { shareCardOpen = true },
         )
+    }
+    g?.let { detail ->
+        if (shareCardOpen) {
+            SzjGlamourShareSheet(d = detail, onDismiss = { shareCardOpen = false })
+        }
     }
     // 多个收藏夹时选一个。
     folderPick?.let { folders ->
@@ -6680,7 +6739,150 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
     }
 }
 
-/** 幻化详情底部的动作条。分享是纯本地动作（官网也没有分享接口）。 */
+/**
+ * 幻化分享卡的预览 + 生成。
+ *
+ * 石之家移动端的做法：把详情页里排好的预览节点交给 html2canvas 栅格化成 PNG，
+ * 再弹图片预览让人保存/分享——**没有服务端接口**。
+ * 这里对应物是 GraphicsLayer：把这张专门排的卡录一层，`toImageBitmap()` 出图。
+ *
+ * 渲的是专门排的卡，不是整屏截图：屏幕上那一版有动作条、滚动位置、
+ * 系统栏，截出来是"截图"；这张卡是为"发出去被人看"排的版。
+ */
+@Composable
+private fun SzjGlamourShareSheet(
+    d: ShizhijiaGlamourDetail,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val layer = androidx.compose.ui.graphics.rememberGraphicsLayer()
+    var sharing by remember { mutableStateOf(false) }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { if (!sharing) onDismiss() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f))
+                .clickable(enabled = !sharing) { onDismiss() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // 这一块就是会被渲成图片的东西。drawWithContent 把它录进图层，
+                // 同时照常画到屏幕上，所以预览和出图必然一致。
+                Column(
+                    Modifier.fillMaxWidth()
+                        .clip(SzjCardShape)
+                        .drawWithContent {
+                            layer.record { this@drawWithContent.drawContent() }
+                            drawLayer(layer)
+                        }
+                        .background(SzjCard),
+                ) {
+                    if (d.images.isNotEmpty()) {
+                        ShizhijiaRemoteImage(
+                            url = d.images.first(),
+                            modifier = Modifier.fillMaxWidth(),
+                            contentScale = ContentScale.FillWidth,
+                            showPlaceholder = true,
+                        )
+                    }
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text(
+                            d.title,
+                            color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(9.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SzjAvatar(d.authorName, d.authorAvatar, d.authorUuid, 26)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(d.authorName, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                val where = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
+                                if (where.isNotBlank()) Text(where, color = SzjMuted, style = SzjMetaStyle)
+                            }
+                            // 出处写在图里：图会脱离 App 传播，没有这行就不知道是哪来的。
+                            Text("石之家 · 艾欧泽亚终端", color = SzjMuted, style = SzjMetaStyle)
+                        }
+                        val genderText = when (d.gender) { 1 -> "男性"; 2 -> "女性"; else -> "" }
+                        val rg = (d.races + listOfNotNull(genderText.takeIf { it.isNotBlank() })).joinToString(" / ")
+                        if (rg.isNotBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                rg, color = SzjOnAccentSoft, style = SzjMetaStyle,
+                                modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft)
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
+                        // 装备清单进图：这是这套幻化真正要传达的信息，
+                        // 只发一张外观图别人还得追问"用的什么部件"。
+                        val listed = d.equips.filter { it.name.isNotBlank() }.take(12)
+                        if (listed.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                            Spacer(Modifier.height(10.dp))
+                            listed.chunked(2).forEach { pair ->
+                                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    pair.forEach { e ->
+                                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                            if (e.iconUrl.isNotBlank()) {
+                                                ShizhijiaRemoteImage(
+                                                    url = e.iconUrl,
+                                                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(5.dp)),
+                                                    showPlaceholder = false,
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+                                            Text(
+                                                e.name, color = SzjText, fontSize = 10.sp,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "取消",
+                        color = Color.White.copy(alpha = .85f), fontSize = 14.sp,
+                        modifier = Modifier.clip(SzjInnerShape).clickable(enabled = !sharing) { onDismiss() }
+                            .padding(horizontal = 18.dp, vertical = 11.dp),
+                    )
+                    SzjPrimaryButton(
+                        if (sharing) "生成中…" else "分享图片",
+                        onClick = {
+                            if (sharing) return@SzjPrimaryButton
+                            sharing = true
+                            scope.launch {
+                                val r = SzjShareImage.shareLayer(
+                                    context, layer,
+                                    name = d.title.ifBlank { "glamour-${d.id}" },
+                                    text = d.title,
+                                )
+                                sharing = false
+                                if (r.isSuccess) onDismiss()
+                                else android.widget.Toast.makeText(
+                                    context, "图片没生成成功", android.widget.Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 幻化详情底部的动作条。分享把这套幻化渲成一张图（同石之家移动端）。 */
 @Composable
 private fun SzjGlamourActionBar(
     liked: Boolean,
@@ -6794,7 +6996,7 @@ private fun ShizhijiaGlamourTab(
                             SzjPressable(onClick = { filterOpen = !filterOpen }, shape = SzjChipShape) {
                                 Row(
                                     Modifier.clip(SzjChipShape)
-                                        .background(if (filtered) SzjAccent else SzjCardRaised)
+                                        .background(if (filtered) SzjAccentFill else SzjCardRaised)
                                         .padding(horizontal = 12.dp, vertical = 7.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -6901,7 +7103,7 @@ private fun ShizhijiaGlamourTab(
                             shape = SzjInnerShape,
                         ) {
                             Text("看结果", color = SzjOnAccent, style = SzjLabelStyle, textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjAccent).padding(vertical = 11.dp))
+                                modifier = Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjAccentFill).padding(vertical = 11.dp))
                         }
                     }
                 }

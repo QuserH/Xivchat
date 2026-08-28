@@ -29,7 +29,9 @@ object AppCatalog {
         PhoneAppItem("venues", "场馆", R.drawable.app_venues, purple),
         PhoneAppItem("games", "游戏", R.drawable.app_games, coral),
         PhoneAppItem("market", "市场", R.drawable.app_market, gold),
-        PhoneAppItem("shizhijia", "石之家", R.drawable.app_news, blue),
+        // 石之家的图标用它自己的金（#c4a86a），不是蓝。桌面上其它 App 的颜色各不
+        // 相同是对的（真手机就是这样），但石之家这一格代表的就是石之家。
+        PhoneAppItem("shizhijia", "石之家", R.drawable.app_news, Color(0xFFC4A86A)),
         PhoneAppItem("appstore", "App Store", R.drawable.app_appstore, cyan),
     )
 

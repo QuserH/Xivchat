@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
+import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -316,7 +317,7 @@ private fun ClockTabStrip(selected: ClockTab, onSelected: (ClockTab) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).padding(3.dp)) {
         ClockTab.entries.forEach { tab ->
             Text(tab.label, color = if (selected == tab) Color.White else PhoneMuted, fontSize = 12.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (selected == tab) PhoneAccent else Color.Transparent).clickable { onSelected(tab) }.padding(vertical = 8.dp))
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (selected == tab) BrandFill else Color.Transparent).clickable { onSelected(tab) }.padding(vertical = 8.dp))
         }
     }
 }
@@ -444,7 +445,7 @@ private fun AlarmEditorScreen(store: ClockStore, alarm: LocalAlarm?, close: () -
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 listOf("一", "二", "三", "四", "五", "六", "日").forEachIndexed { index, day ->
                     val selected = repeat and (1 shl index) != 0
-                    Box(Modifier.size(38.dp).clip(CircleShape).background(if (selected) PhoneAccent else PhoneSurface).clickable { repeat = repeat xor (1 shl index) }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(38.dp).clip(CircleShape).background(if (selected) BrandFill else PhoneSurface).clickable { repeat = repeat xor (1 shl index) }, contentAlignment = Alignment.Center) {
                         Text(day, color = if (selected) Color.White else PhoneMuted, fontSize = 13.sp)
                     }
                 }

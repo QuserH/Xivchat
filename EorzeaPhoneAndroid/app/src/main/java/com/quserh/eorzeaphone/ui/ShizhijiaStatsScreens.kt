@@ -1216,7 +1216,7 @@ private fun SzjUltimateRow(
         ) {
             Box(
                 Modifier.size(8.dp).clip(RoundedCornerShape(4.dp))
-                    .background(if (done) SzjAccent else SzjCardRaised),
+                    .background(if (done) SzjAccentFill else SzjCardRaised),
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {

@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
+import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
@@ -127,7 +128,7 @@ fun ShortcutsScreen(state: PhoneState) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(state.customShortcuts, key = { it.command }) { shortcut ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = state.connected) { state.sendChat(shortcut.command); state.statusMessage = "已发送：${shortcut.name}" }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(PhoneAccent), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic_bolt, Color.White, Modifier.size(20.dp)) }
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(BrandFill), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic_bolt, Color.White, Modifier.size(20.dp)) }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(shortcut.name, color = PhoneText); Text(shortcut.command, color = PhoneMuted, fontSize = 11.sp) }
                     if (state.customShortcuts.count { it.command == shortcut.command } > 1 || defaultShortcuts.none { it.command == shortcut.command }) {
                         ImageGlyph(R.drawable.ic_close, PhoneDanger, Modifier.clickable { state.removeShortcut(shortcut.command) }.padding(6.dp).size(15.dp))

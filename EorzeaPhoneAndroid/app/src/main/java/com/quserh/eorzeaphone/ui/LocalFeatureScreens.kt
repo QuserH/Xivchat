@@ -59,6 +59,7 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameRetainer
+import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -126,7 +127,7 @@ fun JobsScreen(state: PhoneState) {
 @Composable
 private fun ActiveJobCard(job: GameJob) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF263D57)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(54.dp).clip(CircleShape).background(PhoneAccent), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(54.dp).clip(CircleShape).background(BrandFill), contentAlignment = Alignment.Center) {
             Text(job.abbreviation.take(3), color = Color.White, fontWeight = FontWeight.Bold)
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -142,7 +143,7 @@ private fun ActiveJobCard(job: GameJob) {
 private fun JobRow(job: GameJob, divider: Boolean) {
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).background(if (job.active) PhoneAccent else PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).background(if (job.active) BrandFill else PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                 Text(job.abbreviation.take(3), color = if (job.active) Color.White else PhoneText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {

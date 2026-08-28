@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    分享用的临时图片只落在 cacheDir/share 一个子目录里，别把整个 cache 暴露出去。
+-->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

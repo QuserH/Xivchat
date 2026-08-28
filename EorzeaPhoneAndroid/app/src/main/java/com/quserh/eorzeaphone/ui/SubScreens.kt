@@ -101,6 +101,7 @@ import androidx.compose.ui.zIndex
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.GameInventoryItem
 import com.quserh.eorzeaphone.data.ItemIconLoader
+import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
@@ -211,7 +212,7 @@ fun SettingsScreen(state: PhoneState) {
                 ) {
                     Box {
                         Box(
-                            modifier = Modifier.size(56.dp).clip(CircleShape).background(PhoneAccent)
+                            modifier = Modifier.size(56.dp).clip(CircleShape).background(BrandFill)
                                 .combinedClickable(onClick = {}, onLongClick = { avatarMenu = true }),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -1230,7 +1231,7 @@ fun PhoneFilterBar(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clip(PhoneChipShape)
-                    .background(if (active.isEmpty()) PhoneSurfaceRaised else PhoneAccent)
+                    .background(if (active.isEmpty()) PhoneSurfaceRaised else BrandFill)
                     .padding(horizontal = 11.dp, vertical = 7.dp),
             ) {
                 ImageGlyph(

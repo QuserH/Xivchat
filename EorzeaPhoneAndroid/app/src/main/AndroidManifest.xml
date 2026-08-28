@@ -20,6 +20,19 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EorzeaPhone">
+        <!--
+            分享图片要把文件交给别的 App，直接给 file:// 从 Android 7 起就会
+            FileUriExposedException。走 FileProvider 发 content:// 授时权限。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
         <receiver android:name=".data.ResetReminderReceiver" android:exported="false" />
         <receiver android:name=".data.AlarmReceiver" android:exported="false" />
         <service android:name=".data.KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync" />
