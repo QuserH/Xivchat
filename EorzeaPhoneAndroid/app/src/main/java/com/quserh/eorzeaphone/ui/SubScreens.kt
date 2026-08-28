@@ -3,6 +3,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,14 +13,21 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -51,6 +60,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
@@ -61,6 +71,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -75,10 +86,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -107,10 +120,12 @@ import com.quserh.eorzeaphone.data.GameInventoryItem
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
+import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
@@ -198,98 +213,158 @@ fun SettingsScreen(state: PhoneState) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
+                // 头像 56dp（原来 68dp，比标题重太多）。在线状态改成头像右下角的
+                // 小圆点，而不是名字后面挂一个 20dp 的图——名字那一行只放名字。
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(18.dp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface).padding(16.dp),
                 ) {
-                    Box(
-                        modifier = Modifier.size(68.dp).clip(CircleShape).background(PhoneAccent)
-                            .combinedClickable(onClick = {}, onLongClick = { avatarMenu = true }),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val current = avatarBmp
-                        if (current != null) {
-                            Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        } else {
-                            Text(profileName?.take(1) ?: "人", color = Color.White, fontSize = 20.sp)
+                    Box {
+                        Box(
+                            modifier = Modifier.size(56.dp).clip(CircleShape).background(PhoneAccent)
+                                .combinedClickable(onClick = {}, onLongClick = { avatarMenu = true }),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val current = avatarBmp
+                            if (current != null) {
+                                Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            } else {
+                                Text(profileName?.take(1) ?: "人", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(profileName ?: if (state.connected) "已连接终端" else "未连接终端", color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                            Image(
-                                painter = painterResource(if (state.activeCharacterOnline) R.drawable.status_online else R.drawable.status_offline),
-                                contentDescription = if (state.activeCharacterOnline) "在线" else "离线",
-                                modifier = Modifier.padding(start = 5.dp).size(20.dp),
+                        Box(
+                            Modifier.align(Alignment.BottomEnd).size(15.dp).clip(CircleShape).background(PhoneSurface),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier.size(10.dp).clip(CircleShape)
+                                    .background(if (state.activeCharacterOnline) PhoneGreen else PhoneMuted),
                             )
                         }
-                        Text(profileSubtitle, color = PhoneMuted, fontSize = 13.sp)
                     }
-                    Box {
-                        ImageGlyph(
-                            R.drawable.ic_chevron_right,
-                            if (state.knownCharacters.size > 1) PhoneAccent else PhoneMuted,
-                            Modifier.clickable(enabled = state.knownCharacters.isNotEmpty()) { characterMenu = true }
-                                .padding(horizontal = 4.dp).size(22.dp),
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            profileName ?: if (state.connected) "已连接终端" else "未连接终端",
+                            color = PhoneText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        DropdownMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
-                            state.knownCharacters.forEach { character ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(character.name, fontWeight = FontWeight.SemiBold)
-                                            Text(character.world, color = PhoneMuted, fontSize = 11.sp)
-                                        }
-                                    },
-                                    onClick = { state.switchCharacter(character.key); characterMenu = false },
-                                )
+                        Text(profileSubtitle, color = PhoneMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    // 只有真的能切角色时才给入口。原来箭头一直在，只是变灰，
+                    // 点了没反应。
+                    if (state.knownCharacters.size > 1) {
+                        Box {
+                            Box(
+                                Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { characterMenu = true },
+                                contentAlignment = Alignment.Center,
+                            ) { ImageGlyph(R.drawable.ic_person, PhoneAccent, Modifier.size(19.dp)) }
+                            DropdownMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
+                                state.knownCharacters.forEach { character ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(character.name, fontWeight = FontWeight.SemiBold)
+                                                Text(character.world, color = PhoneMuted, fontSize = 11.sp)
+                                            }
+                                        },
+                                        onClick = { state.switchCharacter(character.key); characterMenu = false },
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
             item {
-                Button(
-                    onClick = { if (state.connected) state.disconnect() else state.connect() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAE62DA)),
-                    shape = RoundedCornerShape(17.dp),
-                    modifier = Modifier.fillMaxWidth().height(72.dp),
-                ) { Text(if (state.connected) "断开游戏连接" else "连接 XIVChat / 艾欧泽亚终端", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = state.host, onValueChange = { state.host = it }, label = { Text("游戏电脑 IP") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) }, label = { Text("端口") }, singleLine = true, modifier = Modifier.width(110.dp))
+                // 连接钮原来写死 #AE62DA——M3 模板紫的余党，全局品牌色换过一轮它漏了。
+                // 断开是破坏性操作，改成描边 + PhoneDanger；连接才是实心主色。
+                val connected = state.connected
+                if (connected) {
+                    OutlinedButton(
+                        onClick = { state.disconnect() },
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, PhoneDanger),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PhoneDanger),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                    ) { Text("断开游戏连接", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                } else {
+                    Button(
+                        onClick = { state.connect() },
+                        colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent, contentColor = Color.White),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                    ) { Text("连接游戏", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
                 }
                 val connHint = buildString {
                     val online = state.onlineCharacterName
                     if (online.isNotBlank()) append("已连接 · ").append(online).append(" 在线")
                     else if (state.statusMessage.isNotBlank()) append(state.statusMessage)
                 }
-                if (connHint.isNotBlank()) Text(connHint, color = if (state.connected) PhoneGreen else PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                if (connHint.isNotBlank()) {
+                    Text(
+                        connHint,
+                        color = if (connected) PhoneGreen else PhoneMuted, fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                    )
+                }
             }
             item {
+                // IP / 端口原来是两个裸 OutlinedTextField 浮在列表里，
+                // 和下面那些卡片组不是一个东西。收进卡片，标题也说清楚这是干什么的。
                 SettingsGroup {
-                    ToggleRow("免打扰", state.doNotDisturb, R.drawable.app_notifications) { state.doNotDisturb = it }
-                    ToggleRow("锁定位置", state.lockPosition, R.drawable.app_settings) { state.lockPosition = it }
-                    ToggleRow("待机时滑动手机", state.screenSwipe, R.drawable.app_shortcuts) { state.screenSwipe = it }
-                    ToggleRow("集体动作时显示", state.showEmotes, R.drawable.app_camera) { state.showEmotes = it }
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = SettingsRowPad, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ImageGlyph(R.drawable.ic_link, PhoneMuted, Modifier.size(SettingsIconSize))
+                        Text("游戏电脑地址", color = PhoneText, fontSize = 15.sp, modifier = Modifier.padding(start = 14.dp))
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = SettingsRowPad, end = SettingsRowPad, bottom = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = state.host, onValueChange = { state.host = it },
+                            label = { Text("IP") }, singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) },
+                            label = { Text("端口") }, singleLine = true,
+                            modifier = Modifier.width(104.dp),
+                        )
+                    }
+                }
+            }
+            item {
+                // 免打扰是"现在别吵我"，和下面四个分类设置不是一回事，单独一组。
+                // 原来这一组还重复放了"锁定位置/待机滑动/集体动作"——
+                // 通用页和外观页里各有一份，同一个开关三个地方能改。
+                SettingsGroup {
+                    ToggleRow("免打扰", state.doNotDisturb, R.drawable.ic_bell_off, "静音所有消息提示") { state.doNotDisturb = it }
                 }
             }
             item {
                 SettingsGroup {
-                    LinkRow("通用", R.drawable.app_settings) { state.settingsPage = SettingsPage.General }
-                    LinkRow("外观", R.drawable.app_photos) { state.settingsPage = SettingsPage.Appearance }
-                    LinkRow("声音", R.drawable.app_music) { state.settingsPage = SettingsPage.Sound }
-                    LinkRow("通知", R.drawable.app_notifications, "已开启") { state.settingsPage = SettingsPage.Notifications }
+                    LinkRow("通用", R.drawable.ic_tune) { state.settingsPage = SettingsPage.General }
+                    SettingsDivider()
+                    LinkRow("外观", R.drawable.ic_palette) { state.settingsPage = SettingsPage.Appearance }
+                    SettingsDivider()
+                    LinkRow("声音与触感", R.drawable.ic_volume) { state.settingsPage = SettingsPage.Sound }
+                    SettingsDivider()
+                    LinkRow(
+                        "通知",
+                        R.drawable.ic_bell_on,
+                        value = if (state.doNotDisturb) "免打扰" else if (state.chatNotifications || state.tellNotifications) "已开启" else "已关闭",
+                    ) { state.settingsPage = SettingsPage.Notifications }
                 }
             }
             item {
-                Text("数据来源：${state.serverLabel}", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
-            }
-            item {
-                Text("长按左上角头像可更换角色头像（每个角色独立保存）", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
+                    Text("数据来源：${state.serverLabel}", color = PhoneMuted, fontSize = 12.sp)
+                    Text("长按上方头像可更换角色头像，每个角色单独保存。", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                }
             }
         }
     }
@@ -307,28 +382,120 @@ fun SettingsScreen(state: PhoneState) {
         )
     }
 }
+// ---------------------------------------------------------------------------
+// 设置页的行骨架
+//
+// 三个尺寸常量是这一组行唯一的真相来源。以前 ToggleRow 和 LinkRow 各写一遍：
+// 一个 padding(horizontal=18) 一个 padding(start=18)，图标一个不传尺寸一个只传
+// padding，行之间没有分隔线，副值和箭头的间距也各算一次。
+// ---------------------------------------------------------------------------
+
+/** 设置行高。52dp 比原来的 60dp 紧一档，一屏能多放一项，仍高于 48dp 触控下限。 */
+private val SettingsRowHeight = 52.dp
+/** 图标尺寸。20dp 配 15sp 的标题，视觉重量差不多。 */
+private val SettingsIconSize = 20.dp
+/** 行左右内边距，也是分隔线的左缩进基准。 */
+private val SettingsRowPad = 16.dp
+
 @Composable
-private fun SettingsGroup(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface)) { content() }
+private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface),
+        content = content,
+    )
 }
+
+/** 组内分隔线。缩进到文字起点，不横穿图标那一列。 */
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, icon: Int, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 18.dp)) {
-        ImageGlyph(icon, PhoneText)
-        Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
+private fun SettingsDivider() {
+    Box(
+        Modifier.fillMaxWidth()
+            .padding(start = SettingsRowPad + SettingsIconSize + 14.dp)
+            .height(1.dp).background(MaterialTheme.colorScheme.outlineVariant),
+    )
 }
+
+/**
+ * 设置行骨架。图标 → 标题（+ 说明）→ 尾部控件。
+ * 尾部只放一个东西：开关、值 + 箭头、或者纯箭头。
+ */
 @Composable
-private fun LinkRow(label: String, icon: Int, value: String? = null, onClick: (() -> Unit)? = null) {
+private fun SettingsRow(
+    label: String,
+    icon: Int,
+    hint: String? = null,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().height(60.dp).clickable(enabled = onClick != null) { onClick?.invoke() },
+        modifier = Modifier.fillMaxWidth()
+            .heightIn(min = SettingsRowHeight)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .padding(horizontal = SettingsRowPad, vertical = 8.dp),
     ) {
-        ImageGlyph(icon, PhoneText, Modifier.padding(start = 18.dp))
-        Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
-        if (value != null) Text(value, color = PhoneMuted, fontSize = 13.sp)
-        ImageGlyph(R.drawable.ic_chevron_right, if (onClick != null) PhoneMuted else PhoneSurfaceRaised, Modifier.padding(horizontal = 15.dp).size(18.dp))
+        ImageGlyph(icon, PhoneMuted, Modifier.size(SettingsIconSize))
+        Column(Modifier.weight(1f).padding(start = 14.dp, end = 10.dp)) {
+            Text(label, color = PhoneText, fontSize = 15.sp)
+            if (hint != null) {
+                Text(hint, color = PhoneMuted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        trailing?.invoke(this)
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, checked: Boolean, icon: Int, hint: String? = null, onChange: (Boolean) -> Unit) {
+    SettingsRow(label, icon, hint, onClick = { onChange(!checked) }) {
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            modifier = Modifier.scale(0.85f),
+        )
+    }
+}
+
+@Composable
+private fun LinkRow(label: String, icon: Int, value: String? = null, hint: String? = null, onClick: (() -> Unit)? = null) {
+    SettingsRow(label, icon, hint, onClick = onClick) {
+        if (value != null) Text(value, color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(end = 6.dp))
+        ImageGlyph(
+            R.drawable.ic_chevron_right,
+            if (onClick != null) PhoneMuted else PhoneSurfaceRaised,
+            Modifier.size(17.dp),
+        )
+    }
+}
+
+/**
+ * 加减步进器。通用页的"保留消息上限"和外观页的"左右边距"原来各写一遍，
+ * 连按钮圆角都不一样。
+ */
+@Composable
+private fun SettingsStepper(
+    label: String,
+    icon: Int,
+    value: String,
+    hint: String? = null,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
+    SettingsRow(label, icon, hint) {
+        Box(
+            Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurfaceRaised).clickable(onClick = onMinus),
+            contentAlignment = Alignment.Center,
+        ) { ImageGlyph(R.drawable.ic_remove, PhoneAccent, Modifier.size(16.dp)) }
+        Text(
+            value,
+            color = PhoneText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 54.dp).padding(horizontal = 4.dp),
+        )
+        Box(
+            Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurfaceRaised).clickable(onClick = onPlus),
+            contentAlignment = Alignment.Center,
+        ) { ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.size(16.dp)) }
     }
 }
 @Composable
@@ -345,106 +512,111 @@ fun SettingsSubScreen(state: PhoneState) {
 private fun SettingsSubLayout(title: String, state: PhoneState, content: @Composable ColumnScope.() -> Unit) {
     ScreenFrame {
         ScreenHeader(title, state)
+        // 加了说明文案之后内容会超出一屏（通用页 3 个开关各带一行说明就到底了），
+        // 原来是定高 Column，多出来的部分直接被裁掉。
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = (10 + LocalContentMargin.current).dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = (10 + LocalContentMargin.current).dp)
+                .padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) { content() }
     }
 }
 @Composable
 private fun GeneralSettingsScreen(state: PhoneState) {
     SettingsSubLayout("通用", state) {
+        SectionLabel("手机行为")
         SettingsGroup {
-            ToggleRow("待机时滑动手机", state.screenSwipe, R.drawable.app_shortcuts) { state.screenSwipe = it }
-            ToggleRow("集体动作时显示", state.showEmotes, R.drawable.app_camera) { state.showEmotes = it }
-            ToggleRow("锁定位置", state.lockPosition, R.drawable.app_settings) { state.lockPosition = it }
+            ToggleRow("待机时滑动手机", state.screenSwipe, R.drawable.ic_swipe, "锁屏待机时手机会随呼吸轻微浮动") { state.screenSwipe = it }
+            SettingsDivider()
+            ToggleRow("集体动作时显示", state.showEmotes, R.drawable.ic_group, "做集体动作时不自动收起手机") { state.showEmotes = it }
+            SettingsDivider()
+            ToggleRow("锁定位置", state.lockPosition, R.drawable.ic_lock, "锁住手机在屏幕上的位置，避免误拖") { state.lockPosition = it }
         }
         SectionLabel("聊天记录")
         SettingsGroup {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("保留消息上限", color = PhoneText, modifier = Modifier.weight(1f))
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) }, contentAlignment = Alignment.Center) {
-                    ImageGlyph(R.drawable.ic_remove, PhoneAccent, Modifier.size(18.dp))
-                }
-                Text("  ${state.chatRetentionLimit}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) }, contentAlignment = Alignment.Center) {
-                    ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.size(18.dp))
-                }
-            }
-            Text("每个角色保留最近 N 条，超出自动清理最旧消息；0 = 不限制（永久保留）", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        }
-        SectionLabel("连接")
-        SettingsGroup {
-            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = state.host, onValueChange = { state.host = it }, label = { Text("游戏电脑 IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) }, label = { Text("端口") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            }
+            SettingsStepper(
+                "保留消息上限",
+                R.drawable.ic_history,
+                if (state.chatRetentionLimit == 0) "不限" else state.chatRetentionLimit.toString(),
+                hint = "每个角色保留最近 N 条，超出自动清理最旧的；0 = 永久保留",
+                onMinus = { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) },
+                onPlus = { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) },
+            )
         }
     }
 }
 @Composable
 private fun AppearanceSettingsScreen(state: PhoneState) {
     SettingsSubLayout("外观", state) {
-        SettingsGroup {
-            ToggleRow("紧凑程序坞", state.compactDock, R.drawable.app_shortcuts) { state.compactDock = it }
-            ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.app_photos) { state.reducedMotion = it }
-            ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.app_settings) { state.keepScreenOn = it }
-        }
-        SectionLabel("内容边距")
-        SettingsGroup {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("左右边距", color = PhoneText, modifier = Modifier.weight(1f))
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.contentMargin -= 2 }, contentAlignment = Alignment.Center) {
-                    ImageGlyph(R.drawable.ic_remove, PhoneAccent, Modifier.size(18.dp))
-                }
-                Text("  ${state.contentMargin}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.contentMargin += 2 }, contentAlignment = Alignment.Center) {
-                    ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.size(18.dp))
-                }
-            }
-            Text("左右都向内收缩·数值越小越贴近屏幕边缘", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        }
-
         SectionLabel("主题")
         SettingsGroup {
-            PhoneThemeMode.entries.forEach { mode ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { state.themeMode = mode }.padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(mode.label, color = PhoneText, modifier = Modifier.weight(1f))
+            PhoneThemeMode.entries.forEachIndexed { index, mode ->
+                if (index > 0) SettingsDivider()
+                val on = state.themeMode == mode
+                SettingsRow(mode.label, R.drawable.ic_contrast, onClick = { state.themeMode = mode }) {
                     ImageGlyph(
-                        if (state.themeMode == mode) R.drawable.ic_radio_on else R.drawable.ic_radio_off,
-                        if (state.themeMode == mode) PhoneAccent else PhoneMuted,
+                        if (on) R.drawable.ic_radio_on else R.drawable.ic_radio_off,
+                        if (on) PhoneAccent else PhoneMuted,
                         Modifier.size(20.dp),
                     )
                 }
             }
         }
+        SectionLabel("布局")
+        SettingsGroup {
+            SettingsStepper(
+                "左右边距",
+                R.drawable.ic_margins,
+                "${state.contentMargin}",
+                hint = "两侧同时向内收缩，数值越小越贴近屏幕边缘",
+                onMinus = { state.contentMargin -= 2 },
+                onPlus = { state.contentMargin += 2 },
+            )
+            SettingsDivider()
+            ToggleRow("紧凑程序坞", state.compactDock, R.drawable.ic_grid, "底部程序坞排得更密，露出更多桌面") { state.compactDock = it }
+        }
+        SectionLabel("动效与屏幕")
+        SettingsGroup {
+            ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.ic_motion, "关掉按压缩放、骨架微光等过渡动画") { state.reducedMotion = it }
+            SettingsDivider()
+            ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.ic_brightness, "看攻略或等窗口时屏幕不自动熄灭") { state.keepScreenOn = it }
+        }
     }
 }
 @Composable
 private fun SoundSettingsScreen(state: PhoneState) {
-    SettingsSubLayout("声音", state) {
+    SettingsSubLayout("声音与触感", state) {
         SettingsGroup {
-            ToggleRow("触觉反馈", state.haptics, R.drawable.app_music) { state.haptics = it }
-            ToggleRow("消息提示音", state.chatNotifications, R.drawable.app_message) { state.chatNotifications = it }
+            ToggleRow("消息提示音", state.chatNotifications, R.drawable.ic_volume, "收到消息时响一声") { state.chatNotifications = it }
+            SettingsDivider()
+            ToggleRow("触觉反馈", state.haptics, R.drawable.ic_vibrate, "点按钮和切换标签时轻震一下") { state.haptics = it }
         }
     }
 }
 @Composable
 private fun NotificationsSettingsScreen(state: PhoneState) {
     SettingsSubLayout("通知", state) {
+        SectionLabel("消息")
         SettingsGroup {
-            ToggleRow("聊天消息通知", state.chatNotifications, R.drawable.app_notifications) { state.chatNotifications = it; if (it) state.requestNotificationPermission() }
-            ToggleRow("私聊消息通知", state.tellNotifications, R.drawable.app_message) { state.tellNotifications = it; if (it) state.requestNotificationPermission() }
-            ToggleRow("重置提醒", state.resetNotifications, R.drawable.app_notifications) { state.resetNotifications = it }
+            ToggleRow("聊天消息", state.chatNotifications, R.drawable.ic_chat, "群聊和频道消息推送到系统通知栏") { state.chatNotifications = it; if (it) state.requestNotificationPermission() }
+            SettingsDivider()
+            ToggleRow("私聊消息", state.tellNotifications, R.drawable.ic_bell_on, "有人私聊时单独提醒") { state.tellNotifications = it; if (it) state.requestNotificationPermission() }
+        }
+        SectionLabel("游戏内提醒")
+        SettingsGroup {
+            ToggleRow("重置提醒", state.resetNotifications, R.drawable.ic_timer, "日常、周常和探险札记重置前提醒") { state.resetNotifications = it }
         }
         SectionLabel("免打扰")
         SettingsGroup {
-            ToggleRow("全部静音", state.doNotDisturb, R.drawable.app_notifications) { state.doNotDisturb = it }
+            ToggleRow("全部静音", state.doNotDisturb, R.drawable.ic_bell_off, "盖过上面所有开关，一条都不推") { state.doNotDisturb = it }
         }
-        Text("游戏消息推送需要手机通知权限，开启任意消息通知时会请求授权。", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp))
+        Text(
+            "推送需要系统通知权限，开启任一消息通知时会请求授权。",
+            color = PhoneMuted, fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+        )
     }
 }
 @OptIn(ExperimentalFoundationApi::class)
@@ -520,7 +692,13 @@ private fun ContactSection(title: String, friends: List<PhoneFriend>, state: Pho
 }
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 7.dp))
+    // 组标题跟着下面那张卡走：上间距大、下间距小，读起来才是"这一段的标题"。
+    Text(
+        text,
+        color = PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.4.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 10.dp, bottom = 2.dp),
+    )
 }
 @Composable
 private fun ContactRow(friend: PhoneFriend, onClick: () -> Unit) {
@@ -1315,9 +1493,23 @@ private fun countdownLabel(seconds: Long): String {
         else -> "${m}分钟"
     }
 }
+/**
+ * 单色图标。
+ *
+ * [modifier] 里没给尺寸时兜底到 22dp。以前没有这个兜底，
+ * 而 app_*.png 是 256×256 又放在无密度限定的 drawable/ 下（按 mdpi 解释），
+ * 设置页的 ToggleRow/LinkRow 不传尺寸，图标就按 256dp 铺出来——
+ * 行高把它裁成一条，看着就是"图标过大"。
+ * 外层约束在 Compose 里优先于内层，所以已经自己 .size(...) 的调用点不受影响。
+ */
 @Composable
 fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(tint), modifier = modifier)
+    androidx.compose.foundation.Image(
+        painterResource(icon),
+        contentDescription = null,
+        colorFilter = ColorFilter.tint(tint),
+        modifier = modifier.size(22.dp),
+    )
 }
 
 /**
@@ -1407,6 +1599,177 @@ fun PhoneEmpty(
         if (action != null) {
             Spacer(Modifier.height(18.dp))
             action()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 筛选面板
+//
+// 石之家的招募筛选（SzjRecruitFilterPanel）是全 App 里筛选做得最清楚的一处：
+// 条件按语义分组、每组带标题、chip 换行不横滑（横滑看不到后面还有多少）、
+// 改的是草稿、点"看结果"才发请求。这里把那套形态提成全局件，
+// 别的模块（捕鱼、市场、图鉴…）直接用，不要再各写一套。
+// ---------------------------------------------------------------------------
+
+/** chip 圆角。 */
+val PhoneChipShape = RoundedCornerShape(10.dp)
+
+/**
+ * 一组筛选 chip。[options] 是 (id, 显示名)，[multi] = true 时多选。
+ * 每行 4 个后换行——横向滚动会藏住后面的选项。
+ */
+@Composable
+fun PhoneChipGroup(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: Set<String>,
+    onPick: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(9.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            options.chunked(4).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    row.forEach { (id, name) ->
+                        val on = id in selected
+                        val bg by animateColorAsState(if (on) PhoneAccent else PhoneSurfaceRaised, tween(180), label = "chipBg")
+                        val fg by animateColorAsState(if (on) Color.White else PhoneMuted, tween(180), label = "chipFg")
+                        PhonePressable(onClick = { onPick(id) }, shape = PhoneChipShape) {
+                            Text(
+                                name,
+                                fontSize = 12.sp, maxLines = 1,
+                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                                color = fg,
+                                modifier = Modifier.clip(PhoneChipShape).background(bg)
+                                    .padding(horizontal = 11.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                    repeat(4 - row.size) { Spacer(Modifier.weight(1f, fill = false)) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 从顶部滑下来的筛选面板。
+ *
+ * 高度封到 78%：条件多的时候面板会一直长到屏幕外，底部两个按钮点不到。
+ * 现在选项区自己滚，按钮钉在面板底部。
+ */
+@Composable
+fun PhoneFilterPanel(
+    onClose: () -> Unit,
+    onReset: () -> Unit,
+    onApply: () -> Unit,
+    applyLabel: String = "看结果",
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val noRipple = remember { MutableInteractionSource() }
+    // 面板是覆盖层：返回键先关它，别一路穿透到退出这个 App。
+    BackHandler { onClose() }
+    Box(
+        Modifier.fillMaxSize()
+            .background(Color(0x73000000))
+            .pointerInput(Unit) { detectTapGestures { onClose() } },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = true,
+            enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { -it },
+        ) {
+            Column(
+                Modifier.fillMaxWidth().fillMaxHeight(0.78f)
+                    .clip(RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
+                    .background(PhoneSurface)
+                    .clickable(interactionSource = noRipple, indication = null) { }
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    content = content,
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = onReset,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(44.dp),
+                    ) { Text("重置", fontSize = 14.sp) }
+                    Button(
+                        onClick = onApply,
+                        colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent, contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1.4f).height(44.dp),
+                    ) { Text(applyLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 筛选条 —— 列表页头那一行。
+ *
+ * 左边是当前生效的条件（点一下就摘掉这一条），右边是打开面板的入口。
+ * 一条都没选时左边写一句"全部"，不留空白。
+ * 这样"现在筛的是什么"永远看得见，不用打开面板才知道。
+ */
+@Composable
+fun PhoneFilterBar(
+    active: List<Pair<String, () -> Unit>>,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (active.isEmpty()) {
+            Text("全部", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        } else {
+            LazyRow(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(active.size) { index ->
+                    val (label, clear) = active[index]
+                    PhonePressable(onClick = clear, shape = PhoneChipShape) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clip(PhoneChipShape).background(PhoneAccentContainer)
+                                .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                        ) {
+                            Text(label, color = PhoneOnAccentContainer, fontSize = 12.sp, maxLines = 1)
+                            ImageGlyph(R.drawable.ic_close, PhoneOnAccentContainer, Modifier.padding(start = 3.dp).size(11.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        PhonePressable(onClick = onOpen, shape = PhoneChipShape) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(PhoneChipShape)
+                    .background(if (active.isEmpty()) PhoneSurfaceRaised else PhoneAccent)
+                    .padding(horizontal = 11.dp, vertical = 7.dp),
+            ) {
+                ImageGlyph(
+                    R.drawable.ic_filter,
+                    if (active.isEmpty()) PhoneMuted else Color.White,
+                    Modifier.size(13.dp),
+                )
+                Text(
+                    if (active.isEmpty()) "筛选" else "筛选 ${active.size}",
+                    color = if (active.isEmpty()) PhoneMuted else Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = if (active.isEmpty()) FontWeight.Normal else FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 5.dp),
+                )
+            }
         }
     }
 }

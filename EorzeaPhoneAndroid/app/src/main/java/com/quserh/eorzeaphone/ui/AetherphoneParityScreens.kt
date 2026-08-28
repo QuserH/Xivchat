@@ -28,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
@@ -229,12 +231,16 @@ private fun LightSearchField(
 // 图标 34/38/44dp 三种尺寸，标题 13/14/16sp 三种字号，竖 padding 8/10/11dp，
 // 容器有的扁平有的套卡片。同一个"聊天"App 里滑过去像三个人做的。
 //
-// 下面这几个是唯一的真相来源，四种行全部走它们：
-//   LightRowIcon      —— 行首图标（人是圆的，会话/筛选是圆角方的，尺寸统一）
-//   LightListRow      —— 行骨架（图标 + 标题行 + 副行 + 尾部）
-//   LightRowDivider   —— 行间发丝线
-//   LightUnreadBadge  —— 未读角标（红只有 PhoneDanger 一个）
-//   LightChip         —— 横向筛选 chip
+// 下面这几个是唯一的真相来源，所有列表行全部走它们：
+//   LightRowIcon       —— 行首图标（人是圆的，会话/筛选是圆角方的，尺寸统一）
+//   LightListRow       —— 行骨架 = 一张卡（色条 + 图标 + 标题 + 副行 + 右列 meta）
+//   LightSectionLabel  —— 分段标题（置顶 / 最近 / 在线 / 离线）
+//   LightUnreadBadge   —— 未读角标（红只有 PhoneDanger 一个）
+//   LightChip          —— 横向筛选 chip
+//
+// 形态是卡片：一行一张卡，8dp 间距，14dp 圆角，没有分隔线。
+// 卡左边那条 3dp 色条是这一屏唯一的装饰，也是唯一带信息的装饰——
+// 用的是该频道在游戏里的颜色，扫一眼就知道是私聊还是部队，不用读标题。
 // 气泡（LightChatBubble）不在其列，那是对 FFXIV-Aetherphone 的像素级复刻。
 // ---------------------------------------------------------------------------
 
@@ -263,25 +269,39 @@ private fun LightRowIcon(
     ) { content() }
 }
 
+/** 卡片圆角。 */
+private val LightCardShape = RoundedCornerShape(14.dp)
+/** 卡片之间的间距。 */
+private val LightCardGap = 8.dp
+/** 频道色条宽度。 */
+private val LightSpineWidth = 3.dp
+
 /**
- * 列表行骨架。
+ * 列表行骨架 —— 一行一张卡。
  *
- * [title] 15sp SemiBold、[subtitle] 区 12sp——所有行一致。
- * [titleLeading] 放标题前的小图标（在线状态点之类），[titleTrailing] 放时间/置顶。
- * 按压反馈走全局的 0.978 缩放；[onLongPress] 需要按压点坐标时用 [pressOffset]。
+ * 布局是三列：图标 | 标题+副行 | 右侧 meta。
+ *
+ * 时间放在**独立的右列**，不在标题那一行里。原来时间是 titleTrailing，
+ * 和标题挤在同一个 Row 里：标题 `weight(1f, fill = false)` 只取自己需要的宽度，
+ * 后面再插一个 `weight(1f)` 的 Spacer，两个权重平分剩余空间——于是时间落在
+ * "标题宽度 + 剩余的一半"，标题多长时间就往哪挪，一列看下来像锯齿。
+ * 现在时间在外层 Row 的最后一列，永远贴右边。
+ *
+ * [spine] 是卡左侧的频道色条，null 表示不画（联系人卡不需要频道）。
  */
 @Composable
 private fun LightListRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongPress: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null,
+    spine: Color? = null,
     icon: (@Composable () -> Unit)? = null,
     title: String,
     titleColor: Color = AetherLightText,
+    titleWeight: FontWeight = FontWeight.SemiBold,
     titleLeading: (@Composable () -> Unit)? = null,
-    titleTrailing: (@Composable RowScope.() -> Unit)? = null,
     subtitle: (@Composable RowScope.() -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null,
+    meta: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val motion = phoneMotionEnabled()
@@ -291,9 +311,10 @@ private fun LightListRow(
         label = "lightRowPress",
     )
     Row(
-        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(LightCardShape)
+            .background(AetherLightSurface)
             .pointerInput(onLongPress == null) {
                 detectTapGestures(
                     onPress = {
@@ -305,46 +326,102 @@ private fun LightListRow(
                     onLongPress = onLongPress?.let { cb -> { offset -> cb(offset) } },
                 )
             }
-            .padding(vertical = LightRowPadV),
+            // 色条要撑满卡高，所以外层 Row 按最小固有高度measure。
+            .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) {
-            icon()
-            Spacer(Modifier.width(LightRowIconGap))
+        if (spine != null) {
+            Box(Modifier.width(LightSpineWidth).fillMaxHeight().background(spine))
         }
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                titleLeading?.invoke()
-                Text(
-                    title,
-                    color = titleColor,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f).padding(
+                start = if (spine != null) 11.dp else 12.dp,
+                end = 12.dp,
+                top = LightRowPadV,
+                bottom = LightRowPadV,
+            ),
+        ) {
+            if (icon != null) {
+                icon()
+                Spacer(Modifier.width(LightRowIconGap))
+            }
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    titleLeading?.invoke()
+                    Text(
+                        title,
+                        color = titleColor,
+                        fontSize = 15.sp,
+                        fontWeight = titleWeight,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                if (subtitle != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        subtitle()
+                    }
+                }
+            }
+            if (meta != null) {
+                Spacer(Modifier.width(10.dp))
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    content = meta,
                 )
-                if (titleTrailing != null) {
-                    Spacer(Modifier.weight(1f))
-                    titleTrailing()
-                }
             }
-            if (subtitle != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    subtitle()
-                }
-            }
-        }
-        if (trailing != null) {
-            Spacer(Modifier.width(8.dp))
-            trailing()
         }
     }
 }
 
-/** 行间发丝线。左侧缩进到文字起点，不顶到屏幕边。 */
+/** 列表分段标题（置顶 / 最近 / 在线 / 离线）。卡片之间的分组靠它，不靠分隔线。 */
 @Composable
-private fun LightRowDivider(indent: Dp = LightRowIconSize + LightRowIconGap) {
-    Box(Modifier.fillMaxWidth().padding(start = indent).height(1.dp).background(AetherLightSeparator))
+private fun LightSectionLabel(text: String, iconRes: Int? = null, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp),
+    ) {
+        if (iconRes != null) {
+            ImageGlyph(iconRes, AetherLightMuted, Modifier.size(12.dp).padding(end = 0.dp))
+            Spacer(Modifier.width(5.dp))
+        }
+        Text(
+            text,
+            color = AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.4.sp,
+        )
+    }
+}
+
+/**
+ * 会话卡左侧色条的颜色 = 这条会话所属频道在游戏里的颜色。
+ *
+ * 这是这一屏唯一的装饰，也是唯一带信息的装饰：老玩家扫一眼颜色就知道
+ * 是私聊（粉）、小队（青）、部队（紫）还是通讯贝（黄绿），不用读标题。
+ * 走 themeAdjustedChannelColor，白底上会压暗一档，不然"说话"的白色看不见。
+ */
+@Composable
+private fun conversationSpine(conversation: ChatConversation): Color {
+    val channel = conversation.lastMessage?.channel
+    val base = if (channel != null && channel > 0) {
+        channelDefaultColor(channel)
+    } else {
+        channelDefaultColor(
+            when (conversation.category) {
+                ChatCategory.Tell -> 12
+                ChatCategory.Party -> 14
+                ChatCategory.Team -> 15
+                ChatCategory.FreeCompany -> 24
+                ChatCategory.Linkshell -> 16
+                ChatCategory.Emote -> 29
+                else -> 10
+            },
+        )
+    }
+    return themeAdjustedChannelColor(base)
 }
 
 /**
@@ -575,9 +652,11 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
         }.distinctBy { it.key }
-        val sortedRows = rows.sortedWith(
-            compareByDescending<ChatConversation> { state.isConversationPinned(it) }.thenByDescending { it.lastTimestamp ?: 0L },
-        )
+        // 排序规则没变（置顶在前、各自按最后一条消息倒序），但分成两段带标题，
+        // 边界才看得见。原来置顶和普通会话混在一条流里，唯一的线索是标题右边
+        // 一个 10sp 的"置顶"二字，扫列表时根本注意不到。
+        val pinnedRows = rows.filter { state.isConversationPinned(it) }.sortedByDescending { it.lastTimestamp ?: 0L }
+        val recentRows = rows.filterNot { state.isConversationPinned(it) }.sortedByDescending { it.lastTimestamp ?: 0L }
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 .padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp),
@@ -591,22 +670,23 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 LightChip(label, active, onClick = { state.chatListTab = key }, unread = unread)
             }
         }
-        LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp),
+            verticalArrangement = Arrangement.spacedBy(LightCardGap),
+        ) {
             if (messagesExpanded && !state.localHidden) {
                 item("local-entry") {
                     // 本地行原来是自己手写的第五套：20dp 裸图标、没有图标底座、
                     // 副标题挤在标题右边、置顶标 9sp。现在和会话行同一套骨架。
                     LightListRow(
                         onClick = onOpenLocal,
+                        spine = themeAdjustedChannelColor(channelDefaultColor(10)),
                         icon = {
                             LightRowIcon(circle = false) {
                                 ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
                             }
                         },
                         title = "本地",
-                        titleTrailing = {
-                            if (state.localPinned()) Text("置顶", color = AetherPurple, fontSize = 10.sp)
-                        },
                         subtitle = {
                             Text(
                                 "说话 / 喊话 / 呼喊 / 情感动作",
@@ -615,18 +695,26 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 modifier = Modifier.weight(1f),
                             )
                         },
+                        meta = if (state.localPinned()) {
+                            { ImageGlyph(R.drawable.ic_pin, AetherPurple, Modifier.size(13.dp)) }
+                        } else null,
                     )
-                    LightRowDivider()
                 }
-                itemsIndexed(sortedRows, key = { _, c -> "message-${c.key}" }) { index, conversation ->
-                    Box(Modifier.animateItem()) {
-                        Column {
+                if (pinnedRows.isNotEmpty()) {
+                    item("pinned-label") { LightSectionLabel("置顶", R.drawable.ic_pin) }
+                    itemsIndexed(pinnedRows, key = { _, c -> "message-${c.key}" }) { _, conversation ->
+                        Box(Modifier.animateItem()) {
                             LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key })
-                            if (index < sortedRows.lastIndex) LightRowDivider()
                         }
                     }
+                    if (recentRows.isNotEmpty()) item("recent-label") { LightSectionLabel("最近") }
                 }
-                if (sortedRows.isEmpty() && !state.connected) item("empty") {
+                itemsIndexed(recentRows, key = { _, c -> "message-${c.key}" }) { _, conversation ->
+                    Box(Modifier.animateItem()) {
+                        LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key })
+                    }
+                }
+                if (rows.isEmpty() && !state.connected) item("empty") {
                     Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
                         PhoneEmpty("还没有聊天消息", "连接游戏后，私聊和群聊会出现在这里", R.drawable.app_messages)
                     }
@@ -639,7 +727,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         }
                     }
                 } else {
-                    itemsIndexed(state.chatFilters, key = { _, f -> "tab-${f.id}" }) { filterIndex, filter ->
+                    itemsIndexed(state.chatFilters, key = { _, f -> "tab-${f.id}" }) { _, filter ->
                         val selected = filter.id == state.selectedChatFilterId
                         val last = state.chats.lastOrNull { filter.matches(it) && it.timestamp > state.clearedUntil(filter.id) }
                         var tabPress by remember(filter.id) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -649,15 +737,28 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 modifier = Modifier.animateItem(),
                                 onClick = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
                                 onLongPress = { offset -> tabPress = offset; longPressedTabId = filter.id },
+                                // 筛选器的色条用它收的第一个频道的颜色；选中时换成 accent。
+                                spine = if (selected) AetherPurple else {
+                                    themeAdjustedChannelColor(
+                                        channelDefaultColor(
+                                            when (filter.categories.firstOrNull()) {
+                                                ChatCategory.Tell -> 12
+                                                ChatCategory.Party -> 14
+                                                ChatCategory.Team -> 15
+                                                ChatCategory.FreeCompany -> 24
+                                                ChatCategory.Linkshell -> 16
+                                                ChatCategory.Emote -> 29
+                                                else -> 10
+                                            },
+                                        ),
+                                    )
+                                },
                                 icon = {
                                     LightRowIcon(circle = false, selected = selected) {
                                         SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) Color.White else AetherLightMuted)
                                     }
                                 },
                                 title = filter.label,
-                                titleTrailing = {
-                                    last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                                },
                                 subtitle = if (last != null || filter.alertPolicy == ChatAlertPolicy.Off) {
                                     {
                                         if (last != null) {
@@ -675,6 +776,9 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                         }
                                     }
                                 } else null,
+                                meta = last?.let {
+                                    { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                                },
                             )
                             Box(Modifier.offset { IntOffset(tabPress.x.roundToInt(), tabPress.y.roundToInt()) }) {
                             DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
@@ -685,10 +789,10 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                             }
                             }
                         }
-                        if (filterIndex < state.chatFilters.lastIndex) LightRowDivider()
                     }
                 }
             }
+            item("list-end") { Spacer(Modifier.height(10.dp)) }
         }
     }
     renameTarget?.let { target ->
@@ -1279,24 +1383,28 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         LightListRow(
             onClick = { state.openConversation(conversation) },
             onLongPress = { offset -> pressOffset = offset; menuOpen = true },
+            spine = conversationSpine(conversation),
             icon = {
                 LightRowIcon(circle = isPerson) {
                     ConversationRowIcon(conversation, state, rowTitle)
                 }
             },
             title = rowTitle,
+            // 有未读时标题加粗——不用再靠颜色区分，红角标已经在右列了。
+            titleWeight = if (conversation.unread > 0) FontWeight.Bold else FontWeight.SemiBold,
             titleLeading = if (isPerson) {
                 { FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp)) }
             } else null,
-            titleTrailing = {
-                // 10sp 是字号下限（9sp 在高密度屏上已经开始糊）。
-                if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
-                conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
-            },
             subtitle = {
                 LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 12.sp, Modifier.weight(1f))
                 if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
-                LightUnreadBadge(conversation.unread, conversation.notify, Modifier.padding(start = 7.dp))
+            },
+            meta = {
+                // 时间在上、角标在下，都贴右边。10sp 是字号下限（9sp 在高密度屏上开始糊）。
+                conversation.lastTimestamp?.let {
+                    Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                }
+                LightUnreadBadge(conversation.unread, conversation.notify)
             },
         )
         Box(Modifier.offset { IntOffset(pressOffset.x.roundToInt(), pressOffset.y.roundToInt()) }) {
@@ -1330,7 +1438,6 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         }
         }
     }
-    Spacer(Modifier.height(6.dp))
 }
 
 @Composable
@@ -1406,12 +1513,12 @@ private fun AetherphoneContactsList(state: PhoneState) {
             val online = shown.filter { it.online }
             val offline = shown.filter { !it.online }
             if (online.isNotEmpty()) {
-                item("online-label") { Text("在线 · ${formatCount(online.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
+                item("online-label") { LightSectionLabel("在线 · ${formatCount(online.size)}") }
                 item("online-card") { LightContactCard(online, state, rosterTick, onChangeAvatar = { avatarFriend = it }) }
-                item("online-gap") { Spacer(Modifier.height(18.dp)) }
+                item("online-gap") { Spacer(Modifier.height(14.dp)) }
             }
             if (offline.isNotEmpty()) {
-                item("offline-label") { Text("离线 · ${formatCount(offline.size)}", color = AetherLightMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp)) }
+                item("offline-label") { LightSectionLabel("离线 · ${formatCount(offline.size)}") }
                 item("offline-card") { LightContactCard(offline, state, rosterTick, onChangeAvatar = { avatarFriend = it }) }
             }
             if (shown.isEmpty()) {
@@ -1483,6 +1590,38 @@ private fun friendStatusIcon(status: Long): Int? {
     }
 }
 
+/**
+ * 好友头像的取用顺序：
+ *
+ *   1. 用户自己挑过的        → 永远最优先
+ *   2. 石之家上传的照片      → 名册里带回来的 avatar
+ *   3. 石之家的种族立绘      → 名册没给头像时按 uuid 现问一次（种族/部族/性别拼的官方图）
+ *   4. 随机贴纸              → 这人没注册石之家
+ *
+ * 第 3 步是懒加载：只有滑到这一行才问，问到的结果写回名册，下次直接读。
+ * 图片本身走 ShizhijiaImageLoader 的内存 + 磁盘缓存，所以第二次不会重新下载。
+ */
+@Composable
+private fun friendAvatarFor(friend: PhoneFriend, state: PhoneState, rosterTick: Int): String {
+    val context = LocalContext.current
+    val own = state.friendAvatar(friend)
+    if (own.isNotBlank()) return own
+
+    val entry = remember(friend.name, friend.homeWorld, friend.world, rosterTick) {
+        ShizhijiaFriendRoster.findEntry(context, friend.name, friend.homeWorld.ifBlank { friend.world })
+    } ?: return state.friendFallbackAvatar(friend)
+
+    var resolved by remember(entry.uuid, rosterTick) { mutableStateOf(entry.avatar) }
+    LaunchedEffect(entry.uuid, rosterTick) {
+        if (resolved.isBlank()) {
+            withContext(Dispatchers.IO) { ShizhijiaFriendRoster.resolveAvatar(context, entry) }
+                .takeIf { it.isNotBlank() }
+                ?.let { resolved = it }
+        }
+    }
+    return resolved.ifBlank { state.friendFallbackAvatar(friend) }
+}
+
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun LightContactCard(
@@ -1492,41 +1631,42 @@ private fun LightContactCard(
     rosterTick: Int = 0,
     onChangeAvatar: (PhoneFriend) -> Unit = {},
 ) {
-    // 原来这里是"白卡片包一叠行"，而会话列表是扁平的——同一个 App 两种列表形态。
-    // 现在统一成扁平 + 发丝线，和会话/筛选器列表一致。
-    // 行本身走 LightListRow：头像从 44dp 降到 38dp、间距 16→13dp、
-    // 标题 16sp Bold → 15sp SemiBold，全部对齐会话行。
-    val context = LocalContext.current
-    Column(Modifier.fillMaxWidth()) {
-        friends.forEachIndexed { index, friend ->
+    // 联系人行和会话行走同一套骨架（LightListRow），所以现在也是一行一张卡。
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(LightCardGap)) {
+        friends.forEach { friend ->
             LightListRow(
                 onClick = { state.openFriend(friend) },
                 onLongPress = { onChangeAvatar(friend) },
                 icon = {
-                    // 好友是"人"，圆头像。
-                    // 用户自己设过就用自己设的；没设过而这人在石之家名册里，
-                    // 就用他的石之家头像（走磁盘缓存，第二次不再下载）。
-                    val own = state.friendAvatar(friend)
-                    val shown = remember(own, friend.name, friend.homeWorld, rosterTick) {
-                        own.ifBlank {
-                            ShizhijiaFriendRoster.avatarOf(context, friend.name, friend.homeWorld).orEmpty()
-                        }
-                    }
                     LightRowIcon(circle = true) {
-                        SmallConversationIcon(shown, friend.name.take(1), if (friend.online) AetherPurple else AetherLightMuted)
+                        SmallConversationIcon(
+                            friendAvatarFor(friend, state, rosterTick),
+                            friend.name.take(1),
+                            if (friend.online) AetherPurple else AetherLightMuted,
+                        )
                     }
                 },
                 title = friend.name,
                 titleColor = if (friend.online) AetherLightText else AetherLightMuted,
                 subtitle = {
+                    // 原服和当前服不同时两个都写出来（"沃仙曦染 → 神意之地"）。
+                    // 只显示当前服会让人以为好友换了家，跨界传送时尤其容易误会。
+                    val home = friend.homeWorld.trim()
+                    val now = friend.world.trim()
+                    val text = when {
+                        home.isNotBlank() && now.isNotBlank() && home != now -> "$home → $now"
+                        now.isNotBlank() -> now
+                        home.isNotBlank() -> home
+                        else -> "未知服务器"
+                    }
                     Text(
-                        friend.world.ifBlank { "未知服务器" },
+                        text,
                         color = AetherLightMuted, fontSize = 12.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
                 },
-                trailing = if (friend.online) {
+                meta = if (friend.online) {
                     {
                         val stIcon = friendStatusIcon(friend.status)
                         if (stIcon != null) {
@@ -1537,7 +1677,6 @@ private fun LightContactCard(
                     }
                 } else null,
             )
-            if (index < friends.lastIndex) LightRowDivider()
         }
     }
 }
@@ -1639,7 +1778,9 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
             if (friend == null) return@Column
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
                 Box(Modifier.size(94.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                    SmallConversationIcon(state.friendAvatar(friend), friend.name.take(1), AetherPurple)
+                    // 和联系人列表走同一条链（自己挑的 → 石之家照片 → 种族立绘 → 随机贴纸），
+                    // 不然这里会比列表里少一档。
+                    SmallConversationIcon(friendAvatarFor(friend, state, 0), friend.name.take(1), AetherPurple)
                 }
                 Text(friend.name, color = AetherLightText, fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
                 Text(listOf(friend.world, if (friend.online) "在线" else "离线").filter { it.isNotBlank() }.joinToString(" · "), color = AetherLightMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
@@ -2026,11 +2167,12 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
             LightSearchField(query, { query = it }, "搜索聊天记录", Modifier.weight(1f).focusRequester(focusRequester))
             if (query.isNotBlank()) Text(results.size.toString(), color = AetherPurple, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
         }
-        // 边距和分隔线跟其他列表一致（原来行是独立卡片、靠 spacedBy(8) 撑开）。
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
-            itemsIndexed(results, key = { index, message -> "${message.timestamp}-$index" }) { index, message ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
+            verticalArrangement = Arrangement.spacedBy(LightCardGap),
+        ) {
+            itemsIndexed(results, key = { index, message -> "${message.timestamp}-$index" }) { _, message ->
                 SearchResultRow(state, conversation, message, query, showAvatar) { onOpenMessage(message.timestamp) }
-                if (index < results.lastIndex) LightRowDivider(if (showAvatar) LightRowIconSize + LightRowIconGap else 0.dp)
             }
             if (query.isNotBlank() && results.isEmpty()) item {
                 Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
@@ -2060,11 +2202,11 @@ private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, m
             }
         } else null,
         title = author.replace('\uE05D', ' '),
-        titleTrailing = {
-            Text(chatRecordTime(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
-        },
         subtitle = {
             HighlightText(cleaned, query, AetherLightMuted, 12.sp, 3, Modifier.weight(1f))
+        },
+        meta = {
+            Text(chatRecordTime(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
         },
     )
 }
@@ -2974,8 +3116,11 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                             PhoneEmpty("还没有备忘录", "点右上角的 + 写第一条", R.drawable.ic_add)
                         }
                     } else {
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
-                            itemsIndexed(state.notes, key = { _, n -> n.id }) { index, note ->
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
+                            verticalArrangement = Arrangement.spacedBy(LightCardGap),
+                        ) {
+                            itemsIndexed(state.notes, key = { _, n -> n.id }) { _, note ->
                                 val lines = note.body.lines()
                                 LightListRow(
                                     onClick = { editingNote = note },
@@ -2989,7 +3134,6 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                                         )
                                     },
                                 )
-                                if (index < state.notes.lastIndex) LightRowDivider(0.dp)
                             }
                         }
                     }
@@ -3000,8 +3144,11 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                         }
                     } else {
                         val sorted = state.reminders.sortedBy { it.done }
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
-                            itemsIndexed(sorted, key = { _, r -> r.id }) { index, reminder ->
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
+                            verticalArrangement = Arrangement.spacedBy(LightCardGap),
+                        ) {
+                            itemsIndexed(sorted, key = { _, r -> r.id }) { _, reminder ->
                                 LightListRow(
                                     onClick = { editingReminder = reminder },
                                     icon = {
@@ -3038,7 +3185,6 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                                         }
                                     },
                                 )
-                                if (index < sorted.lastIndex) LightRowDivider()
                             }
                         }
                     }

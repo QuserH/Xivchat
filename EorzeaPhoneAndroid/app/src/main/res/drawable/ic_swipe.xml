@@ -1,0 +1,16 @@
+<!-- 待机时滑动手机：左右滑动手势。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M9.4,7.4L4,12l5.4,4.6 1.4,-1.65L7.5,12l3.3,-2.95z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M14.6,7.4l-1.4,1.65L16.5,12l-3.3,2.95 1.4,1.65L20,12z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M11,10.8h2v2.4h-2z" />
+</vector>

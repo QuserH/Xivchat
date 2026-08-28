@@ -155,22 +155,54 @@ object ShizhijiaFriendRoster {
      * 2. 名册里这条没有 group_name（接口可能不返回），且同名只有一个 → 认为是他
      * 3. 其他情况 → null（交给调用方去搜，或者报没找到）
      */
-    fun match(context: Context, name: String, homeWorld: String): ShizhijiaSearchUser? {
+    fun match(context: Context, name: String, homeWorld: String): ShizhijiaSearchUser? =
+        findEntry(context, name, homeWorld)?.toSearchUser()
+
+    /**
+     * 同 [match]，但返回名册里那条原始记录（要用 uuid 去补头像时需要）。
+     * 判定逻辑只写一遍，两个入口共用。
+     */
+    fun findEntry(context: Context, name: String, homeWorld: String): Entry? {
         if (name.isBlank()) return null
         val sameName = entries(context).filter { it.name == name }
         if (sameName.isEmpty()) return null
-
         if (homeWorld.isNotBlank()) {
-            sameName.firstOrNull { it.groupName == homeWorld }?.let { return it.toSearchUser() }
-            // 名册里同名的都没有服务器信息 → 退到"同名唯一"判定
+            sameName.firstOrNull { it.groupName == homeWorld }?.let { return it }
             if (sameName.any { it.groupName.isNotBlank() }) return null
         }
-        return if (sameName.size == 1) sameName.first().toSearchUser() else null
+        return sameName.singleOrNull()
     }
 
     /** 名册里这个角色的头像 URL，给联系人列表当头像用。没有就 null。 */
     fun avatarOf(context: Context, name: String, homeWorld: String): String? =
-        match(context, name, homeWorld)?.avatar?.takeIf { it.isNotBlank() }
+        findEntry(context, name, homeWorld)?.avatar?.takeIf { it.isNotBlank() }
+
+    /**
+     * 补一条记录的头像。
+     *
+     * 名册接口只给"自己上传过的照片"，没设过头像的人这个字段是空的。
+     * 石之家网页在这种情况下会按角色的种族/部族/性别拼官方立绘
+     * （ShizhijiaApi.resolveAvatar 就是干这个的），所以这里也走同一条路——
+     * 用户要的是"就算是默认头像也要种族头像"，而不是退回随机贴纸。
+     *
+     * 一个人只需要问一次：拿到就写回名册，下次直接从 prefs 里读。
+     * 按可见行懒加载，不在 refresh 里一次性打几十个请求。
+     */
+    suspend fun resolveAvatar(context: Context, entry: Entry): String {
+        if (entry.avatar.isNotBlank()) return entry.avatar
+        if (entry.uuid.isBlank()) return ""
+        val resolved = runCatching { ShizhijiaApi.resolveAvatar(context, entry.uuid) }.getOrDefault("")
+        if (resolved.isBlank()) return ""
+        // 写回名册。这里不动 KEY_ROSTER_TIME：补头像不算"重新拉过名册"，
+        // 否则 TTL 会被不断续期，名册本身永远不刷新。
+        val current = entries(context)
+        val updated = current.map { if (it.uuid == entry.uuid) it.copy(avatar = resolved) else it }
+        val arr = JSONArray()
+        updated.forEach { arr.put(it.toJson()) }
+        prefs(context).edit().putString(KEY_ROSTER, arr.toString()).apply()
+        loaded = updated
+        return resolved
+    }
 
     /**
      * 拉一次名册。需要登录；没登录返回 [ShizhijiaApi.Res.NeedLogin]，

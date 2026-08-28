@@ -53,7 +53,7 @@ fun AppStoreScreen(state: PhoneState) {
                         modifier = Modifier.size(50.dp).clip(RoundedCornerShape(9.dp)).background(app.color),
                         contentAlignment = Alignment.Center,
                     ) {
-                        ImageGlyph(app.icon, Color.White)
+                        ImageGlyph(app.icon, Color.White, Modifier.fillMaxSize().padding(9.dp))
                     }
                     Column(Modifier.padding(start = 12.dp)) {
                         Text(app.label, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)

@@ -759,9 +759,28 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val hiddenConversations = mutableStateOf((charPrefs().getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
     private val pendingSelfTexts = mutableMapOf<String, String>()
     private val pendingSends = mutableListOf<GameChatMessage>()
+    /**
+     * 用户**自己**给好友挑的头像。只有从"更换好友头像"进去选过才会写这里。
+     *
+     * 以前自动分配的随机贴纸也塞在这个 map 里，于是 friendAvatar() 永远非空，
+     * 石之家头像那一条分支根本走不到（0.7.228 加的代码是死的）。
+     * 现在自动分配的去 [friendFallbackAvatars]，两者分开。
+     */
     private val friendAvatars = mutableStateMapOf<String, String>().apply {
         runCatching {
             val o = JSONObject(prefs.getString("friendAvatars", "{}").orEmpty())
+            val it = o.keys()
+            while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
+        }
+    }
+
+    /**
+     * 自动分配的随机贴纸。没注册石之家的好友用这个兜底。
+     * 分配一次就固定下来，不然每次重启头像都在换。
+     */
+    private val friendFallbackAvatars = mutableStateMapOf<String, String>().apply {
+        runCatching {
+            val o = JSONObject(prefs.getString("friendFallbackAvatars", "{}").orEmpty())
             val it = o.keys()
             while (it.hasNext()) { val k = it.next(); put(k, o.getString(k)) }
         }
@@ -817,7 +836,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun conversationIcon(key: String, category: ChatCategory? = null): String {
         if (category == ChatCategory.Tell || key.startsWith("tell:")) {
             val owner = tellAvatarOwners[key]
-            return owner?.let { friendAvatars[it] } ?: conversationIconOverrides[key].orEmpty()
+            // 先看用户自己挑的，再看自动分配的贴纸——两张表拆开之后这里要问两次。
+            owner?.let { friendAvatars[it] ?: friendFallbackAvatars[it] }?.let { return it }
+            return conversationIconOverrides[key].orEmpty()
         }
         conversationIconOverrides[key]?.let { return it }
         return when (category) {
@@ -857,7 +878,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         else -> "fallback:${friend.name.normalizedPlayerName()}@${friend.homeWorld.ifBlank { friend.world }.trim().lowercase()}"
     }
 
+    /** 用户自己挑的头像；没挑过返回空串。 */
     fun friendAvatar(friend: PhoneFriend): String = friendAvatars[friendAvatarOwner(friend)] ?: ""
+
+    /** 兜底的随机贴纸（[ensureFriendAvatars] 分配好的）。纯读，不写。 */
+    fun friendFallbackAvatar(friend: PhoneFriend): String =
+        friendFallbackAvatars[friendAvatarOwner(friend)] ?: ""
 
     /** 按角色名（忽略服务器/装饰）查好友在线状态；非好友返回 null。 */
     fun friendOnlineFor(name: String): Boolean? {
@@ -919,24 +945,45 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         if (iconsChanged) runCatching { charPrefs().edit().putString("convIcons", JSONObject(conversationIconOverrides).toString()).apply() }
     }
 
+    /**
+     * 给每个好友分配一个固定的随机贴纸，写进 [friendFallbackAvatars]。
+     * 只有"头像"那一栏的图能被自动分配（更早的版本会分到小队/部队系统图标）。
+     *
+     * 顺带做一次迁移：老版本把随机贴纸写在 [friendAvatars] 里，
+     * 那会挡住石之家头像。值是贴纸 id 的一律搬到兜底表——
+     * 搬完显示结果不变（链路最后还是会落到它），但石之家有头像时能盖过去，
+     * 这正是"注册了石之家就用他的头像"想要的顺序。
+     * 相册里选的图（绝对路径）和状态图标留在原处，那些一定是手动挑的。
+     */
     private fun ensureFriendAvatars(friendEntries: Iterable<PhoneFriend>) {
-        // Only the images in the dedicated "头像" library tab may be assigned
-        // automatically.  The previous pool included party and FC system icons.
         val pool = builtinConversationIcons.filter { it.category == "avatar" }.map { it.id }
         if (pool.isEmpty()) return
         var changed = false
+        var pickedChanged = false
         val rnd = java.util.Random()
         for (friend in friendEntries) {
             val key = friendAvatarOwner(friend)
             if (key.isBlank()) continue
-            val current = friendAvatars[key]
-            // Repair automatically-assigned system icons saved by older builds.
-            if (current == null || builtinConversationIcons.firstOrNull { it.id == current }?.category == "system") {
-                friendAvatars[key] = pool[rnd.nextInt(pool.size)]
+            val picked = friendAvatars[key]
+            if (picked != null && picked in pool) {
+                friendAvatars.remove(key)
+                if (friendFallbackAvatars[key] == null) friendFallbackAvatars[key] = picked
+                pickedChanged = true
+                changed = true
+                continue
+            }
+            // 老版本自动分配到的系统图标：当成没分配过，重新给一张。
+            if (picked != null && builtinConversationIcons.firstOrNull { it.id == picked }?.category == "system") {
+                friendAvatars.remove(key)
+                pickedChanged = true
+            }
+            if (friendFallbackAvatars[key] == null) {
+                friendFallbackAvatars[key] = pool[rnd.nextInt(pool.size)]
                 changed = true
             }
         }
-        if (changed) runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
+        if (changed) runCatching { prefs.edit().putString("friendFallbackAvatars", JSONObject(friendFallbackAvatars).toString()).apply() }
+        if (pickedChanged) runCatching { prefs.edit().putString("friendAvatars", JSONObject(friendAvatars).toString()).apply() }
     }
     fun savePickedAvatar(key: String, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "avatars").apply { mkdirs() }

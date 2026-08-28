@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -109,7 +111,30 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private enum class FishingFilter(val label: String) { All("全部"), Available("可捕获"), Big("鱼王"), Spear("刺鱼"), Caught("已捕获"), Missing("未捕获") }
+/**
+ * 捕鱼筛选。
+ *
+ * 原来是个单选枚举（全部/可捕获/鱼王/刺鱼/已捕获/未捕获），六个值混了三个维度，
+ * 于是最常想问的那句话反而问不出来——"我还没钓到的鱼王，现在有哪条开着窗口"。
+ * 现在拆成互不相干的四条，可以叠加。
+ */
+private data class FishFilter(
+    /** 只看当前窗口开着的。 */
+    val available: Boolean = false,
+    /** "" 全部 / "big" 鱼王 / "spear" 刺鱼。 */
+    val kind: String = "",
+    /** "" 全部 / "caught" 已捕获 / "missing" 未捕获。 */
+    val collected: String = "",
+    /** 资料片版本；null = 全部。 */
+    val version: Int? = null,
+) {
+    val isEmpty: Boolean get() = !available && kind.isEmpty() && collected.isEmpty() && version == null
+
+    companion object {
+        val KINDS = listOf("" to "全部", "big" to "鱼王", "spear" to "刺鱼")
+        val COLLECTED = listOf("" to "全部", "missing" to "未捕获", "caught" to "已捕获")
+    }
+}
 
 private data class ExpansionTab(val version: Int?, val label: String)
 
@@ -129,8 +154,8 @@ fun FishingScreen(state: PhoneState) {
     var catalog by remember { mutableStateOf<FishingCatalog?>(null) }
     var selected by remember { mutableStateOf<FishingFish?>(null) }
     var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf(FishingFilter.All) }
-    var versionFilter by remember { mutableStateOf<Int?>(null) }
+    var filter by remember { mutableStateOf(FishFilter()) }
+    var filterPanel by remember { mutableStateOf(false) }
     var alarmsOnly by remember { mutableStateOf(false) }
     var alarmVersion by remember { mutableStateOf(0) }
     var mapSpot by remember { mutableStateOf<FishingSpot?>(null) }
@@ -194,7 +219,7 @@ fun FishingScreen(state: PhoneState) {
                 lastScrollPos = pos
             }
     }
-    LaunchedEffect(versionFilter, filter, alarmsOnly) { listState.scrollToItem(0) }
+    LaunchedEffect(filter, alarmsOnly) { listState.scrollToItem(0) }
 
     LaunchedEffect(Unit) {
         catalog = FishingCatalogRepository.load(context).also { FishingAlarmStore.refresh(context, it) }
@@ -236,38 +261,46 @@ fun FishingScreen(state: PhoneState) {
                 } else {
                     val alarmIds = remember(alarmVersion, alarmsOnly) { FishingAlarmStore.enabledIds(context) }
                     val caught = remember(state.fishingLog, data) { data.fish.count { state.isFishCaught(it.logId, it.method) } }
-                    val baseFiltered = remember(data, query, versionFilter, filter, alarmsOnly, alarmVersion, state.fishingLog) {
+                    val baseFiltered = remember(data, query, filter, alarmsOnly, alarmVersion, state.fishingLog) {
                         val needle = query.trim()
                         data.fish.asSequence()
                             .filter { !alarmsOnly || it.id in alarmIds }
-                            .filter { versionFilter == null || it.version.toInt() == versionFilter }
+                            .filter { filter.version == null || it.version.toInt() == filter.version }
                             .filter { needle.isBlank() || it.name.contains(needle, true) || it.spots.any { spot -> spot.name.contains(needle, true) || spot.region.contains(needle, true) || spot.zone.contains(needle, true) } }
                             .filter {
-                                when (filter) {
-                                    FishingFilter.All -> true
-                                    FishingFilter.Available -> true
-                                    FishingFilter.Big -> it.isBigFish
-                                    FishingFilter.Spear -> it.method == "spear"
-                                    FishingFilter.Caught -> state.isFishCaught(it.logId, it.method)
-                                    FishingFilter.Missing -> !state.isFishCaught(it.logId, it.method)
+                                when (filter.kind) {
+                                    "big" -> it.isBigFish
+                                    "spear" -> it.method == "spear"
+                                    else -> true
+                                }
+                            }
+                            .filter {
+                                when (filter.collected) {
+                                    "caught" -> state.isFishCaught(it.logId, it.method)
+                                    "missing" -> !state.isFishCaught(it.logId, it.method)
+                                    else -> true
                                 }
                             }.toList()
                     }
                     val filtered = remember(baseFiltered, availabilityEnd, filter) {
-                        val list = baseFiltered.filter { f -> filter != FishingFilter.Available || availabilityEnd[f.id] != null }.toMutableList()
+                        val list = baseFiltered.filter { f -> !filter.available || availabilityEnd[f.id] != null }.toMutableList()
                         list.sortWith(compareBy({ availabilityEnd[it.id] == null }, { availabilityEnd[it.id] ?: Long.MAX_VALUE }, { it.name }))
                         list
                     }
                     Box(Modifier.fillMaxSize()) {
-                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             item("fishing-header") {
-                                FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null, showCounts = true)
+                                FishingListHeader(query, { query = it }, filter, { filter = it }, { filterPanel = true }, caught, data.fish.size, state.fishingLog != null, showCounts = true)
                             }
                             if (filtered.isEmpty()) item {
                                 // 空态给图标 + 一句下一步，不是干巴巴一行字。
                                 Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                                     when {
-                                        filter == FishingFilter.Available && !availabilityReady ->
+                                        filter.available && !availabilityReady ->
                                             PhoneEmpty("正在计算可捕获时间", "窗口要按艾欧泽亚时和天气逐条推算，稍等一下", R.drawable.ic_timer)
                                         alarmsOnly ->
                                             PhoneEmpty("还没有设置捕鱼闹钟", "在鱼的详情页点闹钟，窗口开始前会提醒你", R.drawable.ic_alarm_bell)
@@ -294,8 +327,40 @@ fun FishingScreen(state: PhoneState) {
                             enter = fadeIn(tween(160)) + expandVertically(tween(160)),
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(120)),
                         ) {
-                            Column(Modifier.fillMaxWidth().background(PhoneBackground)) {
-                                FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null, showCounts = false)
+                            Column(Modifier.fillMaxWidth().background(PhoneBackground).padding(horizontal = 14.dp, vertical = 4.dp)) {
+                                FishingListHeader(query, { query = it }, filter, { filter = it }, { filterPanel = true }, caught, data.fish.size, state.fishingLog != null, showCounts = false)
+                            }
+                        }
+                        if (filterPanel) {
+                            // 面板里改的是草稿，点"看结果"才写回——边选边过滤会让列表
+                            // 在脚下一直跳。
+                            var draft by remember { mutableStateOf(filter) }
+                            PhoneFilterPanel(
+                                onClose = { filterPanel = false },
+                                onReset = { draft = FishFilter() },
+                                onApply = { filter = draft; filterPanel = false },
+                                applyLabel = "看结果",
+                            ) {
+                                PhoneChipGroup(
+                                    "窗口",
+                                    listOf("" to "全部", "now" to "现在可捕获"),
+                                    selected = setOf(if (draft.available) "now" else ""),
+                                ) { draft = draft.copy(available = it == "now") }
+                                PhoneChipGroup(
+                                    "种类",
+                                    FishFilter.KINDS,
+                                    selected = setOf(draft.kind),
+                                ) { draft = draft.copy(kind = it) }
+                                PhoneChipGroup(
+                                    "钓鱼笔记",
+                                    FishFilter.COLLECTED,
+                                    selected = setOf(draft.collected),
+                                ) { draft = draft.copy(collected = it) }
+                                PhoneChipGroup(
+                                    "资料片",
+                                    expansionTabs.map { (it.version?.toString() ?: "") to it.label },
+                                    selected = setOf(draft.version?.toString() ?: ""),
+                                ) { id -> draft = draft.copy(version = id.toIntOrNull()) }
                             }
                         }
                     }
@@ -308,27 +373,28 @@ fun FishingScreen(state: PhoneState) {
 /**
  * 列表页头。
  *
- * 原来是三行堆叠（搜索 / 7 个版本 / 6 个筛选），一屏还没出鱼就吃掉 130dp；
- * 6 个筛选还用 weight(1f) 平分，"可捕获""未捕获"挤成 11sp 勉强能认。
+ * 历次形态：三行堆叠（搜索 / 7 个版本平铺 / 6 个筛选平分）→ 搜索 + 一行横滑
+ * chip + 版本下拉 → 现在的搜索 + 筛选条。
  *
- * 现在：搜索一行，筛选一行横滑（不再平分，按文字宽度），版本收进右边的下拉。
- * 进度条把"已捕获 / 总数"变成看得见的一条，比一行小字直观。
+ * chip 横滑那一版的问题是：六个 chip 一行放不下，滑动才能看到后面的，
+ * 而且六个值混了三个维度（窗口/种类/笔记），只能选一个。
+ * 现在条件收进面板（和石之家的招募筛选同一套件），页头只留"当前筛的是什么"，
+ * 每个条件后面带 × 可以直接摘掉。
  */
 @Composable
 private fun FishingListHeader(
     query: String,
     onQuery: (String) -> Unit,
-    versionFilter: Int?,
-    onVersionFilter: (Int?) -> Unit,
-    filter: FishingFilter,
-    onFilter: (FishingFilter) -> Unit,
+    filter: FishFilter,
+    onFilter: (FishFilter) -> Unit,
+    onOpenFilter: () -> Unit,
     caught: Int,
     total: Int,
     synced: Boolean,
     showCounts: Boolean = true,
 ) {
-    var versionMenu by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
+    // 横向边距由外层列表统一给（LazyColumn / 悬浮头各自 padding），这里不再自己加。
+    Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(10.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp)) {
             ImageGlyph(R.drawable.ic_search, PhoneMuted, Modifier.size(17.dp))
             BasicTextField(query, onQuery, singleLine = true, textStyle = TextStyle(color = PhoneText, fontSize = 14.sp), modifier = Modifier.weight(1f).padding(horizontal = 9.dp), decorationBox = { field -> Box(contentAlignment = Alignment.CenterStart) { if (query.isBlank()) Text("搜索鱼类、钓场或地区", color = PhoneMuted, fontSize = 13.sp); field() } })
@@ -338,72 +404,21 @@ private fun FishingListHeader(
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            // 用 LazyRow 而不是 horizontalScroll：选中项要能自动滚进视野。
-            // 六个筛选横滑放不下，从"图鉴"切到"未捕获"之后选中态常常藏在屏幕外，
-            // 看不出当前在哪一档。
-            val chipState = rememberLazyListState()
-            LaunchedEffect(filter) {
-                val index = FishingFilter.entries.indexOf(filter)
-                if (index >= 0) chipState.animateScrollToItem(index)
-            }
-            LazyRow(
-                state = chipState,
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(FishingFilter.entries, key = { it.name }) { item ->
-                    val on = filter == item
-                    PhonePressable(
-                        onClick = { onFilter(item) },
-                        shape = RoundedCornerShape(13.dp),
-                    ) {
-                        Text(
-                            item.label,
-                            color = if (on) Color.White else PhoneMuted,
-                            fontSize = 12.sp,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            modifier = Modifier.clip(RoundedCornerShape(13.dp))
-                                .background(if (on) PhoneAccent else PhoneSurface)
-                                .padding(horizontal = 12.dp, vertical = 7.dp),
-                        )
-                    }
+        PhoneFilterBar(
+            active = buildList {
+                if (filter.available) add("现在可捕获" to { onFilter(filter.copy(available = false)) })
+                FishFilter.KINDS.firstOrNull { it.first == filter.kind && it.first.isNotEmpty() }
+                    ?.let { (_, label) -> add(label to { onFilter(filter.copy(kind = "")) }) }
+                FishFilter.COLLECTED.firstOrNull { it.first == filter.collected && it.first.isNotEmpty() }
+                    ?.let { (_, label) -> add(label to { onFilter(filter.copy(collected = "")) }) }
+                filter.version?.let { v ->
+                    val label = expansionTabs.firstOrNull { it.version == v }?.label ?: "$v.0"
+                    add(label to { onFilter(filter.copy(version = null)) })
                 }
-            }
-            // 版本收进下拉：7 个资料片平铺要占满一整行，实际很少切。
-            Box {
-                val label = expansionTabs.firstOrNull { it.version == versionFilter }?.label ?: "全部"
-                Row(
-                    Modifier.padding(start = 8.dp).clip(RoundedCornerShape(13.dp))
-                        .background(if (versionFilter != null) PhoneAccent else PhoneSurface)
-                        .clickable { versionMenu = true }
-                        .padding(start = 11.dp, end = 7.dp, top = 7.dp, bottom = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(label, color = if (versionFilter != null) Color.White else PhoneMuted, fontSize = 12.sp, maxLines = 1)
-                    ImageGlyph(
-                        R.drawable.ic_chevron_down,
-                        if (versionFilter != null) Color.White else PhoneMuted,
-                        Modifier.size(14.dp),
-                    )
-                }
-                androidx.compose.material3.DropdownMenu(expanded = versionMenu, onDismissRequest = { versionMenu = false }) {
-                    expansionTabs.forEach { tab ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = {
-                                Text(
-                                    tab.label,
-                                    color = if (versionFilter == tab.version) PhoneAccent else PhoneText,
-                                    fontWeight = if (versionFilter == tab.version) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            onClick = { onVersionFilter(tab.version); versionMenu = false },
-                        )
-                    }
-                }
-            }
-        }
+            },
+            onOpen = onOpenFilter,
+            modifier = Modifier.padding(top = 9.dp),
+        )
         if (showCounts) {
             Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
@@ -450,14 +465,20 @@ private fun FishingRow(
     onClick: () -> Unit,
 ) {
     val available = remainingMillis != null
+    // 一行一张卡，和聊天/联系人列表同一套形态（14dp 圆角 + surface 底 + 左色条）。
+    // 原来是贴满宽度的扁平行、靠 1dp 间隔分隔，跟别的列表不是一个东西。
     Row(
-        Modifier.fillMaxWidth().background(PhoneSurface).clickable(onClick = onClick),
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(PhoneSurface)
+            .clickable(onClick = onClick)
+            .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 可捕获的左侧竖条。不可捕获时留同宽的空位，图标才不会左右跳。
-        Box(Modifier.width(3.dp).height(62.dp).background(if (available) PhoneGreen else Color.Transparent))
+        Box(Modifier.width(3.dp).fillMaxHeight().background(if (available) PhoneGreen else Color.Transparent))
         Row(
-            Modifier.weight(1f).padding(start = 13.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+            Modifier.weight(1f).padding(start = 11.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
