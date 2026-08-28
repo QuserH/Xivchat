@@ -22,6 +22,7 @@ object ShizhijiaSession {
     private const val KEY_BAR_BOTTOM = "bottom_bar_bottom"
     private const val KEY_SEARCH_HISTORY = "search_history"
     private const val KEY_MUTED_PARTS = "muted_post_parts"
+    private const val KEY_RECRUIT_CONTACT = "recruit_contact_info"
 
     /**
      * 不想在推荐里看到的版块 id。
@@ -154,6 +155,22 @@ object ShizhijiaSession {
     fun setSignDate(context: Context, date: String) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_SIGN, date).apply()
+    }
+
+    /**
+     * 上次响应招募时填的联系方式，下次直接带出来。
+     *
+     * 响应招募每次都要填自己的联系方式（QQ 群、微信…），而这东西一个人基本不变。
+     * 每条招募都重新敲一遍没有意义。
+     */
+    fun recruitContact(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_RECRUIT_CONTACT, "").orEmpty()
+    }
+
+    fun setRecruitContact(context: Context, value: String) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_RECRUIT_CONTACT, value.trim()).apply()
     }
 
     /**

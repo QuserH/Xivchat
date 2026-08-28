@@ -117,6 +117,8 @@ data class ShizhijiaPostDetail(
     val contentHtml: String,
     val partName: String,
     val isLike: Boolean,
+    /** 我收藏过没有。官网的详情里是 is_star，和 is_like 并列。 */
+    val isStar: Boolean,
 ) {
     val hasCover: Boolean get() = coverPics.isNotEmpty()
     companion object {
@@ -142,6 +144,7 @@ data class ShizhijiaPostDetail(
                 contentHtml = info?.optString("content").orEmpty(),
                 partName = part?.optString("name").orEmpty().ifBlank { o.optString("part_name") },
                 isLike = o.optInt("is_like") == 1,
+                isStar = o.optInt("is_star") == 1,
             )
         }
     }
@@ -162,6 +165,8 @@ data class ShizhijiaComment(
     val likeCount: Long,
     val avatar: String,
     val isPostsAuthor: Boolean,
+    /** 我给这条点过赞没有。评论点赞走 posts/like 的 type=2。 */
+    val isLike: Boolean,
 ) {
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaComment = ShizhijiaComment(
@@ -178,6 +183,7 @@ data class ShizhijiaComment(
             likeCount = o.optLong("like_count"),
             avatar = cleanAvatar(o.optString("avatar")),
             isPostsAuthor = o.optInt("is_posts_author") == 1,
+            isLike = o.optInt("is_like") == 1,
         )
 
         fun fromArray(arr: JSONArray): List<ShizhijiaComment> =
@@ -564,6 +570,10 @@ data class ShizhijiaGlamourDetail(
     val glassesIconUrl: String,
     val ornamentName: String,
     val ornamentIconUrl: String,
+    /** 我点过赞没有。 */
+    val isLike: Boolean,
+    /** 我收藏过没有。取消收藏时要用它决定是收还是取消。 */
+    val isFavorite: Boolean,
 ) {
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaGlamourDetail {
@@ -608,6 +618,8 @@ data class ShizhijiaGlamourDetail(
                 glassesIconUrl = ShizhijiaGlamourEquip.iconUrlFor(glassesIcon),
                 ornamentName = cleanField(ort?.optString("ornament_name")),
                 ornamentIconUrl = ShizhijiaGlamourEquip.iconUrlFor(ornamentIcon),
+                isLike = o.optInt("is_like") == 1,
+                isFavorite = o.optInt("is_favorite") == 1,
             )
         }
     }
@@ -800,6 +812,13 @@ data class ShizhijiaRecruitDetail(
     val dueDay: Int,
     val ipLocation: String,
     val updatedAt: String,
+    /** 我已经响应过这条招募了。响应过之后能看到发布者的真实联系方式。 */
+    val isResponse: Boolean,
+    /**
+     * 发布者联系方式的**打码版**。响应之前只能看到这个，
+     * 响应成功后接口会返回未打码的（见 ShizhijiaApi.respondRecruit）。
+     */
+    val contactInfoMask: String,
 ) {
     companion object {
         fun fromJson(o: JSONObject, kind: ShizhijiaRecruitKind): ShizhijiaRecruitDetail {
@@ -829,6 +848,8 @@ data class ShizhijiaRecruitDetail(
                 dueDay = o.optInt("due_day", -1),
                 ipLocation = cleanField(o.optString("ip_location")),
                 updatedAt = cleanField(o.optString("updated_at")),
+                isResponse = o.optInt("is_response") == 1,
+                contactInfoMask = cleanField(o.optString("contact_info_mask")),
             )
         }
     }

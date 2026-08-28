@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -64,6 +65,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -2966,6 +2968,12 @@ private fun ShizhijiaRecruitDetailScreen(
     val context = LocalContext.current
     var res by remember(kind, id) { mutableStateOf<ShizhijiaApi.Res<ShizhijiaRecruitDetail?>?>(null) }
     var jobs by remember { mutableStateOf(mapOf<String, ShizhijiaJob>()) }
+    // 响应招募：填自己的联系方式 → 换回发布者的联系方式。
+    var respondOpen by remember(kind, id) { mutableStateOf(false) }
+    var responding by remember(kind, id) { mutableStateOf(false) }
+    /** 响应成功后接口回的发布者联系方式（未打码）。空串表示还没拿到。 */
+    var revealedContact by remember(kind, id) { mutableStateOf("") }
+    val respondScope = rememberCoroutineScope()
     LaunchedEffect(kind, id) {
         jobs = ShizhijiaApi.getJobConfig(context)
         res = ShizhijiaApi.getRecruitDetail(context, kind, id)
@@ -3030,16 +3038,137 @@ private fun ShizhijiaRecruitDetailScreen(
                         }
                     }
                 }
-                item(key = "note") {
-                    Text(
-                        "报名要在石之家网页或官方 App 里做",
-                        color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                    )
+                item(key = "respond") {
+                    // 响应招募。原来这里只有一句"报名要在石之家网页或官方 App 里做"。
+                    //
+                    // 响应的实质是**交换联系方式**：你填自己的联系方式发过去，
+                    // 接口回你发布者的真实联系方式（响应之前只能看到打码的）。
+                    // 所以这一块要同时管三件事：填、发、显示拿到的联系方式。
+                    val already = d.isResponse
+                    val shown = revealedContact.ifBlank { if (already) d.contactInfoMask else "" }
+                    SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(
+                                if (kind == ShizhijiaRecruitKind.Rp) "情景剧招募" else "发布者联系方式",
+                                color = SzjText, style = SzjLabelStyle,
+                            )
+                            Spacer(Modifier.height(9.dp))
+                            when {
+                                kind == ShizhijiaRecruitKind.Rp -> Text(
+                                    "情景剧招募没有「响应」这个动作，去评论区联系发布者",
+                                    color = SzjMuted, fontSize = 12.sp, lineHeight = 18.sp,
+                                )
+                                shown.isNotBlank() -> {
+                                    Text(shown, color = SzjText, fontSize = 14.sp, lineHeight = 21.sp)
+                                    if (revealedContact.isBlank() && already) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            "你已经响应过这条招募（这里是打码的，重新进详情能看到完整的）",
+                                            color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
+                                        )
+                                    }
+                                }
+                                else -> {
+                                    Text(
+                                        "响应之后才能看到对方的联系方式，同时把你填的联系方式发给他",
+                                        color = SzjMuted, fontSize = 12.sp, lineHeight = 18.sp,
+                                    )
+                                    if (d.contactInfoMask.isNotBlank()) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(d.contactInfoMask, color = SzjMuted, fontSize = 14.sp)
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                    SzjPrimaryButton(
+                                        if (responding) "发送中…" else "响应招募",
+                                        onClick = { if (!responding) respondOpen = true },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+    if (respondOpen) {
+        SzjRecruitRespondDialog(
+            initial = ShizhijiaSession.recruitContact(context),
+            sending = responding,
+            onDismiss = { respondOpen = false },
+            onSend = { contact ->
+                responding = true
+                respondScope.launch {
+                    when (val r = ShizhijiaApi.respondRecruit(context, kind, id, contact)) {
+                        is ShizhijiaApi.Res.Ok -> {
+                            // 记住联系方式，下次不用重新敲。
+                            ShizhijiaSession.setRecruitContact(context, contact)
+                            revealedContact = r.value
+                            respondOpen = false
+                            android.widget.Toast.makeText(
+                                context,
+                                if (r.value.isBlank()) "响应成功" else "响应成功，已拿到对方联系方式",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        else -> szjToastWriteFail(context, r, nav)
+                    }
+                    responding = false
+                }
+            },
+        )
+    }
+}
+
+/**
+ * 响应招募的对话框：填自己的联系方式。
+ *
+ * [initial] 是上次填过的，直接带出来（这东西一个人基本不变）。
+ */
+@Composable
+private fun SzjRecruitRespondDialog(
+    initial: String,
+    sending: Boolean,
+    onDismiss: () -> Unit,
+    onSend: (String) -> Unit,
+) {
+    var contact by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text("响应招募", color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    "填你自己的联系方式发给发布者，发完就能看到他的",
+                    color = SzjMuted, fontSize = 12.sp, lineHeight = 18.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                SzjFormField(
+                    label = "我的联系方式",
+                    value = contact,
+                    placeholder = "QQ / 群号 / 微信…",
+                    lines = 2,
+                    required = true,
+                    maxLen = 120,
+                    onChange = { contact = it },
+                )
+            }
+        },
+        confirmButton = {
+            SzjPrimaryButton(
+                if (sending) "发送中…" else "发送",
+                onClick = { if (!sending && contact.isNotBlank()) onSend(contact.trim()) },
+            )
+        },
+        dismissButton = {
+            Text(
+                "取消",
+                color = SzjMuted, fontSize = 14.sp,
+                modifier = Modifier.clip(SzjInnerShape).clickable(enabled = !sending) { onDismiss() }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        },
+        containerColor = SzjCardRaised,
+    )
 }
 
 /** 副本组队的发布字段。副本表按类型二级联动，位置槽可以点着选职业。 */
@@ -3571,11 +3700,33 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
     var commentPage by remember { mutableStateOf(1) }
     var commentPageTime by remember { mutableStateOf("") }
     var commentLoading by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+    // 正文和评论各自一条滚动：原来是一整条 LazyColumn（正文在上、评论接在下面），
+    // 长帖要一直滑到底才见得到第一条评论。现在分成两页横向切换，
+    // 两页各记自己的位置——看完评论切回正文，还在原来那一行。
+    val articleState = rememberLazyListState()
+    val commentState = rememberLazyListState()
+
+    // ---- 点赞 / 收藏 / 评论 ----
+    // 三个状态在本地跟着走，不整屏重拉：点赞收藏是切换接口，返回值告诉你
+    // 现在是开还是关，按返回值定状态（不能"点了就当赞了"——可能是取消）。
+    var liked by remember(postId) { mutableStateOf(false) }
+    var starred by remember(postId) { mutableStateOf(false) }
+    var likeNum by remember(postId) { mutableStateOf(0L) }
+    var starNum by remember(postId) { mutableStateOf(0L) }
+    var busy by remember(postId) { mutableStateOf(false) }
+    var composerOpen by remember(postId) { mutableStateOf(false) }
+    val actionScope = rememberCoroutineScope()
 
     LaunchedEffect(postId) {
         loading = true
-        detail = ShizhijiaApi.getPostDetail(context, postId)
+        val d = ShizhijiaApi.getPostDetail(context, postId)
+        detail = d
+        if (d != null) {
+            liked = d.isLike
+            starred = d.isStar
+            likeNum = d.likeCount
+            starNum = d.starCount
+        }
         loading = false
     }
     // (Re)load comments whenever the ordering changes. The old list stays
@@ -3586,9 +3737,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         comments = result.rows; commentPageTime = result.pageTime; commentPage = 1
         commentLoading = false
     }
-    // Infinite scroll for comments.
+    // Infinite scroll for comments —— 挂在评论那一页的滚动上。
     val nearEnd by remember { derivedStateOf {
-        val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        val last = commentState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
         last >= comments.size - 2
     } }
     LaunchedEffect(nearEnd, commentOrder, postId, onlyAuthor) {
@@ -3631,7 +3782,39 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
             SzjEmpty("这篇帖子没能打开", "可能已被删除，或者网络断了一下。返回再试一次")
             return@ScreenFrame
         }
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        // 正文 / 评论 分成两页，横滑切换。
+        // 内容长的帖子里评论区实际上是够不着的：它排在正文后面，要一路滑到底。
+        // Tab 用主页那套棱条（SzjSubTab），不另起一套样式。
+        val pager = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 2 })
+        val pagerScope = rememberCoroutineScope()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            SzjSubTab("正文", pager.currentPage == 0) { pagerScope.launch { pager.animateScrollToPage(0) } }
+            // 评论数用详情里的 commentCount（不是已加载条数）：分页只拉回来一部分，
+            // 写已加载的数会随着滑动往上跳。
+            val commentTab = if (d.commentCount > 0) "评论 ${d.commentCount}" else "评论"
+            SzjSubTab(commentTab, pager.currentPage == 1) { pagerScope.launch { pager.animateScrollToPage(1) } }
+        }
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        ) { page ->
+            if (page == 1) {
+                SzjPostComments(
+                    state = commentState,
+                    comments = comments,
+                    commentLoading = commentLoading,
+                    onlyAuthor = onlyAuthor,
+                    onToggleAuthor = { onlyAuthor = !onlyAuthor },
+                    commentOrder = commentOrder,
+                    onOrder = { commentOrder = it },
+                    nav = nav,
+                )
+                return@HorizontalPager
+            }
+        LazyColumn(state = articleState, modifier = Modifier.fillMaxSize()) {
             item {
                 // 标题和作者收进一张石板：正文是长内容，先给它一个明确的"头"。
                 SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
@@ -3676,72 +3859,339 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                     ShizhijiaRichContent(d.contentHtml)
                 }
             }
-            item {
-                // 评论区头部。
-                // 原来这一整块（含下面的评论）铺一层灰底 CommentAreaBg，评论卡片再浮在
-                // 灰底上——灰套白两层容器，很重。现在灰底去掉，正文和评论之间靠
-                // 一条发丝线 + "全部评论"标题区隔就够了。
+            // 正文末尾给一句指路：横滑这件事本身看不出来，Tab 在最上面，
+            // 长帖滑到底的时候它已经不在视野里了。
+            item(key = "to-comments") {
                 Column(Modifier.fillMaxWidth()) {
-                  Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
-                  Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("全部评论", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        // 只看楼主: client-side filter on the loaded comment list.
-                        SzjPressable(onClick = { onlyAuthor = !onlyAuthor }, shape = SzjChipShape) {
-                            Text("只看楼主", color = if (onlyAuthor) SzjOnAccentSoft else SzjMuted, style = SzjMetaStyle,
-                                modifier = Modifier.clip(SzjChipShape)
-                                    .background(if (onlyAuthor) SzjAccentSoft else Color.Transparent)
-                                    .border(1.dp, if (onlyAuthor) Color.Transparent else SzjLine, SzjChipShape)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                    SzjPressable(
+                        onClick = { pagerScope.launch { pager.animateScrollToPage(1) } },
+                        shape = SzjInnerShape,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCardRaised)
+                                .padding(horizontal = 14.dp, vertical = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                if (d.commentCount > 0) "看 ${d.commentCount} 条评论" else "看评论",
+                                color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text("向左滑 →", color = SzjMuted, style = SzjMetaStyle)
                         }
                     }
-                    Spacer(Modifier.height(9.dp))
-                    // 排序独占一行，三档并排——原来挤在标题右边，字小到点不准。
-                    // 底色改成描边：灰底去掉之后，实色块落在 SzjBg 上反而突兀。
-                    Row(Modifier.clip(SzjChipShape).border(1.dp, SzjLine, SzjChipShape)) {
-                        SzjSmallOption("默认", commentOrder == "earliest") { commentOrder = "earliest" }
-                        SzjSmallOption("热门", commentOrder == "hottest") { commentOrder = "hottest" }
-                        SzjSmallOption("最新", commentOrder == "latest") { commentOrder = "latest" }
-                    }
-                  }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
-            if (commentLoading && comments.isEmpty()) {
-                item(key = "comments-loading") {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
-                        repeat(2) {
-                            SzjCardSurface(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    SzjShimmerBox(Modifier.size(30.dp), RoundedCornerShape(15.dp))
-                                    Spacer(Modifier.width(9.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        SzjShimmerBox(Modifier.fillMaxWidth(0.4f).height(12.dp), RoundedCornerShape(4.dp))
-                                        Spacer(Modifier.height(7.dp))
-                                        SzjShimmerBox(Modifier.fillMaxWidth(0.9f).height(12.dp), RoundedCornerShape(4.dp))
-                                    }
+        }
+        }
+        // 底部动作条：赞 / 收藏 / 评论。三个都是真请求。
+        SzjPostActionBar(
+            liked = liked, likeNum = likeNum,
+            starred = starred, starNum = starNum,
+            commentNum = d.commentCount,
+            busy = busy,
+            onLike = {
+                if (!busy) actionScope.launch {
+                    busy = true
+                    when (val r = ShizhijiaApi.likePost(context, postId)) {
+                        is ShizhijiaApi.Res.Ok -> {
+                            // 按返回值定状态：这是个切换接口，返回 Off 说明刚取消。
+                            val on = r.value == ShizhijiaApi.Toggle.On
+                            liked = on
+                            likeNum = (likeNum + if (on) 1 else -1).coerceAtLeast(0)
+                        }
+                        else -> szjToastWriteFail(context, r, nav)
+                    }
+                    busy = false
+                }
+            },
+            onStar = {
+                if (!busy) actionScope.launch {
+                    busy = true
+                    when (val r = ShizhijiaApi.starPost(context, postId)) {
+                        is ShizhijiaApi.Res.Ok -> {
+                            val on = r.value == ShizhijiaApi.Toggle.On
+                            starred = on
+                            starNum = (starNum + if (on) 1 else -1).coerceAtLeast(0)
+                            android.widget.Toast.makeText(
+                                context,
+                                if (on) "已收藏" else "已取消收藏",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        else -> szjToastWriteFail(context, r, nav)
+                    }
+                    busy = false
+                }
+            },
+            onComment = { composerOpen = true },
+        )
+    }
+    if (composerOpen) {
+        SzjCommentComposer(
+            title = "回帖",
+            onDismiss = { composerOpen = false },
+            onSend = { text, done ->
+                actionScope.launch {
+                    when (val r = ShizhijiaApi.commentPost(context, postId, text)) {
+                        is ShizhijiaApi.Res.Ok -> {
+                            android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
+                            composerOpen = false
+                            // 重新拉第一页评论，让自己那条出现。
+                            commentLoading = true
+                            val result = ShizhijiaApi.getPostComments(context, postId, commentOrder, onlyLandlord = onlyAuthor)
+                            comments = result.rows
+                            commentPageTime = result.pageTime
+                            commentPage = 1
+                            commentLoading = false
+                        }
+                        else -> szjToastWriteFail(context, r, nav)
+                    }
+                    done()
+                }
+            },
+        )
+    }
+}
+
+/**
+ * 写操作失败时的统一提示。
+ *
+ * 未登录/没绑角色要说清是哪一种，并且能直接去登录——原来所有失败都压成
+ * 一句"失败了"，已登录的人也会看到"请登录"。
+ */
+private fun szjToastWriteFail(
+    context: android.content.Context,
+    res: ShizhijiaApi.Res<*>,
+    nav: (SzjRoute) -> Unit,
+) {
+    val msg = when (res) {
+        is ShizhijiaApi.Res.NeedLogin -> "要先登录石之家"
+        is ShizhijiaApi.Res.NeedCharacter -> "登录了，但还没绑定游戏角色"
+        is ShizhijiaApi.Res.Failed -> res.msg.ifBlank { "没成功，稍后再试" }
+        else -> "没成功，稍后再试"
+    }
+    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    if (res is ShizhijiaApi.Res.NeedLogin) nav(SzjRoute.Login)
+}
+
+/**
+ * 帖子详情底部的动作条。
+ *
+ * 赞和收藏是**切换**：图标在 filled / outline 之间换，不是只换个颜色——
+ * 只靠颜色深浅表达"开/关"在浅色主题下几乎看不出来。
+ */
+@Composable
+private fun SzjPostActionBar(
+    liked: Boolean,
+    likeNum: Long,
+    starred: Boolean,
+    starNum: Long,
+    commentNum: Long,
+    busy: Boolean,
+    onLike: () -> Unit,
+    onStar: () -> Unit,
+    onComment: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+        Row(
+            Modifier.fillMaxWidth().background(SzjCardRaised).padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SzjActionCell(
+                icon = if (liked) R.drawable.ic_heart else R.drawable.ic_heart_outline,
+                label = if (likeNum > 0) formatCount(likeNum) else "赞",
+                on = liked,
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+                onClick = onLike,
+            )
+            SzjActionCell(
+                icon = if (starred) R.drawable.ic_star_filled else R.drawable.ic_star_outline,
+                label = if (starNum > 0) formatCount(starNum) else "收藏",
+                on = starred,
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+                onClick = onStar,
+            )
+            SzjActionCell(
+                icon = R.drawable.ic_comment,
+                label = if (commentNum > 0) formatCount(commentNum) else "回帖",
+                on = false,
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+                onClick = onComment,
+            )
+        }
+    }
+}
+
+/**
+ * 发评论/回复的输入框。
+ *
+ * 用对话框而不是钉在底部的常驻输入条：这一屏底部已经有动作条了，
+ * 再加一条常驻输入框会把两页内容都往上挤，而发评论不是高频动作。
+ *
+ * @param onSend 发送回调。第二个参数是"我这边结束了"的通知，
+ *   请求成功与否都要调，否则按钮一直停在"发送中"。
+ */
+@Composable
+private fun SzjCommentComposer(
+    title: String,
+    onDismiss: () -> Unit,
+    onSend: (String, () -> Unit) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text(title, color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            SzjFormField(
+                label = "内容",
+                value = text,
+                placeholder = "说点什么",
+                lines = 4,
+                maxLen = 500,
+                onChange = { text = it },
+            )
+        },
+        confirmButton = {
+            SzjPrimaryButton(
+                if (sending) "发送中…" else "发送",
+                onClick = {
+                    if (sending || text.isBlank()) return@SzjPrimaryButton
+                    sending = true
+                    onSend(text.trim()) { sending = false }
+                },
+            )
+        },
+        dismissButton = {
+            Text(
+                "取消",
+                color = SzjMuted, fontSize = 14.sp,
+                modifier = Modifier.clip(SzjInnerShape)
+                    .clickable(enabled = !sending) { onDismiss() }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        },
+        containerColor = SzjCardRaised,
+    )
+}
+
+@Composable
+private fun SzjActionCell(
+    icon: Int,
+    label: String,
+    on: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val tint = when {
+        !enabled -> SzjMuted.copy(alpha = .45f)
+        on -> SzjAccent
+        else -> SzjMuted
+    }
+    SzjPressable(onClick = onClick, shape = SzjInnerShape, modifier = modifier) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 11.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ImageGlyph(icon, tint, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = tint, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+        }
+    }
+}
+
+/**
+ * 帖子详情的评论页。
+ *
+ * 从正文那一页里拆出来的：原来评论接在正文后面共用一条 LazyColumn，
+ * 内容长的帖子要一路滑到底才见得到第一条评论。现在是横滑的第二页，
+ * 自己一条滚动、自己的分页加载。
+ */
+@Composable
+private fun SzjPostComments(
+    state: LazyListState,
+    comments: List<ShizhijiaComment>,
+    commentLoading: Boolean,
+    onlyAuthor: Boolean,
+    onToggleAuthor: () -> Unit,
+    commentOrder: String,
+    onOrder: (String) -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
+    LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
+        item(key = "comments-head") {
+            // 评论区头部。
+            // 原来这一整块（含下面的评论）铺一层灰底 CommentAreaBg，评论卡片再浮在
+            // 灰底上——灰套白两层容器，很重。现在灰底去掉，靠标题和发丝线区隔。
+            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("全部评论", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    // 只看楼主: client-side filter on the loaded comment list.
+                    SzjPressable(onClick = onToggleAuthor, shape = SzjChipShape) {
+                        Text("只看楼主", color = if (onlyAuthor) SzjOnAccentSoft else SzjMuted, style = SzjMetaStyle,
+                            modifier = Modifier.clip(SzjChipShape)
+                                .background(if (onlyAuthor) SzjAccentSoft else Color.Transparent)
+                                .border(1.dp, if (onlyAuthor) Color.Transparent else SzjLine, SzjChipShape)
+                                .padding(horizontal = 10.dp, vertical = 6.dp))
+                    }
+                }
+                Spacer(Modifier.height(9.dp))
+                // 排序独占一行，三档并排——原来挤在标题右边，字小到点不准。
+                // 底色改成描边：灰底去掉之后，实色块落在 SzjBg 上反而突兀。
+                Row(Modifier.clip(SzjChipShape).border(1.dp, SzjLine, SzjChipShape)) {
+                    SzjSmallOption("默认", commentOrder == "earliest") { onOrder("earliest") }
+                    SzjSmallOption("热门", commentOrder == "hottest") { onOrder("hottest") }
+                    SzjSmallOption("最新", commentOrder == "latest") { onOrder("latest") }
+                }
+            }
+        }
+        if (commentLoading && comments.isEmpty()) {
+            item(key = "comments-loading") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    repeat(2) {
+                        SzjCardSurface(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                SzjShimmerBox(Modifier.size(30.dp), RoundedCornerShape(15.dp))
+                                Spacer(Modifier.width(9.dp))
+                                Column(Modifier.weight(1f)) {
+                                    SzjShimmerBox(Modifier.fillMaxWidth(0.4f).height(12.dp), RoundedCornerShape(4.dp))
+                                    Spacer(Modifier.height(7.dp))
+                                    SzjShimmerBox(Modifier.fillMaxWidth(0.9f).height(12.dp), RoundedCornerShape(4.dp))
                                 }
                             }
                         }
                     }
                 }
-            } else if (comments.isEmpty()) {
-                item(key = "comments-empty") {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 34.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(if (onlyAuthor) "楼主还没在这里回帖" else "还没有人评论", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Spacer(Modifier.height(6.dp))
-                            Text(if (onlyAuthor) "关掉「只看楼主」看全部" else "在石之家网页版可以发第一条", color = SzjMuted, style = SzjMetaStyle)
-                        }
+            }
+        } else if (comments.isEmpty()) {
+            item(key = "comments-empty") {
+                // 行内空态（固定高度），不是 SzjEmpty——那个是 fillMaxSize，
+                // 放在 LazyColumn 的 item 里会把整页吃掉。
+                Box(Modifier.fillMaxWidth().padding(vertical = 34.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (onlyAuthor) "楼主还没在这里回帖" else "还没有人评论", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(6.dp))
+                        Text(if (onlyAuthor) "关掉「只看楼主」看全部" else "点底下的「回帖」发第一条", color = SzjMuted, style = SzjMetaStyle)
                     }
                 }
-            } else {
-                itemsIndexed(comments, key = { _, it -> it.id }) { index, c ->
-                    SzjRise(index) { SzjCommentRow(c, nav) }
-                }
-                item(key = "comments-footer") {
-                    if (commentLoading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                    }
+            }
+        } else {
+            itemsIndexed(comments, key = { _, it -> it.id }) { index, c ->
+                SzjRise(index) { SzjCommentRow(c, nav) }
+            }
+            item(key = "comments-footer") {
+                if (commentLoading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -3783,7 +4233,46 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(listOf(c.areaName, c.groupName).filter { it.isNotBlank() }.joinToString(" "), color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis); if (c.createdAt.isNotBlank()) { Text(" " + c.createdAt, color = SzjMuted, style = SzjMetaStyle, maxLines = 1) } }
             }
-            if (c.likeCount > 0) Text("${c.likeCount} 赞", color = SzjMuted, style = SzjMetaStyle)
+            // 点赞：评论走 posts/like 的 type=2（和帖子同一个端点）。
+            // 状态和计数在本地跟着切换接口的返回值走，不重拉整页评论。
+            var liked by remember(c.id) { mutableStateOf(c.isLike) }
+            var likeNum by remember(c.id) { mutableStateOf(c.likeCount) }
+            var busy by remember(c.id) { mutableStateOf(false) }
+            val likeScope = rememberCoroutineScope()
+            val ctx = LocalContext.current
+            SzjPressable(
+                shape = SzjChipShape,
+                onClick = {
+                    if (busy) return@SzjPressable
+                    busy = true
+                    likeScope.launch {
+                        when (val r = ShizhijiaApi.likePost(ctx, c.id, isComment = true)) {
+                            is ShizhijiaApi.Res.Ok -> {
+                                val on = r.value == ShizhijiaApi.Toggle.On
+                                liked = on
+                                likeNum = (likeNum + if (on) 1 else -1).coerceAtLeast(0)
+                            }
+                            else -> szjToastWriteFail(ctx, r, nav)
+                        }
+                        busy = false
+                    }
+                },
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ImageGlyph(
+                        if (liked) R.drawable.ic_heart else R.drawable.ic_heart_outline,
+                        if (liked) SzjAccent else SzjMuted,
+                        Modifier.size(13.dp),
+                    )
+                    if (likeNum > 0) {
+                        Spacer(Modifier.width(4.dp))
+                        Text(formatCount(likeNum), color = if (liked) SzjAccent else SzjMuted, style = SzjMetaStyle)
+                    }
+                }
+            }
         }
         if (c.contentHtml.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
@@ -5731,10 +6220,9 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                             "最近登录" to p.lastLoginTime,
                             "游戏时长" to p.playTime,
                             "房屋信息" to p.houseInfo,
-                            // washing_num 在幻化总览接口里和 投影次数/染色次数/套装
-                            // 并列，那边我已经译成"漂白"（把染色洗掉），是同一个字段。
-                            // 原来这里写"幻理模板使用"，是我编的，和字段无关。
-                            "漂白次数" to if (p.washingNum > 0) p.washingNum.toString() else "",
+                            // washing_num = 幻想药次数。"洗"是社区对幻想药的叫法
+                            // （洗性别/洗种族），不是漂白染色。
+                            "幻想药使用次数" to if (p.washingNum > 0) p.washingNum.toString() else "",
                             "水晶冲突段位" to p.crystalRank,
                             "钓鱼次数" to if (p.fishTimes > 0) p.fishTimes.toString() else "",
                             // kill_times / treasure_times 这两行删了。
@@ -5856,7 +6344,25 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
 private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
     val context = LocalContext.current
     var g by remember { mutableStateOf<ShizhijiaGlamourDetail?>(null) }
-    LaunchedEffect(glamourId) { g = ShizhijiaApi.getGlamourDetail(context, glamourId) }
+    // 赞/收藏跟着切换接口的返回值走，同帖子详情。
+    var liked by remember(glamourId) { mutableStateOf(false) }
+    var favorited by remember(glamourId) { mutableStateOf(false) }
+    var likeNum by remember(glamourId) { mutableStateOf(0L) }
+    var favNum by remember(glamourId) { mutableStateOf(0L) }
+    var busy by remember(glamourId) { mutableStateOf(false) }
+    // 收藏夹超过一个时要选一个：(id, 名字, 是否默认)。
+    var folderPick by remember(glamourId) { mutableStateOf<List<Triple<String, String, Boolean>>?>(null) }
+    val actionScope = rememberCoroutineScope()
+    LaunchedEffect(glamourId) {
+        val detail = ShizhijiaApi.getGlamourDetail(context, glamourId)
+        g = detail
+        if (detail != null) {
+            liked = detail.isLike
+            favorited = detail.isFavorite
+            likeNum = detail.likes.toLong()
+            favNum = detail.favorites.toLong()
+        }
+    }
 
     val slotLabels = mapOf(
         "MAIN_HAND" to "主手", "OFF_HAND" to "副手", "HEAD" to "头部", "EARS" to "耳坠",
@@ -6049,14 +6555,164 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                 }
             }
             item {
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.padding(horizontal = 16.dp)) {
-                    SzjCountMeta(R.drawable.ic_heart, d.likes.toLong(), 13.sp)
-                    Spacer(Modifier.width(14.dp))
-                    SzjCountMeta(R.drawable.ic_star_filled, d.favorites.toLong(), 13.sp)
-                }
+                // 计数原来只是两个静态数字。现在真正的赞/收藏在底部动作条上，
+                // 这里不再重复显示同一组数。
                 Spacer(Modifier.height(20.dp))
             }
+        }
+        // 底部动作条：赞 / 收藏 / 分享。
+        SzjGlamourActionBar(
+            liked = liked, likeNum = likeNum,
+            favorited = favorited, favNum = favNum,
+            busy = busy,
+            onLike = {
+                if (!busy) actionScope.launch {
+                    busy = true
+                    when (val r = ShizhijiaApi.likeGlamour(context, glamourId)) {
+                        is ShizhijiaApi.Res.Ok -> {
+                            val on = r.value == ShizhijiaApi.Toggle.On
+                            liked = on
+                            likeNum = (likeNum + if (on) 1 else -1).coerceAtLeast(0)
+                        }
+                        else -> szjToastWriteFail(context, r, nav)
+                    }
+                    busy = false
+                }
+            },
+            onFavorite = {
+                if (!busy) actionScope.launch {
+                    busy = true
+                    if (favorited) {
+                        // 已收藏 → 取消。取消不需要收藏夹 id。
+                        when (val r = ShizhijiaApi.cancelFavoriteGlamour(context, glamourId)) {
+                            is ShizhijiaApi.Res.Ok -> {
+                                favorited = false
+                                favNum = (favNum - 1).coerceAtLeast(0)
+                                android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                            else -> szjToastWriteFail(context, r, nav)
+                        }
+                    } else {
+                        // 未收藏 → 收藏要先有收藏夹。官网的做法：查一次收藏夹列表，
+                        // 只有一个且是默认夹就直接用它，否则让人选。
+                        when (val list = ShizhijiaApi.glamourFavorites(context, page = 1, limit = 50)) {
+                            is ShizhijiaApi.Res.Ok -> {
+                                val folders = list.value
+                                when {
+                                    folders.isEmpty() -> android.widget.Toast.makeText(
+                                        context,
+                                        "还没有收藏夹，先在石之家网页版建一个",
+                                        android.widget.Toast.LENGTH_LONG,
+                                    ).show()
+                                    folders.size == 1 -> {
+                                        val r = ShizhijiaApi.favoriteGlamour(context, glamourId, folders[0].first)
+                                        if (r is ShizhijiaApi.Res.Ok) {
+                                            favorited = true
+                                            favNum += 1
+                                            android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
+                                        } else szjToastWriteFail(context, r, nav)
+                                    }
+                                    else -> folderPick = folders
+                                }
+                            }
+                            else -> szjToastWriteFail(context, list, nav)
+                        }
+                    }
+                    busy = false
+                }
+            },
+            onShare = {
+                // 分享**没有接口**——官网的"分享"就是把页面链接复制到剪贴板。
+                // 这里给系统分享，比复制多一步能直接发出去。
+                val url = "https://ff14risingstones.web.sdo.com/pc/index.html#/glamour/detail/$glamourId"
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_SUBJECT, d.title)
+                    putExtra(android.content.Intent.EXTRA_TEXT, listOf(d.title, url).filter { it.isNotBlank() }.joinToString("\n"))
+                }
+                runCatching { context.startActivity(android.content.Intent.createChooser(send, "分享这套幻化")) }
+                    .onFailure {
+                        android.widget.Toast.makeText(context, "没有可以分享的应用", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+            },
+        )
+    }
+    // 多个收藏夹时选一个。
+    folderPick?.let { folders ->
+        AlertDialog(
+            onDismissRequest = { folderPick = null },
+            title = { Text("收藏到", color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    folders.forEach { (fid, fname, isDefault) ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(SzjInnerShape).clickable {
+                                folderPick = null
+                                actionScope.launch {
+                                    busy = true
+                                    val r = ShizhijiaApi.favoriteGlamour(context, glamourId, fid)
+                                    if (r is ShizhijiaApi.Res.Ok) {
+                                        favorited = true
+                                        favNum += 1
+                                        android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
+                                    } else szjToastWriteFail(context, r, nav)
+                                    busy = false
+                                }
+                            }.padding(horizontal = 4.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(fname.ifBlank { "未命名收藏夹" }, color = SzjText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            if (isDefault) Text("默认", color = SzjMuted, style = SzjMetaStyle)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Text(
+                    "取消",
+                    color = SzjMuted, fontSize = 14.sp,
+                    modifier = Modifier.clip(SzjInnerShape).clickable { folderPick = null }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            },
+            containerColor = SzjCardRaised,
+        )
+    }
+}
+
+/** 幻化详情底部的动作条。分享是纯本地动作（官网也没有分享接口）。 */
+@Composable
+private fun SzjGlamourActionBar(
+    liked: Boolean,
+    likeNum: Long,
+    favorited: Boolean,
+    favNum: Long,
+    busy: Boolean,
+    onLike: () -> Unit,
+    onFavorite: () -> Unit,
+    onShare: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+        Row(
+            Modifier.fillMaxWidth().background(SzjCardRaised).padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SzjActionCell(
+                icon = if (liked) R.drawable.ic_heart else R.drawable.ic_heart_outline,
+                label = if (likeNum > 0) formatCount(likeNum) else "赞",
+                on = liked, enabled = !busy, modifier = Modifier.weight(1f), onClick = onLike,
+            )
+            SzjActionCell(
+                icon = if (favorited) R.drawable.ic_star_filled else R.drawable.ic_star_outline,
+                label = if (favNum > 0) formatCount(favNum) else "收藏",
+                on = favorited, enabled = !busy, modifier = Modifier.weight(1f), onClick = onFavorite,
+            )
+            SzjActionCell(
+                icon = R.drawable.ic_send_arrow,
+                label = "分享",
+                on = false, enabled = !busy, modifier = Modifier.weight(1f), onClick = onShare,
+            )
         }
     }
 }

@@ -1996,21 +1996,77 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
                 },
             )
             if (friend == null) return@Column
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
-                Box(Modifier.size(94.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                    // 和联系人列表走同一条链（自己挑的 → 石之家照片 → 种族立绘 → 随机贴纸），
-                    // 不然这里会比列表里少一档。
-                    SmallConversationIcon(friendAvatarFor(friend, state, 0), friend.name.take(1), AetherPurple)
+            // 这一屏原来是联系人流程里唯一没跟上列表的：22dp 自定边距（列表用
+            // LocalContentMargin）、10dp 圆角（卡片梯子是 14dp）、四个动作四种
+            // 饱和色圆饼。四色圆饼是最响的元素，而它们标的四件事没有轻重之分——
+            // 颜色在这里不承载信息，只是让这一屏看着比别处吵。
+            // 现在：边距和圆角回到列表那一套，动作统一成一个 accent。
+            val margin = LocalContentMargin.current.dp
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                    .padding(horizontal = margin),
+                verticalArrangement = Arrangement.spacedBy(LightCardGap),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().clip(LightCardShape).background(AetherLightSurface)
+                        .padding(vertical = 22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(Modifier.size(84.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
+                        // 和联系人列表走同一条链（自己挑的 → 石之家照片 → 种族立绘 → 随机贴纸），
+                        // 不然这里会比列表里少一档。
+                        SmallConversationIcon(friendAvatarFor(friend, state, 0), friend.name.take(1), AetherPurple)
+                    }
+                    Text(
+                        friend.name,
+                        color = AetherLightText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 13.dp),
+                    )
+                    Row(
+                        Modifier.padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        // 在线状态用列表里那颗同样的图标，不再写成"在线/离线"两个字：
+                        // 列表已经用图标表达这件事了，两屏说法要一致。
+                        val stIcon = if (friend.online) friendStatusIcon(friend.status) ?: R.drawable.status_online else null
+                        if (stIcon != null) {
+                            Image(painterResource(stIcon), contentDescription = "在线", modifier = Modifier.size(14.dp))
+                        }
+                        val home = friend.homeWorld.trim()
+                        val now = friend.world.trim()
+                        val where = when {
+                            home.isNotBlank() && now.isNotBlank() && home != now -> "$home → $now"
+                            now.isNotBlank() -> now
+                            home.isNotBlank() -> home
+                            else -> "未知服务器"
+                        }
+                        Text(
+                            if (friend.online) where else "$where · 离线",
+                            color = AetherLightMuted, fontSize = 13.sp,
+                        )
+                    }
                 }
-                Text(friend.name, color = AetherLightText, fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
-                Text(listOf(friend.world, if (friend.online) "在线" else "离线").filter { it.isNotBlank() }.joinToString(" · "), color = AetherLightMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
-                Row(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    LightContactAction("发消息", R.drawable.app_messages, Color(0xFF49C97A)) { state.startTell(friend) }
-                    LightContactAction("铭牌", R.drawable.app_contacts, Color(0xFF6A83E9)) { state.friendAction(friend, 1) }
-                    LightContactAction("小队", R.drawable.app_muster, AetherPurple) { state.friendAction(friend, 2) }
-                    LightContactAction("参观", R.drawable.app_housing, Color(0xFFF2A142)) { state.friendAction(friend, 3) }
+                // 需要 contentId 的动作在拿不到标识时置灰。四个动作全亮着、点下去
+                // 只弹一句"该好友缺少游戏角色标识"，等于把能不能用藏到点击之后。
+                // 私聊只按名字发，不需要 contentId，所以它一直是亮的。
+                val hasId = friend.contentId != 0L
+                Row(
+                    Modifier.fillMaxWidth().clip(LightCardShape).background(AetherLightSurface)
+                        .padding(vertical = 14.dp),
+                ) {
+                    LightContactAction("私聊", R.drawable.app_messages, Modifier.weight(1f)) { state.startTell(friend) }
+                    LightContactAction("铭牌", R.drawable.app_contacts, Modifier.weight(1f), enabled = hasId) { state.friendAction(friend, 1) }
+                    // 邀请入队要对方在线，离线时游戏侧本来就会失败。
+                    LightContactAction("小队", R.drawable.app_muster, Modifier.weight(1f), enabled = hasId && friend.online) { state.friendAction(friend, 2) }
+                    LightContactAction("参观", R.drawable.app_housing, Modifier.weight(1f), enabled = hasId) { state.friendAction(friend, 3) }
+                    // FriendActionKind.SearchInfo（=4）：在游戏里打开这个人的详细情报。
+                    // 插件一直实现着（GameFunctions.ExecuteFriendAction），是旧详情页里
+                    // 单独一行的"查看玩家信息"，我重做这屏时把它漏掉了。
+                    LightContactAction("情报", R.drawable.app_news, Modifier.weight(1f), enabled = hasId) { state.friendAction(friend, 4) }
                 }
-                Column(Modifier.fillMaxWidth().padding(top = 28.dp).clip(RoundedCornerShape(10.dp)).background(AetherLightSurface)) {
+                LightSectionLabel("资料")
+                Column(Modifier.fillMaxWidth().clip(LightCardShape).background(AetherLightSurface)) {
                     LightInfoRow("服务器", friend.world)
                     LightInfoRow("部队", friend.freeCompany.ifBlank { "未读取" })
                     LightInfoRow("位置", friend.location.ifBlank { "离线" })
@@ -2046,7 +2102,9 @@ private fun ShizhijiaLinkCard(
     val hit = (link as? ShizhijiaFriendLink.Result.Found)?.user
     val clickable = hit != null
     Column(
-        Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(10.dp))
+        // 间距交给外层的 spacedBy，圆角跟卡片梯子（14dp）。
+        // 原来自带 top = 14.dp + 10dp 圆角，在列里既比别的卡矮一档又多一截空隙。
+        Modifier.fillMaxWidth().clip(LightCardShape)
             .background(AetherLightSurface)
             .then(if (clickable) Modifier.clickable { openShizhijiaProfile(state, hit!!.uuid) } else Modifier),
     ) {
@@ -2100,12 +2158,33 @@ private fun ShizhijiaLinkCard(
 }
 
 @Composable
-private fun LightContactAction(label: String, icon: Int, color: Color, action: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = action).padding(3.dp)) {
-        Box(Modifier.size(54.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-            ImageGlyph(icon, Color.White, Modifier.size(27.dp))
+private fun LightContactAction(
+    label: String,
+    icon: Int,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    action: () -> Unit,
+) {
+    // 原来每个动作一个饱和色实心圆（绿/蓝/紫/橙，54dp）。四种颜色标的是四件
+    // 平级的事，颜色不区分任何东西，只是把这一屏变成整个 App 里最花的一屏。
+    // 现在统一成浅底 + accent 图标，圆角跟卡片同族（不是圆饼）。
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.clip(RoundedCornerShape(11.dp))
+            .clickable(enabled = enabled, onClick = action).padding(vertical = 4.dp),
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(AetherLightControl),
+            contentAlignment = Alignment.Center,
+        ) {
+            ImageGlyph(icon, if (enabled) AetherPurple else AetherLightMuted.copy(alpha = .45f), Modifier.size(21.dp))
         }
-        Text(label, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
+        Text(
+            label,
+            color = if (enabled) AetherLightMuted else AetherLightMuted.copy(alpha = .45f),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 7.dp),
+        )
     }
 }
 

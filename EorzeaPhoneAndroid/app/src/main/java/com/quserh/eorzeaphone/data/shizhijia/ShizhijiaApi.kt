@@ -86,9 +86,14 @@ object ShizhijiaApi {
         runCatching {
             val url = base + path + query
             val conn = connect(url, context, method, cookie)
-            if (body.isNotEmpty()) {
+            if (body.isNotEmpty() || method == "POST" || method == "PUT") {
+                // 站点的 axios 请求拦截器（index bundle 里）对 POST 做两件事：
+                //   t.data = {...t.data, tempsuid: uuid()}   ← body 里也要有一个
+                //   t.data = qs.stringify(t.data)            ← form-urlencoded，不是 JSON
+                // 所以 body 的 tempsuid 和 query 的是两个不同的 uuid，两边都要带。
+                val full = body + mapOf("tempsuid" to tempsuid())
                 conn.doOutput = true
-                conn.outputStream.bufferedWriter().use { it.write(encodeParams(body)) }
+                conn.outputStream.bufferedWriter().use { it.write(encodeParams(full)) }
             }
             read(conn)
         }.getOrNull()
@@ -578,6 +583,180 @@ object ShizhijiaApi {
             code == CODE_NEED_LOGIN -> Res.NeedLogin
             code == CODE_NEED_CHARACTER -> Res.NeedCharacter
             else -> Res.Failed(code, msg)
+        }
+    }
+
+    // ---- 写操作：点赞 / 收藏 / 评论 / 招募响应 -----------------------------
+    //
+    // 形状不是猜的，是从站点自己的 JS 分包里读出来的（那是公开静态资源）。
+    // 完整的接口表和取得过程写在同目录的 API_WRITE_ENDPOINTS.md。
+    //
+    // 注意：**点赞和收藏都是"切换"，不是幂等的 set**。同一个接口再打一次就取消。
+    // 返回 data == 1 表示现在是已赞/已收，== -1 表示刚被取消。
+    // 界面必须按返回值来定状态，不能自己假设"点了就是赞了"。
+
+    /** 一次切换的结果：[liked] 是**调用之后**的状态。 */
+    enum class Toggle { On, Off }
+
+    private fun JSONObject.toggleRes(): Res<Toggle> = toRes {
+        // data 是裸数字 1 / -1。
+        when (it.optInt("data")) {
+            1 -> Toggle.On
+            else -> Toggle.Off
+        }
+    }
+
+    private suspend fun toggle(
+        context: Context,
+        path: String,
+        body: Map<String, String>,
+    ): Res<Toggle> {
+        val json = request(context, HOME_BASE, path, body = body, method = "POST")
+            ?: return Res.Failed(null, "网络没通")
+        return json.toggleRes()
+    }
+
+    /**
+     * 给帖子或评论点赞（再点一次取消）。
+     *
+     * `type` 是 1=帖子 / 2=评论——同一个端点两用。
+     */
+    suspend fun likePost(context: Context, postId: String, isComment: Boolean = false): Res<Toggle> {
+        if (postId.isBlank()) return Res.Failed(null, "没有帖子 id")
+        return toggle(context, "posts/like", mapOf("id" to postId, "type" to if (isComment) "2" else "1"))
+    }
+
+    /** 收藏帖子（再调一次取消）。注意字段名是 `posts_id`，和点赞的 `id` 不一样。 */
+    suspend fun starPost(context: Context, postId: String): Res<Toggle> {
+        if (postId.isBlank()) return Res.Failed(null, "没有帖子 id")
+        return toggle(context, "posts/star", mapOf("posts_id" to postId))
+    }
+
+    /**
+     * 发一条评论或回复。
+     *
+     * @param parentId 回复哪一条评论。顶层评论传 "0"。
+     * @param rootParent 楼层根评论 id。顶层评论传 "0"；回复顶层评论时和 [parentId] 相同。
+     * @param pics 逗号拼接的图片 URL；App 里没有上传通道，一直是空串。
+     */
+    suspend fun commentPost(
+        context: Context,
+        postId: String,
+        content: String,
+        parentId: String = "0",
+        rootParent: String = "0",
+        pics: String = "",
+    ): Res<String> {
+        if (postId.isBlank()) return Res.Failed(null, "没有帖子 id")
+        if (content.isBlank()) return Res.Failed(null, "评论不能为空")
+        val json = request(
+            context, HOME_BASE, "posts/comment",
+            body = mapOf(
+                "posts_id" to postId,
+                "content" to content,
+                "parent_id" to parentId,
+                "root_parent" to rootParent,
+                "comment_pic" to pics,
+                // atInfo 是 @ 的人的数组。没有 @ 时官网发的是空数组。
+                "atInfo" to "[]",
+            ),
+            method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optString("msg").ifBlank { "已发布" } }
+    }
+
+    /** 幻化点赞（切换）。 */
+    suspend fun likeGlamour(context: Context, id: String): Res<Toggle> {
+        if (id.isBlank()) return Res.Failed(null, "没有幻化 id")
+        return toggle(context, "glamour/like", mapOf("id" to id))
+    }
+
+    /**
+     * 幻化收藏夹。收藏必须指定一个夹子，所以先要拿到列表。
+     *
+     * 返回 (id, 名字, 是否默认夹)。
+     */
+    suspend fun glamourFavorites(
+        context: Context,
+        page: Int = 1,
+        limit: Int = 20,
+    ): Res<List<Triple<String, String, Boolean>>> = dataRes(
+        context, HOME_BASE, "glamour/myFavoritesList",
+        mapOf("page" to page.toString(), "limit" to limit.toString()),
+    ) { root ->
+        val rows = root.optJSONObject("data")?.optJSONArray("rows")
+        buildList {
+            if (rows != null) for (i in 0 until rows.length()) {
+                val o = rows.optJSONObject(i) ?: continue
+                add(
+                    Triple(
+                        o.opt("id")?.toString().orEmpty(),
+                        o.optString("name").ifBlank { o.optString("title") },
+                        o.optInt("is_default") == 1,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * 收藏一套幻化到指定收藏夹。
+     *
+     * `favorite_id` 是**收藏夹** id，不是幻化 id——官网的流程是先查
+     * myFavoritesList，只有一个夹且 is_default 时直接用它，否则让人选。
+     */
+    suspend fun favoriteGlamour(context: Context, id: String, favoriteId: String): Res<String> {
+        if (id.isBlank() || favoriteId.isBlank()) return Res.Failed(null, "缺少 id")
+        val json = request(
+            context, HOME_BASE, "glamour/favorite",
+            body = mapOf("id" to id, "favorite_id" to favoriteId), method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optString("msg").ifBlank { "已收藏" } }
+    }
+
+    /** 取消幻化收藏。 */
+    suspend fun cancelFavoriteGlamour(context: Context, id: String): Res<String> {
+        if (id.isBlank()) return Res.Failed(null, "没有幻化 id")
+        val json = request(
+            context, HOME_BASE, "glamour/cancelFavorite",
+            body = mapOf("id" to id), method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optString("msg").ifBlank { "已取消收藏" } }
+    }
+
+    /**
+     * 响应一条招募。
+     *
+     * 四类各一个端点，body 都是 `{id, contact_info}`。
+     * [contactInfo] 是**你自己**留给发布者的联系方式，不能为空。
+     *
+     * 成功后返回**发布者的**联系方式（`data.recruit_contact_info`）——
+     * 这就是"响应"的实际作用：交换联系方式。响应之前只能看到打码的
+     * `contact_info_mask`。
+     *
+     * 情景剧（Rp）没有响应接口，那一类走的是评论和 starRp。
+     */
+    suspend fun respondRecruit(
+        context: Context,
+        kind: ShizhijiaRecruitKind,
+        id: String,
+        contactInfo: String,
+    ): Res<String> {
+        if (id.isBlank()) return Res.Failed(null, "没有招募 id")
+        if (contactInfo.isBlank()) return Res.Failed(null, "请先填写你的联系方式")
+        val path = when (kind) {
+            ShizhijiaRecruitKind.Fb -> "recruit/responseRecruitFb"
+            ShizhijiaRecruitKind.Novice -> "recruit/responseNoviceEntertain"
+            ShizhijiaRecruitKind.Other -> "recruit/responseRecruitOther"
+            ShizhijiaRecruitKind.Guild -> "recruit/responseRecruitGuild"
+            ShizhijiaRecruitKind.Rp -> return Res.Failed(null, "情景剧招募没有响应功能")
+        }
+        val json = request(
+            context, HOME_BASE, path,
+            body = mapOf("id" to id, "contact_info" to contactInfo), method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { root ->
+            root.optJSONObject("data")?.optString("recruit_contact_info").orEmpty()
         }
     }
 

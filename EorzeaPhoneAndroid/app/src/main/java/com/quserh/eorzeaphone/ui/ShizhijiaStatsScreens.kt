@@ -783,7 +783,7 @@ private fun SzjDressPane(onLogin: () -> Unit) {
                     "投影次数" to fmtNum(t.vanityTimes.toDouble()),
                     "染色次数" to fmtNum(t.colorTimes.toDouble()),
                     "套装" to t.setNum.toString(),
-                    "漂白" to t.washingNum.toString(),
+                    "幻想药" to t.washingNum.toString(),
                 ), columns = 2)
             }
         }
