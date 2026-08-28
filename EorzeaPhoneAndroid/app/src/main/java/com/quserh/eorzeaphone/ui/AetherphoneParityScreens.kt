@@ -28,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.graphics.graphicsLayer
@@ -35,6 +37,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.horizontalScroll
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaAvatarStore
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendRoster
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -499,27 +502,42 @@ private fun LightHeader(
 ) {
     val headerMargin = LocalContentMargin.current
     val sidePad = (headerMargin.coerceAtLeast(2) - 2).dp
-    // 标题垂直位置与 ScreenHeader（捕鱼等窗口）保持一致：内容高度 + 上下 12dp，返回键尺寸一致
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, PhonePressSpring, label = "lightBack")
+    // 三个模块的页头现在完全同构：
+    //   石之家 SzjHeader / 工具屏 ScreenHeader / 聊天 LightHeader
+    // 都是「左返回(30dp 矢量, 按压 0.86 缩放) + 居中 20sp SemiBold 标题 + 右 trailing」，
+    // 上下 12dp。原来这里标题是 Bold（比另两个重一档）、返回键没有按压反馈，
+    // 也没有自己的签名。
+    // 石之家的签名是水晶棱条；聊天这边用通讯贝（linkpearl）——
+    // 一个实心圆点外面一圈环，就是游戏里那颗贝的样子。
     Box(Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp)) {
         Box(Modifier.align(Alignment.CenterStart).width(46.dp), contentAlignment = Alignment.CenterStart) {
             ImageGlyph(
                 R.drawable.ic_back,
                 AetherPurple,
-                Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 6.dp, vertical = 4.dp),
+                Modifier
+                    .graphicsLayer { scaleX = backScale; scaleY = backScale }
+                    .size(30.dp).clip(RoundedCornerShape(10.dp))
+                    .clickable(interactionSource = interaction, indication = null, onClick = onBack)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
             )
         }
         // 标题限定在返回键与右侧按钮之间，避免窄屏/大边距时与右侧按钮重叠
         Box(Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 54.dp), contentAlignment = Alignment.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                LightLinkpearl()
                 Text(
                     title,
                     color = AetherLightText,
                     fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.2.sp,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.offset(y = titleOffsetY),
+                    modifier = Modifier.padding(start = 8.dp).offset(y = titleOffsetY),
                 )
                 if (titleIcon != null) {
                     Box(Modifier.padding(start = 6.dp)) { titleIcon() }
@@ -527,6 +545,20 @@ private fun LightHeader(
             }
         }
         Row(Modifier.align(Alignment.CenterEnd).widthIn(min = 46.dp), horizontalArrangement = Arrangement.End, content = trailing)
+    }
+}
+
+/**
+ * 聊天模块的签名：通讯贝。实心圆 + 一圈环，10dp。
+ * 和石之家的水晶棱条（SzjShard）对位——每个"App"有自己的一个记号，
+ * 出现在页头标题左边。
+ */
+@Composable
+private fun LightLinkpearl(size: Dp = 10.dp, color: Color = AetherPurple) {
+    Canvas(Modifier.size(size)) {
+        val r = this.size.minDimension / 2f
+        drawCircle(color, radius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(width = r * 0.34f))
+        drawCircle(color, radius = r * 0.42f)
     }
 }
 
@@ -652,11 +684,12 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 (myName.isEmpty() || c.title.normalizedPlayerName() != myName) &&
                 (query.isBlank() || c.title.contains(query, true) || c.lastMessage?.text?.contains(query, true) == true)
         }.distinctBy { it.key }
-        // 排序规则没变（置顶在前、各自按最后一条消息倒序），但分成两段带标题，
-        // 边界才看得见。原来置顶和普通会话混在一条流里，唯一的线索是标题右边
-        // 一个 10sp 的"置顶"二字，扫列表时根本注意不到。
-        val pinnedRows = rows.filter { state.isConversationPinned(it) }.sortedByDescending { it.lastTimestamp ?: 0L }
-        val recentRows = rows.filterNot { state.isConversationPinned(it) }.sortedByDescending { it.lastTimestamp ?: 0L }
+        // 一条流，不分段：置顶的排在前面，各自按最后一条消息倒序。
+        // 置顶身份靠卡右列那个图钉标，不靠分段标题。
+        val sortedRows = rows.sortedWith(
+            compareByDescending<ChatConversation> { state.isConversationPinned(it) }
+                .thenByDescending { it.lastTimestamp ?: 0L },
+        )
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 .padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp),
@@ -700,16 +733,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         } else null,
                     )
                 }
-                if (pinnedRows.isNotEmpty()) {
-                    item("pinned-label") { LightSectionLabel("置顶", R.drawable.ic_pin) }
-                    itemsIndexed(pinnedRows, key = { _, c -> "message-${c.key}" }) { _, conversation ->
-                        Box(Modifier.animateItem()) {
-                            LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key })
-                        }
-                    }
-                    if (recentRows.isNotEmpty()) item("recent-label") { LightSectionLabel("最近") }
-                }
-                itemsIndexed(recentRows, key = { _, c -> "message-${c.key}" }) { _, conversation ->
+                itemsIndexed(sortedRows, key = { _, c -> "message-${c.key}" }) { _, conversation ->
                     Box(Modifier.animateItem()) {
                         LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key })
                     }
@@ -990,15 +1014,66 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                 }
                 item("settings") {
                     Text("筛选器设置", color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
-                    val settings = listOf(
-                        "回复发送到" to (sendChannel?.let { id -> outputChannels.firstOrNull { it.id == id }?.label } ?: "当前频道"),
-                        "布局" to if (layout == ChatLayout.Bubbles) "气泡" else "紧凑",
-                        "保存记录" to when (historyPolicy) { ChatHistoryPolicy.Off -> "关闭"; ChatHistoryPolicy.Session -> "本次会话"; ChatHistoryPolicy.ThirtyDays -> "30 天"; ChatHistoryPolicy.Forever -> "永久" },
-                        "提醒" to when (alertPolicy) { ChatAlertPolicy.All -> "全部"; ChatAlertPolicy.Mentions -> "仅提及"; ChatAlertPolicy.Off -> "关闭" },
+                    // 这四行原来是**空的**：settings 算出来之后
+                    // `settings.forEach { (label, value) -> }` 循环体是空的，
+                    // 于是"筛选器设置"底下只有标题没有内容，
+                    // sendChannel / layout / historyPolicy / alertPolicy 四个状态
+                    // 谁也改不了（新建的筛选器永远是默认值）。
+                    SzjLikeSettingRow(
+                        "回复发送到",
+                        sendChannel?.let { id -> outputChannels.firstOrNull { it.id == id }?.label } ?: "当前频道",
+                        open = settingMenu == "send",
+                        onOpen = { settingMenu = if (settingMenu == "send") null else "send" },
+                        options = listOf<Pair<String, () -> Unit>>("当前频道" to { sendChannel = null }) +
+                            outputChannels.map { ch -> ch.label to { sendChannel = ch.id } },
+                        onPicked = { settingMenu = null },
                     )
-                    settings.forEach { (label, value) ->
-                    }
-                    Text("记录仅保存在这台手机上。", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, bottom = 30.dp))
+                    SzjLikeSettingRow(
+                        "布局",
+                        if (layout == ChatLayout.Bubbles) "气泡" else "紧凑",
+                        open = settingMenu == "layout",
+                        onOpen = { settingMenu = if (settingMenu == "layout") null else "layout" },
+                        options = listOf(
+                            "气泡" to { layout = ChatLayout.Bubbles },
+                            "紧凑" to { layout = ChatLayout.Compact },
+                        ),
+                        onPicked = { settingMenu = null },
+                    )
+                    SzjLikeSettingRow(
+                        "保存记录",
+                        when (historyPolicy) {
+                            ChatHistoryPolicy.Off -> "关闭"
+                            ChatHistoryPolicy.Session -> "本次会话"
+                            ChatHistoryPolicy.ThirtyDays -> "30 天"
+                            ChatHistoryPolicy.Forever -> "永久"
+                        },
+                        open = settingMenu == "history",
+                        onOpen = { settingMenu = if (settingMenu == "history") null else "history" },
+                        options = listOf(
+                            "关闭" to { historyPolicy = ChatHistoryPolicy.Off },
+                            "本次会话" to { historyPolicy = ChatHistoryPolicy.Session },
+                            "30 天" to { historyPolicy = ChatHistoryPolicy.ThirtyDays },
+                            "永久" to { historyPolicy = ChatHistoryPolicy.Forever },
+                        ),
+                        onPicked = { settingMenu = null },
+                    )
+                    SzjLikeSettingRow(
+                        "提醒",
+                        when (alertPolicy) {
+                            ChatAlertPolicy.All -> "全部"
+                            ChatAlertPolicy.Mentions -> "仅提及"
+                            ChatAlertPolicy.Off -> "关闭"
+                        },
+                        open = settingMenu == "alert",
+                        onOpen = { settingMenu = if (settingMenu == "alert") null else "alert" },
+                        options = listOf(
+                            "全部" to { alertPolicy = ChatAlertPolicy.All },
+                            "仅提及" to { alertPolicy = ChatAlertPolicy.Mentions },
+                            "关闭" to { alertPolicy = ChatAlertPolicy.Off },
+                        ),
+                        onPicked = { settingMenu = null },
+                    )
+                    Text("记录仅保存在这台手机上。", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, top = 10.dp, bottom = 30.dp))
                 }
                 if (existing?.removable == true) item("delete-tab") {
                     Text("删除筛选器", color = PhoneDanger, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
@@ -1011,6 +1086,46 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * 筛选器编辑页里的一行设置：标签 + 当前值 + 下拉选。
+ * 走和会话设置页（ChatSettingRow）一样的行高和字号。
+ */
+@Composable
+private fun SzjLikeSettingRow(
+    label: String,
+    value: String,
+    open: Boolean,
+    onOpen: () -> Unit,
+    options: List<Pair<String, () -> Unit>>,
+    onPicked: () -> Unit,
+) {
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().height(48.dp).clickable(onClick = onOpen),
+        ) {
+            Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Text(value, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1)
+            ImageGlyph(R.drawable.ic_chevron_down, AetherLightMuted, Modifier.padding(start = 4.dp).size(16.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = onPicked) {
+            options.forEach { (optLabel, apply) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            optLabel,
+                            color = if (optLabel == value) AetherPurple else AetherLightText,
+                            fontWeight = if (optLabel == value) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = { apply(); onPicked() },
+                )
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(top = 47.dp).height(1.dp).background(AetherLightSeparator))
     }
 }
 
@@ -1401,8 +1516,13 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             },
             meta = {
                 // 时间在上、角标在下，都贴右边。10sp 是字号下限（9sp 在高密度屏上开始糊）。
-                conversation.lastTimestamp?.let {
-                    Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (state.isConversationPinned(conversation)) {
+                        ImageGlyph(R.drawable.ic_pin, AetherLightMuted, Modifier.padding(end = 4.dp).size(11.dp))
+                    }
+                    conversation.lastTimestamp?.let {
+                        Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                    }
                 }
                 LightUnreadBadge(conversation.unread, conversation.notify)
             },
@@ -1489,7 +1609,12 @@ private fun AetherphoneContactsList(state: PhoneState) {
                     // 刷新按钮也强制重拉一次石之家名册（绕过一天的 TTL）：
                     // 好友刚注册石之家时，用户会想立刻看到。
                     rosterScope.launch {
-                        if (ShizhijiaFriendRoster.refresh(context) is ShizhijiaApi.Res.Ok) rosterTick++
+                        // 头像的"查过没有"结论也一起清掉：好友刚注册石之家时，
+                        // 不清的话会一直记着那条空结论。
+                        withContext(Dispatchers.IO) { ShizhijiaAvatarStore.clear(context) }
+                        ShizhijiaFriendLink.clear()
+                        ShizhijiaFriendRoster.refresh(context)
+                        rosterTick++
                     }
                 },
                 contentAlignment = Alignment.Center,
@@ -1607,16 +1732,16 @@ private fun friendAvatarFor(friend: PhoneFriend, state: PhoneState, rosterTick: 
     val own = state.friendAvatar(friend)
     if (own.isNotBlank()) return own
 
-    val entry = remember(friend.name, friend.homeWorld, friend.world, rosterTick) {
-        ShizhijiaFriendRoster.findEntry(context, friend.name, friend.homeWorld.ifBlank { friend.world })
-    } ?: return state.friendFallbackAvatar(friend)
-
-    var resolved by remember(entry.uuid, rosterTick) { mutableStateOf(entry.avatar) }
-    LaunchedEffect(entry.uuid, rosterTick) {
+    // 已知结论先用上（落盘的），没有再去查。
+    var resolved by remember(friend.name, friend.homeWorld, rosterTick) {
+        mutableStateOf(ShizhijiaAvatarStore.peek(context, friend.name, friend.homeWorld).orEmpty())
+    }
+    LaunchedEffect(friend.name, friend.homeWorld, rosterTick) {
         if (resolved.isBlank()) {
-            withContext(Dispatchers.IO) { ShizhijiaFriendRoster.resolveAvatar(context, entry) }
-                .takeIf { it.isNotBlank() }
-                ?.let { resolved = it }
+            val url = withContext(Dispatchers.IO) {
+                ShizhijiaAvatarStore.resolve(context, friend.name, friend.homeWorld, friend.world)
+            }
+            if (url.isNotBlank()) resolved = url
         }
     }
     return resolved.ifBlank { state.friendFallbackAvatar(friend) }

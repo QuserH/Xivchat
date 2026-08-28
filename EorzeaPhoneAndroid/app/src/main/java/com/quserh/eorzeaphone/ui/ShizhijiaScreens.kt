@@ -106,7 +106,9 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaCareer
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaComment
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendRoster
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruit
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitDetail
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecruitForm
@@ -618,6 +620,8 @@ private sealed interface SzjRoute {
     data object Login : SzjRoute
     data object SignCalendar : SzjRoute
     data class UserProfile(val uuid: String) : SzjRoute
+    /** 关注列表 / 粉丝列表。[fans] = true 看粉丝。 */
+    data class RelationList(val uuid: String, val fans: Boolean, val who: String = "") : SzjRoute
     data class GlamourDetail(val glamourId: String) : SzjRoute
     /** 我收藏的帖子（userInfo/myStarPosts，需登录）。 */
     data object Favorites : SzjRoute
@@ -934,6 +938,7 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             SzjRoute.Login -> ShizhijiaLoginScreen(state, pop)
             SzjRoute.SignCalendar -> ShizhijiaSignCalendarScreen(state, pop)
             is SzjRoute.UserProfile -> ShizhijiaUserProfileScreen(state, route.uuid, pop, nav)
+            is SzjRoute.RelationList -> ShizhijiaRelationListScreen(route.uuid, route.fans, route.who, pop, nav)
             is SzjRoute.GlamourDetail -> ShizhijiaGlamourDetailScreen(state, route.glamourId, pop, nav)
             SzjRoute.Favorites -> ShizhijiaFavoritesScreen(pop, nav)
             SzjRoute.MyRecruits -> ShizhijiaMyRecruitsScreen(pop, nav)
@@ -1468,13 +1473,30 @@ private fun ShizhijiaMeTab(
                     // 真数没到之前整行不占位——宁可没有，也不摆一排 0。
                     myCounts?.let { c ->
                         Spacer(Modifier.height(16.dp))
+                        // 关注/粉丝可以点进名单，和玩家主页那张卡一致。自己的这两份
+                        // 名单是登录后能读的，所以这里比看别人的更靠得住。
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            listOf("关注" to c.followNum, "粉丝" to c.fansNum, "获赞" to c.likedNum).forEachIndexed { i, (label, num) ->
+                            val cells: List<Triple<String, Int, (() -> Unit)?>> = listOf(
+                                Triple("关注", c.followNum) { nav(SzjRoute.RelationList(myUuid, fans = false, who = p?.name.orEmpty())) },
+                                Triple("粉丝", c.fansNum) { nav(SzjRoute.RelationList(myUuid, fans = true, who = p?.name.orEmpty())) },
+                                Triple("获赞", c.likedNum, null),
+                            )
+                            cells.forEachIndexed { i, (label, num, onClick) ->
                                 if (i > 0) Box(Modifier.width(1.dp).height(22.dp).background(SzjLine))
-                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(
+                                    Modifier.weight(1f)
+                                        .let { if (onClick != null) it.clip(SzjChipShape).clickable(onClick = onClick) else it }
+                                        .padding(vertical = 3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
                                     Text("$num", color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                     Spacer(Modifier.height(2.dp))
-                                    Text(label, color = SzjMuted, style = SzjMetaStyle)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(label, color = SzjMuted, style = SzjMetaStyle)
+                                        if (onClick != null) {
+                                            ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.padding(start = 1.dp).size(11.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4280,14 +4302,38 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                 SzjCardSurface(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 12.dp)) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.Bottom) {
                         Column(Modifier.weight(1f)) {
-                            Text("本月已签到", fontSize = 13.sp, color = SzjMuted, letterSpacing = 0.4.sp)
+                            Text(
+                                if (month == monthFmt.format(java.util.Date())) "本月已签到" else "$month 已签到",
+                                fontSize = 13.sp, color = SzjMuted, letterSpacing = 0.4.sp,
+                            )
                             Spacer(Modifier.height(2.dp))
                             Row(verticalAlignment = Alignment.Bottom) {
                                 Text("${log?.count ?: 0}", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = SzjAccent, lineHeight = 34.sp)
                                 Text(" 天", fontSize = 13.sp, color = SzjMuted, modifier = Modifier.padding(bottom = 4.dp))
                             }
                         }
-                        SzjShard(widthDp = 5, heightDp = 30)
+                        // 月份切换。接口本来就收 month 参数，但 month 这个状态
+                        // 以前初始化成当月之后再没人改过——这一页只能看当月，
+                        // 往前翻的能力白写了。不给往未来翻。
+                        fun shift(delta: Int): String = runCatching {
+                            val cal = java.util.Calendar.getInstance()
+                            cal.time = monthFmt.parse(month)!!
+                            cal.add(java.util.Calendar.MONTH, delta)
+                            monthFmt.format(cal.time)
+                        }.getOrDefault(month)
+                        val atCurrent = month >= monthFmt.format(java.util.Date())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SzjPressable(onClick = { month = shift(-1) }, shape = CircleShape) {
+                                ImageGlyph(R.drawable.ic_chevron_left, SzjAccent, Modifier.size(26.dp).padding(4.dp))
+                            }
+                            SzjPressable(onClick = { if (!atCurrent) month = shift(1) }, shape = CircleShape) {
+                                ImageGlyph(
+                                    R.drawable.ic_chevron_right,
+                                    if (atCurrent) SzjMuted.copy(alpha = .4f) else SzjAccent,
+                                    Modifier.size(26.dp).padding(4.dp),
+                                )
+                            }
+                        }
                     }
                 }
                 // Day strip: 7 per row, signed days highlighted.
@@ -5261,6 +5307,188 @@ private fun szjCrafterAbbr(name: String) = when (name) {
     "采矿工" -> "MIN"; "园艺工" -> "BTN"; "捕鱼人" -> "FSH"; else -> name.take(1)
 }
 
+/**
+ * 关注 / 粉丝列表。
+ *
+ * 主页上那三个数字（关注/粉丝/获赞）以前是纯展示，点不动——想知道自己关注了谁
+ * 只能去网页。现在关注和粉丝都能点进来（获赞不是名单，仍然不可点）。
+ *
+ * 粉丝接口没对过真实响应，所以空列表要分两种说法：
+ * 请求成功但确实没人 → "还没有粉丝"；请求失败 → "读不到"，别让用户以为是 0。
+ */
+@Composable
+private fun ShizhijiaRelationListScreen(
+    uuid: String,
+    fans: Boolean,
+    who: String,
+    pop: () -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
+    val context = LocalContext.current
+    var rows by remember(uuid, fans) { mutableStateOf<List<ShizhijiaFriendRoster.Entry>?>(null) }
+    var failed by remember(uuid, fans) { mutableStateOf(false) }
+    var needLogin by remember(uuid, fans) { mutableStateOf(false) }
+    LaunchedEffect(uuid, fans) {
+        when (val res = ShizhijiaApi.getRelationList(context, fans = fans, uuid = uuid)) {
+            is ShizhijiaApi.Res.Ok -> rows = res.value
+            is ShizhijiaApi.Res.NeedLogin -> { needLogin = true; rows = emptyList() }
+            is ShizhijiaApi.Res.NeedCharacter -> { needLogin = true; rows = emptyList() }
+            is ShizhijiaApi.Res.Failed -> { failed = true; rows = emptyList() }
+        }
+    }
+    val title = (if (who.isNotBlank()) "$who · " else "") + if (fans) "粉丝" else "关注"
+    ScreenFrame(background = SzjBg) {
+        SzjHeader(title, onBack = pop)
+        val list = rows
+        when {
+            list == null -> SzjFeedSkeleton()
+            needLogin -> SzjEmpty("登录后才能看这份名单", "石之家只对本人开放关注和粉丝列表", R.drawable.ic_person)
+            failed -> SzjEmpty("这份名单读不到", "接口没返回数据，不代表这里是空的", R.drawable.ic_warning)
+            list.isEmpty() -> SzjEmpty(
+                if (fans) "还没有粉丝" else "还没有关注任何人",
+                if (fans) "发帖和发幻化会带来关注者" else "去社区找几个想追的光之战士",
+                R.drawable.ic_person,
+            )
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                itemsIndexed(list, key = { i, e -> "${e.uuid}-$i" }) { index, e ->
+                    SzjRise(index) {
+                        SzjCardSurface(
+                            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            onClick = if (e.uuid.isNotBlank()) ({ nav(SzjRoute.UserProfile(e.uuid)) }) else null,
+                        ) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                SzjAvatar(e.name, e.avatar, e.uuid, 44)
+                                Spacer(Modifier.width(11.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(e.name, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    val line = listOf(e.areaName, e.groupName).filter { it.isNotBlank() }.joinToString(" ")
+                                    if (line.isNotBlank()) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            SzjLocPin(13)
+                                            Text(line, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                                ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 职业按职能分组
+//
+// 接口给的 career_type 只有"战斗精英/魔法导师/能工巧匠/大地使者"四类，
+// 没有坦克/治疗/近战/远敏/法系这一层——那是游戏里的职能划分，得自己列表。
+// 官网移动端就是按职能一行一行摆的。
+//
+// 顺序按游戏内职业面板：坦克 → 治疗 → 近战 → 远敏 → 法系 → 巧匠 → 使者。
+// ---------------------------------------------------------------------------
+
+private val SzjRoleJobs: List<Pair<String, List<String>>> = listOf(
+    "坦克" to listOf("骑士", "战士", "暗黑骑士", "绝枪战士"),
+    "治疗" to listOf("白魔法师", "学者", "占星术士", "贤者"),
+    "近战" to listOf("武僧", "龙骑士", "忍者", "武士", "钟情剑士", "蝰蛇剑士"),
+    "远敏" to listOf("吟游诗人", "机工士", "舞者"),
+    "法系" to listOf("黑魔法师", "召唤师", "赤魔法师", "绘灵法师", "青魔法师"),
+    "能工巧匠" to listOf("刻木匠", "锻铁匠", "铸甲匠", "雕金匠", "制革匠", "裁衣匠", "炼金术士", "烹调师"),
+    "大地使者" to listOf("采矿工", "园艺工", "捕鱼人"),
+)
+
+/**
+ * 一个职能一行：左边职能名，右边这一职能的全部职业。
+ *
+ * 没练的职业也要显示（用户明确要求"有没有等级的都要显示出来"）——
+ * 图标压到 38% 透明、等级写"—"，一眼能看出哪些还没开。
+ *
+ * [known] 是石之家职业图标表的 key。用它过一遍，国服还没实装的职业
+ * 不会凭空多出几个永远填不上的灰位。
+ */
+@Composable
+private fun SzjCareerRoleRow(
+    role: String,
+    jobNames: List<String>,
+    byName: Map<String, ShizhijiaCareer>,
+    jobIcons: Map<String, String>,
+    known: Set<String>,
+    tipCareer: String?,
+    onTip: (String?) -> Unit,
+) {
+    val shown = jobNames.filter { it in known || it in byName }
+    if (shown.isEmpty()) return
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            role,
+            color = SzjMuted, fontSize = 11.sp, lineHeight = 14.sp,
+            modifier = Modifier.width(30.dp).padding(end = 6.dp),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            shown.chunked(6).forEach { chunk ->
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    chunk.forEach { name ->
+                        val career = byName[name]
+                        val level = career?.level ?: 0
+                        val has = level > 0
+                        val icon = jobIcons[name].orEmpty()
+                        val showTip = tipCareer == name
+                        Box {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable { onTip(if (showTip) null else name) },
+                            ) {
+                                Box(
+                                    Modifier.size(31.dp).clip(SzjChipShape).background(SzjCardRaised),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (icon.isNotBlank()) {
+                                        ShizhijiaRemoteImage(
+                                            url = icon,
+                                            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (has) 1f else 0.38f },
+                                            contentScale = ContentScale.Fit,
+                                            showPlaceholder = false,
+                                        )
+                                    } else {
+                                        Text(
+                                            szjCrafterAbbr(name),
+                                            color = if (has) SzjAccent else SzjMuted.copy(alpha = .55f),
+                                            fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    if (has) "$level" else "—",
+                                    fontSize = 9.sp,
+                                    color = if (has) SzjText else SzjMuted.copy(alpha = .6f),
+                                )
+                            }
+                            if (showTip) {
+                                Box(Modifier.matchParentSize()) {
+                                    Text(
+                                        name, color = SzjOnAccentSoft, fontSize = 10.sp,
+                                        maxLines = 1,
+                                        modifier = Modifier.align(Alignment.TopCenter)
+                                            .offset(y = (-20).dp)
+                                            .clip(SzjChipShape)
+                                            .background(SzjAccentSoft)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** 玩家主页：资料卡(头像/UID/粉丝获赞) + 信息(职业/种族/部队/游戏数据) + TA的帖子。 */
 @Composable
 private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () -> Unit, nav: (SzjRoute) -> Unit) {
@@ -5345,13 +5573,30 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         Text(p.profile, color = SzjMuted, fontSize = 12.sp, lineHeight = 18.sp)
                     }
                     Spacer(Modifier.height(14.dp))
+                    // 关注和粉丝可以点进名单（获赞不是名单，保持不可点）。
+                    // 原来三个都是纯数字，想知道自己关注了谁只能去网页。
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        listOf("关注" to p.followNum, "粉丝" to p.fansNum, "获赞" to p.likedNum).forEachIndexed { i, (label, num) ->
+                        val cells: List<Triple<String, Int, (() -> Unit)?>> = listOf(
+                            Triple("关注", p.followNum) { nav(SzjRoute.RelationList(uuid, fans = false, who = p.name)) },
+                            Triple("粉丝", p.fansNum) { nav(SzjRoute.RelationList(uuid, fans = true, who = p.name)) },
+                            Triple("获赞", p.likedNum, null),
+                        )
+                        cells.forEachIndexed { i, (label, num, onClick) ->
                             if (i > 0) Box(Modifier.width(1.dp).height(22.dp).background(SzjLine))
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                Modifier.weight(1f)
+                                    .let { if (onClick != null) it.clip(SzjChipShape).clickable(onClick = onClick) else it }
+                                    .padding(vertical = 3.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
                                 Text("$num", color = SzjText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(2.dp))
-                                Text(label, color = SzjMuted, style = SzjMetaStyle)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label, color = SzjMuted, style = SzjMetaStyle)
+                                    if (onClick != null) {
+                                        ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.padding(start = 1.dp).size(11.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -5370,86 +5615,27 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                 // ---- 信息 tab ----
                 item {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        val battle = p.careers.filter { it.type !in listOf("能工巧匠", "大地使者") }.sortedByDescending { it.level }
-                        val craft = p.careers.filter { it.type in listOf("能工巧匠", "大地使者") }.sortedByDescending { it.level }
-                        if (battle.isNotEmpty()) {
-                            Text("战斗精英 & 魔法导师", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(5.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                battle.chunked(5).forEach { row ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        row.forEach { c ->
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                val icon = jobIcons[c.name].orEmpty()
-                                                val abbr = szjCrafterAbbr(c.name)
-                                                var showTip = tipCareer == c.name
-                                                Box {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier.clickable { tipCareer = if (showTip) null else c.name }) {
-                                                        Box(Modifier.size(34.dp).clip(SzjChipShape).background(SzjCardRaised), contentAlignment = Alignment.Center) {
-                                                            if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                            else Text(abbr, color = SzjAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                                        }
-                                                        Text("${c.level}", fontSize = 10.sp, color = SzjText)
-                                                    }
-                                                    if (showTip) {
-                                                        // Small bubble above the icon with the job name.
-                                                        Box(Modifier.matchParentSize()) {
-                                                            Text(c.name, color = SzjOnAccentSoft, fontSize = 10.sp,
-                                                                modifier = Modifier.align(Alignment.TopCenter)
-                                                                    .offset(y = (-22).dp)
-                                                                    .clip(SzjChipShape)
-                                                                    .background(SzjAccentSoft)
-                                                                    .padding(horizontal = 6.dp, vertical = 2.dp))
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                        // 职业按职能分组（坦克/治疗/近战/远敏/法系 + 巧匠/使者），
+                        // 没练的也列出来。原来是"战斗类全部按等级倒序铺成 5 列"，
+                        // 读不出职能结构，也看不出哪些还没开。
+                        val byName = remember(p.careers) { p.careers.associateBy { it.name } }
+                        val known = remember(jobIcons) { jobIcons.keys.toSet() }
+                        Column(Modifier.fillMaxWidth()) {
+                            SzjRoleJobs.forEachIndexed { index, (role, names) ->
+                                // 生产采集和战斗职业中间隔一档，两段各自成组。
+                                if (role == "能工巧匠") Spacer(Modifier.height(6.dp))
+                                SzjCareerRoleRow(
+                                    role = role,
+                                    jobNames = names,
+                                    byName = byName,
+                                    jobIcons = jobIcons,
+                                    known = known,
+                                    tipCareer = tipCareer,
+                                    onTip = { tipCareer = it },
+                                )
                             }
-                            Spacer(Modifier.height(8.dp))
                         }
-                        if (craft.isNotEmpty()) {
-                            Text("能工巧匠 & 大地使者", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(5.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                craft.chunked(5).forEach { row ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        row.forEach { c ->
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                val icon = jobIcons[c.name].orEmpty()
-                                                val abbr = szjCrafterAbbr(c.name)
-                                                var showTip = tipCareer == c.name
-                                                Box {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                                        modifier = Modifier.clickable { tipCareer = if (showTip) null else c.name }) {
-                                                        Box(Modifier.size(34.dp).clip(SzjChipShape).background(SzjCardRaised), contentAlignment = Alignment.Center) {
-                                                            if (icon.isNotBlank()) ShizhijiaRemoteImage(url = icon, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, showPlaceholder = false)
-                                                            else Text(abbr, color = SzjAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                                        }
-                                                        Text("${c.level}", fontSize = 10.sp, color = SzjText)
-                                                    }
-                                                    if (showTip) {
-                                                        // Small bubble above the icon with the job name.
-                                                        Box(Modifier.matchParentSize()) {
-                                                            Text(c.name, color = SzjOnAccentSoft, fontSize = 10.sp,
-                                                                modifier = Modifier.align(Alignment.TopCenter)
-                                                                    .offset(y = (-22).dp)
-                                                                    .clip(SzjChipShape)
-                                                                    .background(SzjAccentSoft)
-                                                                    .padding(horizontal = 6.dp, vertical = 2.dp))
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                        }
+                        Spacer(Modifier.height(4.dp))
                         Spacer(Modifier.height(6.dp))
                         val genderText = when (p.gender) { 0 -> "男"; 1 -> "女"; else -> "" }
                         // 资料明细收进一张卡：标签左对齐固定宽度，值右侧成一列，

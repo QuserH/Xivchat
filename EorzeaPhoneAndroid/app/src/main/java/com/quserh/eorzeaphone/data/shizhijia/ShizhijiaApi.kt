@@ -329,6 +329,31 @@ object ShizhijiaApi {
     }
 
     /**
+     * 关注列表 / 粉丝列表。
+     *
+     * `userRelation/followList` 是名册已经在用的那个接口（拉自己关注的人），
+     * 确定可用。粉丝走 `userRelation/fansList`——同模块下的对称接口，
+     * **未对过真实响应**；拿不到就是空列表，界面上要说成"读不到"而不是"没有粉丝"。
+     *
+     * [uuid] 传别人的 uuid 能不能看他的列表也没验证过（官网只暴露看自己的）。
+     * 传了服务端忽略也不出错，真不行就是空。
+     */
+    suspend fun getRelationList(
+        context: Context,
+        fans: Boolean,
+        uuid: String = "",
+        page: Int = 1,
+        limit: Int = 100,
+    ): Res<List<ShizhijiaFriendRoster.Entry>> {
+        val params = buildMap {
+            put("page", page.toString())
+            put("limit", limit.toString())
+            if (uuid.isNotBlank()) put("uuid", uuid)
+        }
+        return friendRosterPage(context, if (fans) "userRelation/fansList" else "userRelation/followList", params)
+    }
+
+    /**
      * 名册的一页。给 [ShizhijiaFriendRoster] 用。
      *
      * 两个来源的 `data` 形状不一样（getUnFollowFriend 是裸数组、followList 大概是

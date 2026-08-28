@@ -105,6 +105,7 @@ object ShizhijiaSession {
         // 否则联系人列表还挂着上一个账号看到的头像和 uuid。
         ShizhijiaFriendRoster.clear(context)
         ShizhijiaFriendLink.clear()
+        ShizhijiaAvatarStore.clear(context)
     }
 
     /** Persist the resolved profile so the top bar renders instantly on next entry (no 已登录→昵称 flash). */
