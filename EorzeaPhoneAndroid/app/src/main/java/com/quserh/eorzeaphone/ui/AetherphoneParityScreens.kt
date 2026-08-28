@@ -159,6 +159,7 @@ import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.normalizedPlayerName
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendLink
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
+import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -359,6 +360,16 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     contentAlignment = Alignment.Center,
                 ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                    // 搜索框（下面那个 AnimatedVisibility）本来一直没有入口——
+                    // searching 全文没有任何地方设成 true，功能白写。放在菜单第一项。
+                    DropdownMenuItem(
+                        text = { Text(if (searching) "关闭搜索" else "搜索") },
+                        onClick = {
+                            overflowOpen = false
+                            searching = !searching
+                            if (!searching) query = ""
+                        },
+                    )
                     DropdownMenuItem(text = { Text("新建筛选器") }, onClick = { overflowOpen = false; editTab() })
                     DropdownMenuItem(text = { Text("默认打开的标签") }, onClick = { overflowOpen = false; showDefaultTabDialog = true })
                 }
@@ -1813,13 +1824,22 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 val showTail = privateChat || groupStart
                 LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party || conversation.category == ChatCategory.Team) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
-                    Text(
-                        "⚠ 向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
-                        color = Color(0xFFE5484D),
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
-                    )
+                    // 原来是"⚠"字符 + 硬编码红。字符在部分机型上会渲染成彩色 emoji，
+                    // 红色也和别处的红各写一个值，统一走 PhoneDanger。
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ImageGlyph(R.drawable.ic_warning, PhoneDanger, Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
+                            color = PhoneDanger,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }
@@ -1958,12 +1978,29 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     }
                 },
                 trailing = {
-                    Box(
-                        Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
-                            if (conversation.key.startsWith("tab:")) pushChatSub(ChatSub.TabSettings) else pushChatSub(ChatSub.Settings)
-                        },
-                        contentAlignment = Alignment.Center,
-                    ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 会话内搜索连"上一条/下一条"跳转都写好了，却一直没有入口
+                        // （searching 没有任何地方设成 true）。放大镜在这里开关它。
+                        Box(
+                            Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                                searching = !searching
+                                if (!searching) search = ""
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ImageGlyph(
+                                R.drawable.ic_search,
+                                if (searching) AetherPurple else AetherLightMuted,
+                                Modifier.size(19.dp),
+                            )
+                        }
+                        Box(
+                            Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                                if (conversation.key.startsWith("tab:")) pushChatSub(ChatSub.TabSettings) else pushChatSub(ChatSub.Settings)
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                    }
                 },
             )
             Box(Modifier.weight(1f).fillMaxWidth()) {

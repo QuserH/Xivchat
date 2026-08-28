@@ -79,6 +79,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -100,6 +102,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
@@ -149,9 +152,12 @@ import kotlinx.coroutines.launch
 // ---------------------------------------------------------------------------
 
 // 深色：板岩夜。近黑但偏蓝，卡片逐层抬升。
+// 卡片明度是调过的：原来 #1A1F26 和底 #12161B 只差 ~4%，而 3dp 阴影在近黑底上
+// 根本看不见，结果深色模式糊成一整块灰板，"石板卡片"这个概念只在浅色模式成立。
+// 现在拉到 ~9%，靠明度本身分层，不指望阴影。
 private val SzjDarkBg = Color(0xFF12161B)          // 板岩底
-private val SzjDarkCard = Color(0xFF1A1F26)        // 石板
-private val SzjDarkCardRaised = Color(0xFF232932)  // 抬升层
+private val SzjDarkCard = Color(0xFF212730)        // 石板
+private val SzjDarkCardRaised = Color(0xFF2B333E)  // 抬升层
 private val SzjDarkAccent = Color(0xFF5FD2C8)      // 水晶青
 private val SzjDarkAccentSoft = Color(0xFF14312F)  // 青光残留
 private val SzjDarkOnAccentSoft = Color(0xFF8FE3DB)
@@ -159,7 +165,8 @@ private val SzjDarkText = Color(0xFFE8EDF2)
 private val SzjDarkMuted = Color(0xFF8A94A2)
 private val SzjDarkLine = Color(0xFF2A313A)
 private val SzjDarkHairline = Color(0xFF39414C)
-private val SzjDarkEdge = Color(0x14FFFFFF)        // 石板顶边高光
+// 顶边高光原来 0x14（8%），在提亮后的卡片上等于没有。石面受光要看得见才算受光。
+private val SzjDarkEdge = Color(0x24FFFFFF)        // 石板顶边高光
 
 // 浅色：晨雾。冷调薄雾底 + 纯白卡片 + 深青。
 private val SzjLightBg = Color(0xFFEEF1F4)         // 薄雾底
@@ -529,34 +536,43 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, SzjPressSpring, label = "szjBack")
-    Row(
-        Modifier.fillMaxWidth().background(SzjBg)
-            .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "‹",
-            color = SzjAccent,
-            fontSize = 34.sp,
-            lineHeight = 30.sp,
-            modifier = Modifier
-                .graphicsLayer { scaleX = backScale; scaleY = backScale }
-                .clip(CircleShape)
-                .clickable(interactionSource = interaction, indication = null, onClick = { onBack?.invoke() })
-                .padding(horizontal = 10.dp, vertical = 2.dp),
-        )
-        SzjShard(heightDp = 15)
-        Text(
-            title,
-            color = SzjText,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.2.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(start = 10.dp),
-        )
-        trailing?.invoke()
+    // 骨架和工具屏的 ScreenHeader / 聊天的 LightHeader 统一：
+    // 左返回（矢量，30dp 触控区）+ 居中 20sp SemiBold 标题 + 右 trailing。
+    // 原来这里是文字"‹"（34sp）+ 左对齐 17sp 标题，三个模块像三个 App 拼的。
+    // 石之家自己的签名（水晶青棱条）保留，但挪进居中的标题组里。
+    Box(Modifier.fillMaxWidth().background(SzjBg).padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Box(Modifier.align(Alignment.CenterStart)) {
+            ImageGlyph(
+                R.drawable.ic_back,
+                SzjAccent,
+                Modifier
+                    .graphicsLayer { scaleX = backScale; scaleY = backScale }
+                    .size(30.dp).clip(RoundedCornerShape(10.dp))
+                    .clickable(interactionSource = interaction, indication = null, onClick = { onBack?.invoke() })
+                    .padding(horizontal = 2.dp, vertical = 6.dp),
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 50.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SzjShard(heightDp = 15)
+            Text(
+                title,
+                color = SzjText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.2.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.End) {
+            trailing?.invoke()
+        }
     }
 }
 
@@ -565,10 +581,14 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
  *
  * Renders the forum through the public JSON API: a post feed with partitions,
  * post detail (HTML body), comments, search, and the login-gated dynamics feed.
- * The whole feature uses its own minimal "Rising Stones" design language:
- * near-black base, warm off-white text, antique-gold accents and thin hairline
- * dividers instead of the global purple Material3 theme. Internal navigation
- * uses a simple back stack so the system back button walks out level-by-level.
+ *
+ * 自成一套设计语言：**冷调板岩 + 水晶青**（摩杜纳/银泪湖的水晶阵意象）——
+ * 深色是板岩夜（近黑偏蓝的底 + 逐层抬升的石板卡片 + 顶边受光高光 + 屏顶一层
+ * 极淡的青色环境光），浅色是晨雾（薄雾冷底 + 白石板 + 深水晶青）。
+ * 签名元素是水晶青棱条（`SzjShard`），只用在一级分区标题和选中态。
+ * 页头骨架、字号、返回键和全局的 `ScreenHeader` 一致，配色是自己的。
+ * Internal navigation uses a simple back stack so the system back button walks
+ * out level-by-level.
  */
 
 private sealed interface SzjRoute {
@@ -905,11 +925,39 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             is SzjRoute.PublishRecruit -> ShizhijiaPublishRecruitScreen(route.kind, recruitState, pop, nav)
             SzjRoute.Statistics -> ShizhijiaStatisticsScreen(pop, onLogin = { nav(SzjRoute.Login) })
         }
+        // 屏顶一层极淡的水晶青环境光，只在深色模式出现。深色板岩底本身很死，
+        // 这层青光从顶部中央散开，呼应"水晶阵青光"，也是成本最低的气质提升。
+        // 叠在内容之上（各屏的 ScreenFrame 背景是实色，压在下面看不见），
+        // alpha 峰值 6%，不吃触摸，也不影响任何文字的对比度。
+        SzjAmbientGlow()
         SzjViewer.url?.let { url ->
             // Full-screen overlay for viewing a tapped image at size.
             SzjPhotoViewer(url = url, onClose = { SzjViewer.url = null })
         }
     }
+}
+
+/**
+ * 石之家屏顶的水晶青环境光。
+ *
+ * 一个从顶部中央散开的径向渐变，半径约等于屏宽，向下 40% 处衰减到 0。
+ * 浅色模式不画：薄雾底本来就有层次，再加一层青只会显得脏。
+ */
+@Composable
+private fun SzjAmbientGlow() {
+    if (szjLight) return
+    val accent = SzjAccent
+    Box(
+        Modifier.fillMaxWidth().fillMaxHeight(0.42f).drawBehind {
+            drawRect(
+                Brush.radialGradient(
+                    colors = listOf(accent.copy(alpha = 0.06f), Color.Transparent),
+                    center = Offset(size.width * 0.5f, 0f),
+                    radius = size.width * 1.05f,
+                )
+            )
+        }
+    )
 }
 
 /**
@@ -966,9 +1014,11 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
         // 所以这里固定用亮色，不跟随浅色主题。
         Box(Modifier.align(Alignment.BottomEnd).padding(18.dp)) {
             SzjPressable(onClick = onClose, shape = CircleShape) {
-                Text("✕", color = Color(0xFFE8EDF2), fontSize = 20.sp,
-                    modifier = Modifier.clip(CircleShape).background(Color(0xB3232932))
-                        .padding(horizontal = 14.dp, vertical = 9.dp))
+                Box(
+                    Modifier.clip(CircleShape).background(Color(0xB3232932))
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    contentAlignment = Alignment.Center,
+                ) { ImageGlyph(R.drawable.ic_close, Color(0xFFE8EDF2), Modifier.size(18.dp)) }
             }
         }
     }
@@ -1130,7 +1180,7 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
     // 账号行本身就是一张石板卡片，取代原来"一行内容 + 一条分割线"。
     SzjCardSurface(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp)
+            Box(Modifier.size(44.dp)
                 .clip(CircleShape)
                 .clickable(enabled = !loggedIn || myUuid.isNotBlank(), onClick = openMe)
                 .shadow(2.dp, CircleShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
@@ -1153,7 +1203,7 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
                     .clip(SzjChipShape)
                     .clickable(enabled = !loggedIn || myUuid.isNotBlank(), onClick = openMe),
             ) {
-                Text(loginUser?.name ?: if (loggedIn) "已登录" else "未登录", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(loginUser?.name ?: if (loggedIn) "已登录" else "未登录", color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 val server = listOfNotNull(loginUser?.area, loginUser?.group)
                 if (server.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(); Text(server.joinToString(" "), color = SzjMuted, style = SzjMetaStyle) }
@@ -1177,8 +1227,14 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
                 )
             }
             Spacer(Modifier.width(6.dp))
+            // 搜索原来是一个 22sp 的"⌕"字符：签到是实心软青块，搜索却是个虚字符，
+            // 一眼过去两个按钮轻重完全不对等。换成 40dp 圆形图标钮，
+            // 底色用 SzjCardRaised，视觉重量和签到那一块配平。
             SzjPressable(onClick = { nav(SzjRoute.Search) }, shape = CircleShape) {
-                Text("⌕", color = SzjAccent, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(SzjCardRaised),
+                    contentAlignment = Alignment.Center,
+                ) { ImageGlyph(R.drawable.ic_search, SzjAccent, Modifier.size(19.dp)) }
             }
         }
     }
@@ -1285,6 +1341,13 @@ private fun ShizhijiaMeTab(
     // 设置页盖在「我」上面，返回键先退出设置。
     BackHandler(enabled = showSettings) { showSettings = false }
     val p = loginUser
+    // 关注/粉丝/获赞原来是硬编码的三个 0——自己主页明明有真数，摆一排假 0
+    // 是最显眼的半成品。这里按 uuid 拉一次真资料；没拉到就整行不显示。
+    var myCounts by remember { mutableStateOf<ShizhijiaUserProfile?>(null) }
+    LaunchedEffect(p?.uuid) {
+        val uuid = p?.uuid.orEmpty()
+        myCounts = if (uuid.isBlank()) null else ShizhijiaApi.getUserProfile(context, uuid)
+    }
     Column(Modifier.fillMaxSize().padding(bottom = 90.dp).verticalScroll(rememberScrollState())) {
       // 品牌行随内容滑走，和其他分区一致。它自带左右 16dp，所以放在内边距外面。
       header()
@@ -1363,7 +1426,14 @@ private fun ShizhijiaMeTab(
             }
             Spacer(Modifier.height(12.dp))
             SzjPressable(onClick = { showSettings = false }, shape = SzjChipShape) {
-                Text("‹ 返回", color = SzjAccent, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
+                    ImageGlyph(R.drawable.ic_back, SzjAccent, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("返回", color = SzjAccent, fontSize = 14.sp)
+                }
             }
         } else if (loggedIn) {
             // ---- 资料头卡：头像 + 名字 + 服务器 + 三个计数 ----
@@ -1385,17 +1455,20 @@ private fun ShizhijiaMeTab(
                                 Row(verticalAlignment = Alignment.CenterVertically) { SzjLocPin(14); Text(srv, color = SzjMuted, style = SzjMetaStyle) }
                             }
                         }
-                        if (myUuid.isNotBlank()) Text("›", color = SzjMuted, fontSize = 22.sp)
+                        if (myUuid.isNotBlank()) ImageGlyph(R.drawable.ic_chevron_right, SzjMuted, Modifier.size(18.dp))
                     }
-                    Spacer(Modifier.height(16.dp))
                     // 计数条：数字大、标签小，中间用竖棱条分隔。
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        listOf("关注" to 0, "粉丝" to 0, "获赞" to 0).forEachIndexed { i, (label, num) ->
-                            if (i > 0) Box(Modifier.width(1.dp).height(22.dp).background(SzjLine))
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("$num", color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(2.dp))
-                                Text(label, color = SzjMuted, style = SzjMetaStyle)
+                    // 真数没到之前整行不占位——宁可没有，也不摆一排 0。
+                    myCounts?.let { c ->
+                        Spacer(Modifier.height(16.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            listOf("关注" to c.followNum, "粉丝" to c.fansNum, "获赞" to c.likedNum).forEachIndexed { i, (label, num) ->
+                                if (i > 0) Box(Modifier.width(1.dp).height(22.dp).background(SzjLine))
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("$num", color = SzjText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(label, color = SzjMuted, style = SzjMetaStyle)
+                                }
                             }
                         }
                     }
@@ -1545,9 +1618,9 @@ private fun SzjPostFilterCard() {
                 }
                 // 展开时箭头转成向上，收起时向下。
                 val rot by animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "szjFilterArrow")
-                Text(
-                    "⌄", color = SzjMuted, fontSize = 17.sp,
-                    modifier = Modifier.graphicsLayer { rotationZ = rot }.padding(start = 8.dp),
+                ImageGlyph(
+                    R.drawable.ic_chevron_down, SzjMuted,
+                    Modifier.graphicsLayer { rotationZ = rot }.padding(start = 8.dp).size(16.dp),
                 )
             }
             if (expanded) {
@@ -1875,16 +1948,34 @@ internal fun SzjEmptyInline(title: String, hint: String? = null, action: (@Compo
 /** 分区 chip：选中时底色和文字色一起过渡，不做位移，避免和棱条抢戏。 */
 @Composable
 private fun SzjPartChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) SzjAccentSoft else SzjCard, tween(220), label = "szjChipBg")
+    // 未选中态原来填 SzjCard 落在 SzjBg 上，深色下两个色差不到一档，chip 几乎隐形。
+    // 改成透明底 + 描边：轮廓比色块更能在近黑底上立住，选中态才是唯一的色块。
+    val bg by animateColorAsState(if (selected) SzjAccentSoft else Color.Transparent, tween(220), label = "szjChipBg")
     val fg by animateColorAsState(if (selected) SzjOnAccentSoft else SzjMuted, tween(220), label = "szjChipFg")
+    val stroke by animateColorAsState(if (selected) Color.Transparent else SzjHairline, tween(220), label = "szjChipStroke")
     SzjPressable(onClick = onClick, shape = SzjChipShape) {
         Text(
             label,
             color = fg,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.clip(SzjChipShape).background(bg).padding(horizontal = 14.dp, vertical = 7.dp),
+            modifier = Modifier.clip(SzjChipShape).background(bg)
+                .border(1.dp, stroke, SzjChipShape)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
         )
+    }
+}
+
+/** 图标 + 数字的元信息（评论数/阅读数）。图标 12dp，跟 11sp 元信息字号配平。 */
+@Composable
+private fun SzjCountMeta(iconRes: Int, count: Long) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Icon(
+            painterResource(iconRes), contentDescription = null,
+            tint = SzjMuted, modifier = Modifier.size(12.dp),
+        )
+        Spacer(Modifier.width(3.dp))
+        Text("$count", color = SzjMuted, style = SzjMetaStyle)
     }
 }
 
@@ -1910,16 +2001,37 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
             lineHeight = 23.sp, letterSpacing = 0.1.sp,
             maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
-        // Line 2: main-image thumbnails, up to 3 (deduplicated). Every thumbnail keeps
-        // the SAME fixed ~1/3 width whether 1, 2 or 3 are shown; failed images
-        // collapse away (no blank frame before the healthy ones).
-        if (post.coverPics.isNotEmpty()) {
+        // Line 2: 配图。张数决定版式，跟官方移动端一致——
+        //   1 张 → 全宽 16:9 大图（原来不管几张都切 1/3 小方块，
+        //          单图时就是一个孤零零的小方块，是信息流里最寒酸的地方）
+        //   2 张 → 各 1/2 宽的方块
+        //   ≥3 张 → 三格，保持原样
+        // 失败的图直接塌掉，不留空框。
+        val pics = post.coverPics.distinct()
+        if (pics.isNotEmpty()) {
             Spacer(Modifier.height(11.dp))
-            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cell = (maxWidth - 12.dp) / 3
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    post.coverPics.distinct().take(3).forEach { url ->
-                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+            when (pics.size) {
+                1 -> ShizhijiaRemoteImage(
+                    url = pics[0],
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(SzjInnerShape),
+                    contentScale = ContentScale.Crop,
+                    showPlaceholder = false, collapseOnFail = true,
+                    onClick = { SzjViewer.url = it },
+                )
+                2 -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val cell = (maxWidth - 6.dp) / 2
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        pics.forEach { url ->
+                            ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+                        }
+                    }
+                }
+                else -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val cell = (maxWidth - 12.dp) / 3
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        pics.take(3).forEach { url ->
+                            ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+                        }
                     }
                 }
             }
@@ -1936,12 +2048,10 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
                 Text(post.groupName, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.weight(1f))
-            if (post.commentCount > 0) Text("${post.commentCount} 评论", color = SzjMuted, style = SzjMetaStyle)
-            if (post.commentCount > 0 && post.readCount > 0) {
-                // 计数之间用一个小点分隔，比空格更有结构。
-                Text(" · ", color = SzjMuted, style = SzjMetaStyle)
-            }
-            if (post.readCount > 0) Text("${post.readCount} 阅读", color = SzjMuted, style = SzjMetaStyle)
+            // 计数带 12dp 小图标，比"N 评论 · N 阅读"这一串裸文字好扫。
+            if (post.commentCount > 0) SzjCountMeta(R.drawable.ic_comment, post.commentCount)
+            if (post.commentCount > 0 && post.readCount > 0) Spacer(Modifier.width(10.dp))
+            if (post.readCount > 0) SzjCountMeta(R.drawable.ic_eye, post.readCount)
         }
         }
     }
@@ -2300,7 +2410,7 @@ private fun ShizhijiaRecruitTab(
                         .padding(horizontal = 15.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("＋", color = SzjOnAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    ImageGlyph(R.drawable.ic_add, SzjOnAccent, Modifier.size(15.dp))
                     Spacer(Modifier.width(5.dp))
                     Text("发布", color = SzjOnAccent, style = SzjLabelStyle)
                 }
@@ -3088,7 +3198,7 @@ private fun SzjSheet(title: String, onClose: () -> Unit, content: @Composable Co
                 Spacer(Modifier.width(8.dp))
                 Text(title, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 SzjPressable(onClick = onClose, shape = CircleShape) {
-                    Text("✕", color = SzjMuted, fontSize = 17.sp, modifier = Modifier.padding(6.dp))
+                    ImageGlyph(R.drawable.ic_close, SzjMuted, Modifier.padding(6.dp).size(16.dp))
                 }
             }
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { content() }
@@ -3760,7 +3870,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                 val btnBg by animateColorAsState(if (ready) SzjAccent else SzjCardRaised, tween(220), label = "szjSearchBtn")
                 SzjPressable(onClick = { doSearch() }, shape = SzjChipShape) {
                     Box(Modifier.size(36.dp).clip(SzjChipShape).background(btnBg), contentAlignment = Alignment.Center) {
-                        Text("⌕", color = if (ready) SzjOnAccent else SzjMuted, fontSize = 18.sp)
+                        ImageGlyph(R.drawable.ic_search, if (ready) SzjOnAccent else SzjMuted, Modifier.size(18.dp))
                     }
                 }
             }
@@ -4407,11 +4517,15 @@ private fun ShizhijiaMyRecruitsScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) 
         if (kind != ShizhijiaRecruitKind.Guild) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.End) {
                 SzjPressable(onClick = { nav(SzjRoute.PublishRecruit(kind)) }, shape = SzjChipShape) {
-                    Text(
-                        "＋ 发布${kind.label}", color = SzjOnAccentSoft, style = SzjLabelStyle,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft)
                             .padding(horizontal = 12.dp, vertical = 7.dp),
-                    )
+                    ) {
+                        ImageGlyph(R.drawable.ic_add, SzjOnAccentSoft, Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("发布${kind.label}", color = SzjOnAccentSoft, style = SzjLabelStyle)
+                    }
                 }
             }
         }

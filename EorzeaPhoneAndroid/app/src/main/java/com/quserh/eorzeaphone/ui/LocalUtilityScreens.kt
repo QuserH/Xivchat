@@ -43,8 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneText
@@ -108,7 +110,7 @@ fun PhotosScreen(state: PhoneState) {
                             Text("艾欧泽亚照片", color = PhoneText, fontWeight = FontWeight.SemiBold)
                             Text(photo.file.nameWithoutExtension, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
                         }
-                        Text("›", color = PhoneMuted, fontSize = 28.sp, modifier = Modifier.padding(end = 14.dp))
+                        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.padding(end = 14.dp).size(18.dp))
                     }
                 }
             }
@@ -121,16 +123,16 @@ fun ShortcutsScreen(state: PhoneState) {
     var adding by remember { mutableStateOf(false) }
     var nameInput by remember { mutableStateOf("") }
     var commandInput by remember { mutableStateOf("") }
-    FeatureFrame("快捷指令", state, trailing = { Text("＋", color = PhoneAccent, fontSize = 24.sp, modifier = Modifier.clickable { nameInput = ""; commandInput = ""; adding = true }.padding(horizontal = 8.dp)) }) {
+    FeatureFrame("快捷指令", state, trailing = { ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.clickable { nameInput = ""; commandInput = ""; adding = true }.padding(horizontal = 8.dp).size(21.dp)) }) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(state.customShortcuts, key = { it.command }) { shortcut ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = state.connected) { state.sendChat(shortcut.command); state.statusMessage = "已发送：${shortcut.name}" }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(PhoneAccent), contentAlignment = Alignment.Center) { Text("⌁", color = Color.White, fontSize = 20.sp) }
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(PhoneAccent), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic_bolt, Color.White, Modifier.size(20.dp)) }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(shortcut.name, color = PhoneText); Text(shortcut.command, color = PhoneMuted, fontSize = 11.sp) }
                     if (state.customShortcuts.count { it.command == shortcut.command } > 1 || defaultShortcuts.none { it.command == shortcut.command }) {
-                        Text("✕", color = Color(0xFFE56B6F), fontSize = 16.sp, modifier = Modifier.clickable { state.removeShortcut(shortcut.command) }.padding(6.dp))
+                        ImageGlyph(R.drawable.ic_close, PhoneDanger, Modifier.clickable { state.removeShortcut(shortcut.command) }.padding(6.dp).size(15.dp))
                     } else {
-                        Text("›", color = PhoneMuted, fontSize = 24.sp)
+                        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(16.dp))
                     }
                 }
             }
@@ -185,7 +187,7 @@ fun MapsScreen(state: PhoneState) {
     val favorites = maps?.expansions.orEmpty().flatMap { it.regions }.flatMap { it.destinations }.filter { state.isMapFavorite(it.rowId) }
     ScreenFrame(background = Color(0xFFF5F5FA)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(66.dp).padding(start = LocalContentMargin.current.dp, end = 21.dp)) {
-            Text("‹", color = purple, fontSize = 40.sp, modifier = Modifier.clickable { state.back() }.padding(end = 4.dp))
+            ImageGlyph(R.drawable.ic_back, purple, Modifier.clickable { state.back() }.padding(end = 4.dp).size(24.dp))
             Text("地图", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
             Box(Modifier.size(40.dp))
         }
@@ -197,7 +199,7 @@ fun MapsScreen(state: PhoneState) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 43.dp).height(44.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFFE7E7EC)),
             decorationBox = { field ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
-                    Text("⌕", color = muted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                    ImageGlyph(R.drawable.ic_search, muted, Modifier.padding(end = 10.dp).size(19.dp))
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         if (query.isEmpty()) Text("搜索地点", color = muted, fontSize = 14.sp)
                         field()
@@ -209,7 +211,7 @@ fun MapsScreen(state: PhoneState) {
             item("current-label") { Text("当前位置", color = muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 42.dp, vertical = 8.dp)) }
             item("current") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).clip(RoundedCornerShape(10.dp)).background(Color.White).padding(horizontal = 24.dp, vertical = 17.dp)) {
-                    Text("●", color = purple, fontSize = 24.sp)
+                    ImageGlyph(R.drawable.ic_dot, purple, Modifier.size(15.dp))
                     Column(Modifier.padding(start = 16.dp)) {
                         Text(maps?.currentZone?.ifBlank { profile?.location.orEmpty() }?.ifBlank { "尚未取得位置" } ?: "尚未连接游戏", color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Text(maps?.currentRegion?.ifBlank { profile?.currentWorld.orEmpty() }.orEmpty(), color = muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
@@ -233,7 +235,9 @@ fun MapsScreen(state: PhoneState) {
                         expandedRegion = null
                     }.padding(horizontal = 42.dp, vertical = 17.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (expanded) "⌄" else "›", color = ink, fontSize = 28.sp, modifier = Modifier.width(28.dp))
+                            Box(Modifier.width(28.dp)) {
+                                ImageGlyph(if (expanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right, ink, Modifier.size(19.dp))
+                            }
                             Text(expansion.name, color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -244,7 +248,9 @@ fun MapsScreen(state: PhoneState) {
                     item("region-$regionKey") {
                         val expanded = normalizedQuery.isNotBlank() || expandedRegion == regionKey
                         Row(Modifier.fillMaxWidth().clickable { expandedRegion = if (expandedRegion == regionKey) null else regionKey }.padding(start = 66.dp, end = 42.dp, top = 11.dp, bottom = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (expanded) "⌄" else "›", color = muted, fontSize = 24.sp, modifier = Modifier.width(26.dp))
+                            Box(Modifier.width(26.dp)) {
+                                ImageGlyph(if (expanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right, muted, Modifier.size(17.dp))
+                            }
                             Text(region.name, color = ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
                             Text("${region.destinations.size}", color = muted, fontSize = 11.sp)
                         }
@@ -263,9 +269,13 @@ fun MapsScreen(state: PhoneState) {
 @Composable
 private fun MapDestinationRow(name: String, favorite: Boolean, accent: Color, ink: Color, muted: Color, onFavorite: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 42.dp, vertical = 2.dp).clip(RoundedCornerShape(8.dp)).background(Color.White).padding(start = 48.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("●", color = accent, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp))
+        ImageGlyph(R.drawable.ic_dot, accent, Modifier.padding(end = 12.dp).size(8.dp))
         Text(name, color = ink, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(if (favorite) "★" else "☆", color = if (favorite) accent else muted, fontSize = 20.sp, modifier = Modifier.clickable { onFavorite() }.padding(4.dp))
+        ImageGlyph(
+            if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star_outline,
+            if (favorite) accent else muted,
+            Modifier.clickable { onFavorite() }.padding(4.dp).size(20.dp),
+        )
     }
 }
 

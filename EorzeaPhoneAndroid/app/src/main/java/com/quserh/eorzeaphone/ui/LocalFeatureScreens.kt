@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.GameJob
 import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameRetainer
@@ -78,7 +79,7 @@ fun FeatureFrame(title: String, state: PhoneState, trailing: (@Composable () -> 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) },
-            navigationIcon = { IconButton(onClick = state::back) { Text("‹", color = PhoneAccent, fontSize = 30.sp) } },
+            navigationIcon = { IconButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(22.dp)) } },
             actions = { trailing?.invoke() },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
         )
@@ -298,7 +299,7 @@ private fun DailyDataRow(state: PhoneState, item: GameDailyEntry) {
     val complete = if (item.automatic) item.complete else manualChecked
     val done = if (item.automatic && item.available) (item.goal - item.remaining).coerceIn(0, item.goal.coerceAtLeast(0)) else if (complete) item.goal else 0
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = !item.automatic) { state.toggleDaily(item.id, item.weekly) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(28.dp).clip(CircleShape).background(if (complete) PhoneGreen else PhoneSurfaceRaised), contentAlignment = Alignment.Center) { Text(if (complete) "✓" else "", color = Color.White, fontWeight = FontWeight.Bold) }
+        Box(Modifier.size(28.dp).clip(CircleShape).background(if (complete) PhoneGreen else PhoneSurfaceRaised), contentAlignment = Alignment.Center) { if (complete) ImageGlyph(R.drawable.ic_check_small, Color.White, Modifier.size(17.dp)) }
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(item.label, color = PhoneText, fontWeight = FontWeight.SemiBold)
             val note = if (item.id == "daily.levequests" && item.available && item.remaining >= 0) {

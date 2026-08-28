@@ -92,6 +92,7 @@ import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
+import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
@@ -210,8 +211,12 @@ fun SettingsScreen(state: PhoneState) {
                         Text(profileSubtitle, color = PhoneMuted, fontSize = 13.sp)
                     }
                     Box {
-                        Text("›", color = if (state.knownCharacters.size > 1) PhoneAccent else PhoneMuted, fontSize = 32.sp,
-                            modifier = Modifier.clickable(enabled = state.knownCharacters.isNotEmpty()) { characterMenu = true }.padding(horizontal = 4.dp))
+                        ImageGlyph(
+                            R.drawable.ic_chevron_right,
+                            if (state.knownCharacters.size > 1) PhoneAccent else PhoneMuted,
+                            Modifier.clickable(enabled = state.knownCharacters.isNotEmpty()) { characterMenu = true }
+                                .padding(horizontal = 4.dp).size(22.dp),
+                        )
                         DropdownMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
                             state.knownCharacters.forEach { character ->
                                 DropdownMenuItem(
@@ -307,7 +312,7 @@ private fun LinkRow(label: String, icon: Int, value: String? = null, onClick: ((
         ImageGlyph(icon, PhoneText, Modifier.padding(start = 18.dp))
         Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
         if (value != null) Text(value, color = PhoneMuted, fontSize = 13.sp)
-        Text("›", color = if (onClick != null) PhoneMuted else PhoneSurfaceRaised, fontSize = 28.sp, modifier = Modifier.padding(horizontal = 15.dp))
+        ImageGlyph(R.drawable.ic_chevron_right, if (onClick != null) PhoneMuted else PhoneSurfaceRaised, Modifier.padding(horizontal = 15.dp).size(18.dp))
     }
 }
 @Composable
@@ -343,11 +348,11 @@ private fun GeneralSettingsScreen(state: PhoneState) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("保留消息上限", color = PhoneText, modifier = Modifier.weight(1f))
                 Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) }, contentAlignment = Alignment.Center) {
-                    Text("−", color = PhoneAccent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    ImageGlyph(R.drawable.ic_remove, PhoneAccent, Modifier.size(18.dp))
                 }
                 Text("  ${state.chatRetentionLimit}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) }, contentAlignment = Alignment.Center) {
-                    Text("＋", color = PhoneAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.size(18.dp))
                 }
             }
             Text("每个角色保留最近 N 条，超出自动清理最旧消息；0 = 不限制（永久保留）", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -374,11 +379,11 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("左右边距", color = PhoneText, modifier = Modifier.weight(1f))
                 Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.contentMargin -= 2 }, contentAlignment = Alignment.Center) {
-                    Text("−", color = PhoneAccent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    ImageGlyph(R.drawable.ic_remove, PhoneAccent, Modifier.size(18.dp))
                 }
                 Text("  ${state.contentMargin}  ", color = PhoneText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).clickable { state.contentMargin += 2 }, contentAlignment = Alignment.Center) {
-                    Text("＋", color = PhoneAccent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.size(18.dp))
                 }
             }
             Text("左右都向内收缩·数值越小越贴近屏幕边缘", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -392,7 +397,11 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(mode.label, color = PhoneText, modifier = Modifier.weight(1f))
-                    Text(if (state.themeMode == mode) "●" else "○", color = if (state.themeMode == mode) PhoneAccent else PhoneMuted, fontSize = 20.sp)
+                    ImageGlyph(
+                        if (state.themeMode == mode) R.drawable.ic_radio_on else R.drawable.ic_radio_off,
+                        if (state.themeMode == mode) PhoneAccent else PhoneMuted,
+                        Modifier.size(20.dp),
+                    )
                 }
             }
         }
@@ -450,7 +459,7 @@ fun ContactsTab(state: PhoneState) {
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.width(150.dp).focusRequester(focusRequester),
                 )
-                Text("✕", color = PhoneMuted, fontSize = 20.sp, modifier = Modifier.clickable { searching = false; query = ""; keyboard?.hide() }.padding(start = 10.dp))
+                ImageGlyph(R.drawable.ic_close, PhoneMuted, Modifier.clickable { searching = false; query = ""; keyboard?.hide() }.padding(start = 10.dp).size(19.dp))
             } else {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -508,7 +517,7 @@ private fun ContactRow(friend: PhoneFriend, onClick: () -> Unit) {
             Text(if (friend.location.isBlank()) friend.world else "${friend.world} · ${friend.location}", color = PhoneMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (friend.job.isNotBlank()) Text(friend.job, color = PhoneAccent, fontSize = 11.sp)
         }
-        Text("›", color = PhoneMuted, fontSize = 25.sp)
+        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(17.dp))
     }
 }
 @Composable
@@ -565,7 +574,7 @@ fun ContactDetailScreen(state: PhoneState) {
             ) {
                 Box(Modifier.size(38.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF77798A)), contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold) }
                 Text("查看玩家信息", color = if (friend.contentId != 0L) PhoneText else PhoneMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 14.dp))
-                Text("›", color = PhoneMuted, fontSize = 28.sp)
+                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(18.dp))
             }
             if (state.statusMessage.isNotBlank()) Text(state.statusMessage, color = PhoneMuted, fontSize = 12.sp)
         }
@@ -607,7 +616,7 @@ fun InventoryScreen(state: PhoneState) {
                 Box(Modifier.padding(start = 9.dp).size(34.dp).clip(RoundedCornerShape(7.dp)).background(PhoneSurfaceRaised).clickable {
                     showSearch = !showSearch
                     if (!showSearch) query = ""
-                }, contentAlignment = Alignment.Center) { Text("⌕", color = PhoneAccent, fontSize = 21.sp) }
+                }, contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic_search, PhoneAccent, Modifier.size(20.dp)) }
             } },
             onBack = if (selectedGroup == null) null else ({ selectedGroup = null; selectedRetainerId = null; query = "" }),
             showBack = selectedGroup != null)
@@ -662,7 +671,7 @@ private fun CompactInventorySearch(value: String, change: (String) -> Unit, modi
             .clip(RoundedCornerShape(11.dp)).background(PhoneSurfaceRaised),
         decorationBox = { field ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
-                Text("⌕", color = PhoneMuted, fontSize = 21.sp, modifier = Modifier.padding(end = 10.dp))
+                ImageGlyph(R.drawable.ic_search, PhoneMuted, Modifier.padding(end = 10.dp).size(19.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     if (value.isEmpty()) Text("搜索物品", color = PhoneMuted, fontSize = 14.sp)
                     field()
@@ -698,7 +707,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                         Box(Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)).background(color), contentAlignment = Alignment.Center) { ImageGlyph(icon, Color.White, Modifier.size(26.dp)) }
                         Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
                         Text(formatCount(count), color = color, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 5.dp))
-                        Text("›", color = PhoneMuted, fontSize = 26.sp, modifier = Modifier.padding(start = 9.dp))
+                        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.padding(start = 9.dp).size(17.dp))
                     }
                     if (index < rows.lastIndex) Divider(Modifier.padding(start = 78.dp), color = Color(0x22333333))
                 }
@@ -895,7 +904,8 @@ fun SkywatcherScreen(state: PhoneState) {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
                         Column(Modifier.fillMaxWidth().padding(vertical = 25.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(weatherGlyph(weather.current), color = visual.ink, fontSize = 72.sp)
+                            ImageGlyph(weatherIcon(weather.current), visual.ink, Modifier.size(72.dp))
+                            Spacer(Modifier.height(10.dp))
                             Text(weather.current, color = visual.ink, fontSize = 29.sp, fontWeight = FontWeight.Bold)
                             Text(weather.zone, color = visual.ink.copy(alpha = .74f), fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
                             Text("艾欧泽亚时 ${String.format("%02d:00", bell)}", color = visual.ink.copy(alpha = .62f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
@@ -906,7 +916,7 @@ fun SkywatcherScreen(state: PhoneState) {
                         val rowVisual = phoneWeatherVisual(window.name, window.eorzeaBell)
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(rowVisual.ink.copy(alpha = .12f)).padding(horizontal = 15.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(43.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(rowVisual.top, rowVisual.bottom))), contentAlignment = Alignment.Center) {
-                                Text(weatherGlyph(window.name), color = rowVisual.ink, fontSize = 19.sp)
+                                ImageGlyph(weatherIcon(window.name), rowVisual.ink, Modifier.size(21.dp))
                             }
                             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                 Text(window.name, color = visual.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -978,7 +988,7 @@ private fun ConversationListTab(state: PhoneState) {
                 Text(filter.label, color = if (filter.id == state.selectedChatFilterId) Color.White else PhoneMuted, fontSize = 12.sp,
                     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (filter.id == state.selectedChatFilterId) PhoneAccent else PhoneSurface).clickable { state.selectedChatFilterId = filter.id }.padding(horizontal = 10.dp, vertical = 7.dp))
             }
-            Text("＋", color = PhoneAccent, fontSize = 20.sp, modifier = Modifier.clickable { filterEditor = true }.padding(horizontal = 4.dp))
+            ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.clickable { filterEditor = true }.padding(horizontal = 4.dp).size(19.dp))
         }
         if (state.conversations.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1048,7 +1058,7 @@ private fun ConversationRow(conv: ChatConversation, state: PhoneState) {
                     }
                 }
             }
-            Text("›", color = PhoneMuted, fontSize = 25.sp, modifier = Modifier.padding(start = 8.dp))
+            ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.padding(start = 8.dp).size(17.dp))
         }
         Box(Modifier.fillMaxWidth().padding(start = 79.dp).height(1.dp).background(Color.White.copy(alpha = 0.06f)))
     }
@@ -1066,11 +1076,20 @@ private fun ConversationDetailScreen(state: PhoneState, conv: ChatConversation) 
     ScreenFrame {
         ScreenHeader(conv.title, state, trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (conv.notify) "🔔" else "🔕", fontSize = 19.sp, modifier = Modifier.clickable { state.toggleConversationNotify(conv) }.padding(6.dp))
+                // 原来是 🔔/🔕 两个 emoji：各家系统画法不同，还是彩色的，
+                // 和这一排纯色图标完全不搭。
+                ImageGlyph(
+                    if (conv.notify) R.drawable.ic_bell_on else R.drawable.ic_bell_off,
+                    if (conv.notify) PhoneAccent else PhoneMuted,
+                    Modifier.clickable { state.toggleConversationNotify(conv) }.padding(6.dp).size(19.dp),
+                )
                 if (conv.category != ChatCategory.Tell) {
                     Box {
                         TextButton(onClick = { channelMenu = true }, enabled = state.connected, contentPadding = ButtonDefaults.TextButtonContentPadding) {
-                            Text("${state.currentChannelName} ⌄", color = PhoneText, fontSize = 13.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(state.currentChannelName, color = PhoneText, fontSize = 13.sp)
+                                ImageGlyph(R.drawable.ic_chevron_down, PhoneText, Modifier.padding(start = 3.dp).size(14.dp))
+                            }
                         }
                         DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
                             outputChannels.forEach { channel ->

@@ -1,0 +1,10 @@
+<!-- 通知关（Material notifications_off）。原来是"🔕"emoji。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M792,904L671,784L160,784L160,704L240,704L240,424Q240,392 246.5,361Q253,330 266,302L56,92L112,36L848,848L792,904ZM720,585L320,185Q356,155 402,138.5Q448,122 500,122Q604,122 674,193Q744,264 744,368L744,585L720,585ZM480,904Q447,904 423.5,880.5Q400,857 400,824L560,824Q560,857 536.5,880.5Q513,904 480,904ZM591,704L320,433L320,704L591,704Z" />
+</vector>

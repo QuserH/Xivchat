@@ -1,0 +1,10 @@
+<!-- 列表项圆点 / 当前位置标记。原来是"●"字符，字号变化时半径不可控。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M480,760Q364,760 282,678Q200,596 200,480Q200,364 282,282Q364,200 480,200Q596,200 678,282Q760,364 760,480Q760,596 678,678Q596,760 480,760Z" />
+</vector>

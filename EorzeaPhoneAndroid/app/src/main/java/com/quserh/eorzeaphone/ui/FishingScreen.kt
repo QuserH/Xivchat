@@ -629,16 +629,17 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                 }
             }
             if (fish.guide.isNotBlank() || fish.guidePath.isNotBlank()) item {
+                val guideAccent = PhoneAccent
                 DetailSection("攻略") {
                     if (fish.guidePath.isNotBlank()) {
                         Text("推荐路线", color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        guideParagraphs(fish.guidePath).forEach { paragraph ->
+                        guideParagraphs(fish.guidePath, guideAccent).forEach { paragraph ->
                             Text(paragraph, color = PhoneText, fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 6.dp))
                         }
                     }
                     if (fish.guide.isNotBlank()) {
                         Text("钓法说明", color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = if (fish.guidePath.isNotBlank()) 12.dp else 0.dp))
-                        guideParagraphs(fish.guide).forEach { paragraph ->
+                        guideParagraphs(fish.guide, guideAccent).forEach { paragraph ->
                             Text(paragraph, color = PhoneText, fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 6.dp))
                         }
                     }
@@ -691,11 +692,13 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                             val x = (spot.x / 2048f).coerceIn(0f, 1f)
                             val y = (spot.y / 2048f).coerceIn(0f, 1f)
                             if (spot.radius > 0) {
+                                // Canvas lambda 非 composable，accent 先在外面取。
+                                val accent = PhoneAccent
                                 Canvas(Modifier.fillMaxSize()) {
                                     val radius = size.minDimension * (spot.radius / 6.25f / 2048f)
                                     val center = Offset(size.width * x, size.height * y)
-                                    drawCircle(PhoneAccent.copy(alpha = .17f), radius, center)
-                                    drawCircle(PhoneAccent.copy(alpha = .78f), radius, center, style = Stroke(2.dp.toPx()))
+                                    drawCircle(accent.copy(alpha = .17f), radius, center)
+                                    drawCircle(accent.copy(alpha = .78f), radius, center, style = Stroke(2.dp.toPx()))
                                 }
                             }
                         }
@@ -944,15 +947,16 @@ private fun String.decodeHtmlEntities(): String = this
     .replace("&nbsp;", " ")
     .replace("&amp;", "&")
 
-private fun guideParagraphs(raw: String): List<AnnotatedString> = raw
+// accent 从调用方传进来：这两个函数不是 composable，而品牌色现在跟主题走。
+private fun guideParagraphs(raw: String, accent: Color): List<AnnotatedString> = raw
     .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
     .decodeHtmlEntities()
     .split("\n")
     .map { it.trim() }
     .filter { it.isNotBlank() }
-    .map { buildGuideAnnotated(it) }
+    .map { buildGuideAnnotated(it, accent) }
 
-private fun buildGuideAnnotated(line: String): AnnotatedString {
+private fun buildGuideAnnotated(line: String, accent: Color): AnnotatedString {
     val result = AnnotatedString.Builder()
     val spanRegex = Regex("""<span\s+style="color:([^"]+)">([^<]*)</span>""")
     val skillRegex = Regex("<([^<>]{1,12})>")
@@ -978,7 +982,7 @@ private fun buildGuideAnnotated(line: String): AnnotatedString {
                 val color = runCatching { Color(android.graphics.Color.parseColor(m.groupValues[1])) }.getOrNull() ?: Color(0xFFD8D8DE)
                 result.withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) { append(m.groupValues[2]) }
             }
-            "skill" -> result.withStyle(SpanStyle(color = PhoneAccent, fontWeight = FontWeight.SemiBold)) { append("〈${m.groupValues[1]}〉") }
+            "skill" -> result.withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) { append("〈${m.groupValues[1]}〉") }
             "item" -> result.withStyle(SpanStyle(color = Color(0xFFFFC071), fontWeight = FontWeight.SemiBold)) { append(m.groupValues[0]) }
             else -> Unit
         }

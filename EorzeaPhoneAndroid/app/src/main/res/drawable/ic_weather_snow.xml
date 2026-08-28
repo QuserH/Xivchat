@@ -1,0 +1,10 @@
+<!-- 雪（Material ac_unit）。原来用"✻"字符，字形缺失率也高。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M440,920L440,725L303,862L246,806L440,612L440,520L348,520L154,714L98,657L235,520L40,520L40,440L235,440L98,303L154,246L348,440L440,440L440,348L246,154L303,98L440,235L440,40L520,40L520,235L657,98L714,154L520,348L520,440L612,440L806,246L862,303L725,440L920,440L920,520L725,520L862,657L806,714L612,520L520,520L520,612L714,806L657,862L520,725L520,920L440,920Z" />
+</vector>

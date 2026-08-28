@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaImageLoader
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaDataOpen
@@ -1106,7 +1107,10 @@ private fun SzjMkdCategoryCard(type: String, list: List<ShizhijiaMkdItem>) {
                         )
                         Text("${list.size} 种", color = SzjMuted, style = SzjMetaStyle)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (open) "收起" else "记录 ›", color = SzjAccent, style = SzjLabelStyle)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (open) "收起" else "记录", color = SzjAccent, style = SzjLabelStyle)
+                            if (!open) ImageGlyph(R.drawable.ic_chevron_right, SzjAccent, Modifier.padding(start = 2.dp).size(12.dp))
+                        }
                     }
                 }
                 list.sortedByDescending { it.num }.forEach { m ->
@@ -1229,11 +1233,14 @@ private fun SzjUltimateRow(
                 Spacer(Modifier.height(2.dp))
                 Text(meta, color = SzjMuted, style = SzjMetaStyle)
             }
-            Text(
-                if (done) (if (expanded) "收起" else "明细 ›") else "—",
-                color = if (done) SzjAccent else SzjMuted,
-                style = SzjLabelStyle,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (done) (if (expanded) "收起" else "明细") else "—",
+                    color = if (done) SzjAccent else SzjMuted,
+                    style = SzjLabelStyle,
+                )
+                if (done && !expanded) ImageGlyph(R.drawable.ic_chevron_right, SzjAccent, Modifier.padding(start = 2.dp).size(12.dp))
+            }
         }
     }
     if (onClick != null) SzjPressable(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = SzjInnerShape) { content() }

@@ -401,7 +401,8 @@ private fun WeatherWidget(state: PhoneState, modifier: Modifier = Modifier) {
                 (weather?.forecast?.take(5) ?: emptyList()).forEach { window ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (window.minutesFromNow <= 0) "现在" else "${window.minutesFromNow}分", color = visual.ink.copy(alpha = .78f), fontSize = 10.sp)
-                        Text(weatherGlyph(window.name), color = visual.ink, fontSize = 18.sp)
+                        Spacer(Modifier.height(3.dp))
+                        ImageGlyph(weatherIcon(window.name), visual.ink, Modifier.size(18.dp))
                     }
                 }
             }
@@ -427,13 +428,20 @@ private fun PageIndicator(page: Int, count: Int, homeText: Color) {
     }
 }
 
-internal fun weatherGlyph(name: String): String = when {
-    name.contains("雷") -> "ϟ"
-    name.contains("雪") || name.contains("冰") -> "✻"
-    name.contains("雨") -> "☂"
-    name.contains("雾") || name.contains("尘") || name.contains("霾") -> "≋"
-    name.contains("晴") || name.contains("碧") -> "☀"
-    else -> "☁"
+/**
+ * 天气 → 矢量图标。
+ *
+ * 原来这里返回的是字符（`ϟ ✻ ☂ ≋ ☀ ☁`）。`ϟ` 是希腊字母 digamma、`≋` 是三波浪号，
+ * 两个在多数中文字体里都没有字形，会渲染成豆腐块；`☂ ☀` 在部分机型上会被
+ * 替换成彩色 emoji，和纯色 UI 打架。全部换成 drawable。
+ */
+internal fun weatherIcon(name: String): Int = when {
+    name.contains("雷") -> R.drawable.ic_weather_storm
+    name.contains("雪") || name.contains("冰") -> R.drawable.ic_weather_snow
+    name.contains("雨") -> R.drawable.ic_weather_rain
+    name.contains("雾") || name.contains("尘") || name.contains("霾") -> R.drawable.ic_weather_fog
+    name.contains("晴") || name.contains("碧") -> R.drawable.ic_weather_sun
+    else -> R.drawable.ic_weather_cloud
 }
 
 @Composable

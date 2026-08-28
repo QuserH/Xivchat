@@ -54,7 +54,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
@@ -346,6 +348,8 @@ private fun WorldClockTab(store: ClockStore) {
 
 @Composable
 private fun AnalogClock(hour: Int, minute: Int, second: Int, modifier: Modifier = Modifier) {
+    // Canvas 的 lambda 不是 composable，读不到 PhoneAccent 那个 getter，先在外面取好。
+    val accent = PhoneAccent
     Canvas(modifier) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.minDimension / 2f - 5.dp.toPx()
@@ -364,8 +368,8 @@ private fun AnalogClock(hour: Int, minute: Int, second: Int, modifier: Modifier 
         }
         hand((hour % 12) + minute / 60f, 12f, .48f, 4f, Color.White)
         hand(minute + second / 60f, 60f, .68f, 3f, Color.White)
-        hand(second.toFloat(), 60f, .76f, 1.2f, PhoneAccent)
-        drawCircle(PhoneAccent, 3.dp.toPx(), center)
+        hand(second.toFloat(), 60f, .76f, 1.2f, accent)
+        drawCircle(accent, 3.dp.toPx(), center)
     }
 }
 
@@ -374,7 +378,7 @@ private fun WorldClockRow(name: String, subtitle: String, time: String, remove: 
     Row(Modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(name, color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold); Text(subtitle, color = PhoneMuted, fontSize = 11.sp) }
         Text(time, color = PhoneText, fontSize = 25.sp, fontWeight = FontWeight.Light)
-        if (remove != null) TextButton(onClick = remove, modifier = Modifier.width(36.dp)) { Text("×", color = Color(0xFFE05858), fontSize = 22.sp) }
+        if (remove != null) TextButton(onClick = remove, modifier = Modifier.width(36.dp)) { ImageGlyph(R.drawable.ic_close, PhoneDanger, Modifier.size(18.dp)) }
     }
 }
 
@@ -460,16 +464,16 @@ private fun AlarmEditorScreen(store: ClockStore, alarm: LocalAlarm?, close: () -
 @Composable
 private fun TimeStepper(value: Int, down: () -> Unit, up: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        TextButton(onClick = up, modifier = Modifier.size(42.dp)) { Text("⌃", color = PhoneAccent, fontSize = 23.sp) }
+        TextButton(onClick = up, modifier = Modifier.size(42.dp)) { ImageGlyph(R.drawable.ic_chevron_up, PhoneAccent, Modifier.size(22.dp)) }
         Box(Modifier.size(88.dp, 68.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurface), contentAlignment = Alignment.Center) { Text("%02d".format(value), color = PhoneText, fontSize = 38.sp, fontWeight = FontWeight.Light) }
-        TextButton(onClick = down, modifier = Modifier.size(42.dp)) { Text("⌄", color = PhoneAccent, fontSize = 23.sp) }
+        TextButton(onClick = down, modifier = Modifier.size(42.dp)) { ImageGlyph(R.drawable.ic_chevron_down, PhoneAccent, Modifier.size(22.dp)) }
     }
 }
 
 @Composable
 private fun SimpleLocalHeader(title: String, close: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = close, modifier = Modifier.size(50.dp)) { Text("‹", color = PhoneAccent, fontSize = 36.sp) }
+        TextButton(onClick = close, modifier = Modifier.size(50.dp)) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(24.dp)) }
         Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -535,6 +539,7 @@ private fun CountdownTab(store: ClockStore) {
         }
     } else {
         val fraction = if (store.timerDuration <= 0L) 0f else (remaining.toFloat() / store.timerDuration).coerceIn(0f, 1f)
+        val accent = PhoneAccent   // 同上：进度弧在 Canvas 里画，颜色得先提出来
         Column(Modifier.fillMaxSize().padding(horizontal = 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(238.dp).padding(top = 30.dp), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
@@ -542,7 +547,7 @@ private fun CountdownTab(store: ClockStore) {
                     val arcSize = Size(size.width - stroke, size.height - stroke)
                     val top = Offset(stroke / 2f, stroke / 2f)
                     drawArc(Color.White.copy(alpha = .09f), -90f, 360f, false, top, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                    drawArc(PhoneAccent, -90f, 360f * fraction, false, top, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                    drawArc(accent, -90f, 360f * fraction, false, top, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(formatClockDuration(remaining), color = PhoneText, fontSize = 38.sp, fontWeight = FontWeight.Light); if (remaining == 0L) Text("计时结束", color = PhoneAccent) }
             }

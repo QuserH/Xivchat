@@ -1,0 +1,10 @@
+<!-- 收藏未选（Material star_outline）。原来是"☆"字符。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M354,674L480,598L606,675L573,532L682,437L539,424L480,291L421,423L278,437L387,532L354,674ZM233,880L298,600L80,412L370,387L480,120L590,387L880,412L662,600L727,880L480,712L233,880ZM480,501L480,501Q480,501 480,501Q480,501 480,501L480,501Z" />
+</vector>

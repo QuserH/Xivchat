@@ -3,6 +3,7 @@ package com.quserh.eorzeaphone.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.EorzeaPhoneTheme
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 
@@ -216,6 +218,14 @@ private fun performPhoneHaptic(context: Context, view: android.view.View) {
     else @Suppress("DEPRECATION") vibrator.vibrate(14L)
 }
 
+// 传送横幅固定深底：它盖在任意界面上（包括浅色的桌面和石之家），
+// 只有自带深底 + 白字才能保证任何背景下都读得清。所以这几个色**不跟主题**，
+// 是有意为之，不是漏改。抽成常量，别再散在布局里。
+private val TeleportDoneBg = Color(0xEE23382A)   // 完成：墨绿
+private val TeleportBusyBg = Color(0xEE20283A)   // 进行中：墨蓝
+private val TeleportDoneInk = Color(0xFF6FE39A)
+private val TeleportBusyInk = Color(0xFF9CC8FF)
+
 @Composable
 private fun TeleportBanner(state: PhoneState) {
     val target = state.teleportTarget ?: return
@@ -226,7 +236,7 @@ private fun TeleportBanner(state: PhoneState) {
                 .widthIn(max = 340.dp)
                 .padding(top = 56.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(if (done) Color(0xEE23382A) else Color(0xEE20283A))
+                .background(if (done) TeleportDoneBg else TeleportBusyBg)
                 .pointerInput(state) {
                     detectHorizontalDragGestures(
                         onHorizontalDrag = { _, _ -> },
@@ -239,9 +249,19 @@ private fun TeleportBanner(state: PhoneState) {
                 ItemIcon(60453, Modifier.size(30.dp), "晶")
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text(target, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (done) "传送完毕" else "传送中", color = (if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF)), fontSize = 11.sp)
+                    Text(if (done) "传送完毕" else "传送中", color = if (done) TeleportDoneInk else TeleportBusyInk, fontSize = 11.sp)
                 }
-                Text(if (done) "✓" else "…", color = if (done) Color(0xFF6FE39A) else Color(0xFF9CC8FF), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                // 完成打勾，进行中转圈。原来是"✓"和"…"两个字符，
+                // 省略号在不同字体里宽度差一倍，横幅右端会忽宽忽窄。
+                if (done) {
+                    ImageGlyph(R.drawable.ic_check_small, TeleportDoneInk, Modifier.size(19.dp))
+                } else {
+                    CircularProgressIndicator(
+                        color = TeleportBusyInk,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
             }
         }
     }
