@@ -218,6 +218,185 @@ private fun LightSearchField(
     )
 }
 
+// ---------------------------------------------------------------------------
+// 聊天模块的列表骨架
+//
+// 以前这里有四套各写一遍的列表行——会话行、筛选器行、联系人行、搜索结果行，
+// 图标 34/38/44dp 三种尺寸，标题 13/14/16sp 三种字号，竖 padding 8/10/11dp，
+// 容器有的扁平有的套卡片。同一个"聊天"App 里滑过去像三个人做的。
+//
+// 下面这几个是唯一的真相来源，四种行全部走它们：
+//   LightRowIcon      —— 行首图标（人是圆的，会话/筛选是圆角方的，尺寸统一）
+//   LightListRow      —— 行骨架（图标 + 标题行 + 副行 + 尾部）
+//   LightRowDivider   —— 行间发丝线
+//   LightUnreadBadge  —— 未读角标（红只有 PhoneDanger 一个）
+//   LightChip         —— 横向筛选 chip
+// 气泡（LightChatBubble）不在其列，那是对 FFXIV-Aetherphone 的像素级复刻。
+// ---------------------------------------------------------------------------
+
+/** 行首图标尺寸。38dp 是原来 34/38/44 三档的折中，触控区也够。 */
+private val LightRowIconSize = 38.dp
+/** 图标到文字的间距。 */
+private val LightRowIconGap = 13.dp
+/** 行的竖向内边距。 */
+private val LightRowPadV = 11.dp
+
+/**
+ * 行首图标底座。[circle] = true 用圆形（代表"人"：好友、私聊对象），
+ * false 用圆角方形（代表"会话/分类"：群聊、筛选器）。形状有语义，尺寸不该有差别。
+ */
+@Composable
+private fun LightRowIcon(
+    circle: Boolean,
+    selected: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        Modifier.size(LightRowIconSize)
+            .clip(if (circle) CircleShape else RoundedCornerShape(11.dp))
+            .background(if (selected) AetherPurple else AetherLightControl),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+/**
+ * 列表行骨架。
+ *
+ * [title] 15sp SemiBold、[subtitle] 区 12sp——所有行一致。
+ * [titleLeading] 放标题前的小图标（在线状态点之类），[titleTrailing] 放时间/置顶。
+ * 按压反馈走全局的 0.978 缩放；[onLongPress] 需要按压点坐标时用 [pressOffset]。
+ */
+@Composable
+private fun LightListRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongPress: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null,
+    icon: (@Composable () -> Unit)? = null,
+    title: String,
+    titleColor: Color = AetherLightText,
+    titleLeading: (@Composable () -> Unit)? = null,
+    titleTrailing: (@Composable RowScope.() -> Unit)? = null,
+    subtitle: (@Composable RowScope.() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val motion = phoneMotionEnabled()
+    val scale by animateFloatAsState(
+        if (pressed && motion) 0.978f else 1f,
+        PhonePressSpring,
+        label = "lightRowPress",
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth()
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .pointerInput(onLongPress == null) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        tryAwaitRelease()
+                        pressed = false
+                    },
+                    onTap = { onClick() },
+                    onLongPress = onLongPress?.let { cb -> { offset -> cb(offset) } },
+                )
+            }
+            .padding(vertical = LightRowPadV),
+    ) {
+        if (icon != null) {
+            icon()
+            Spacer(Modifier.width(LightRowIconGap))
+        }
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                titleLeading?.invoke()
+                Text(
+                    title,
+                    color = titleColor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (titleTrailing != null) {
+                    Spacer(Modifier.weight(1f))
+                    titleTrailing()
+                }
+            }
+            if (subtitle != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    subtitle()
+                }
+            }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            trailing()
+        }
+    }
+}
+
+/** 行间发丝线。左侧缩进到文字起点，不顶到屏幕边。 */
+@Composable
+private fun LightRowDivider(indent: Dp = LightRowIconSize + LightRowIconGap) {
+    Box(Modifier.fillMaxWidth().padding(start = indent).height(1.dp).background(AetherLightSeparator))
+}
+
+/**
+ * 未读角标。[notify] = false（免打扰）时用灰色，不用另一个红。
+ * 以前会话行是 #E5485D/#8A93A5，chip 是 #D93025/#9AA0A6——同一个意思两套色。
+ */
+@Composable
+private fun LightUnreadBadge(unread: Int, notify: Boolean, modifier: Modifier = Modifier) {
+    if (unread <= 0) return
+    Box(
+        modifier.height(20.dp).widthIn(min = 20.dp).clip(CircleShape)
+            .background(if (notify) PhoneDanger else AetherLightMuted),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (unread > 99) "99+" else unread.toString(),
+            color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 5.dp),
+        )
+    }
+}
+
+/** 横向筛选 chip。本地列的频道筛选和会话列表的"消息/筛选器"共用它。 */
+@Composable
+private fun LightChip(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    unread: Int = 0,
+    notify: Boolean = true,
+) {
+    Box {
+        PhonePressable(onClick = onClick, shape = RoundedCornerShape(15.dp)) {
+            Text(
+                label,
+                color = if (active) Color.White else AetherLightText,
+                fontSize = 13.sp,
+                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(15.dp))
+                    .background(if (active) AetherPurple else AetherLightControl)
+                    .padding(horizontal = 13.dp, vertical = 7.dp),
+            )
+        }
+        if (unread > 0) {
+            Box(
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 5.dp, y = (-5).dp).clip(CircleShape)
+                    .background(if (notify) PhoneDanger else AetherLightMuted)
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            ) {
+                Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
 @Composable
 private fun LightFrame(content: @Composable () -> Unit) {
     Box(
@@ -405,87 +584,104 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             chips.forEach { (key, label) ->
                 val active = if (key == "messages") messagesExpanded else tabsExpanded
                 val unread = if (key == "messages") state.badgeUnread() else 0
-                ChatGroupChip(label, unread, notify = true, active = active) {
-                    state.chatListTab = key
-                }
+                LightChip(label, active, onClick = { state.chatListTab = key }, unread = unread)
             }
         }
         LazyColumn(Modifier.fillMaxSize().padding(top = 6.dp).padding(horizontal = LocalContentMargin.current.dp)) {
             if (messagesExpanded && !state.localHidden) {
                 item("local-entry") {
-                    Row(Modifier.fillMaxWidth().clickable { onOpenLocal() }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
-                        Text("本地", color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
-                        if (state.localPinned()) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
-                        Text("说话/喊话/呼喊/情感动作", color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // 本地行原来是自己手写的第五套：20dp 裸图标、没有图标底座、
+                    // 副标题挤在标题右边、置顶标 9sp。现在和会话行同一套骨架。
+                    LightListRow(
+                        onClick = onOpenLocal,
+                        icon = {
+                            LightRowIcon(circle = false) {
+                                ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
+                            }
+                        },
+                        title = "本地",
+                        titleTrailing = {
+                            if (state.localPinned()) Text("置顶", color = AetherPurple, fontSize = 10.sp)
+                        },
+                        subtitle = {
+                            Text(
+                                "说话 / 喊话 / 呼喊 / 情感动作",
+                                color = AetherLightMuted, fontSize = 12.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                        },
+                    )
+                    LightRowDivider()
+                }
+                itemsIndexed(sortedRows, key = { _, c -> "message-${c.key}" }) { index, conversation ->
+                    Box(Modifier.animateItem()) {
+                        Column {
+                            LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key })
+                            if (index < sortedRows.lastIndex) LightRowDivider()
+                        }
                     }
                 }
-                items(sortedRows, key = { "message-${it.key}" }) { conversation ->
-                    Box(Modifier.animateItem()) { LightConversationRow(conversation, state, onRename = { renameTarget = it; renameText = it.title }, onChangeIcon = { iconKeyTarget = it.key }) }
-                }
                 if (sortedRows.isEmpty() && !state.connected) item("empty") {
-                    Text("连接游戏后显示聊天消息", color = AetherLightMuted, fontSize = 14.sp,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
+                    Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
+                        PhoneEmpty("还没有聊天消息", "连接游戏后，私聊和群聊会出现在这里", R.drawable.app_messages)
+                    }
                 }
             } else {
                 if (state.chatFilters.isEmpty()) {
                     item("empty-tabs") {
-                        Text("还没有筛选器，点右上角新建", color = AetherLightMuted, fontSize = 14.sp,
-                            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 50.dp))
+                        Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
+                            PhoneEmpty("还没有筛选器", "筛选器可以把指定频道的消息单独收成一条会话", R.drawable.ic_add)
+                        }
                     }
                 } else {
-                    items(state.chatFilters, key = { "tab-${it.id}" }) { filter ->
+                    itemsIndexed(state.chatFilters, key = { _, f -> "tab-${f.id}" }) { filterIndex, filter ->
                         val selected = filter.id == state.selectedChatFilterId
                         val last = state.chats.lastOrNull { filter.matches(it) && it.timestamp > state.clearedUntil(filter.id) }
                         var tabPress by remember(filter.id) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-                        // 同会话行：长按要 offset 定位菜单，所以用 onPress 驱动缩放。
-                        var tabPressed by remember(filter.id) { mutableStateOf(false) }
-                        val tabMotion = phoneMotionEnabled()
-                        val tabScale by animateFloatAsState(
-                            if (tabPressed && tabMotion) 0.978f else 1f,
-                            PhonePressSpring,
-                            label = "chatFilterRowPress",
-                        )
                         Box {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem()
-                                .graphicsLayer { scaleX = tabScale; scaleY = tabScale }
-                                .pointerInput(filter.id) {
-                                    detectTapGestures(
-                                        onPress = {
-                                            tabPressed = true
-                                            tryAwaitRelease()
-                                            tabPressed = false
-                                        },
-                                        onTap = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
-                                        onLongPress = { offset -> tabPress = offset; longPressedTabId = filter.id },
-                                    )
-                                }
-                                .padding(vertical = 8.dp)) {
-                                Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(if (selected) AetherPurple else AetherLightControl), contentAlignment = Alignment.Center) {
-                                    SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) Color.White else AetherLightMuted)
-                                }
-                                Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                                    Text(filter.label, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    if (last != null) LightMessagePreview(last, AetherLightMuted, 12.sp, Modifier.padding(top = 2.dp))
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).padding(start = 4.dp)) {
-                                    last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 10.sp, maxLines = 1, softWrap = false) }
-                                    if (filter.alertPolicy == ChatAlertPolicy.Off) {
-                                        Box(Modifier.size(25.dp).clickable { state.toggleChatFilterNotifications(filter) }, contentAlignment = Alignment.Center) {
-                                            ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(16.dp))
+                            // 筛选器是"会话分类"，用圆角方形图标；选中时图标底色变 accent。
+                            LightListRow(
+                                modifier = Modifier.animateItem(),
+                                onClick = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
+                                onLongPress = { offset -> tabPress = offset; longPressedTabId = filter.id },
+                                icon = {
+                                    LightRowIcon(circle = false, selected = selected) {
+                                        SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) Color.White else AetherLightMuted)
+                                    }
+                                },
+                                title = filter.label,
+                                titleTrailing = {
+                                    last?.let { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                                },
+                                subtitle = if (last != null || filter.alertPolicy == ChatAlertPolicy.Off) {
+                                    {
+                                        if (last != null) {
+                                            LightMessagePreview(last, AetherLightMuted, 12.sp, Modifier.weight(1f))
+                                        } else {
+                                            Spacer(Modifier.weight(1f))
+                                        }
+                                        if (filter.alertPolicy == ChatAlertPolicy.Off) {
+                                            Box(
+                                                Modifier.size(22.dp).clickable { state.toggleChatFilterNotifications(filter) },
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp))
+                                            }
                                         }
                                     }
-                                }
-                            }
+                                } else null,
+                            )
                             Box(Modifier.offset { IntOffset(tabPress.x.roundToInt(), tabPress.y.roundToInt()) }) {
                             DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
                                 DropdownMenuItem(text = { Text("更换图标") }, onClick = { iconKeyTarget = filter.id; longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
                                 DropdownMenuItem(text = { Text(if (filter.alertPolicy == ChatAlertPolicy.Off) "取消消息免打扰" else "消息免打扰") }, onClick = { state.toggleChatFilterNotifications(filter); longPressedTabId = null })
-                                DropdownMenuItem(text = { Text("删除筛选器", color = Color(0xFFD64555)) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
+                                DropdownMenuItem(text = { Text("删除筛选器", color = PhoneDanger) }, onClick = { state.removeChatFilter(filter); longPressedTabId = null })
                             }
                             }
                         }
+                        if (filterIndex < state.chatFilters.lastIndex) LightRowDivider()
                     }
                 }
             }
@@ -520,7 +716,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     Column {
                         Text("图标库", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { showLibrary = true }.padding(vertical = 12.dp))
                         Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
-                        Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target, ""); iconKeyTarget = null }.padding(vertical = 12.dp))
+                        Text("恢复默认", color = PhoneDanger, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setConversationIcon(target, ""); iconKeyTarget = null }.padding(vertical = 12.dp))
                     }
                 }
             },
@@ -697,7 +893,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                     Text("记录仅保存在这台手机上。", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp, bottom = 30.dp))
                 }
                 if (existing?.removable == true) item("delete-tab") {
-                    Text("删除筛选器", color = Color(0xFFD64555), fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    Text("删除筛选器", color = PhoneDanger, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.fillMaxWidth().clickable {
                             state.removeChatFilter(existing)
                             state.openChatFilterId = null
@@ -710,29 +906,9 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
     }
 }
 
-@Composable
-private fun ChatGroupChip(label: String, unread: Int, notify: Boolean, active: Boolean, onClick: () -> Unit) {
-    val bg = if (active) AetherPurple else AetherLightControl
-    val fg = if (active) Color.White else AetherLightText
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(bg).clickable(onClick = onClick)
-                .padding(horizontal = 13.dp, vertical = 6.dp),
-        ) {
-            Text(label, color = fg, fontSize = 13.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
-        }
-        if (unread > 0) {
-            Box(
-                modifier = Modifier.align(Alignment.TopEnd).offset(x = 5.dp, y = (-5).dp).clip(CircleShape)
-                    .background(if (notify) Color(0xFFD93025) else Color(0xFF9AA0A6))
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
-            ) {
-                Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
+// ChatGroupChip 删了：它和本地列那套 chip 各写一遍、每个值都差一点
+// （圆角 16 vs 14、13sp vs 12sp、未读角标 #D93025 vs 会话行的 #E5485D）。
+// 现在两处都走 LightChip。
 
 private fun chatDay(timestamp: Long): Int {
     val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
@@ -932,10 +1108,12 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // chips 和会话列表的"消息/筛选器"共用 LightChip：
+            // 原来这里是圆角 14 / 12sp / 6dp padding，那边是圆角 16 / 13sp / 6dp，
+            // 两处各写一遍、每个值都差一点。
+            Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 labels.forEachIndexed { i, l ->
-                    Text(l, color = if (filter == i) Color.White else AetherLightMuted, fontSize = 12.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (filter == i) AetherPurple else AetherLightControl).clickable { filter = i; sendChannel = listOf(1, 1, 4, 5)[i] }.padding(horizontal = 12.dp, vertical = 6.dp))
+                    LightChip(l, filter == i, onClick = { filter = i; sendChannel = listOf(1, 1, 4, 5)[i] })
                 }
             }
             val listState = rememberLazyListState()
@@ -955,7 +1133,13 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             }
             if (msgs.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                    Text("暂无本地消息", color = AetherLightMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 44.dp))
+                    Box(Modifier.padding(top = 44.dp)) {
+                        PhoneEmpty(
+                            if (filter == 0) "附近还没有人说话" else "这个频道还没有消息",
+                            if (state.activeCharacterOnline) "下面可以直接发言" else "连接游戏后会实时刷新",
+                            R.drawable.app_messages,
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -1072,60 +1256,32 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         previewMsg == null -> "暂无消息"
         else -> previewMsg.text
     }.replace('\n', ' ')
-    // 会话行原来是裸 detectTapGestures，按下去毫无反馈。长按要拿按压点的
-    // 坐标来定位菜单，所以不能换成 PhonePressable（那个走 combinedClickable，
-    // 拿不到 offset）；改成用 detectTapGestures 自己的 onPress 驱动缩放，
-    // 手感和全局的 PhonePressable 一致（大行用 0.978）。
-    var rowPressed by remember { mutableStateOf(false) }
-    val rowMotion = phoneMotionEnabled()
-    val rowScale by animateFloatAsState(
-        if (rowPressed && rowMotion) 0.978f else 1f,
-        PhonePressSpring,
-        label = "chatRowPress",
-    )
+    // 私聊是"人"用圆头像，群聊/线路是"会话"用圆角方形——形状有语义，尺寸没有。
+    val isPerson = conversation.category == ChatCategory.Tell || conversation.key.startsWith("tell:")
     Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-                .graphicsLayer { scaleX = rowScale; scaleY = rowScale }
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            rowPressed = true
-                            tryAwaitRelease()
-                            rowPressed = false
-                        },
-                        onTap = { state.openConversation(conversation) },
-                        onLongPress = { offset -> pressOffset = offset; menuOpen = true },
-                    )
+        LightListRow(
+            onClick = { state.openConversation(conversation) },
+            onLongPress = { offset -> pressOffset = offset; menuOpen = true },
+            icon = {
+                LightRowIcon(circle = isPerson) {
+                    ConversationRowIcon(conversation, state, rowTitle)
                 }
-                .padding(vertical = 10.dp),
-        ) {
-            Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                ConversationRowIcon(conversation, state, rowTitle)
-            }
-            Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (conversation.category == ChatCategory.Tell || conversation.key.startsWith("tell:")) {
-                        FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp))
-                    }
-                    Text(rowTitle, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    // 10sp 是字号下限（9sp 在高密度屏上已经开始糊）。
-                    if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
-                    conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 13.sp, Modifier.weight(1f))
-                    if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
-                    if (conversation.unread > 0) {
-                        Box(
-                            Modifier.padding(start = 7.dp).height(21.dp).widthIn(min = 21.dp).clip(CircleShape).background(if (conversation.notify) Color(0xFFE5485D) else Color(0xFF8A93A5)),
-                            contentAlignment = Alignment.Center,
-                        ) { Text(if (conversation.unread > 99) "99+" else conversation.unread.toString(), color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 5.dp)) }
-                    }
-                }
-            }
-        }
+            },
+            title = rowTitle,
+            titleLeading = if (isPerson) {
+                { FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp)) }
+            } else null,
+            titleTrailing = {
+                // 10sp 是字号下限（9sp 在高密度屏上已经开始糊）。
+                if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
+                conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
+            },
+            subtitle = {
+                LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 12.sp, Modifier.weight(1f))
+                if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
+                LightUnreadBadge(conversation.unread, conversation.notify, Modifier.padding(start = 7.dp))
+            },
+        )
         Box(Modifier.offset { IntOffset(pressOffset.x.roundToInt(), pressOffset.y.roundToInt()) }) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
@@ -1194,7 +1350,9 @@ private fun AetherphoneContactsList(state: PhoneState) {
                 LightRefreshIcon(AetherPurple, Modifier.size(17.dp))
             }
         }
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        // 横向边距跟会话列表统一走 LocalContentMargin（原来写死 20dp，
+        // 是给已经删掉的那层卡片留的）。
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
             item("search") {
                 LightSearchField(query, { query = it }, "搜索")
                 LightSegment(
@@ -1217,7 +1375,16 @@ private fun AetherphoneContactsList(state: PhoneState) {
                 item("offline-card") { LightContactCard(offline, state, onChangeAvatar = { avatarFriend = it }) }
             }
             if (shown.isEmpty()) {
-                item("empty") { Text(if (!state.connected) "连接游戏后读取列表" else if (friendsOnly) "暂无联系人" else "暂无小队成员", color = AetherLightMuted, modifier = Modifier.padding(top = 50.dp).fillMaxWidth(), textAlign = TextAlign.Center) }
+                item("empty") {
+                    Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
+                        when {
+                            !state.connected -> PhoneEmpty("还没读到列表", "连接游戏后，好友和小队成员会出现在这里", R.drawable.app_contacts)
+                            query.isNotBlank() -> PhoneEmpty("没有匹配「$query」的人", "换个名字或服务器再试", R.drawable.ic_search)
+                            friendsOnly -> PhoneEmpty("好友列表是空的", "在游戏里加好友后下拉刷新", R.drawable.app_contacts)
+                            else -> PhoneEmpty("现在没有小队", "组队之后成员会出现在这里", R.drawable.app_contacts)
+                        }
+                    }
+                }
             }
             item("end") { Spacer(Modifier.height(16.dp)) }
         }
@@ -1233,7 +1400,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
                     Column {
                         Text("图标库", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarShowLibrary = true }.padding(vertical = 12.dp))
                         Text("从相册选择", color = AetherLightText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { pickFriendAvatar.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
-                        Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setFriendAvatar(friend, ""); avatarFriend = null }.padding(vertical = 12.dp))
+                        Text("恢复默认", color = PhoneDanger, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setFriendAvatar(friend, ""); avatarFriend = null }.padding(vertical = 12.dp))
                     }
                 }
             },
@@ -1279,25 +1446,43 @@ private fun friendStatusIcon(status: Long): Int? {
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun LightContactCard(friends: List<PhoneFriend>, state: PhoneState, onChangeAvatar: (PhoneFriend) -> Unit = {}) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(AetherLightSurface)) {
+    // 原来这里是"白卡片包一叠行"，而会话列表是扁平的——同一个 App 两种列表形态。
+    // 现在统一成扁平 + 发丝线，和会话/筛选器列表一致。
+    // 行本身走 LightListRow：头像从 44dp 降到 38dp、间距 16→13dp、
+    // 标题 16sp Bold → 15sp SemiBold，全部对齐会话行。
+    Column(Modifier.fillMaxWidth()) {
         friends.forEachIndexed { index, friend ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { state.openFriend(friend) }, onLongClick = { onChangeAvatar(friend) }).padding(horizontal = 20.dp, vertical = 11.dp),
-            ) {
-                Box(Modifier.size(44.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                    SmallConversationIcon(state.friendAvatar(friend), friend.name.take(1), if (friend.online) AetherPurple else Color(0xFFA7A7AE))
-                }
-                Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                    Text(friend.name, color = if (friend.online) AetherLightText else AetherLightMuted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(friend.world.ifBlank { "未知服务器" }, color = AetherLightMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
-                }
-                if (friend.online) {
-                    val stIcon = friendStatusIcon(friend.status)
-                    if (stIcon != null) Image(painterResource(stIcon), contentDescription = null, modifier = Modifier.size(20.dp)) else Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
-                }
-            }
-            if (index < friends.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(AetherLightSeparator))
+            LightListRow(
+                onClick = { state.openFriend(friend) },
+                onLongPress = { onChangeAvatar(friend) },
+                icon = {
+                    // 好友是"人"，圆头像。
+                    LightRowIcon(circle = true) {
+                        SmallConversationIcon(state.friendAvatar(friend), friend.name.take(1), if (friend.online) AetherPurple else AetherLightMuted)
+                    }
+                },
+                title = friend.name,
+                titleColor = if (friend.online) AetherLightText else AetherLightMuted,
+                subtitle = {
+                    Text(
+                        friend.world.ifBlank { "未知服务器" },
+                        color = AetherLightMuted, fontSize = 12.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                },
+                trailing = if (friend.online) {
+                    {
+                        val stIcon = friendStatusIcon(friend.status)
+                        if (stIcon != null) {
+                            Image(painterResource(stIcon), contentDescription = null, modifier = Modifier.size(20.dp))
+                        } else {
+                            Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                } else null,
+            )
+            if (index < friends.lastIndex) LightRowDivider()
         }
     }
 }
@@ -1430,7 +1615,7 @@ private fun ShizhijiaLinkCard(state: PhoneState, link: ShizhijiaFriendLink.Resul
         ) {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp))
-                    .background(if (clickable) Color(0xFF3E7BD6) else AetherLightControl),
+                    .background(if (clickable) AetherPurple else AetherLightControl),
                 contentAlignment = Alignment.Center,
             ) {
                 ImageGlyph(R.drawable.app_news, if (clickable) Color.White else AetherLightMuted, Modifier.size(20.dp))
@@ -1566,9 +1751,9 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
             ChatSettingDivider()
             ChatSettingRow("消息免打扰", trailing = { Switch(checked = !conversation.notify, onCheckedChange = { state.toggleConversationNotify(conversation) }) })
             ChatSettingDivider()
-            ChatSettingRow("删除会话", color = Color(0xFFD64555), onClick = onDeleteConversation)
+            ChatSettingRow("删除会话", color = PhoneDanger, onClick = onDeleteConversation)
             ChatSettingDivider()
-            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
+            ChatSettingRow("删除聊天记录", color = PhoneDanger, onClick = { confirmClear = true })
         }
     }
     if (confirmClear) {
@@ -1576,7 +1761,7 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
             onDismissRequest = { confirmClear = false },
             title = { Text("删除聊天记录") },
             text = { Text("确定删除该会话的全部聊天记录吗？此操作不可恢复。") },
-            confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
+            confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = PhoneDanger) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
         )
     }
@@ -1595,7 +1780,7 @@ private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory
             ChatSettingDivider()
             ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
+            ChatSettingRow("删除聊天记录", color = PhoneDanger, onClick = { confirmClear = true })
         }
     }
     if (confirmClear) {
@@ -1603,7 +1788,7 @@ private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory
             onDismissRequest = { confirmClear = false },
             title = { Text("删除聊天记录") },
             text = { Text("确定删除本地聊天记录吗？此操作不可恢复。") },
-            confirmButton = { TextButton(onClick = { state.clearLocalMessages(); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
+            confirmButton = { TextButton(onClick = { state.clearLocalMessages(); confirmClear = false }) { Text("删除", color = PhoneDanger) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
         )
     }
@@ -1627,9 +1812,9 @@ private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversat
             ChatSettingDivider()
             ChatSettingRow("消息免打扰", trailing = { Switch(checked = !conversation.notify, onCheckedChange = { state.toggleConversationNotify(conversation) }) })
             ChatSettingDivider()
-            ChatSettingRow("删除会话", color = Color(0xFFD64555), onClick = onDeleteConversation)
+            ChatSettingRow("删除会话", color = PhoneDanger, onClick = onDeleteConversation)
             ChatSettingDivider()
-            ChatSettingRow("删除聊天记录", color = Color(0xFFD64555), onClick = { confirmClear = true })
+            ChatSettingRow("删除聊天记录", color = PhoneDanger, onClick = { confirmClear = true })
         }
     }
     if (confirmClear) {
@@ -1637,7 +1822,7 @@ private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversat
             onDismissRequest = { confirmClear = false },
             title = { Text("删除聊天记录") },
             text = { Text("确定删除该筛选器的全部聊天记录吗？此操作不可恢复。") },
-            confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = Color(0xFFD64555)) } },
+            confirmButton = { TextButton(onClick = { state.clearConversation(conversation); confirmClear = false }) { Text("删除", color = PhoneDanger) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
         )
     }
@@ -1726,7 +1911,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
                 .background(AetherPurple).clickable(onClick = onOpenCalendar),
             contentAlignment = Alignment.Center,
         ) {
-            Text("📅", color = Color.White, fontSize = 22.sp)
+            ImageGlyph(R.drawable.ic_calendar, Color.White, Modifier.size(23.dp))
         }
     }
 }
@@ -1747,12 +1932,16 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
             LightSearchField(query, { query = it }, "搜索聊天记录", Modifier.weight(1f).focusRequester(focusRequester))
             if (query.isNotBlank()) Text(results.size.toString(), color = AetherPurple, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
         }
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(results, key = { index, message -> "${message.timestamp}-$index" }) { _, message ->
+        // 边距和分隔线跟其他列表一致（原来行是独立卡片、靠 spacedBy(8) 撑开）。
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
+            itemsIndexed(results, key = { index, message -> "${message.timestamp}-$index" }) { index, message ->
                 SearchResultRow(state, conversation, message, query, showAvatar) { onOpenMessage(message.timestamp) }
+                if (index < results.lastIndex) LightRowDivider(if (showAvatar) LightRowIconSize + LightRowIconGap else 0.dp)
             }
             if (query.isNotBlank() && results.isEmpty()) item {
-                Text("未找到匹配的聊天记录", color = AetherLightMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(30.dp))
+                Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                    PhoneEmpty("没找到「$query」", "换个词，或者少打几个字", R.drawable.ic_search)
+                }
             }
         }
     }
@@ -1763,21 +1952,27 @@ private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, m
     val self = message.self || (state.profile?.name != null && message.isFrom(state.profile?.name))
     val author = if (self) state.profile?.name?.takeIf { it.isNotBlank() } ?: "我" else state.displayNameFor(message).takeIf { it != "对方" } ?: conversation.title
     val cleaned = cleanChatText(message.text, author)
-    Row(
-        verticalAlignment = Alignment.Top,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(AetherLightSurface).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        if (showAvatar) {
-            Box(Modifier.size(38.dp).clip(CircleShape).background(AetherLightControl), contentAlignment = Alignment.Center) {
-                SmallConversationIcon(state.conversationIcon(conversation.key, conversation.category), author.take(1), AetherPurple)
+    // \u641C\u7D22\u7ED3\u679C\u884C\u539F\u6765\u6BCF\u884C\u662F\u4E00\u5F20\u72EC\u7ACB\u5361\u7247\uFF08\u5706\u89D2 10 + surface \u5E95\uFF09\uFF0C
+    // \u800C\u5176\u4ED6\u5217\u8868\u90FD\u662F\u6241\u5E73\u884C\u2014\u2014\u4E00\u8FDB\u641C\u7D22\u7ED3\u679C\u6574\u4E2A\u5217\u8868\u5F62\u6001\u5C31\u53D8\u4E86\u3002
+    // \u73B0\u5728\u8D70\u540C\u4E00\u5957\u9AA8\u67B6\uFF0C\u9760\u53D1\u4E1D\u7EBF\u5206\u9694\uFF08\u5206\u9694\u7EBF\u7531\u8C03\u7528\u65B9\u5728\u884C\u4E4B\u95F4\u63D2\uFF09\u3002
+    // \u547D\u4E2D\u7684\u6B63\u6587\u5141\u8BB8\u591A\u884C\uFF0C\u6240\u4EE5\u526F\u884C\u4E0D\u9650\u5355\u884C\u3002
+    LightListRow(
+        onClick = onClick,
+        icon = if (showAvatar) {
+            {
+                LightRowIcon(circle = true) {
+                    SmallConversationIcon(state.conversationIcon(conversation.key, conversation.category), author.take(1), AetherPurple)
+                }
             }
-        }
-        Column(Modifier.weight(1f).padding(start = if (showAvatar) 11.dp else 0.dp)) {
-            Text(author.replace('\uE05D', ' '), color = AetherLightText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            HighlightText(cleaned, query, AetherLightMuted, 13.sp, 3, Modifier.padding(top = 3.dp))
-        }
-        Text(chatRecordTime(message.timestamp), color = AetherLightMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp))
-    }
+        } else null,
+        title = author.replace('\uE05D', ' '),
+        titleTrailing = {
+            Text(chatRecordTime(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
+        },
+        subtitle = {
+            HighlightText(cleaned, query, AetherLightMuted, 12.sp, 3, Modifier.weight(1f))
+        },
+    )
 }
 
 @Composable
@@ -2671,45 +2866,85 @@ fun AetherphoneNotesScreen(state: PhoneState) {
             Column(Modifier.fillMaxSize()) {
                 LightHeader("备忘录", state::back) {
                     Box(
-                        Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFE1E1E6))
+                        Modifier.size(40.dp).clip(CircleShape).background(AetherLightControl)
                             .clickable { if (tab == 0) creatingNote = true else creatingReminder = true },
                         contentAlignment = Alignment.Center,
-                    ) { Text("+", color = AetherLightText, fontSize = 23.sp) }
+                    ) { ImageGlyph(R.drawable.ic_add, AetherPurple, Modifier.size(20.dp)) }
                 }
                 LightSegment("备忘录", "提醒事项", tab == 0, { tab = if (it) 0 else 1 }, Modifier.padding(horizontal = 42.dp, vertical = 4.dp))
                 if (tab == 0) {
+                    // 备忘录/提醒原来也各写一套（22dp 边距、17sp/15sp 标题、
+                    // 13dp/12dp padding），现在和会话/联系人同一套骨架。
                     if (state.notes.isEmpty()) {
-                        Text("还没有备忘录。点按 + 写一条。", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 94.dp))
+                        Box(Modifier.fillMaxWidth().padding(top = 80.dp), contentAlignment = Alignment.Center) {
+                            PhoneEmpty("还没有备忘录", "点右上角的 + 写第一条", R.drawable.ic_add)
+                        }
                     } else {
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 12.dp)) {
-                            items(state.notes, key = { it.id }) { note ->
+                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
+                            itemsIndexed(state.notes, key = { _, n -> n.id }) { index, note ->
                                 val lines = note.body.lines()
-                                Column(Modifier.fillMaxWidth().clickable { editingNote = note }.padding(vertical = 13.dp)) {
-                                    Text(lines.firstOrNull().orEmpty().ifBlank { "无标题" }, color = AetherLightText, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("${noteDate(note.updatedAt)}  ${lines.drop(1).joinToString(" ")}", color = AetherLightMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-                                }
-                                Box(Modifier.fillMaxWidth().height(1.dp).background(AetherLightSeparator))
+                                LightListRow(
+                                    onClick = { editingNote = note },
+                                    title = lines.firstOrNull().orEmpty().ifBlank { "无标题" },
+                                    subtitle = {
+                                        Text(
+                                            "${noteDate(note.updatedAt)}  ${lines.drop(1).joinToString(" ")}",
+                                            color = AetherLightMuted, fontSize = 12.sp,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    },
+                                )
+                                if (index < state.notes.lastIndex) LightRowDivider(0.dp)
                             }
                         }
                     }
                 } else {
                     if (state.reminders.isEmpty()) {
-                        Text("还没有提醒事项。点按 + 添加一条。", color = AetherLightMuted, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 94.dp))
+                        Box(Modifier.fillMaxWidth().padding(top = 80.dp), contentAlignment = Alignment.Center) {
+                            PhoneEmpty("还没有提醒事项", "点右上角的 + 添加一条", R.drawable.ic_alarm_bell)
+                        }
                     } else {
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 12.dp)) {
-                            items(state.reminders.sortedBy { it.done }, key = { it.id }) { reminder ->
-                                Row(Modifier.fillMaxWidth().clickable { editingReminder = reminder }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        Modifier.size(25.dp).clip(CircleShape).background(if (reminder.done) AetherPurple else Color.Transparent)
-                                            .clickable { state.toggleReminder(reminder.id) },
-                                        contentAlignment = Alignment.Center,
-                                    ) { ImageGlyph(if (reminder.done) R.drawable.ic_check_small else R.drawable.ic_radio_off, if (reminder.done) Color.White else AetherLightMuted, Modifier.size(22.dp)) }
-                                    Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                                        Text(reminder.title, color = if (reminder.done) AetherLightMuted else AetherLightText, fontSize = 15.sp)
-                                        reminder.dueAt?.let { Text(reminderDate(it), color = if (it < System.currentTimeMillis() && !reminder.done) Color(0xFFD64A57) else AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp)) }
-                                    }
-                                }
-                                Box(Modifier.fillMaxWidth().height(1.dp).background(AetherLightSeparator))
+                        val sorted = state.reminders.sortedBy { it.done }
+                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
+                            itemsIndexed(sorted, key = { _, r -> r.id }) { index, reminder ->
+                                LightListRow(
+                                    onClick = { editingReminder = reminder },
+                                    icon = {
+                                        // 勾选圈本身可点（切换完成），所以不走 LightRowIcon 的底座。
+                                        Box(
+                                            Modifier.size(LightRowIconSize).clip(CircleShape)
+                                                .clickable { state.toggleReminder(reminder.id) },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Box(
+                                                Modifier.size(25.dp).clip(CircleShape)
+                                                    .background(if (reminder.done) AetherPurple else Color.Transparent),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                ImageGlyph(
+                                                    if (reminder.done) R.drawable.ic_check_small else R.drawable.ic_radio_off,
+                                                    if (reminder.done) Color.White else AetherLightMuted,
+                                                    Modifier.size(21.dp),
+                                                )
+                                            }
+                                        }
+                                    },
+                                    title = reminder.title,
+                                    titleColor = if (reminder.done) AetherLightMuted else AetherLightText,
+                                    subtitle = reminder.dueAt?.let { due ->
+                                        {
+                                            val overdue = due < System.currentTimeMillis() && !reminder.done
+                                            Text(
+                                                reminderDate(due),
+                                                color = if (overdue) PhoneDanger else AetherLightMuted,
+                                                fontSize = 12.sp,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                    },
+                                )
+                                if (index < sorted.lastIndex) LightRowDivider()
                             }
                         }
                     }
@@ -2726,7 +2961,7 @@ private fun NoteEditor(state: PhoneState, note: LocalNote?, close: () -> Unit) {
         Column(Modifier.fillMaxSize()) {
             LightHeader("备忘录", onBack = { state.upsertNote(note?.id, body); close() }) {
                 Text("保存", color = AetherPurple, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { state.upsertNote(note?.id, body); close() }.padding(horizontal = 10.dp))
-                if (note != null) Text("删除", color = Color(0xFFD64A57), fontSize = 13.sp, modifier = Modifier.clickable { state.deleteNote(note.id); close() }.padding(10.dp))
+                if (note != null) Text("删除", color = PhoneDanger, fontSize = 13.sp, modifier = Modifier.clickable { state.deleteNote(note.id); close() }.padding(10.dp))
             }
             OutlinedTextField(
                 value = body,
@@ -2749,7 +2984,7 @@ private fun ReminderEditor(state: PhoneState, reminder: LocalReminder?, close: (
     LightFrame {
         Column(Modifier.fillMaxSize()) {
             LightHeader(if (reminder == null) "新提醒事项" else "编辑提醒事项", onBack = close) {
-                if (reminder != null) Text("删除", color = Color(0xFFD64A57), fontSize = 13.sp, modifier = Modifier.clickable { state.deleteReminder(reminder.id); close() }.padding(10.dp))
+                if (reminder != null) Text("删除", color = PhoneDanger, fontSize = 13.sp, modifier = Modifier.clickable { state.deleteReminder(reminder.id); close() }.padding(10.dp))
             }
             Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 OutlinedTextField(title, { title = it.take(120) }, placeholder = { Text("提醒内容") }, singleLine = true, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth())
@@ -3015,6 +3250,13 @@ private fun ActivitySimpleRow(label: String, value: String) {
 }
 
 @Composable
+/**
+ * 固定深色的数据面板（职业等级、活跃度）。
+ *
+ * **这两屏刻意不跟深浅主题**——它们复刻的是游戏里的深色数据面板，
+ * 所以里面那些写死的蓝灰色（#E6EDF8 / #91A2BB / #99ABC2 …）是有意的，
+ * 不是漏改。要动的话整屏一起重新设计，别只把单个色换成 token。
+ */
 private fun DarkDataFrame(top: Color, bottom: Color, content: @Composable () -> Unit) {
     Box(
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(top, bottom)))

@@ -741,7 +741,7 @@ private fun SzjLocPin(sizeDp: Int = 16) {
             modifier = Modifier.size(sizeDp.dp),
         )
     } else {
-        Text("📍", color = tint, fontSize = (sizeDp * 0.85f).sp)
+        ImageGlyph(R.drawable.ic_pin, tint, Modifier.size(sizeDp.dp))
     }
 }
 
@@ -1966,16 +1966,21 @@ private fun SzjPartChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** 图标 + 数字的元信息（评论数/阅读数）。图标 12dp，跟 11sp 元信息字号配平。 */
+/**
+ * 图标 + 数字的元信息（评论/阅读/点赞/收藏数）。
+ * 图标默认 12dp，跟 11sp 元信息字号配平；[fontSize] 大一档时图标跟着放大。
+ * 石之家所有"图标 + 计数"都走这个，别再写 "♥ $n" 这种字符拼接。
+ */
 @Composable
-private fun SzjCountMeta(iconRes: Int, count: Long) {
+private fun SzjCountMeta(iconRes: Int, count: Long, fontSize: androidx.compose.ui.unit.TextUnit = 11.sp) {
+    val iconDp = (fontSize.value + 1f).dp
     Row(verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Icon(
             painterResource(iconRes), contentDescription = null,
-            tint = SzjMuted, modifier = Modifier.size(12.dp),
+            tint = SzjMuted, modifier = Modifier.size(iconDp),
         )
         Spacer(Modifier.width(3.dp))
-        Text("$count", color = SzjMuted, style = SzjMetaStyle)
+        Text("$count", color = SzjMuted, fontSize = fontSize, letterSpacing = 0.4.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -3842,7 +3847,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                     Row(Modifier.clip(SzjChipShape).background(SzjCardRaised)
                         .padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(typeLabel, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("▾", color = SzjMuted, fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp))
+                        ImageGlyph(R.drawable.ic_chevron_down, SzjMuted, Modifier.padding(start = 4.dp).size(13.dp))
                     }
                     }
                     androidx.compose.material3.DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
@@ -5749,7 +5754,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                                 Spacer(Modifier.width(3.dp))
                                                                 Text(dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 10.sp, maxLines = 1)
                                                             } else {
-                                                                Text("⊘", color = SzjMuted, fontSize = 11.sp)
+                                                                ImageGlyph(R.drawable.ic_block, SzjMuted, Modifier.size(10.dp))
                                                                 Spacer(Modifier.width(2.dp))
                                                                 Text("无染色", color = SzjMuted, fontSize = 10.sp)
                                                             }
@@ -5768,9 +5773,9 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
             item {
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.padding(horizontal = 16.dp)) {
-                    Text("♥ ${d.likes}", color = SzjMuted, fontSize = 13.sp)
+                    SzjCountMeta(R.drawable.ic_heart, d.likes.toLong(), 13.sp)
                     Spacer(Modifier.width(14.dp))
-                    Text("★ ${d.favorites}", color = SzjMuted, fontSize = 13.sp)
+                    SzjCountMeta(R.drawable.ic_star_filled, d.favorites.toLong(), 13.sp)
                 }
                 Spacer(Modifier.height(20.dp))
             }
@@ -6094,9 +6099,9 @@ private fun SzjGlamourCardItem(card: ShizhijiaGlamourCard, nav: (SzjRoute) -> Un
             }
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("★ ${card.favorites}", color = SzjMuted, style = SzjMetaStyle)
-                Text(" · ", color = SzjMuted, style = SzjMetaStyle)
-                Text("♥ ${card.likes}", color = SzjMuted, style = SzjMetaStyle)
+                SzjCountMeta(R.drawable.ic_star_filled, card.favorites.toLong())
+                Spacer(Modifier.width(10.dp))
+                SzjCountMeta(R.drawable.ic_heart, card.likes.toLong())
             }
         }
     }

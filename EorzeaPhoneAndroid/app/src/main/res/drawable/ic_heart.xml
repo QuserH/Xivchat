@@ -1,0 +1,10 @@
+<!-- 点赞数（Material favorite）。原来是"♥"字符，和旁边的数字基线对不齐。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M480,840L422,788Q321,697 254.5,631Q188,565 148,512.5Q108,460 94,415.5Q80,371 80,324Q80,228 144.5,164Q209,100 305,100Q358,100 406,122.5Q454,145 480,186Q506,145 554,122.5Q602,100 655,100Q751,100 815.5,164Q880,228 880,324Q880,371 866,415.5Q852,460 812,512.5Q772,565 705.5,631Q639,697 538,788L480,840Z" />
+</vector>

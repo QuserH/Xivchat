@@ -451,7 +451,7 @@ private fun AlarmEditorScreen(store: ClockStore, alarm: LocalAlarm?, close: () -
             }
             OutlinedTextField(label, { label = it.take(32) }, label = { Text("标签") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.weight(1f))
-            if (alarm != null) TextButton(onClick = { store.deleteAlarm(alarm.id); close() }, modifier = Modifier.fillMaxWidth()) { Text("删除闹钟", color = Color(0xFFE05858)) }
+            if (alarm != null) TextButton(onClick = { store.deleteAlarm(alarm.id); close() }, modifier = Modifier.fillMaxWidth()) { Text("删除闹钟", color = PhoneDanger) }
             Button(onClick = {
                 store.upsertAlarm(LocalAlarm(alarm?.id ?: System.currentTimeMillis(), hour, minute, repeat, label.trim(), true))
                 close()

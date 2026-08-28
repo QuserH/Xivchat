@@ -1,0 +1,11 @@
+<!-- 位置/服务器标记（Material location_on）。SzjLocPin 拿不到远端图标时的兜底，
+     原来是"📍"emoji。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M480,840Q480,840 480,840Q480,840 480,840Q645,700 725,591Q805,482 805,398Q805,251 711.5,155.5Q618,60 480,60Q342,60 248.5,155.5Q155,251 155,398Q155,482 235,591Q315,700 480,840ZM480,520Q431,520 396.5,485.5Q362,451 362,402Q362,353 396.5,318.5Q431,284 480,284Q529,284 563.5,318.5Q598,353 598,402Q598,451 563.5,485.5Q529,520 480,520Z" />
+</vector>

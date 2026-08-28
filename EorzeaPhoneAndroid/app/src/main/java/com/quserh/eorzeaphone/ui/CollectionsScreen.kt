@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.GameCollectionCategory
 import com.quserh.eorzeaphone.data.GameCollectionItem
 import com.quserh.eorzeaphone.data.CollectionRemote
@@ -99,7 +100,7 @@ private fun CollectionsRoot(state: PhoneState, categories: List<GameCollectionCa
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("↗", color = PhoneAccent, fontSize = 19.sp)
+                        ImageGlyph(R.drawable.ic_info, PhoneAccent, Modifier.size(18.dp))
                         Text("绑定角色后可查看各类收藏与具体获取方式。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 10.dp))
                     }
                 }

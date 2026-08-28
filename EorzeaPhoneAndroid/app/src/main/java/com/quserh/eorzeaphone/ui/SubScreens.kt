@@ -300,7 +300,7 @@ fun SettingsScreen(state: PhoneState) {
             text = {
                 Column {
                     Text("从相册选择", color = PhoneText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarMenu = false; pickAvatar.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
-                    Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setCharacterAvatar(avatarKey, ""); avatarMenu = false }.padding(vertical = 12.dp))
+                    Text("恢复默认", color = PhoneDanger, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setCharacterAvatar(avatarKey, ""); avatarMenu = false }.padding(vertical = 12.dp))
                 }
             },
             confirmButton = {},
@@ -481,7 +481,7 @@ fun ContactsTab(state: PhoneState) {
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(38.dp).clip(CircleShape).clickable { searching = true },
                 ) {
-                    Text("🔍", fontSize = 19.sp)
+                    ImageGlyph(R.drawable.ic_search, PhoneAccent, Modifier.size(19.dp))
                 }
             }
         }
@@ -896,7 +896,7 @@ fun ProfileScreen(state: PhoneState) {
             text = {
                 Column {
                     Text("从相册选择", color = PhoneText, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { avatarMenu = false; pickAvatar.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(vertical = 12.dp))
-                    Text("恢复默认", color = Color(0xFFD64555), fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setCharacterAvatar(avatarKey, ""); avatarMenu = false }.padding(vertical = 12.dp))
+                    Text("恢复默认", color = PhoneDanger, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { state.setCharacterAvatar(avatarKey, ""); avatarMenu = false }.padding(vertical = 12.dp))
                 }
             },
             confirmButton = {},
@@ -1036,7 +1036,7 @@ private fun ConversationListTab(state: PhoneState) {
                     state.chatFilters.filter { it.removable }.forEach { custom ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Text("已保存：${custom.label}", modifier = Modifier.weight(1f))
-                            TextButton(onClick = { state.removeChatFilter(custom) }) { Text("删除", color = Color(0xFFE56B6F)) }
+                            TextButton(onClick = { state.removeChatFilter(custom) }) { Text("删除", color = PhoneDanger) }
                         }
                     }
                 }
@@ -1066,9 +1066,9 @@ private fun ConversationRow(conv: ChatConversation, state: PhoneState) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 5.dp)) {
                     Text(preview, color = PhoneMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (!conv.notify) Text("🔕", fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                    if (!conv.notify) ImageGlyph(R.drawable.ic_bell_off, PhoneMuted, Modifier.padding(start = 8.dp).size(13.dp))
                     if (conv.unread > 0) {
-                        Box(Modifier.padding(start = 8.dp).size(width = 22.dp, height = 22.dp).clip(CircleShape).background(Color(0xFFE53935)), contentAlignment = Alignment.Center) {
+                        Box(Modifier.padding(start = 8.dp).size(width = 22.dp, height = 22.dp).clip(CircleShape).background(PhoneDanger), contentAlignment = Alignment.Center) {
                             Text(if (conv.unread > 99) "99+" else conv.unread.toString(), color = Color.White, fontSize = 11.sp)
                         }
                     }
