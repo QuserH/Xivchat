@@ -3,12 +3,22 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -50,6 +60,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -63,6 +74,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -1302,4 +1318,173 @@ private fun countdownLabel(seconds: Long): String {
 @Composable
 fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
     androidx.compose.foundation.Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(tint), modifier = modifier)
+}
+
+/**
+ * 骨架微光。首屏加载用它替代转圈——先把即将出现的内容形状占住，
+ * 比一行"正在载入…"更少的跳变。实现和石之家的 SzjShimmerBox 同源。
+ */
+@Composable
+fun PhoneShimmerBox(modifier: Modifier, shape: Shape = RoundedCornerShape(8.dp)) {
+    val base = PhoneSurfaceRaised
+    if (!phoneMotionEnabled()) {
+        Box(modifier.clip(shape).background(base))
+        return
+    }
+    val transition = rememberInfiniteTransition(label = "phoneShimmer")
+    val x by transition.animateFloat(
+        initialValue = -1.6f,
+        targetValue = 1.6f,
+        animationSpec = infiniteRepeatable(tween(1250, easing = LinearEasing), RepeatMode.Restart),
+        label = "phoneShimmerX",
+    )
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val glow = if (light) Color(0x40FFFFFF) else Color(0x18FFFFFF)
+    Box(
+        modifier.clip(shape).background(base).drawWithContent {
+            drawContent()
+            drawRect(
+                Brush.linearGradient(
+                    colors = listOf(Color.Transparent, glow, Color.Transparent),
+                    start = Offset(x * size.width, 0f),
+                    end = Offset((x + 0.7f) * size.width, size.height),
+                )
+            )
+        }
+    )
+}
+
+/**
+ * 列表骨架屏：[rows] 行，每行一个图标位 + 两行文字位。
+ * 形状照着真实列表行来，加载完不会突然跳版。
+ */
+@Composable
+fun PhoneListSkeleton(rows: Int = 6, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        repeat(rows) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                PhoneShimmerBox(Modifier.size(34.dp), RoundedCornerShape(9.dp))
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f)) {
+                    PhoneShimmerBox(Modifier.fillMaxWidth(0.42f).height(12.dp), RoundedCornerShape(4.dp))
+                    Spacer(Modifier.height(7.dp))
+                    PhoneShimmerBox(Modifier.fillMaxWidth(0.78f).height(11.dp), RoundedCornerShape(4.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                PhoneShimmerBox(Modifier.width(42.dp).height(11.dp), RoundedCornerShape(4.dp))
+            }
+        }
+    }
+}
+
+/**
+ * 全局空态版式：**图标 + 标题 + 一句引导 +（可选）动作按钮**。
+ *
+ * 版式是从石之家的 SzjEmpty 提上来的。规则：纯文字"暂无内容/正在载入…"
+ * 只允许出现在行内小区域，不许占整屏——空屏是邀请动作的地方。
+ * [iconRes] 传对应模块自己的图标；[tint] 默认压得很淡，图标是锚点不是主角。
+ */
+@Composable
+fun PhoneEmpty(
+    title: String,
+    hint: String? = null,
+    iconRes: Int = R.drawable.ic_empty_box,
+    iconTint: Color = PhoneMuted.copy(alpha = 0.55f),
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ImageGlyph(iconRes, iconTint, Modifier.size(38.dp))
+        Spacer(Modifier.height(14.dp))
+        Text(title, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+        if (hint != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(hint, color = PhoneMuted, fontSize = 11.sp, textAlign = TextAlign.Center, lineHeight = 17.sp)
+        }
+        if (action != null) {
+            Spacer(Modifier.height(18.dp))
+            action()
+        }
+    }
+}
+
+// ---- 全局按压反馈 ----
+// 规则：**要么弹簧缩放，要么 ripple，不许裸奔**。
+// 以前石之家有弹簧、桌面有弹簧，但聊天的会话行/筛选器行是裸 detectTapGestures
+// 零反馈，捕鱼行是默认 ripple——同一台手机里三种手感。
+// 这一套是从石之家的 SzjPressable 提上来的（那套手感是全模块标杆），
+// 参数完全一致：控件 0.94、卡片 0.978、同一条弹簧。
+// 对话框菜单项等系统控件保留 ripple，不要套这个。
+
+/** 按压弹簧。阻尼 0.62 / 刚度 420——按下去有回弹但不晃。 */
+val PhonePressSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
+
+/** 系统关掉动画时（开发者选项 / 省电）不做缩放，只保留点击。 */
+@Composable
+fun phoneMotionEnabled(): Boolean {
+    val ctx = LocalContext.current
+    return remember {
+        runCatching {
+            android.provider.Settings.Global.getFloat(
+                ctx.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) > 0f
+        }.getOrDefault(true)
+    }
+}
+
+/**
+ * 可按压容器：按下缩到 [pressedScale]，松手弹回。没有 ripple。
+ *
+ * 小控件（chip、图标钮）用默认 0.94；整行大卡片传 0.978——
+ * 面积越大，同样的缩放比例看起来越夸张。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PhonePressable(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(10.dp),
+    pressedScale: Float = 0.94f,
+    enabled: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
+    contentAlignment: Alignment = Alignment.Center,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val motion = phoneMotionEnabled()
+    val scale by animateFloatAsState(
+        if (pressed && motion && enabled) pressedScale else 1f,
+        PhonePressSpring,
+        label = "phonePressable",
+    )
+    Box(
+        modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(shape)
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        enabled = enabled,
+                        onLongClick = onLongClick,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        enabled = enabled,
+                        onClick = onClick,
+                    )
+                }
+            ),
+        contentAlignment = contentAlignment,
+    ) { content() }
 }

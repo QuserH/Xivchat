@@ -380,9 +380,15 @@ private fun countdownLabel(seconds: Long): String {
     }
 }
 
+/**
+ * 功能屏的空态。原来是整屏居中一行灰字，现在走全局的 PhoneEmpty 版式
+ * （图标 + 标题 + 引导）。[hint] 不传时只有标题，兼容原来的一句式调用。
+ */
 @Composable
-fun EmptyFeature(text: String) {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(text, color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.padding(28.dp)) }
+fun EmptyFeature(text: String, hint: String? = null, iconRes: Int = R.drawable.ic_empty_box) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        PhoneEmpty(text, hint, iconRes)
+    }
 }
 
 private fun formatDuration(value: Duration?): String {

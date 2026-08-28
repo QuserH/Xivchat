@@ -73,6 +73,8 @@ import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
+import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -99,9 +101,12 @@ fun HomeScreen(state: PhoneState) {
             painter = painterResource(R.drawable.wallpaper_dusk_dark),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (darkTheme) 1f else .07f },
+            // 浅色模式原来是 alpha .07 的壁纸 + .90 的罩，两头不沾：
+            // 既看不见纹理，又白白吃一次全屏解码。给到 .18 + 罩降到 .82，
+            // 让纹理隐约可见（浅色模式还是以白为主，只是不再是一块死白）。
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (darkTheme) 1f else .18f },
         )
-        Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .90f)))
+        Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .82f)))
 
         Column(
             modifier = Modifier
@@ -136,14 +141,15 @@ private fun HomeEditBar(state: PhoneState, homeText: Color) {
         ) {
             Text("编辑主屏幕", color = homeText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Text("长按拖拽排序 · 点 − 移除", color = homeText.copy(alpha = .8f), fontSize = 11.sp)
+            // "完成"原来写死成浅蓝 #5BC0EB，和品牌色无关。走 accent。
             Text(
                 "完成",
-                color = Color(0xFF5BC0EB),
+                color = PhoneAccent,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0x3366DDFF))
+                    .background(PhoneAccent.copy(alpha = .18f))
                     .clickable { state.exitEditMode() }
                     .padding(horizontal = 14.dp, vertical = 6.dp),
             )
@@ -343,10 +349,10 @@ private fun HomeTile(
                         .align(Alignment.TopEnd)
                         .size(18.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(Color(0xFFE53935))
+                        .background(PhoneDanger)
                         .clickable { onTap() },
                 ) {
-                    Text("−", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    ImageGlyph(R.drawable.ic_remove, Color.White, Modifier.size(13.dp))
                 }
             }
         }
@@ -362,16 +368,10 @@ private fun HomeTile(
     }
 }
 
-@Composable
-fun PhoneStatusBar() {
-    val homeText = if (MaterialTheme.colorScheme.background.luminance() < .5f) Color.White else MaterialTheme.colorScheme.onBackground
-    var eorzea by remember { mutableStateOf(eorzeaNow()) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(5_000); eorzea = eorzeaNow() } }
-    Box(Modifier.fillMaxWidth().height(30.dp)) {
-        Text(eorzea, color = homeText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
-    }
-}
+// `PhoneStatusBar` 删掉了：全项目没有任何地方调用它（桌面的 ET 时间来自
+// WeatherWidget，系统状态栏靠 windowInsetsPadding 让位）。UI 意见书里
+// "状态栏左侧是空的，应该放连接状态点 + 本地时间"这一条落在这个函数上，
+// 但它是死代码——补上去屏幕上也不会出现。真要做得先决定谁来渲染它。
 
 @Composable
 private fun WeatherWidget(state: PhoneState, modifier: Modifier = Modifier) {
@@ -487,7 +487,9 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
                     val unread = state.badgeUnread()
                     if (unread > 0) {
                         Box(
-                            Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Color(0xFFE5485D)),
+                            // 未读角标：红色走 PhoneDanger（原来 #E5485D 是这一处
+                            // 独有的第三个红，同一语义不许有第二个色值）。
+                            Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(PhoneDanger),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 10.sp, lineHeight = 18.sp, textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.align(Alignment.Center).padding(horizontal = 2.dp))

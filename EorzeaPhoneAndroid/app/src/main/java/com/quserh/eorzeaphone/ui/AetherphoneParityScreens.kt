@@ -28,6 +28,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.horizontalScroll
@@ -308,9 +309,15 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
                     HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
                         if (page == 0) AetherphoneConversationList(state, { editingTab = true }, { showLocalScreen = true }) else AetherphoneContactsList(state)
                     }
-                    Row(modifier = Modifier.fillMaxWidth().height(64.dp).background(AetherLightBackground), verticalAlignment = Alignment.CenterVertically) {
-                        LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(0) } }
-                        LightNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(1) } }
+                    // 底栏原来是 64dp 裸行，背景直接用 background（和列表同色），
+                    // 无分割线也无层次，看起来像列表末尾多出来的一行。
+                    // 顶部一条发丝线 + 底栏自己用 surface，把它和列表分开。
+                    Column(Modifier.fillMaxWidth()) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        Row(modifier = Modifier.fillMaxWidth().height(64.dp).background(AetherLightSurface), verticalAlignment = Alignment.CenterVertically) {
+                            LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(0) } }
+                            LightNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(1) } }
+                        }
                     }
                 }
             }
@@ -431,10 +438,24 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         val selected = filter.id == state.selectedChatFilterId
                         val last = state.chats.lastOrNull { filter.matches(it) && it.timestamp > state.clearedUntil(filter.id) }
                         var tabPress by remember(filter.id) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                        // 同会话行：长按要 offset 定位菜单，所以用 onPress 驱动缩放。
+                        var tabPressed by remember(filter.id) { mutableStateOf(false) }
+                        val tabMotion = phoneMotionEnabled()
+                        val tabScale by animateFloatAsState(
+                            if (tabPressed && tabMotion) 0.978f else 1f,
+                            PhonePressSpring,
+                            label = "chatFilterRowPress",
+                        )
                         Box {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().animateItem()
+                                .graphicsLayer { scaleX = tabScale; scaleY = tabScale }
                                 .pointerInput(filter.id) {
                                     detectTapGestures(
+                                        onPress = {
+                                            tabPressed = true
+                                            tryAwaitRelease()
+                                            tabPressed = false
+                                        },
                                         onTap = { state.selectedChatFilterId = filter.id; state.openChatFilterId = filter.id },
                                         onLongPress = { offset -> tabPress = offset; longPressedTabId = filter.id },
                                     )
@@ -1051,12 +1072,29 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         previewMsg == null -> "暂无消息"
         else -> previewMsg.text
     }.replace('\n', ' ')
+    // 会话行原来是裸 detectTapGestures，按下去毫无反馈。长按要拿按压点的
+    // 坐标来定位菜单，所以不能换成 PhonePressable（那个走 combinedClickable，
+    // 拿不到 offset）；改成用 detectTapGestures 自己的 onPress 驱动缩放，
+    // 手感和全局的 PhonePressable 一致（大行用 0.978）。
+    var rowPressed by remember { mutableStateOf(false) }
+    val rowMotion = phoneMotionEnabled()
+    val rowScale by animateFloatAsState(
+        if (rowPressed && rowMotion) 0.978f else 1f,
+        PhonePressSpring,
+        label = "chatRowPress",
+    )
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
+                .graphicsLayer { scaleX = rowScale; scaleY = rowScale }
                 .pointerInput(Unit) {
                     detectTapGestures(
+                        onPress = {
+                            rowPressed = true
+                            tryAwaitRelease()
+                            rowPressed = false
+                        },
                         onTap = { state.openConversation(conversation) },
                         onLongPress = { offset -> pressOffset = offset; menuOpen = true },
                     )
@@ -1072,7 +1110,8 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                         FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp))
                     }
                     Text(rowTitle, color = AetherLightText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 9.sp, modifier = Modifier.padding(end = 6.dp))
+                    // 10sp 是字号下限（9sp 在高密度屏上已经开始糊）。
+                    if (state.isConversationPinned(conversation)) Text("置顶", color = AetherPurple, fontSize = 10.sp, modifier = Modifier.padding(end = 6.dp))
                     conversation.lastTimestamp?.let { Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {

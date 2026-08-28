@@ -196,7 +196,6 @@ internal val SzjLine: Color @Composable get() = if (szjLight) SzjLightLine else 
 internal val SzjHairline: Color @Composable get() = if (szjLight) SzjLightHairline else SzjDarkHairline
 internal val SzjEdge: Color @Composable get() = if (szjLight) SzjLightEdge else SzjDarkEdge
 internal val SzjOnAccent: Color @Composable get() = if (szjLight) Color(0xFFFFFFFF) else Color(0xFF07211F)
-private val SzjCommentBg: Color @Composable get() = if (szjLight) Color(0xFFE7ECF1) else Color(0xFF161B21)
 
 // ---- 形状：卡片舒展，控件收紧。三档而不是一档，层级靠圆角区分。 ----
 internal val SzjCardShape = RoundedCornerShape(14.dp)
@@ -449,8 +448,9 @@ internal fun <T> SzjResState(
     onLogin: (() -> Unit)? = null,
     inline: Boolean = false,
 ) {
+    // action 用具名参数传：SzjEmpty/SzjEmptyInline 的第三个位置现在是 iconRes。
     val empty: @Composable (String, String?, (@Composable () -> Unit)?) -> Unit =
-        if (inline) { t, h, a -> SzjEmptyInline(t, h, a) } else { t, h, a -> SzjEmpty(t, h, a) }
+        if (inline) { t, h, a -> SzjEmptyInline(t, h, action = a) } else { t, h, a -> SzjEmpty(t, h, action = a) }
     when (res) {
         null -> empty("正在读取", null, null)
         is ShizhijiaApi.Res.NeedLogin -> empty(
@@ -473,23 +473,42 @@ internal fun <T> SzjResState(
 
 /**
  * 空态：一句说明现状，一句给下一步。空屏是邀请动作的地方，
- * 不是只写"暂无内容"的地方。棱条在这里当一个安静的锚点。
+ * 不是只写"暂无内容"的地方。
+ *
+ * 锚点原来是一根棱条——棱条现在只留给一级分区标题和选中态，这里换成真图标
+ * （[iconRes]，默认通用空箱）。版式和全局的 PhoneEmpty 一致，只是配色走石之家。
  */
 @Composable
-internal fun SzjEmpty(title: String, hint: String? = null, action: (@Composable () -> Unit)? = null) {
+internal fun SzjEmpty(
+    title: String,
+    hint: String? = null,
+    iconRes: Int = R.drawable.ic_empty_box,
+    action: (@Composable () -> Unit)? = null,
+) {
     Box(Modifier.fillMaxSize().padding(bottom = 90.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 40.dp)) {
-            SzjShard(widthDp = 4, heightDp = 26, color = SzjHairline)
-            Spacer(Modifier.height(14.dp))
-            Text(title, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
-            if (hint != null) {
-                Spacer(Modifier.height(6.dp))
-                Text(hint, color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center, lineHeight = 17.sp)
-            }
-            if (action != null) {
-                Spacer(Modifier.height(18.dp))
-                action()
-            }
+        SzjEmptyBody(title, hint, iconRes, action)
+    }
+}
+
+/** SzjEmpty / SzjEmptyInline 共用的那一列内容。 */
+@Composable
+private fun SzjEmptyBody(
+    title: String,
+    hint: String?,
+    iconRes: Int,
+    action: (@Composable () -> Unit)?,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 40.dp)) {
+        ImageGlyph(iconRes, SzjMuted.copy(alpha = 0.55f), Modifier.size(38.dp))
+        Spacer(Modifier.height(14.dp))
+        Text(title, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+        if (hint != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(hint, color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center, lineHeight = 17.sp)
+        }
+        if (action != null) {
+            Spacer(Modifier.height(18.dp))
+            action()
         }
     }
 }
@@ -557,7 +576,7 @@ internal fun SzjHeader(title: String, onBack: (() -> Unit)? = null, trailing: (@
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SzjShard(heightDp = 15)
+            SzjShard(widthDp = 4, heightDp = 17)
             Text(
                 title,
                 color = SzjText,
@@ -1036,10 +1055,6 @@ private const val SUB_POSTS = 0
 private const val SUB_DYNAMICS = 1
 private const val SUB_GUIDE = 2
 
-/** Slightly raised backdrop for the comment area, distinct from the article
- *  body so the two regions are obvious while scrolling. */
-private val CommentAreaBg: Color @Composable get() = SzjCommentBg
-
 @Composable
 private fun ShizhijiaHomeScreen(
     state: PhoneState,
@@ -1252,17 +1267,9 @@ internal fun SzjPressable(
     shape: androidx.compose.ui.graphics.Shape = SzjChipShape,
     content: @Composable () -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val motion = szjMotionEnabled()
-    val scale by animateFloatAsState(if (pressed && motion) 0.94f else 1f, SzjPressSpring, label = "szjPressable")
-    Box(
-        modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { content() }
+    // 实现已经提升成全局的 PhonePressable（这套手感是全模块标杆，
+    // 其他模块现在向它看齐）。这里保留名字，省得改几十个调用点。
+    PhonePressable(onClick = onClick, modifier = modifier, shape = shape, content = content)
 }
 
 /** Second-level tab row inside the Community section: 帖子 / 动态 / 攻略. */
@@ -1355,7 +1362,7 @@ private fun ShizhijiaMeTab(
         if (showSettings) {
             // ---- 设置页 ----
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SzjShard(widthDp = 3, heightDp = 18)
+                SzjShard(widthDp = 4, heightDp = 19)
                 Spacer(Modifier.width(8.dp))
                 Text("设置", color = SzjText, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
             }
@@ -1927,21 +1934,14 @@ private fun SzjFeedScaffold(
  * 里会塌成零高，所以这里给一个固定高度的版本。
  */
 @Composable
-internal fun SzjEmptyInline(title: String, hint: String? = null, action: (@Composable () -> Unit)? = null) {
+internal fun SzjEmptyInline(
+    title: String,
+    hint: String? = null,
+    iconRes: Int = R.drawable.ic_empty_box,
+    action: (@Composable () -> Unit)? = null,
+) {
     Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 40.dp)) {
-            SzjShard(widthDp = 4, heightDp = 26, color = SzjHairline)
-            Spacer(Modifier.height(14.dp))
-            Text(title, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
-            if (hint != null) {
-                Spacer(Modifier.height(6.dp))
-                Text(hint, color = SzjMuted, style = SzjMetaStyle, textAlign = TextAlign.Center, lineHeight = 17.sp)
-            }
-            if (action != null) {
-                Spacer(Modifier.height(18.dp))
-                action()
-            }
-        }
+        SzjEmptyBody(title, hint, iconRes, action)
     }
 }
 
@@ -1989,11 +1989,12 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
         // Line 1: 分区标签独占一行做眉标，标题不再被标签挤成两段。
         // 眉标左侧带一根小棱条，和页头/品牌行的标记同源。
         if (post.partName.isNotBlank()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
-                SzjShard(widthDp = 2, heightDp = 10)
-                Spacer(Modifier.width(6.dp))
-                Text(post.partName, color = SzjAccent, style = SzjMetaStyle)
-            }
+            // 眉标不带棱条：分区名本来就是 accent 色，已经够醒目；
+            // 棱条只留给一级分区标题和选中态（否则满屏碎片）。
+            Text(
+                post.partName, color = SzjAccent, style = SzjMetaStyle,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
         }
         Text(
             post.title,
@@ -2737,11 +2738,9 @@ private fun SzjFilterChips(
     onPick: (String) -> Unit,
 ) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SzjShard(widthDp = 2, heightDp = 11)
-            Spacer(Modifier.width(7.dp))
-            Text(label, color = SzjText, style = SzjLabelStyle)
-        }
+        // 筛选标题不带棱条：棱条只留给一级分区标题和选中态，
+        // 撒在每个小标题上单个看不见、满屏又显得碎。
+        Text(label, color = SzjText, style = SzjLabelStyle)
         Spacer(Modifier.height(9.dp))
         // 每行 4 个，多了换行——横向滚动的话看不到后面还有多少
         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -2940,7 +2939,7 @@ private fun ShizhijiaRecruitDetailScreen(
                     SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
                         Column(Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                SzjShard(widthDp = 3, heightDp = 13)
+                                SzjShard(widthDp = 4, heightDp = 16)
                                 Spacer(Modifier.width(7.dp))
                                 Text(label, color = SzjText, style = SzjLabelStyle)
                             }
@@ -3194,7 +3193,7 @@ private fun SzjSheet(title: String, onClose: () -> Unit, content: @Composable Co
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
-                SzjShard(widthDp = 3, heightDp = 16)
+                SzjShard(widthDp = 4, heightDp = 18)
                 Spacer(Modifier.width(8.dp))
                 Text(title, color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 SzjPressable(onClick = onClose, shape = CircleShape) {
@@ -3617,34 +3616,40 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 }
             }
             item {
-                // Comments header with an inline ordering toggle. Its tinted
-                // backdrop signals the switch from the article body into the
-                // comment area, so the two never blur together while scrolling.
-                Column(Modifier.fillMaxWidth().background(CommentAreaBg).padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 6.dp)) {
+                // 评论区头部。
+                // 原来这一整块（含下面的评论）铺一层灰底 CommentAreaBg，评论卡片再浮在
+                // 灰底上——灰套白两层容器，很重。现在灰底去掉，正文和评论之间靠
+                // 一条发丝线 + "全部评论"标题区隔就够了。
+                Column(Modifier.fillMaxWidth()) {
+                  Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                  Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SzjShard(heightDp = 14)
+                        SzjShard(widthDp = 4, heightDp = 18)
                         Spacer(Modifier.width(8.dp))
                         Text("全部评论", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                         // 只看楼主: client-side filter on the loaded comment list.
                         SzjPressable(onClick = { onlyAuthor = !onlyAuthor }, shape = SzjChipShape) {
                             Text("只看楼主", color = if (onlyAuthor) SzjOnAccentSoft else SzjMuted, style = SzjMetaStyle,
                                 modifier = Modifier.clip(SzjChipShape)
-                                    .background(if (onlyAuthor) SzjAccentSoft else SzjCard)
+                                    .background(if (onlyAuthor) SzjAccentSoft else Color.Transparent)
+                                    .border(1.dp, if (onlyAuthor) Color.Transparent else SzjLine, SzjChipShape)
                                     .padding(horizontal = 10.dp, vertical = 6.dp))
                         }
                     }
                     Spacer(Modifier.height(9.dp))
                     // 排序独占一行，三档并排——原来挤在标题右边，字小到点不准。
-                    Row(Modifier.clip(SzjChipShape).background(SzjCard)) {
+                    // 底色改成描边：灰底去掉之后，实色块落在 SzjBg 上反而突兀。
+                    Row(Modifier.clip(SzjChipShape).border(1.dp, SzjLine, SzjChipShape)) {
                         SzjSmallOption("默认", commentOrder == "earliest") { commentOrder = "earliest" }
                         SzjSmallOption("热门", commentOrder == "hottest") { commentOrder = "hottest" }
                         SzjSmallOption("最新", commentOrder == "latest") { commentOrder = "latest" }
                     }
+                  }
                 }
             }
             if (commentLoading && comments.isEmpty()) {
                 item(key = "comments-loading") {
-                    Column(Modifier.fillMaxWidth().background(CommentAreaBg).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
                         repeat(2) {
                             SzjCardSurface(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3662,7 +3667,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 }
             } else if (comments.isEmpty()) {
                 item(key = "comments-empty") {
-                    Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(vertical = 34.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 34.dp), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(if (onlyAuthor) "楼主还没在这里回帖" else "还没有人评论", color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Spacer(Modifier.height(6.dp))
@@ -3675,7 +3680,7 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                     SzjRise(index) { SzjCommentRow(c, nav) }
                 }
                 item(key = "comments-footer") {
-                    if (commentLoading) Box(Modifier.fillMaxWidth().background(CommentAreaBg).padding(16.dp), contentAlignment = Alignment.Center) {
+                    if (commentLoading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                     }
                 }
@@ -3700,8 +3705,10 @@ private fun SzjSmallOption(label: String, selected: Boolean, onClick: () -> Unit
 
 @Composable
 private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
-    SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp)) {
-      Column(Modifier.padding(12.dp)) {
+    // 平铺，不是卡片：评论区去掉灰底之后，一条条白卡落在 SzjBg 上还是两层容器。
+    // 现在评论之间用 1dp 发丝线分隔，和正文一样直接落在底色上。
+    Column(Modifier.fillMaxWidth()) {
+      Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(SzjInnerShape).clickable { nav(SzjRoute.UserProfile(c.uuid)) }) {
             SzjAvatar(c.characterName, c.avatar, c.uuid, 30)
             Spacer(Modifier.width(9.dp))
@@ -3738,6 +3745,8 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
             )
         }
       }
+      // 评论之间的分隔线。左侧留出 16dp，和内容对齐而不是顶到屏幕边。
+      Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(1.dp).background(SzjLine))
     }
 }
 
@@ -3878,8 +3887,6 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                 if (history.value.isNotEmpty()) {
                     Spacer(Modifier.height(18.dp))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        SzjShard(widthDp = 2, heightDp = 11)
-                        Spacer(Modifier.width(7.dp))
                         Text("搜索记录", color = SzjText, style = SzjLabelStyle)
                         Spacer(Modifier.weight(1f))
                         SzjPressable(onClick = {
@@ -3926,11 +3933,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                 }
                 if (hotWords.value.isNotEmpty()) {
                     Spacer(Modifier.height(18.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SzjShard(widthDp = 2, heightDp = 11)
-                        Spacer(Modifier.width(7.dp))
-                        Text("热门搜索", color = SzjText, style = SzjLabelStyle)
-                    }
+                    Text("热门搜索", color = SzjText, style = SzjLabelStyle)
                     Spacer(Modifier.height(10.dp))
                     // 热词换行排布，别在窄屏上被挤出屏幕外。
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3948,7 +3951,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                 when {
                     searching.value -> SzjFeedSkeleton()
                     searchType.value == ShizhijiaApi.SEARCH_TYPE_USER -> {
-                        if (userResults.value.isNullOrEmpty()) SzjEmpty("没有叫「${query.value.trim()}」的角色", "试试只输入名字的一部分")
+                        if (userResults.value.isNullOrEmpty()) SzjEmpty("没有叫「${query.value.trim()}」的角色", "试试只输入名字的一部分", R.drawable.ic_search)
                         else LazyColumn(state = s.userListState, modifier = Modifier.fillMaxSize(),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)) {
                             val users = userResults.value.orEmpty()
@@ -3972,7 +3975,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                         }
                     }
                     searchType.value == ShizhijiaApi.SEARCH_TYPE_GLAMOUR -> {
-                        if (glamourResults.value.isNullOrEmpty()) SzjEmpty("没找到「${query.value.trim()}」的幻化", "换个部件名或职业名试试")
+                        if (glamourResults.value.isNullOrEmpty()) SzjEmpty("没找到「${query.value.trim()}」的幻化", "换个部件名或职业名试试", R.drawable.ic_search)
                         else androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
                             state = s.glamourGridState,
                             columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
@@ -3991,7 +3994,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
                             }
                         }
                     }
-                    postResults.value.isNullOrEmpty() -> SzjEmpty("没有匹配「${query.value.trim()}」的$typeLabel", "换个说法，或者切到别的搜索类型")
+                    postResults.value.isNullOrEmpty() -> SzjEmpty("没有匹配「${query.value.trim()}」的$typeLabel", "换个说法，或者切到别的搜索类型", R.drawable.ic_search)
                     else -> LazyColumn(state = s.postListState, modifier = Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)) {
                         // 搜索页自带左右 16dp 内边距，卡片这里不再重复加。
@@ -4314,7 +4317,7 @@ private fun ShizhijiaSignCalendarScreen(state: PhoneState, pop: () -> Unit) {
                 }
                 Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SzjShard(widthDp = 2, heightDp = 12)
+                    SzjShard(widthDp = 4, heightDp = 16)
                     Spacer(Modifier.width(7.dp))
                     Text("累计奖励", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = SzjText)
                 }
@@ -4601,7 +4604,7 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
             item(key = "current") {
                 Column(Modifier.padding(horizontal = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
-                        SzjShard(widthDp = 2, heightDp = 12)
+                        SzjShard(widthDp = 4, heightDp = 16)
                         Spacer(Modifier.width(7.dp))
                         Text("当前角色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -4629,7 +4632,7 @@ private fun ShizhijiaCharactersScreen(pop: () -> Unit) {
             item(key = "switch-title") {
                 Column(Modifier.padding(horizontal = 14.dp).padding(top = 20.dp, bottom = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SzjShard(widthDp = 2, heightDp = 12)
+                        SzjShard(widthDp = 4, heightDp = 16)
                         Spacer(Modifier.width(7.dp))
                         Text("换一个角色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -4956,7 +4959,7 @@ private fun SzjGuildGroupLabel(label: String, count: Int) {
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SzjShard(widthDp = 3, heightDp = 13)
+        SzjShard(widthDp = 4, heightDp = 16)
         Spacer(Modifier.width(7.dp))
         Text(label, color = SzjText, style = SzjLabelStyle)
         Spacer(Modifier.width(6.dp))
@@ -5162,11 +5165,11 @@ private fun ShizhijiaGuildPhotoDetailScreen(photoId: String, pop: () -> Unit, na
                 }
                 item(key = "clabel") {
                     Row(
-                        Modifier.fillMaxWidth().background(SzjCommentBg)
+                        Modifier.fillMaxWidth()
                             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SzjShard(widthDp = 3, heightDp = 13)
+                        SzjShard(widthDp = 4, heightDp = 16)
                         Spacer(Modifier.width(7.dp))
                         Text("评论", color = SzjText, style = SzjLabelStyle)
                     }
@@ -5174,17 +5177,17 @@ private fun ShizhijiaGuildPhotoDetailScreen(photoId: String, pop: () -> Unit, na
                 val cs = (comments as? ShizhijiaApi.Res.Ok)?.value
                 when {
                     comments == null -> item(key = "cload") {
-                        Box(Modifier.fillMaxWidth().background(SzjCommentBg).padding(24.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
                         }
                     }
                     cs.isNullOrEmpty() -> item(key = "cempty") {
-                        Box(Modifier.fillMaxWidth().background(SzjCommentBg)) {
-                            SzjEmptyInline("还没有评论")
+                        Box(Modifier.fillMaxWidth()) {
+                            SzjEmptyInline("还没有评论", iconRes = R.drawable.ic_comment)
                         }
                     }
                     else -> items(cs, key = { it.id }) { c ->
-                        Box(Modifier.fillMaxWidth().background(SzjCommentBg)) { SzjCommentRow(c, nav) }
+                        SzjCommentRow(c, nav)
                     }
                 }
             }
@@ -5477,7 +5480,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         // 特殊成就: medal icons + name/detail/time.
                         if (p.achievements.isNotEmpty()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                SzjShard(widthDp = 2, heightDp = 12)
+                                SzjShard(widthDp = 4, heightDp = 16)
                                 Spacer(Modifier.width(7.dp))
                                 Text("特殊成就", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(6.dp))
@@ -5503,7 +5506,7 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                         }
                         // 游戏近况: recent/r{typeId}.png + event text.
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SzjShard(widthDp = 2, heightDp = 12)
+                            SzjShard(widthDp = 4, heightDp = 16)
                             Spacer(Modifier.width(7.dp))
                             Text("游戏近况", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
@@ -5678,7 +5681,7 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SzjShard(widthDp = 2, heightDp = 12)
+                    SzjShard(widthDp = 4, heightDp = 16)
                     Spacer(Modifier.width(7.dp))
                     Text("装备与染色", color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
@@ -5972,11 +5975,9 @@ private fun ShizhijiaGlamourTab(
 @Composable
 private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, selected: Int, onSelect: (Int) -> Unit) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SzjShard(widthDp = 2, heightDp = 11)
-            Spacer(Modifier.width(7.dp))
-            Text(label, color = SzjText, style = SzjLabelStyle)
-        }
+        // 筛选标题不带棱条：棱条只留给一级分区标题和选中态，
+        // 撒在每个小标题上单个看不见、满屏又显得碎。
+        Text(label, color = SzjText, style = SzjLabelStyle)
         Spacer(Modifier.height(9.dp))
         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
             options.chunked(4).forEach { row ->

@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -82,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.quserh.eorzeaphone.ui.theme.PhoneInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -149,19 +151,31 @@ fun FishingScreen(state: PhoneState) {
         }
     }
     var availabilityEnd by remember(catalog) { mutableStateOf<Map<Int, Long>>(emptyMap()) }
+    // 不在窗口内的鱼：下一个窗口的开始时间。
+    // 列表右列原来在这种情况下只写"暂不可钓"——一句废话占掉整列。
+    // nextWindow 本来就算出来了（下面这个循环里），以前只是把不在窗口内的丢掉。
+    var nextWindowStart by remember(catalog) { mutableStateOf<Map<Int, Long>>(emptyMap()) }
     var availabilityReady by remember(catalog) { mutableStateOf(false) }
     LaunchedEffect(catalog, nowMillis) {
         val data = catalog ?: return@LaunchedEffect
         val now = nowMillis
         if (availabilityEnd.isEmpty()) availabilityReady = false
-        availabilityEnd = withContext(Dispatchers.Default) {
-            val map = HashMap<Int, Long>(data.fish.size)
+        val computed = withContext(Dispatchers.Default) {
+            val open = HashMap<Int, Long>(data.fish.size)
+            val next = HashMap<Int, Long>(data.fish.size)
             for (f in data.fish) {
                 val window = FishingWindowCalculator.nextWindow(f, data, now - 1_000L)
-                if (window != null && window.startMillis <= now && window.endMillis > now) map[f.id] = window.endMillis
+                if (window == null) continue
+                if (window.startMillis <= now && window.endMillis > now) {
+                    open[f.id] = window.endMillis
+                } else if (window.startMillis > now) {
+                    next[f.id] = window.startMillis
+                }
             }
-            map
+            open to next
         }
+        availabilityEnd = computed.first
+        nextWindowStart = computed.second
         availabilityReady = true
     }
     val listState = rememberLazyListState()
@@ -216,7 +230,9 @@ fun FishingScreen(state: PhoneState) {
                 })
                 val data = catalog
                 if (data == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("正在载入捕鱼资料…", color = PhoneMuted) }
+                    // 首屏用骨架而不是"正在载入…"一行字：形状对齐真实的鱼行，
+                    // 数据到了不会整屏跳一下。
+                    PhoneListSkeleton(rows = 8, modifier = Modifier.fillMaxSize())
                 } else {
                     val alarmIds = remember(alarmVersion, alarmsOnly) { FishingAlarmStore.enabledIds(context) }
                     val caught = remember(state.fishingLog, data) { data.fish.count { state.isFishCaught(it.logId, it.method) } }
@@ -248,20 +264,27 @@ fun FishingScreen(state: PhoneState) {
                                 FishingListHeader(query, { query = it }, versionFilter, { versionFilter = it }, filter, { filter = it }, caught, data.fish.size, state.fishingLog != null, showCounts = true)
                             }
                             if (filtered.isEmpty()) item {
-                                Text(
+                                // 空态给图标 + 一句下一步，不是干巴巴一行字。
+                                Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                                     when {
-                                        filter == FishingFilter.Available && !availabilityReady -> "正在计算可捕获时间…"
-                                        alarmsOnly -> "还没有设置捕鱼闹钟"
-                                        else -> "没有符合条件的鱼"
-                                    },
-                                    color = PhoneMuted,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(34.dp),
-                                )
+                                        filter == FishingFilter.Available && !availabilityReady ->
+                                            PhoneEmpty("正在计算可捕获时间", "窗口要按艾欧泽亚时和天气逐条推算，稍等一下", R.drawable.ic_timer)
+                                        alarmsOnly ->
+                                            PhoneEmpty("还没有设置捕鱼闹钟", "在鱼的详情页点闹钟，窗口开始前会提醒你", R.drawable.ic_alarm_bell)
+                                        else ->
+                                            PhoneEmpty("没有符合条件的鱼", "放宽筛选或清掉搜索词再看看", R.drawable.ic_search)
+                                    }
+                                }
                             }
                             items(filtered, key = { "${it.method}-${it.id}" }) { fishRow ->
                                 Box(Modifier.animateItem()) {
-                                    FishingRow(fishRow, state.isFishCaught(fishRow.logId, fishRow.method), fishRow.id in alarmIds, availabilityEnd[fishRow.id]?.let { it - displayNow }) { selected = fishRow }
+                                    FishingRow(
+                                        fishRow,
+                                        state.isFishCaught(fishRow.logId, fishRow.method),
+                                        fishRow.id in alarmIds,
+                                        availabilityEnd[fishRow.id]?.let { it - displayNow },
+                                        nextWindowStart[fishRow.id],
+                                    ) { selected = fishRow }
                                 }
                             }
                         }
@@ -316,20 +339,36 @@ private fun FishingListHeader(
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FishingFilter.entries.forEach { item ->
+            // 用 LazyRow 而不是 horizontalScroll：选中项要能自动滚进视野。
+            // 六个筛选横滑放不下，从"图鉴"切到"未捕获"之后选中态常常藏在屏幕外，
+            // 看不出当前在哪一档。
+            val chipState = rememberLazyListState()
+            LaunchedEffect(filter) {
+                val index = FishingFilter.entries.indexOf(filter)
+                if (index >= 0) chipState.animateScrollToItem(index)
+            }
+            LazyRow(
+                state = chipState,
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(FishingFilter.entries, key = { it.name }) { item ->
                     val on = filter == item
-                    Text(
-                        item.label,
-                        color = if (on) Color.White else PhoneMuted,
-                        fontSize = 12.sp,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1,
-                        modifier = Modifier.clip(RoundedCornerShape(13.dp))
-                            .background(if (on) PhoneAccent else PhoneSurface)
-                            .clickable { onFilter(item) }
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                    )
+                    PhonePressable(
+                        onClick = { onFilter(item) },
+                        shape = RoundedCornerShape(13.dp),
+                    ) {
+                        Text(
+                            item.label,
+                            color = if (on) Color.White else PhoneMuted,
+                            fontSize = 12.sp,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            modifier = Modifier.clip(RoundedCornerShape(13.dp))
+                                .background(if (on) PhoneAccent else PhoneSurface)
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                        )
+                    }
                 }
             }
             // 版本收进下拉：7 个资料片平铺要占满一整行，实际很少切。
@@ -402,7 +441,14 @@ private fun FishingListHeader(
  * 条件提示（ET/天气）。
  */
 @Composable
-private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remainingMillis: Long?, onClick: () -> Unit) {
+private fun FishingRow(
+    fish: FishingFish,
+    caught: Boolean,
+    alarm: Boolean,
+    remainingMillis: Long?,
+    nextWindowMillis: Long?,
+    onClick: () -> Unit,
+) {
     val available = remainingMillis != null
     Row(
         Modifier.fillMaxWidth().background(PhoneSurface).clickable(onClick = onClick),
@@ -445,14 +491,18 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remai
                     color = PhoneMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
+                // 徽章配色收敛成两类，不再一行四个色（原来蓝/accent/紫/橙各一个）：
+                //   身份类（鱼王）→ accent，它是"这条鱼值不值得专门跑一趟"
+                //   条件类（刺鱼/ET/天气）→ PhoneInfo，都是"能不能钓"的限定条件
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 5.dp)) {
-                    if (fish.method == "spear") MiniBadge("刺鱼", Color(0xFF3E9BD6))
                     if (fish.isBigFish) MiniBadge("鱼王", PhoneAccent)
-                    if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}", Color(0xFF8C7AFF))
-                    if (fish.weather.isNotEmpty()) MiniBadge("天气", Color(0xFFFFA149))
+                    if (fish.method == "spear") MiniBadge("刺鱼", PhoneInfo)
+                    if (fish.startHour != 0.0 || fish.endHour != 24.0) MiniBadge("ET ${fish.startText}-${fish.endText}", PhoneInfo)
+                    if (fish.weather.isNotEmpty()) MiniBadge("天气", PhoneInfo)
                 }
             }
-            // 倒计时列：可捕获时是这一行最显眼的东西。
+            // 倒计时列：可捕获时是这一行最显眼的东西；
+            // 不可捕获时显示距下一个窗口还有多久，整列永远有信息。
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
                 if (available) {
                     Text("可捕获", color = PhoneGreen, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
@@ -461,8 +511,16 @@ private fun FishingRow(fish: FishingFish, caught: Boolean, alarm: Boolean, remai
                         formatRemainingSeconds(remainingMillis!!),
                         color = PhoneGreen, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                     )
+                } else if (nextWindowMillis != null) {
+                    Text("下次", color = PhoneMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        formatNextWindow(nextWindowMillis),
+                        color = PhoneMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    )
                 } else {
-                    Text("暂不可钓", color = PhoneMuted.copy(alpha = .5f), fontSize = 11.sp, maxLines = 1)
+                    // 连下一个窗口都算不出来（没有窗口条件 = 全天可钓，或者资料缺失）。
+                    Text("全天", color = PhoneMuted.copy(alpha = .55f), fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
@@ -712,13 +770,21 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                             ) {
                                 ItemIcon(60453, Modifier.size(28.dp), "晶")
                                 if (crystal.name.isNotBlank()) {
+                                    // 9sp 是这里的下限（地图上要塞好几个水晶名，
+                                    // 再大就互相压）。原来 8sp + 2f 阴影在浅色地图上
+                                    // 基本读不出来，所以给一块半透明深底 + 更实的阴影。
                                     Text(
                                         crystal.name,
                                         color = Color.White,
-                                        fontSize = 8.sp,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Medium,
                                         maxLines = 1,
+                                        modifier = Modifier.padding(top = 1.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(Color(0x8C000000))
+                                            .padding(horizontal = 3.dp, vertical = 1.dp),
                                         style = androidx.compose.ui.text.TextStyle(
-                                            shadow = androidx.compose.ui.graphics.Shadow(Color(0x66000000), Offset.Zero, 2f),
+                                            shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC000000), Offset.Zero, 3f),
                                         ),
                                     )
                                 }
@@ -884,9 +950,11 @@ private fun ItemPath(label: String, items: List<FishingItemRef>) {
 }
 
 @Composable
+// 10sp 是全局字号下限。8sp 在高密度屏上已经开始糊，而这几个徽章
+// （刺鱼 / 鱼王 / ET / 天气）恰恰是判断"这条鱼要不要现在去钓"的关键信息。
 private fun MiniBadge(text: String, color: Color = PhoneMuted, modifier: Modifier = Modifier) {
-    Text(text, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        modifier = modifier.clip(CircleShape).background(color).padding(horizontal = 4.dp, vertical = 2.dp))
+    Text(text, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = modifier.clip(CircleShape).background(color).padding(horizontal = 6.dp, vertical = 2.dp))
 }
 
 private fun FishingFish.weatherNames(catalog: FishingCatalog): String = weather.mapNotNull { catalog.weather[it]?.name }.joinToString(" / ")
@@ -910,6 +978,42 @@ private fun formatRemaining(millis: Long): String {
         hours > 0 && minutes > 0 -> "${hours}小时${minutes}分"
         hours > 0 -> "${hours}小时"
         else -> "${minutes}分"
+    }
+}
+
+/**
+ * 下一个窗口的说法。近的说"还有多久"，远的直接说钟点——
+ * "14小时后"没有"明天 14:00"好用。
+ */
+private fun formatNextWindow(startMillis: Long): String {
+    val delta = startMillis - System.currentTimeMillis()
+    if (delta <= 0) return "即将开始"
+    val minutes = delta / 60_000L
+    return when {
+        minutes < 1 -> "不到 1 分钟"
+        minutes < 60 -> "${minutes}分钟后"
+        minutes < 12 * 60 -> {
+            val h = minutes / 60
+            val m = minutes % 60
+            if (m == 0L) "${h}小时后" else "${h}小时${m}分后"
+        }
+        else -> {
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = startMillis }
+            val clock = String.format("%02d:%02d", cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
+            // 按"过了几个午夜"算天数差，不是按 24 小时——21:00 看"次日 09:00"
+            // 差 12 小时但确实是明天。
+            val midnight = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            when (((startMillis - midnight) / 86_400_000L)) {
+                0L -> clock
+                1L -> "明天 $clock"
+                else -> String.format("%d/%d %s", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH), clock)
+            }
+        }
     }
 }
 
