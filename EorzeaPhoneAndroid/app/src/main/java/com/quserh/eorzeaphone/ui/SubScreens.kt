@@ -1230,6 +1230,18 @@ fun WalletScreen(state: PhoneState) {
         }
     }
 }
+/**
+ * 没有独立界面的应用落到这里。
+ *
+ * 原来这页说的是"应用已打开，等待游戏数据"——**那是假话**：这些应用没有
+ * 界面，等下去也不会有东西出现。连不上游戏时还给一个"前往设置连接"，
+ * 把人往一个解决不了问题的方向推。
+ *
+ * 现在如实说：这个应用只有图标，还没做界面。并给一个真的下一步——
+ * 从桌面移除（它现在占着一格），或者返回。哪个应用有界面这件事
+ * 由 AppStoreCatalog 记着，商店里标"占位"用的是同一份数据，
+ * 两处不会各说一套。
+ */
 @Composable
 fun GenericAppScreen(state: PhoneState) {
     val app = state.selectedApp
@@ -1239,21 +1251,45 @@ fun GenericAppScreen(state: PhoneState) {
             if (app != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(58.dp).clip(RoundedCornerShape(15.dp)).background(app.color), contentAlignment = Alignment.Center) { ImageGlyph(app.icon, Color.White) }
-                    Text(app.label, color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 14.dp))
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text(app.label, color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("还没做界面", color = PhoneMuted, fontSize = 12.sp)
+                    }
                 }
             }
-            Text(appDescription(app?.id, state), color = PhoneMuted, fontSize = 15.sp)
-            if (!state.connected) Button(onClick = { state.open(AppCatalog.dock.last()) }, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent)) { Text("前往设置连接") }
+            Text(
+                AppStoreCatalog.blurbOf(app?.id.orEmpty()),
+                color = PhoneMuted,
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+            )
+            Text(
+                "它现在占着桌面上的一格。不想留着可以移除，之后在 App Store 里随时装回来。",
+                color = PhoneMuted,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+            )
+            if (app != null && app.id != "appstore") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PhonePressable(
+                        onClick = { state.uninstallApp(app.id); state.back() },
+                        shape = RoundedCornerShape(10.dp),
+                        pressedScale = 0.95f,
+                    ) {
+                        Text(
+                            "从桌面移除",
+                            color = PhoneText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                                .background(PhoneSurfaceRaised)
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+            }
         }
     }
-}
-private fun appDescription(id: String?, state: PhoneState): String = when (id) {
-    "skywatcher" -> if (state.connected) "天气组件会在插件提供天气数据后更新。" else "连接游戏后显示当前区域天气。"
-    "collections" -> "收藏馆：查看坐骑、宠物和成就收藏。"
-    "wallet" -> "钱包：同步当前金币和货币余额。"
-    "dailies" -> "日常：显示每日和每周重置项目。"
-    "housing" -> "房屋：显示当前角色的房屋位置。"
-    else -> if (state.connected) "应用已打开，等待游戏数据。" else "请先在设置中连接游戏插件。"
 }
 private fun countdownLabel(seconds: Long): String {
     val s = seconds.coerceAtLeast(0L)
