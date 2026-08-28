@@ -275,9 +275,9 @@ private fun LightRowIcon(
 private val LightCardShape = RoundedCornerShape(14.dp)
 /** 卡片之间的间距。 */
 private val LightCardGap = 8.dp
-/** 频道色标宽度。 */
+/** 频道色标宽度。只有筛选器行还在用，见 [LightListRow]。 */
 private val LightSpineWidth = 3.dp
-/** 频道色标高度。见 [LightListRow] 里关于"短标而不是长条"的说明。 */
+/** 频道色标高度。 */
 private val LightSpineHeight = 20.dp
 
 /**
@@ -291,13 +291,13 @@ private val LightSpineHeight = 20.dp
  * "标题宽度 + 剩余的一半"，标题多长时间就往哪挪，一列看下来像锯齿。
  * 现在时间在外层 Row 的最后一列，永远贴右边。
  *
- * [spine] 是频道色标，null 表示不画（联系人卡不需要频道）。
+ * [spine] 是头像前面那条频道色标，默认 null（不画）。
  *
- * 它原来是撑满卡高的硬边长条。问题是**每一张卡都有一条**：十行会话就是十条
- * 齐头齐尾的竖杠，颜色还各不相同——最响的元素出现在每一行上，就等于没有区分
- * 任何东西，只是把列表搞吵。现在收成 20dp 的圆角短标、竖直居中：
- * 颜色这条信息一个不少（老玩家照样扫一眼认出私聊/部队），但它退回到"标记"的
- * 音量，不再是"边框"。
+ * 会话行**不画**它。它先是撑满卡高的硬边长条，后来收成圆角短标，但问题始终是
+ * 每一张卡上都有一条：最响的元素出现在每一行上就等于没区分任何东西，
+ * 只是在头像前面多插一根竖杠。频道这条信息本来就写在图标和标题里了。
+ * 现在只有筛选器行还传它——那里它标的是"这个筛选器收的是哪个频道"，
+ * 而筛选器的图标是用户自己换的，颜色是唯一能看出频道的地方。
  */
 @Composable
 private fun LightListRow(
@@ -467,34 +467,6 @@ private fun LightSectionLabel(text: String, modifier: Modifier = Modifier) {
         letterSpacing = 0.4.sp,
         modifier = modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp),
     )
-}
-
-/**
- * 会话卡左侧色条的颜色 = 这条会话所属频道在游戏里的颜色。
- *
- * 这是这一屏唯一的装饰，也是唯一带信息的装饰：老玩家扫一眼颜色就知道
- * 是私聊（粉）、小队（青）、部队（紫）还是通讯贝（黄绿），不用读标题。
- * 走 themeAdjustedChannelColor，白底上会压暗一档，不然"说话"的白色看不见。
- */
-@Composable
-private fun conversationSpine(conversation: ChatConversation): Color {
-    val channel = conversation.lastMessage?.channel
-    val base = if (channel != null && channel > 0) {
-        channelDefaultColor(channel)
-    } else {
-        channelDefaultColor(
-            when (conversation.category) {
-                ChatCategory.Tell -> 12
-                ChatCategory.Party -> 14
-                ChatCategory.Team -> 15
-                ChatCategory.FreeCompany -> 24
-                ChatCategory.Linkshell -> 16
-                ChatCategory.Emote -> 29
-                else -> 10
-            },
-        )
-    }
-    return themeAdjustedChannelColor(base)
 }
 
 /**
@@ -780,7 +752,6 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     // 副标题挤在标题右边、置顶标 9sp。现在和会话行同一套骨架。
                     LightListRow(
                         onClick = onOpenLocal,
-                        spine = themeAdjustedChannelColor(channelDefaultColor(10)),
                         icon = {
                             LightRowIcon(circle = false) {
                                 ImageGlyph(R.drawable.app_messages, AetherLightMuted, Modifier.size(20.dp))
@@ -1576,7 +1547,6 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         LightListRow(
             onClick = { state.openConversation(conversation) },
             onLongPress = { offset -> pressOffset = offset; menuOpen = true },
-            spine = conversationSpine(conversation),
             icon = {
                 LightRowIcon(circle = isPerson) {
                     ConversationRowIcon(conversation, state, rowTitle)
@@ -1677,9 +1647,26 @@ private fun AetherphoneContactsList(state: PhoneState) {
             if (path != null) state.setFriendAvatar(friend, path)
         }
     }
+    var searching by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         val rosterScope = rememberCoroutineScope()
+        // 页头和会话列表同构：搜索是可点图标（开着变 accent），刷新在它右边。
+        // 原来搜索框常驻在列表第一行，等于把一个不常用的输入框永久钉在最显眼的位置，
+        // 而会话列表那边是藏在图标后面的——同一个 App 的两屏，两套规矩。
         LightHeader("联系人", state::back) {
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
+                    searching = !searching
+                    if (!searching) query = ""
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                ImageGlyph(
+                    R.drawable.ic_search,
+                    if (searching) AetherPurple else AetherLightMuted,
+                    Modifier.size(19.dp),
+                )
+            }
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
                     state.refreshFriends()
@@ -1700,29 +1687,49 @@ private fun AetherphoneContactsList(state: PhoneState) {
                 LightRefreshIcon(AetherPurple, Modifier.size(17.dp))
             }
         }
-        // 横向边距跟会话列表统一走 LocalContentMargin（原来写死 20dp，
-        // 是给已经删掉的那层卡片留的）。
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp)) {
-            item("search") {
-                LightSearchField(query, { query = it }, "搜索")
-                LightSegment(
-                    first = "好友",
-                    second = "小队",
-                    firstSelected = friendsOnly,
-                    onSelect = { friendsOnly = it },
-                    modifier = Modifier.padding(top = 14.dp, bottom = 18.dp),
-                )
-            }
-            val online = shown.filter { it.online }
-            val offline = shown.filter { !it.online }
+        AnimatedVisibility(visible = searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            LightSearchField(
+                query, { query = it }, "搜索名字或服务器",
+                Modifier.padding(horizontal = LocalContentMargin.current.dp, vertical = 2.dp),
+            )
+        }
+        val online = shown.filter { it.online }
+        val offline = shown.filter { !it.online }
+        // 好友/小队用会话列表那同一个凹槽滑块。原来这里是另一套（LightSegment：
+        // 40dp、整圆、实心紫填充、12sp），和会话列表那套的几何完全不一样。
+        // 右边的数字挂在线人数——这是这一屏真正想知道的事。
+        LightSegmented(
+            options = listOf("friends" to "好友", "party" to "小队"),
+            selected = if (friendsOnly) "friends" else "party",
+            counts = mapOf((if (friendsOnly) "friends" else "party") to online.size),
+            onSelect = { friendsOnly = it == "friends" },
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = LocalContentMargin.current.dp)
+                .padding(top = 2.dp, bottom = 8.dp),
+        )
+        // 一条流，一人一张卡，和会话列表同一个骨架和同一个间距。
+        // 原来在线/离线各收进一个 LightContactCard（一个 item 里塞整组人），
+        // 于是这一屏的"卡"是组，会话列表的"卡"是行——两屏的卡片不是一个意思。
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
+            verticalArrangement = Arrangement.spacedBy(LightCardGap),
+        ) {
             if (online.isNotEmpty()) {
                 item("online-label") { LightSectionLabel("在线 · ${formatCount(online.size)}") }
-                item("online-card") { LightContactCard(online, state, rosterTick, onChangeAvatar = { avatarFriend = it }) }
-                item("online-gap") { Spacer(Modifier.height(14.dp)) }
+                items(online, key = { "on-${it.name}@${it.homeWorld}" }) { friend ->
+                    LightContactRow(friend, state, rosterTick, onChangeAvatar = { avatarFriend = it })
+                }
             }
             if (offline.isNotEmpty()) {
-                item("offline-label") { LightSectionLabel("离线 · ${formatCount(offline.size)}") }
-                item("offline-card") { LightContactCard(offline, state, rosterTick, onChangeAvatar = { avatarFriend = it }) }
+                item("offline-label") {
+                    LightSectionLabel(
+                        "离线 · ${formatCount(offline.size)}",
+                        modifier = if (online.isNotEmpty()) Modifier.padding(top = 8.dp) else Modifier,
+                    )
+                }
+                items(offline, key = { "off-${it.name}@${it.homeWorld}" }) { friend ->
+                    LightContactRow(friend, state, rosterTick, onChangeAvatar = { avatarFriend = it })
+                }
             }
             if (shown.isEmpty()) {
                 item("empty") {
@@ -1730,7 +1737,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
                         when {
                             !state.connected -> PhoneEmpty("还没读到列表", "连接游戏后，好友和小队成员会出现在这里", R.drawable.app_contacts)
                             query.isNotBlank() -> PhoneEmpty("没有匹配「$query」的人", "换个名字或服务器再试", R.drawable.ic_search)
-                            friendsOnly -> PhoneEmpty("好友列表是空的", "在游戏里加好友后下拉刷新", R.drawable.app_contacts)
+                            friendsOnly -> PhoneEmpty("好友列表是空的", "在游戏里加好友后点右上角刷新", R.drawable.app_contacts)
                             else -> PhoneEmpty("现在没有小队", "组队之后成员会出现在这里", R.drawable.app_contacts)
                         }
                     }
@@ -1827,80 +1834,59 @@ private fun friendAvatarFor(friend: PhoneFriend, state: PhoneState, rosterTick: 
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun LightContactCard(
-    friends: List<PhoneFriend>,
+private fun LightContactRow(
+    friend: PhoneFriend,
     state: PhoneState,
-    /** 名册版本号。名册拉回来后 +1，让下面的头像重新查表。 */
+    /** 名册版本号。名册拉回来后 +1，让头像重新查表。 */
     rosterTick: Int = 0,
     onChangeAvatar: (PhoneFriend) -> Unit = {},
 ) {
-    // 联系人行和会话行走同一套骨架（LightListRow），所以现在也是一行一张卡。
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(LightCardGap)) {
-        friends.forEach { friend ->
-            LightListRow(
-                onClick = { state.openFriend(friend) },
-                onLongPress = { onChangeAvatar(friend) },
-                icon = {
-                    LightRowIcon(circle = true) {
-                        SmallConversationIcon(
-                            friendAvatarFor(friend, state, rosterTick),
-                            friend.name.take(1),
-                            if (friend.online) AetherPurple else AetherLightMuted,
-                        )
-                    }
-                },
-                title = friend.name,
-                titleColor = if (friend.online) AetherLightText else AetherLightMuted,
-                subtitle = {
-                    // 原服和当前服不同时两个都写出来（"沃仙曦染 → 神意之地"）。
-                    // 只显示当前服会让人以为好友换了家，跨界传送时尤其容易误会。
-                    val home = friend.homeWorld.trim()
-                    val now = friend.world.trim()
-                    val text = when {
-                        home.isNotBlank() && now.isNotBlank() && home != now -> "$home → $now"
-                        now.isNotBlank() -> now
-                        home.isNotBlank() -> home
-                        else -> "未知服务器"
-                    }
-                    Text(
-                        text,
-                        color = AetherLightMuted, fontSize = 12.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                },
-                meta = if (friend.online) {
-                    {
-                        val stIcon = friendStatusIcon(friend.status)
-                        if (stIcon != null) {
-                            Image(painterResource(stIcon), contentDescription = null, modifier = Modifier.size(20.dp))
-                        } else {
-                            Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                } else null,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LightSegment(first: String, second: String, firstSelected: Boolean, onSelect: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(40.dp).clip(CircleShape).background(AetherLightControl)) {
-        listOf(first to true, second to false).forEach { (label, value) ->
-            val selected = firstSelected == value
+    // 一人一张卡，和会话行走同一套骨架（LightListRow）。
+    // 原来是 LightContactCard——一个 item 里塞整组人，于是这屏的"卡"是"一组"，
+    // 会话列表的"卡"是"一行"，两屏的卡片不是同一个意思。
+    LightListRow(
+        onClick = { state.openFriend(friend) },
+        onLongPress = { onChangeAvatar(friend) },
+        icon = {
+            LightRowIcon(circle = true) {
+                SmallConversationIcon(
+                    friendAvatarFor(friend, state, rosterTick),
+                    friend.name.take(1),
+                    if (friend.online) AetherPurple else AetherLightMuted,
+                )
+            }
+        },
+        title = friend.name,
+        titleColor = if (friend.online) AetherLightText else AetherLightMuted,
+        subtitle = {
+            // 原服和当前服不同时两个都写出来（"沃仙曦染 → 神意之地"）。
+            // 只显示当前服会让人以为好友换了家，跨界传送时尤其容易误会。
+            val home = friend.homeWorld.trim()
+            val now = friend.world.trim()
+            val text = when {
+                home.isNotBlank() && now.isNotBlank() && home != now -> "$home → $now"
+                now.isNotBlank() -> now
+                home.isNotBlank() -> home
+                else -> "未知服务器"
+            }
             Text(
-                label,
-                color = if (selected) AetherLightText else AetherLightMuted,
-                fontSize = 12.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(11.dp))
-                    .background(if (selected) AetherPurple else Color.Transparent)
-                    .clickable { onSelect(value) }.padding(top = 11.dp),
+                text,
+                color = AetherLightMuted, fontSize = 12.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-        }
-    }
+        },
+        meta = if (friend.online) {
+            {
+                val stIcon = friendStatusIcon(friend.status)
+                if (stIcon != null) {
+                    Image(painterResource(stIcon), contentDescription = null, modifier = Modifier.size(20.dp))
+                } else {
+                    Image(painterResource(R.drawable.status_online), contentDescription = "在线", modifier = Modifier.size(16.dp))
+                }
+            }
+        } else null,
+    )
 }
 
 @Composable
@@ -3310,7 +3296,15 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                         contentAlignment = Alignment.Center,
                     ) { ImageGlyph(R.drawable.ic_add, AetherPurple, Modifier.size(20.dp)) }
                 }
-                LightSegment("备忘录", "提醒事项", tab == 0, { tab = if (it) 0 else 1 }, Modifier.padding(horizontal = 42.dp, vertical = 4.dp))
+                // 边距原来写死 42dp，比下面的列表缩进一大截；改成跟列表同一栏。
+                LightSegmented(
+                    options = listOf("notes" to "备忘录", "reminders" to "提醒事项"),
+                    selected = if (tab == 0) "notes" else "reminders",
+                    onSelect = { tab = if (it == "notes") 0 else 1 },
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = LocalContentMargin.current.dp)
+                        .padding(top = 2.dp, bottom = 8.dp),
+                )
                 if (tab == 0) {
                     // 备忘录/提醒原来也各写一套（22dp 边距、17sp/15sp 标题、
                     // 13dp/12dp padding），现在和会话/联系人同一套骨架。

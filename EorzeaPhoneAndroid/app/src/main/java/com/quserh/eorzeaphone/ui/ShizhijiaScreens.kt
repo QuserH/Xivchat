@@ -2034,37 +2034,20 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
             lineHeight = 23.sp, letterSpacing = 0.1.sp,
             maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
-        // Line 2: 配图。张数决定版式，跟官方移动端一致——
-        //   1 张 → 全宽 16:9 大图（原来不管几张都切 1/3 小方块，
-        //          单图时就是一个孤零零的小方块，是信息流里最寒酸的地方）
-        //   2 张 → 各 1/2 宽的方块
-        //   ≥3 张 → 三格，保持原样
+        // Line 2: 配图。**不管几张，每格都是同一个固定 1/3 宽**。
+        //
+        // 0.7.225 改成过"1 张就铺满全宽 16:9、2 张各半宽"，理由是单张时那个
+        // 小方块看着寒酸。但代价是列表里每张卡的高度取决于配了几张图：
+        // 一张图的帖子比三张图的帖子高一倍，滑起来忽高忽低。
+        // 列表要的是稳定的行高，不是每张卡都争最大版面。改回来了。
         // 失败的图直接塌掉，不留空框。
-        val pics = post.coverPics.distinct()
-        if (pics.isNotEmpty()) {
+        if (post.coverPics.isNotEmpty()) {
             Spacer(Modifier.height(11.dp))
-            when (pics.size) {
-                1 -> ShizhijiaRemoteImage(
-                    url = pics[0],
-                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(SzjInnerShape),
-                    contentScale = ContentScale.Crop,
-                    showPlaceholder = false, collapseOnFail = true,
-                    onClick = { SzjViewer.url = it },
-                )
-                2 -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val cell = (maxWidth - 6.dp) / 2
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        pics.forEach { url ->
-                            ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
-                        }
-                    }
-                }
-                else -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val cell = (maxWidth - 12.dp) / 3
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        pics.take(3).forEach { url ->
-                            ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
-                        }
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val cell = (maxWidth - 12.dp) / 3
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    post.coverPics.distinct().take(3).forEach { url ->
+                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
                     }
                 }
             }
@@ -5396,10 +5379,9 @@ private val SzjRoleJobs: List<Pair<String, List<String>>> = listOf(
 /**
  * 职能在 FFXIV 里是有颜色的，而且是全体玩家共识的那三个：
  * 坦克蓝、治疗绿、输出红——排本、招募、队列面板全用这一套。
- * 生产/采集没有官定颜色，用石之家自己的水晶青和一档暖褐区分开。
  *
- * 这三个色只画一条 2dp 短杠在职能名下面，不铺底、不上图标。
- * 用途是让"这一段是坦克"在扫视时先于文字被认出来，不是装饰。
+ * 这个色**直接染职能名那两个字**，不额外画杠也不加图形：不占一点多余空间，
+ * 颜色这条信息照样在。生产/采集没有官定颜色，用静默灰。
  */
 private val SzjRoleAccents: Map<String, Color> = mapOf(
     "坦克" to Color(0xFF4B7BE5),
@@ -5410,18 +5392,17 @@ private val SzjRoleAccents: Map<String, Color> = mapOf(
 )
 
 /**
- * 一个职能一段：职能名单独占一行（下面一条职能色短杠），职业图标铺满整宽。
+ * 一个职能一行：左边职能名（染职能色），右边这一职能的全部职业，等级写在图标下面。
  *
- * 原来是「30dp 的职能名 + 右边 chunked(6) 的图标」：
- *   - 30dp 装不下"能工巧匠"四个字；
- *   - 超过 6 个的职能会换行，而职能名只和第一行对齐，第二行整段悬空。
- * 现在职能名自己一行，图标固定 8 列——巧匠正好占满一行，坦克占一半，
- * 各职能的列位在竖直方向对齐，是一个真的网格。
+ * 版式收紧过一轮。上一版是「职能名独占一行 + 下面一条色杠 + 右侧进度 + 8 列图标」，
+ * 一个职能要占三层，七个职能铺下来比整张资料卡还高。现在压成一行：
+ *   - 职能名和图标同一行（名字染色，不画杠）；
+ *   - 格子尺寸按可用宽度算出来（BoxWithConstraints），始终按 8 列的宽度取，
+ *     所以各职能的列位在竖直方向对齐，窄屏也不会挤出边界；
+ *   - 等级回到图标正下方（原来压在图标右下角当角标，糊在图上不好读）；
+ *   - "满级几个"去掉了——图标下面就是等级，数得出来的事不用再写一遍。
  *
- * 等级不再写在图标下面，改成压在图标右下角的小角标：
- *   - 满级（100）用水晶青，扫一眼就知道练满了几个；
- *   - 没练的职业**不画角标**，图标压到 30% 透明。
- *     "没有角标"本身就是"还没开"，不用再印一个"—"占位。
+ * 没练的职业照样列出来：图标压到 30% 透明，等级位写一个"—"。
  *
  * [known] 是石之家职业图标表的 key。用它过一遍，国服还没实装的职业
  * 不会凭空多出几个永远填不上的灰位。
@@ -5438,90 +5419,84 @@ private fun SzjCareerRoleRow(
 ) {
     val shown = jobNames.filter { it in known || it in byName }
     if (shown.isEmpty()) return
-    val accent = SzjRoleAccents[role] ?: SzjAccent
-    val leveled = shown.count { (byName[it]?.level ?: 0) > 0 }
-    val maxed = shown.count { (byName[it]?.level ?: 0) >= 100 }
-    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-        // 职能名 + 右侧进度。进度是真信息：练了几个 / 共几个，满级几个。
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Column {
-                Text(role, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.width(18.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(accent))
-            }
-            Spacer(Modifier.weight(1f))
+    val roleColor = SzjRoleAccents[role] ?: SzjMuted
+    // 职能名的槽：4 个字 × 11sp ≈ 44dp。给 46dp，"能工巧匠"也是一行。
+    val labelWidth = 46.dp
+    val gap = 4.dp
+    val columns = 8
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        // 格子宽度始终按 8 列算——哪怕这个职能只有 3 个职业，格子也和别的职能一样大，
+        // 列位才对得齐。窄屏上格子会自动变小，不会挤出边界。
+        val cell = ((maxWidth - labelWidth - gap * (columns + 1)) / columns).coerceIn(20.dp, 34.dp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Text(
-                buildString {
-                    append(leveled); append('/'); append(shown.size)
-                    if (maxed > 0) { append("  满级 "); append(maxed) }
-                },
-                color = SzjMuted, fontSize = 10.sp,
+                role,
+                color = roleColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier.width(labelWidth).padding(top = (cell - 11.dp) / 2),
             )
-        }
-        Spacer(Modifier.height(9.dp))
-        // 固定 8 列：巧匠正好一整行，其他职能占前几格，列位在竖直方向对齐。
-        val columns = 8
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            shown.chunked(columns).forEach { chunk ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    chunk.forEach { name ->
-                        val level = byName[name]?.level ?: 0
-                        val has = level > 0
-                        val icon = jobIcons[name].orEmpty()
-                        val showTip = tipCareer == name
-                        Box(Modifier.weight(1f)) {
-                            Box(
-                                Modifier.fillMaxWidth().aspectRatio(1f)
-                                    .clip(SzjChipShape)
-                                    .background(if (has) SzjCardRaised else SzjCardRaised.copy(alpha = .45f))
-                                    .clickable { onTip(if (showTip) null else name) },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (icon.isNotBlank()) {
-                                    ShizhijiaRemoteImage(
-                                        url = icon,
-                                        modifier = Modifier.fillMaxSize().padding(2.dp)
-                                            .graphicsLayer { alpha = if (has) 1f else 0.30f },
-                                        contentScale = ContentScale.Fit,
-                                        showPlaceholder = false,
-                                    )
-                                } else {
+            Spacer(Modifier.width(gap))
+            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                shown.chunked(columns).forEach { chunk ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        chunk.forEach { name ->
+                            val level = byName[name]?.level ?: 0
+                            val has = level > 0
+                            val icon = jobIcons[name].orEmpty()
+                            val showTip = tipCareer == name
+                            Box {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.width(cell)
+                                        .clickable { onTip(if (showTip) null else name) },
+                                ) {
+                                    Box(
+                                        Modifier.size(cell).clip(SzjChipShape)
+                                            .background(if (has) SzjCardRaised else SzjCardRaised.copy(alpha = .45f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (icon.isNotBlank()) {
+                                            ShizhijiaRemoteImage(
+                                                url = icon,
+                                                modifier = Modifier.fillMaxSize().padding(1.dp)
+                                                    .graphicsLayer { alpha = if (has) 1f else 0.30f },
+                                                contentScale = ContentScale.Fit,
+                                                showPlaceholder = false,
+                                            )
+                                        } else {
+                                            Text(
+                                                szjCrafterAbbr(name),
+                                                color = if (has) SzjText else SzjMuted.copy(alpha = .45f),
+                                                fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                                            )
+                                        }
+                                    }
+                                    // 等级在图标正下方。
                                     Text(
-                                        szjCrafterAbbr(name),
-                                        color = if (has) SzjText else SzjMuted.copy(alpha = .45f),
-                                        fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                                        if (has) "$level" else "—",
+                                        fontSize = 9.sp, lineHeight = 11.sp,
+                                        fontWeight = if (level >= 100) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = when {
+                                            level >= 100 -> SzjAccent
+                                            has -> SzjText
+                                            else -> SzjMuted.copy(alpha = .5f)
+                                        },
                                     )
                                 }
-                                // 等级角标压在右下角。没练的不画——"没有角标"就是"还没开"。
-                                if (has) {
+                                if (showTip) {
                                     Text(
-                                        "$level",
-                                        color = if (level >= 100) SzjOnAccentSoft else SzjText,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.align(Alignment.BottomEnd)
-                                            .padding(1.dp)
-                                            .clip(RoundedCornerShape(5.dp))
-                                            .background(if (level >= 100) SzjAccentSoft else SzjCard.copy(alpha = .92f))
-                                            .padding(horizontal = 3.dp),
+                                        name, color = SzjOnAccentSoft, fontSize = 10.sp,
+                                        maxLines = 1, softWrap = false,
+                                        modifier = Modifier.align(Alignment.TopCenter)
+                                            .offset(y = (-18).dp)
+                                            .clip(SzjChipShape)
+                                            .background(SzjAccentSoft)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
                                 }
-                            }
-                            if (showTip) {
-                                Text(
-                                    name, color = SzjOnAccentSoft, fontSize = 10.sp,
-                                    maxLines = 1, softWrap = false,
-                                    modifier = Modifier.align(Alignment.TopCenter)
-                                        .offset(y = (-19).dp)
-                                        .clip(SzjChipShape)
-                                        .background(SzjAccentSoft)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
                             }
                         }
                     }
-                    // 最后一行不足 8 格时补空位，图标尺寸才不会被拉大。
-                    repeat(columns - chunk.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
@@ -5664,8 +5639,9 @@ private fun ShizhijiaUserProfileScreen(state: PhoneState, uuid: String, pop: () 
                                 // 战斗职业和生产采集之间一道发丝线：这是两类完全不同的东西，
                                 // 中间只留白的话读起来还是一长串。
                                 if (role == "能工巧匠") {
+                                    Spacer(Modifier.height(7.dp))
                                     Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
-                                    Spacer(Modifier.height(14.dp))
+                                    Spacer(Modifier.height(7.dp))
                                 }
                                 SzjCareerRoleRow(
                                     role = role,
