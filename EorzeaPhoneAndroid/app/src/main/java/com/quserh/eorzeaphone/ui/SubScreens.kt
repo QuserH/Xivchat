@@ -1,4 +1,11 @@
 package com.quserh.eorzeaphone.ui
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.toArgb
+import com.quserh.eorzeaphone.ui.theme.AccentPalette
+import com.quserh.eorzeaphone.ui.theme.PhoneOutline
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -555,6 +562,8 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
                 }
             }
         }
+        SectionLabel("主题色")
+        AccentPicker(state)
         SectionLabel("布局")
         SettingsGroup {
             SettingsStepper(
@@ -576,6 +585,293 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
         }
     }
 }
+/**
+ * 主题色选择。
+ *
+ * 版式上刻意**不用**设置行那一套（图标 + 标签 + 右侧单选圈）：颜色这件事
+ * 只能看，不能读——一行"石之家金 ○"没有任何信息量。所以是色块网格，
+ * 选中的那个套一圈描边 + 打勾。
+ *
+ * 上面压一条实时预览：一颗填充按钮、一段自己发的气泡（带情感动作那种浅青字）、
+ * 一行强调文字。这三样正好是主题色的三个角色（填充 / 气泡 / 文字），
+ * 换色时能立刻看出后果——特别是气泡：浅底会把情感动作的字吃掉，
+ * 光看色块看不出来。
+ */
+@Composable
+private fun AccentPicker(state: PhoneState) {
+    var customOpen by remember { mutableStateOf(false) }
+    val current = state.accent
+    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+        // ---- 实时预览 ----
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface)
+                .padding(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "按钮",
+                    color = current.onFill, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(current.fill)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("强调文字", color = PhoneAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(10.dp))
+            // 气泡预览：一行普通字 + 一行情感动作色（#BEFFF1）。
+            // 后者是判断气泡底够不够深的标尺。
+            Column(
+                Modifier.clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp, bottomEnd = 4.dp))
+                    .background(current.bubble)
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+            ) {
+                Text("我发的消息", color = current.onBubble, fontSize = 13.sp)
+                Spacer(Modifier.height(3.dp))
+                Text("※玛琳 摆了摆手。", color = Color(0xFFBEFFF1), fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "上面那行浅青是游戏里的情感动作颜色。它由游戏决定，改不了，" +
+                    "所以气泡底必须够深——看不清就换一套。",
+                color = PhoneMuted, fontSize = 11.sp, lineHeight = 16.sp,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        // ---- 预设色块 ----
+        val swatches = AccentPalette.presets
+        swatches.chunked(5).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { p ->
+                    AccentSwatch(
+                        palette = p,
+                        selected = state.accentId == p.id,
+                        modifier = Modifier.weight(1f),
+                        onClick = { state.accentId = p.id },
+                    )
+                }
+                repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        // ---- 自定义 ----
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(PhoneSurface)
+                .clickable { customOpen = true }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val customSeed = Color(state.accentCustom)
+            Box(
+                Modifier.size(26.dp).clip(CircleShape).background(customSeed)
+                    .border(
+                        if (state.accentId == "custom") 2.dp else 1.dp,
+                        if (state.accentId == "custom") PhoneAccent else PhoneOutline.copy(alpha = .5f),
+                        CircleShape,
+                    ),
+            )
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("自定义颜色", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "挑一个颜色，其余三个角色自动推算",
+                    color = PhoneMuted, fontSize = 11.sp,
+                )
+            }
+            ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(17.dp))
+        }
+    }
+    if (customOpen) {
+        AccentCustomDialog(
+            initial = Color(state.accentCustom),
+            onDismiss = { customOpen = false },
+            onPick = { c ->
+                state.accentCustom = c.toArgb()
+                state.accentId = "custom"
+                customOpen = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun AccentSwatch(
+    palette: AccentPalette,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        // 色块画成两半：上半是填充色，下半是气泡色。一个色块就能看出这套主题
+        // 的两个关键角色，不用点进去才发现气泡是深的还是浅的。
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onClick),
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().weight(1f).background(palette.fill))
+                Box(Modifier.fillMaxWidth().weight(1f).background(palette.bubble))
+            }
+            if (selected) {
+                Box(
+                    Modifier.fillMaxSize().border(2.5.dp, PhoneText, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(20.dp).clip(CircleShape).background(PhoneText),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ImageGlyph(R.drawable.ic_check_small, PhoneSurface, Modifier.size(13.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            palette.label,
+            color = if (selected) PhoneText else PhoneMuted,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * 自定义颜色。
+ *
+ * 色相一条横带（点/拖选），下面饱和度和明度各一条。三条都是实时的渐变条，
+ * 不是数字输入框——挑颜色应该看着挑。
+ */
+@Composable
+private fun AccentCustomDialog(
+    initial: Color,
+    onDismiss: () -> Unit,
+    onPick: (Color) -> Unit,
+) {
+    val hsv = remember {
+        val out = FloatArray(3)
+        android.graphics.Color.colorToHSV(initial.toArgb(), out)
+        out
+    }
+    var hue by remember { mutableStateOf(hsv[0]) }
+    var sat by remember { mutableStateOf(hsv[1].coerceAtLeast(0.15f)) }
+    var value by remember { mutableStateOf(hsv[2].coerceAtLeast(0.25f)) }
+    val picked = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value)))
+    val derived = AccentPalette.fromSeed(picked)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("自定义主题色", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                // 预览：填充 + 气泡（带情感动作色），和上一屏同一套标尺。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(derived.fill))
+                    Spacer(Modifier.width(8.dp))
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(derived.bubble)
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                    ) {
+                        Text("我发的消息", color = derived.onBubble, fontSize = 12.sp)
+                        Text("※摆了摆手。", color = Color(0xFFBEFFF1), fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                ColorSlider(
+                    label = "色相",
+                    fraction = hue / 360f,
+                    colors = List(13) { i -> Color(android.graphics.Color.HSVToColor(floatArrayOf(i * 30f, 1f, 1f))) },
+                    onChange = { hue = (it * 360f).coerceIn(0f, 359.99f) },
+                )
+                Spacer(Modifier.height(12.dp))
+                ColorSlider(
+                    label = "饱和度",
+                    fraction = sat,
+                    colors = listOf(
+                        Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0f, value))),
+                        Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, value))),
+                    ),
+                    onChange = { sat = it.coerceIn(0f, 1f) },
+                )
+                Spacer(Modifier.height(12.dp))
+                ColorSlider(
+                    label = "明度",
+                    fraction = value,
+                    colors = listOf(
+                        Color.Black,
+                        Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, 1f))),
+                    ),
+                    onChange = { value = it.coerceIn(0.08f, 1f) },
+                )
+            }
+        },
+        confirmButton = {
+            Text(
+                "用这个颜色",
+                color = PhoneAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(9.dp)).clickable { onPick(picked) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        },
+        dismissButton = {
+            Text(
+                "取消",
+                color = PhoneMuted, fontSize = 14.sp,
+                modifier = Modifier.clip(RoundedCornerShape(9.dp)).clickable(onClick = onDismiss)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        },
+        containerColor = PhoneSurface,
+    )
+}
+
+/** 一条渐变滑条。点或拖都能改，游标是一个描白边的小圆。 */
+@Composable
+private fun ColorSlider(
+    label: String,
+    fraction: Float,
+    colors: List<Color>,
+    onChange: (Float) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, color = PhoneMuted, fontSize = 11.sp)
+        Spacer(Modifier.height(5.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth().height(28.dp)) {
+            val w = maxWidth
+            Box(
+                Modifier.fillMaxWidth().height(18.dp).align(Alignment.CenterStart)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(Brush.horizontalGradient(colors))
+                    // 按下就跟手、拖着继续跟。
+                    // 不用 detectTapGestures + detectHorizontalDragGestures 两个
+                    // pointerInput 叠：那两个会互相抢手势（谁先消费谁赢），
+                    // 表现就是有时点了没反应。这里自己收事件，按下和移动一视同仁。
+                    .pointerInput(colors) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitPointerEvent()
+                                val pos = down.changes.firstOrNull()?.position ?: continue
+                                if (size.width > 0) {
+                                    onChange((pos.x / size.width).coerceIn(0f, 1f))
+                                }
+                                down.changes.forEach { it.consume() }
+                            }
+                        }
+                    },
+            )
+            Box(
+                Modifier.align(Alignment.CenterStart)
+                    .offset(x = (w - 20.dp) * fraction.coerceIn(0f, 1f))
+                    .size(20.dp).clip(CircleShape)
+                    .background(Color.White)
+                    .border(2.dp, PhoneText.copy(alpha = .45f), CircleShape),
+            )
+        }
+    }
+}
+
 @Composable
 private fun SoundSettingsScreen(state: PhoneState) {
     SettingsSubLayout("声音与触感", state) {

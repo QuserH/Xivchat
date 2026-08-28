@@ -208,7 +208,9 @@ internal val szjLight: Boolean @Composable get() = MaterialTheme.colorScheme.bac
 internal val SzjBg: Color @Composable get() = if (szjLight) SzjLightBg else SzjDarkBg
 internal val SzjCard: Color @Composable get() = if (szjLight) SzjLightCard else SzjDarkCard
 internal val SzjCardRaised: Color @Composable get() = if (szjLight) SzjLightCardRaised else SzjDarkCardRaised
-internal val SzjAccent: Color @Composable get() = if (szjLight) SzjLightAccent else SzjDarkAccent
+// 强调色跟设置里选的主题色走（默认石之家金）。
+// 中性色（底/卡/文字/线）不跟着换——那套是照石之家的中性色定的。
+internal val SzjAccent: Color @Composable get() = com.quserh.eorzeaphone.ui.theme.PhoneAccent
 internal val SzjAccentSoft: Color @Composable get() = if (szjLight) SzjLightAccentSoft else SzjDarkAccentSoft
 internal val SzjOnAccentSoft: Color @Composable get() = if (szjLight) SzjLightOnAccentSoft else SzjDarkOnAccentSoft
 internal val SzjText: Color @Composable get() = if (szjLight) SzjLightText else SzjDarkText
@@ -217,16 +219,17 @@ internal val SzjLine: Color @Composable get() = if (szjLight) SzjLightLine else 
 internal val SzjHairline: Color @Composable get() = if (szjLight) SzjLightHairline else SzjDarkHairline
 internal val SzjEdge: Color @Composable get() = if (szjLight) SzjLightEdge else SzjDarkEdge
 /**
- * 实心填充用的金 —— 官网原值 #c4a86a，深浅两档同一个。
+ * 实心填充用的强调色（按钮、选中态的底），上面配 [SzjOnAccent]。
  *
- * 和 [SzjAccent] 分工：那个是**文字/图标**用的（压深过，够对比度），
- * 这个是**底色**用的（按钮、选中态），上面配白字。官网就是这么用的：
+ * 和 [SzjAccent] 分工：那个是**文字/图标**用的（够对比度），这个是**底色**用的。
+ * 默认那一套就是官网原值 #c4a86a，用法也和官网一样：
  * `.active{background-color:#c4a86a;color:#fff}`。
+ * 设置里换主题色时这里跟着变。
  */
-internal val SzjAccentFill: Color = Color(0xFFC4A86A)
+internal val SzjAccentFill: Color @Composable get() = com.quserh.eorzeaphone.ui.theme.BrandFill
 
-/** 落在 [SzjAccentFill] 上的字色。官网是纯白。 */
-internal val SzjOnAccent: Color = Color(0xFFFFFFFF)
+/** 落在 [SzjAccentFill] 上的字色。 */
+internal val SzjOnAccent: Color @Composable get() = com.quserh.eorzeaphone.ui.theme.BrandOnFill
 
 // ---- 形状：卡片舒展，控件收紧。三档而不是一档，层级靠圆角区分。 ----
 internal val SzjCardShape = RoundedCornerShape(14.dp)

@@ -685,6 +685,43 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         PhoneThemeMode.Light -> false
         PhoneThemeMode.Dark -> true
     }
+
+    // ---- 主题色 ----
+    // 存两个值：预设 id，和自定义色的 ARGB。id == "custom" 时用后者。
+    // 自定义色只存种子，四个角色（填充/浅色墨/深色墨/气泡）由
+    // AccentPalette.fromSeed 现算——存四个值的话，算法改了旧数据就对不上。
+    private var _accentId by mutableStateOf(
+        prefs.getString("accentId", com.quserh.eorzeaphone.ui.theme.AccentPalette.default.id)
+            ?: com.quserh.eorzeaphone.ui.theme.AccentPalette.default.id,
+    )
+    private var _accentCustom by mutableStateOf(prefs.getInt("accentCustom", 0xFF8669F2.toInt()))
+
+    /** 当前主题色的 id。预设的 id，或 "custom"。 */
+    var accentId: String
+        get() = _accentId
+        set(value) {
+            _accentId = value
+            prefs.edit().putString("accentId", value).apply()
+        }
+
+    /** 自定义主题色的种子（ARGB）。 */
+    var accentCustom: Int
+        get() = _accentCustom
+        set(value) {
+            _accentCustom = value
+            prefs.edit().putInt("accentCustom", value).apply()
+        }
+
+    /** 解出当前该用的那一套。 */
+    val accent: com.quserh.eorzeaphone.ui.theme.AccentPalette
+        get() = if (_accentId == "custom") {
+            com.quserh.eorzeaphone.ui.theme.AccentPalette.fromSeed(
+                androidx.compose.ui.graphics.Color(_accentCustom),
+            )
+        } else {
+            com.quserh.eorzeaphone.ui.theme.AccentPalette.byId(_accentId)
+                ?: com.quserh.eorzeaphone.ui.theme.AccentPalette.default
+        }
     var settingsPage by mutableStateOf<SettingsPage?>(null)
     var editChatTabs by mutableStateOf(false)
     var editingChatFilterId by mutableStateOf<String?>(null)

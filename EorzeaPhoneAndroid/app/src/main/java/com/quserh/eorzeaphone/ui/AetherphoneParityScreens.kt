@@ -166,7 +166,10 @@ import com.quserh.eorzeaphone.data.ItemIconLoader
 import com.quserh.eorzeaphone.data.displayPlayerName
 import com.quserh.eorzeaphone.data.normalizedPlayerName
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendLink
+import com.quserh.eorzeaphone.ui.theme.BrandBubble
 import com.quserh.eorzeaphone.ui.theme.BrandFill
+import com.quserh.eorzeaphone.ui.theme.BrandOnBubble
+import com.quserh.eorzeaphone.ui.theme.BrandOnFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
@@ -198,8 +201,11 @@ private val AetherLightControl: Color @Composable get() = MaterialTheme.colorSch
  */
 private val AetherPurple: Color @Composable get() = PhoneAccent
 
-/** 实心填充用的金（官网原值 #c4a86a），上面配白字。 */
-private val AetherFill: Color = BrandFill
+/** 实心填充用的强调色（当前主题色的 fill），上面配 [AetherOnFill]。 */
+private val AetherFill: Color @Composable get() = BrandFill
+
+/** 落在 [AetherFill] 上的字色。 */
+private val AetherOnFill: Color @Composable get() = BrandOnFill
 private val EmoteChatColor = Color(0xFFBEFFF1) // 情感动作文字颜色（游戏内 190,255,241）
 private val AetherPink = Color(0xFFF46DAA)
 private val AetherNavyTop = Color(0xFF12335E)
@@ -516,7 +522,7 @@ private fun LightChip(
         PhonePressable(onClick = onClick, shape = RoundedCornerShape(15.dp)) {
             Text(
                 label,
-                color = if (active) Color.White else AetherLightText,
+                color = if (active) AetherOnFill else AetherLightText,
                 fontSize = 13.sp,
                 fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
@@ -853,7 +859,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 },
                                 icon = {
                                     LightRowIcon(circle = false, selected = selected) {
-                                        SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) Color.White else AetherLightMuted)
+                                        SmallConversationIcon(state.conversationIcon(filter.id, filter.categories.firstOrNull()), filter.label, if (selected) AetherOnFill else AetherLightMuted)
                                     }
                                 },
                                 title = filter.label,
@@ -1230,7 +1236,7 @@ private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
                     "status" -> "状态"
                     else -> cat
                 }
-                Text(label, color = if (libraryTab == cat) Color.White else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                Text(label, color = if (libraryTab == cat) AetherOnFill else AetherLightMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(RoundedCornerShape(13.dp)).background(if (libraryTab == cat) AetherFill else AetherLightControl).clickable { libraryTab = cat }.padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
@@ -1520,7 +1526,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     val canSend = state.activeCharacterOnline && state.chatDraft.isNotBlank()
                     ImageGlyph(
                         R.drawable.ic_send_arrow,
-                        if (canSend) Color.White else AetherLightMuted,
+                        if (canSend) AetherOnFill else AetherLightMuted,
                         Modifier.size(19.dp),
                     )
                 }
@@ -2170,7 +2176,7 @@ private fun ShizhijiaLinkCard(
                         showPlaceholder = false,
                     )
                 } else {
-                    ImageGlyph(R.drawable.app_news, if (clickable) Color.White else AetherLightMuted, Modifier.size(20.dp))
+                    ImageGlyph(R.drawable.app_news, if (clickable) AetherOnFill else AetherLightMuted, Modifier.size(20.dp))
                 }
             }
             Column(Modifier.weight(1f).padding(start = 13.dp)) {
@@ -2488,7 +2494,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
                 .background(AetherFill).clickable(onClick = onOpenCalendar),
             contentAlignment = Alignment.Center,
         ) {
-            ImageGlyph(R.drawable.ic_calendar, Color.White, Modifier.size(23.dp))
+            ImageGlyph(R.drawable.ic_calendar, AetherOnFill, Modifier.size(23.dp))
         }
     }
 }
@@ -2925,7 +2931,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     val canSend = state.activeCharacterOnline && state.chatDraft.isNotBlank()
                     ImageGlyph(
                         R.drawable.ic_send_arrow,
-                        if (canSend) Color.White else AetherLightMuted,
+                        if (canSend) AetherOnFill else AetherLightMuted,
                         Modifier.size(19.dp),
                     )
                 }
@@ -3173,17 +3179,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     val cleaned = remember(rawText, author) { cleanChatText(rawText, if (selfEmoteFull) "" else author).ifBlank { " " } }
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val timeText = lightClock(message.timestamp)
-    // 自己气泡里的时间也跟着走深墨（气泡底是金），白字在金上读不出来。
-    val timeColor = if (self) Color(0xFF2A2110).copy(alpha = .70f) else AetherLightMuted
+    // 自己气泡里的时间跟着气泡的字色走。
+    val timeColor = if (self) BrandOnBubble.copy(alpha = .72f) else AetherLightMuted
     val baseColor = when {
         message.category == ChatCategory.Emote -> themeAdjustedChannelColor(EmoteChatColor)
-        // 自己发的气泡是金底。**深字不是白字**：白字落在 #c4a86a 上只有 2.0:1,
-        // 官网拿金底白字做的是按钮短标签，一整段聊天正文照抄就不能读了。
-        // 深墨落在同一个金上约 8:1。
-        self -> Color(0xFF2A2110)
+        // 气泡底用主题色里**专门给气泡挑的那个值**（AccentPalette.bubble），
+        // 不是填充色。原因是这上面要落**游戏自带的频道文字色**：情感动作是
+        // #BEFFF1 那种很浅的青，浅底上直接看不见——上一版我把气泡改成石之家的
+        // 金（#c4a86a，很亮）就是这个问题。
+        // 所以每套主题的气泡底都是单独挑的深色，字色跟着它走。
+        self -> BrandOnBubble
         else -> AetherLightText
     }
-    val bubbleBg = if (self) AetherFill else AetherLightSurface
+    val bubbleBg = if (self) BrandBubble else AetherLightSurface
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) {
@@ -3519,7 +3527,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                                             ) {
                                                 ImageGlyph(
                                                     if (reminder.done) R.drawable.ic_check_small else R.drawable.ic_radio_off,
-                                                    if (reminder.done) Color.White else AetherLightMuted,
+                                                    if (reminder.done) AetherOnFill else AetherLightMuted,
                                                     Modifier.size(21.dp),
                                                 )
                                             }

@@ -35,43 +35,55 @@ val LocalContentMargin = staticCompositionLocalOf { 16 }
 // 所以分成两个角色：
 //   AccentFill —— 填充（按钮、选中态的底），配白字，和官网完全一致
 //   AccentInk  —— 文字/图标用的深金，白底 5.2:1
-private val AccentFill = Color(0xFFC4A86A)          // 石之家金（填充）
-private val AccentFillPressed = Color(0xFFA69162)   // 按下态
-private val AccentInkLight = Color(0xFF7D6229)      // 白底上的金字（5.2:1）
-private val AccentInkDark = Color(0xFFD8BE85)       // 深底上的金字
-private val AccentSoftLight = Color(0xFFFBF9F4)     // 金的浅色底
-private val AccentSoftDark = Color(0xFF2E2921)
+// 主题色现在是**可换的**（设置 → 外观 → 主题色，九套预设 + 自定义），
+// 定义搬到 AccentPalette.kt。下面这些 getter 都读当前选中的那一套。
+// 默认仍是石之家金。
+//
+// 中性色（背景/卡片/文字/分割线）不跟着换：那套是照石之家的中性色定的，
+// 换的只是强调色。整套底色跟着变会让每个预设都得重新校一遍对比度。
 
-/**
- * 石之家金 —— 填充用（按钮底、选中态底），上面配白字。
- * 深浅两档同一个值：这个金在两种底上都能当填充。
- */
-val BrandFill: Color = AccentFill
+/** 实心填充用的强调色（按钮底、选中态底），上面配 [BrandOnFill]。 */
+val BrandFill: Color @Composable get() = CurrentAccent.fill
 
-/** 按下态的深金。 */
-val BrandFillPressed: Color = AccentFillPressed
-private val BrandLight = AccentInkLight             // 白底 5.2:1
+/** 落在 [BrandFill] 上的字色。 */
+val BrandOnFill: Color @Composable get() = CurrentAccent.onFill
+
+/** 按下态：把填充色压暗一档。 */
+val BrandFillPressed: Color @Composable get() = CurrentAccent.fill.let {
+    Color(it.red * 0.85f, it.green * 0.85f, it.blue * 0.85f, it.alpha)
+}
+
+/** 自己发的聊天气泡底色。够深，游戏的浅色频道文字要能落在上面。 */
+val BrandBubble: Color @Composable get() = CurrentAccent.bubble
+
+/** 落在 [BrandBubble] 上的字色。 */
+val BrandOnBubble: Color @Composable get() = CurrentAccent.onBubble
+
+// M3 colorScheme 需要的静态默认值（Provider 之外的兜底）。
 private val BrandOnLight = Color.White
-private val BrandContainerLight = AccentSoftLight
+private val BrandContainerLight = Color(0xFFFBF9F4)
 private val BrandOnContainerLight = Color(0xFF4A3A15)
-private val BrandDark = AccentInkDark               // 深底 8.6:1
 private val BrandOnDark = Color(0xFF2A2110)
-private val BrandContainerDark = AccentSoftDark
+private val BrandContainerDark = Color(0xFF2E2921)
 private val BrandOnContainerDark = Color(0xFFE8D5A8)
 
-// 亮/暗两档都要用，所以做成 composable。
-// 这是**文字/图标**用的金（够对比度）；实心填充用 BrandFill（官网原值）。
+/**
+ * **文字/图标**用的强调色（在当前背景上够对比度）。
+ * 实心填充用 [BrandFill] —— 那个鲜艳但当字色不够对比。
+ */
 val PhoneAccent: Color @Composable get() =
-    if (MaterialTheme.colorScheme.background.luminance() > 0.5f) BrandLight else BrandDark
+    if (MaterialTheme.colorScheme.background.luminance() > 0.5f) CurrentAccent.inkLight
+    else CurrentAccent.inkDark
+
 val PhoneAccentContainer: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer
 val PhoneOnAccentContainer: Color @Composable get() = MaterialTheme.colorScheme.onPrimaryContainer
 
 /**
  * Canvas / DrawScope 是非 composable 作用域，读不到上面那些 getter。
- * 这两个是给画笔用的定值：在 Canvas 外面先 `val accent = PhoneAccentFor(dark)`
- * 拿到颜色，再传进去。
+ * 在 Canvas 外面先 `val accent = phoneAccentFor(dark, accent)` 拿到颜色再传进去。
  */
-fun phoneAccentFor(dark: Boolean): Color = if (dark) BrandDark else BrandLight
+fun phoneAccentFor(dark: Boolean, palette: AccentPalette = AccentPalette.default): Color =
+    if (dark) palette.inkDark else palette.inkLight
 
 // ---- 语义色 ----
 // 规则：同一种语义只允许有一个色值。以前红色散落成三个（#E5485D 桌面角标、
@@ -107,8 +119,8 @@ val PhoneOutline = Color(0xFF79747E)
 // 中性色跟着石之家走：#f2f2f2 页底、#fff 卡片、#f5f5f5 抬升层、
 // #1f1f1f 正文、#e5e5e5 分割线、#c2c2c2 描边——都是从它的 app.css 里读的。
 // 原来是蓝灰一套（配水晶青），底色偏冷，配金会显脏。现在中性色也退到中性偏暖。
-private val LightPhoneColors = lightColorScheme(
-    primary = BrandLight,
+private fun lightPhoneColors(accent: AccentPalette) = lightColorScheme(
+    primary = accent.inkLight,
     onPrimary = BrandOnLight,
     primaryContainer = BrandContainerLight,
     onPrimaryContainer = BrandOnContainerLight,
@@ -135,8 +147,8 @@ private val LightPhoneColors = lightColorScheme(
 )
 
 // 官网只有浅色一套，深色这边按同一个金推暖灰（冷灰配金显脏）。
-private val DarkPhoneColors = darkColorScheme(
-    primary = BrandDark,
+private fun darkPhoneColors(accent: AccentPalette) = darkColorScheme(
+    primary = accent.inkDark,
     onPrimary = BrandOnDark,
     primaryContainer = BrandContainerDark,
     onPrimaryContainer = BrandOnContainerDark,
@@ -170,12 +182,21 @@ private val Md3Shapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
 )
 
+/**
+ * @param accent 主题色。设置里选的那一套，透过 [LocalAccent] 发给全 App。
+ */
 @Composable
-fun EorzeaPhoneTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkPhoneColors else LightPhoneColors,
-        typography = Typography(),
-        shapes = Md3Shapes,
-        content = content,
-    )
+fun EorzeaPhoneTheme(
+    darkTheme: Boolean,
+    accent: AccentPalette = AccentPalette.default,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalAccent provides accent) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) darkPhoneColors(accent) else lightPhoneColors(accent),
+            typography = Typography(),
+            shapes = Md3Shapes,
+            content = content,
+        )
+    }
 }

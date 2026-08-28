@@ -112,7 +112,7 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
         }
     }
     val darkTheme = state.useDarkTheme(isSystemInDarkTheme())
-    EorzeaPhoneTheme(darkTheme = darkTheme) {
+    EorzeaPhoneTheme(darkTheme = darkTheme, accent = state.accent) {
         val view = LocalView.current
         val touchSlop = remember(view) { ViewConfiguration.get(view.context).scaledTouchSlop.toFloat() }
         SideEffect {
