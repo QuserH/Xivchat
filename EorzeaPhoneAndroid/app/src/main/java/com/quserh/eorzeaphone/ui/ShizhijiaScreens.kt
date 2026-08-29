@@ -8842,14 +8842,17 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                                                         val dy = equip?.dyes?.getOrNull(hi)
                                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                                             if (dy != null) {
-                                                                val dyeColor = dy.color.takeIf { it.startsWith("#") }?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: SzjCardRaised
+                                                                // 和分享卡共用 szjDyeColor（原来这儿内联写了一遍同样的解析）
+                                                                val dyeColor = szjDyeColor(dy.color) ?: SzjCardRaised
                                                                 Box(Modifier.size(10.dp).clip(CircleShape).background(dyeColor).border(0.5.dp, SzjMuted, CircleShape))
                                                                 Spacer(Modifier.width(3.dp))
                                                                 Text(dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 10.sp, maxLines = 1)
                                                             } else {
+                                                                // 「无」就够 —— 旁边已经有孔位图标，
+                                                                // 「无染色」三个字在一行两个孔的布局里挤掉部件名。
                                                                 ImageGlyph(R.drawable.ic_block, SzjMuted, Modifier.size(10.dp))
                                                                 Spacer(Modifier.width(2.dp))
-                                                                Text("无染色", color = SzjMuted, fontSize = 10.sp)
+                                                                Text("无", color = SzjMuted, fontSize = 10.sp)
                                                             }
                                                         }
                                                     }
@@ -9010,7 +9013,8 @@ private fun szjDyeColor(raw: String): Color? =
 private data class SzjShareSlotItem(
     val name: String,
     val iconUrl: String,
-    val dyes: List<ShizhijiaGlamourDye>,
+    /** 按孔位定长，空孔是 null。见 [ShizhijiaGlamourEquip.dyes]。 */
+    val dyes: List<ShizhijiaGlamourDye?>,
     val dyeHoles: Int,
 )
 
@@ -9032,8 +9036,12 @@ private fun szjShareSlot(d: ShizhijiaGlamourDetail, slot: String): SzjShareSlotI
  * 分享卡里的一个槽位格：槽位名 + 图标 + 部件名 + 染色点。
  *
  * 比详情页那版紧凑（图标 26dp、字 10sp）——分享卡要在一屏里装完十几个槽，
- * 详情页的 40dp 图标放这儿会撑爆。染色只画色点加名字，不画"无染色"占位：
- * 分享图里每一行都该是信息。
+ * 详情页的 40dp 图标放这儿会撑爆。
+ *
+ * **空孔要画。** 原来这里 `mapNotNull` 把没染的孔滤掉了，理由写的是
+ * "分享图里每一行都该是信息" —— 但**孔位本身就是信息**：
+ * 两个孔只染第 2 孔时，只画一个色点等于告诉人"染的是第 1 孔"，是错的。
+ * 别人照着分享图去染就染错位置，而这正是分享图存在的意义。
  */
 @Composable
 private fun SzjShareSlotCell(slot: String, item: SzjShareSlotItem) {
@@ -9053,24 +9061,34 @@ private fun SzjShareSlotCell(slot: String, item: SzjShareSlotItem) {
                 item.name, color = SzjText, fontSize = 10.sp,
                 lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
-            // 染色：有几个染色孔就画几个，只画真染了的。
-            val shown = (0 until item.dyeHoles).mapNotNull { item.dyes.getOrNull(it) }
-                .filter { it.name.isNotBlank() }
-            if (shown.isNotEmpty()) {
+            // 染色：有几个孔就画几个，**空孔画成空心圈 + 「无」**，
+            // 这样孔位对得上（见上面注释）。
+            if (item.dyeHoles > 0) {
                 Spacer(Modifier.height(2.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    shown.forEach { dy ->
+                    for (hi in 0 until item.dyeHoles) {
+                        val dy = item.dyes.getOrNull(hi)?.takeIf { it.name.isNotBlank() }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier.size(8.dp).clip(CircleShape)
-                                    .background(szjDyeColor(dy.color) ?: SzjCardRaised)
-                                    .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape),
-                            )
-                            Spacer(Modifier.width(2.dp))
-                            Text(
-                                dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 9.sp,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
+                            if (dy != null) {
+                                Box(
+                                    Modifier.size(8.dp).clip(CircleShape)
+                                        .background(szjDyeColor(dy.color) ?: SzjCardRaised)
+                                        .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape),
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Text(
+                                    dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 9.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            } else {
+                                // 空心圈：和实心色点一样大，一眼能看出这一孔是空的。
+                                Box(
+                                    Modifier.size(8.dp).clip(CircleShape)
+                                        .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape),
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Text("无", color = SzjMuted, fontSize = 9.sp, maxLines = 1)
+                            }
                         }
                     }
                 }

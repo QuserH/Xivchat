@@ -560,14 +560,21 @@ data class ShizhijiaUserProfile(
 }
 
 
-/** 染剂（名称 + 十六进制颜色），顺序与游戏染色孔 1/2 一一对应。 */
+/** 染剂（名称 + 十六进制颜色）。 */
 data class ShizhijiaGlamourDye(val name: String, val color: String)
 
 /** One equipment slot of a glamour outfit (glamour/glamourDetail -> equipments[]). */
 data class ShizhijiaGlamourEquip(
     val slot: String,
     val name: String,
-    val dyes: List<ShizhijiaGlamourDye>,
+    /**
+     * **按孔位定长的数组**，长度 == [dyeHoleCount]，没染的那孔是 null。
+     *
+     * 不是「染了哪几个」的紧凑列表 —— 孔位本身是信息。
+     * 原来是紧凑列表，2 个孔只染第 2 孔时会塌成 `[那个染剂]`，
+     * 界面按下标画就成了「第 1 孔有色、第 2 孔无色」，**正好画反**。
+     */
+    val dyes: List<ShizhijiaGlamourDye?>,
     val iconUrl: String,
     val mallUrl: String,
     val dyeHoleCount: Int,
@@ -588,8 +595,9 @@ data class ShizhijiaGlamourEquip(
         }
 
         fun fromJson(o: JSONObject): ShizhijiaGlamourEquip {
-            // 染剂必须按 dye_ids 的顺序渲染（双染剂先后顺序影响效果），
-            // 所以先按 id 建索引，再按 dye_ids 依次取出。
+            // `dyes[]` 是"这件染了哪些色"（无序、只含真染了的），
+            // `dye_ids[]` 是"每个孔放的是谁"（定长 == 孔数，空孔是 -1/0 之类）。
+            // 所以要按 dye_ids 的**下标**把染剂摆回孔位上。
             val dyeById = mutableMapOf<String, ShizhijiaGlamourDye>()
             val leftovers = mutableListOf<ShizhijiaGlamourDye>()
             o.optJSONArray("dyes")?.let { da ->
@@ -600,18 +608,34 @@ data class ShizhijiaGlamourEquip(
                     if (id.isNotBlank()) dyeById[id] = dye else leftovers.add(dye)
                 }
             }
-            val ordered = mutableListOf<ShizhijiaGlamourDye>()
-            val holeCount = o.optJSONArray("dye_ids")?.length() ?: 0
-            o.optJSONArray("dye_ids")?.let { ids ->
-                for (k in 0 until ids.length()) {
-                    dyeById.remove(ids.optString(k))?.let { ordered.add(it) }
+            // 真机实测的形状（0.7.256 探针，slot=HEAD）：
+            //   dye_ids = [-1, 48227]
+            //   dyes    = [{"id":48227,"name":"胭脂红染剂","color":"#de0b16", …}]
+            // 即 **dye_ids 定长 == 孔数，空孔是 -1**，值是**物品 id**（不是 StainId：
+            // 48227 在 items.db 里就是胭脂红染剂，六个 id 全对得上）。
+            val ids = o.optJSONArray("dye_ids")
+            val holeCount = ids?.length() ?: 0
+            // 定长数组，摆不上的孔留 null —— 原来这里是 `ordered.add()`，
+            // 只在命中时追加，空孔被压掉，后面的染剂就都往前挪了一位。
+            val byHole = arrayOfNulls<ShizhijiaGlamourDye>(holeCount)
+            if (ids != null) {
+                for (k in 0 until holeCount) {
+                    // 取不到就是空孔（-1 / 0 / "" 都走这条），不必枚举哪些值算空。
+                    byHole[k] = dyeById.remove(ids.optString(k))
                 }
             }
-            ordered.addAll(leftovers)
+            // 没带 id 的染剂（服务端偶尔这样）按顺序填进还空着的孔，
+            // 别丢掉——它们是真染了的。
+            if (leftovers.isNotEmpty()) {
+                val it2 = leftovers.iterator()
+                for (k in 0 until holeCount) {
+                    if (byHole[k] == null && it2.hasNext()) byHole[k] = it2.next()
+                }
+            }
             return ShizhijiaGlamourEquip(
                 slot = o.optString("slot"),
                 name = o.optString("name"),
-                dyes = ordered,
+                dyes = byHole.toList(),
                 iconUrl = iconUrlFor(o.optString("icon_id")),
                 mallUrl = o.optString("sqmall_url").takeUnless { it.isBlank() || it == "null" }.orEmpty(),
                 dyeHoleCount = holeCount,
