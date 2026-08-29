@@ -172,7 +172,10 @@ object ShizhijiaApi {
      * dataRes/rowsRes。所以开两个薄口子，而不是把 request/toRes 整个放开：
      * 请求的组装（tempsuid、cookie、UA、Referer）还是只有这里知道。
      */
-    internal suspend fun rawGet(
+    // 名字不叫 rawGet：上面 108 行已经有一个 rawGet(context, path, params)
+    // （给 ShizhijiaProbe 用，固定走 HOME_BASE）。两个只差一个参数的同名函数
+    // 靠重载解析区分，读代码的人得数参数才知道打的是哪个 base，太容易看错。
+    internal suspend fun rawGetOn(
         context: Context,
         base: String,
         path: String,
@@ -681,8 +684,16 @@ object ShizhijiaApi {
                 "parent_id" to parentId,
                 "root_parent" to rootParent,
                 "comment_pic" to pics,
-                // atInfo 是 @ 的人的数组。没有 @ 时官网发的是空数组。
-                "atInfo" to "[]",
+                // **这里以前有一行 "atInfo" to "[]"，那是发不出去的原因**
+                // （服务端回"@信息格式不对"）。
+                //
+                // atInfo 是 @ 的人的**数组**（官网 CommentBox 里是 `atInfo: ye.value`），
+                // 而 body 走的是 qs.stringify —— 它对空数组的处理是**整个键都不发**，
+                // 不是发一个字面量 "[]"。我照字面量发过去，服务端拿它当数组解析就报格式错。
+                //
+                // 所以没有 @ 的时候就是不带这个键。真要支持 @ 的话，
+                // qs 的形状是 atInfo[0][字段]=值，得先把 body 从
+                // Map<String,String> 扩成支持嵌套的结构，那是另一件事。
             ),
             method = "POST",
         ) ?: return Res.Failed(null, "网络没通")

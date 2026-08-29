@@ -62,7 +62,7 @@ object ShizhijiaCosUpload {
      * 有可能过不了后端对图片 URL 的正则校验，所以调用方按用途传。
      */
     suspend fun token(context: Context, channel: String = "default"): ShizhijiaApi.Res<Cred> {
-        val json = ShizhijiaApi.rawGet(context, TOKEN_BASE, "common/getCOSTokenI", mapOf("channel" to channel))
+        val json = ShizhijiaApi.rawGetOn(context, TOKEN_BASE, "common/getCOSTokenI", mapOf("channel" to channel))
             ?: return ShizhijiaApi.Res.Failed(null, "网络没通")
         return ShizhijiaApi.resOf(json) { root ->
             val d = root.optJSONObject("data") ?: return@resOf null
