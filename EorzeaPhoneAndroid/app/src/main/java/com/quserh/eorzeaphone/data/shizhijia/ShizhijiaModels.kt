@@ -243,16 +243,24 @@ data class ShizhijiaDynamic(
 ) {
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaDynamic {
-            // The dynamic payload typically carries content as a JSON string or an object;
-            // handle both shapes so the parser survives server-side changes.
-            val text = when (val c = o.opt("content")) {
+            // **正文字段是 mask_content，图片字段是 pic_url（逗号分隔的字符串）。**
+            //
+            // 这两个原来写的是 content 和 pics，都不存在，于是正文和图片双双解析成空
+            // ——头像名字照常显示、内容一片空白，就是"动态详情打不开"的真相。
+            // 名字是从官网 DynamicDetail 里读出来的（`o.pic_url.split(",")`、
+            // `J.value.mask_content`），移动端 chunk 里同样是这两个名字
+            // （mask_content 出现 18 次、pic_url 14 次），两端一致。
+            //
+            // 仍然保留对旧名字的兜底：万一服务端哪天换回去，不至于又是一片空白。
+            val text = when (val c = o.opt("mask_content") ?: o.opt("content")) {
                 is String -> c
                 is JSONObject -> c.optString("text")
                 else -> ""
             }
-            val pics = when (val p = o.opt("pics")) {
+            val pics = when (val p = o.opt("pic_url") ?: o.opt("pics")) {
+                // pic_url 是 "a.jpg,b.jpg" 这种，要按逗号切。
+                is String -> p.split(',').map { it.trim() }.filter { it.isNotBlank() }
                 is JSONArray -> buildList(p.length()) { for (i in 0 until p.length()) p.optString(i) }
-                is String -> listOf(p).filter { it.isNotBlank() }
                 else -> emptyList()
             }
             return ShizhijiaDynamic(
@@ -263,7 +271,7 @@ data class ShizhijiaDynamic(
                 areaName = o.optString("area_name"),
                 groupName = o.optString("group_name"),
                 contentText = text,
-                images = pics,
+                images = pics.map { cleanAvatar(it) },
                 createdAt = o.optString("created_at"),
                 likeCount = o.optLong("like_count"),
                 commentCount = o.optLong("comment_count"),

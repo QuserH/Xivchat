@@ -700,6 +700,72 @@ object ShizhijiaApi {
         return json.toRes { it.optString("msg").ifBlank { "已发布" } }
     }
 
+    /** 帖子可见范围。取值来自官网 PublishPost 的三个单选。 */
+    enum class PostScope(val code: Int, val label: String) {
+        Public(1, "公开"),
+        Mutual(2, "仅互关可见"),
+        Private(3, "仅自己可见"),
+    }
+
+    /**
+     * 发帖（也用于发攻略，差别只是 [type]）。
+     *
+     * body 取自官网 `PublishPost.DWDKRiEh.js`：
+     * ```
+     * {id, updated_at, atInfo, type, part_id, title, is_share, content, scope, cover_pic, has_vote}
+     * ```
+     * - `id` / `updated_at` 是**编辑**已有帖子时才用的，新发留空
+     * - `type` 1 = 帖子，2 = 攻略（和 postsList 的 type 一致）
+     * - `content` 是 HTML；图片以 `<img src>` 的形式**嵌在正文里**
+     * - `cover_pic` 是从正文里提取出来的图片 URL（逗号分隔），
+     *   官网的做法是正则扫 `<img src>` 并**排除 static.web.sdo.com 开头的**
+     *   ——那些是表情，不能当封面
+     * - `has_vote` 没有投票时是 "0"
+     * - **`atInfo` 是数组，没有 @ 时整个键都不发**（和 commentPost 同一个坑，
+     *   发字面量 "[]" 会被服务端拒："@信息格式不对"）
+     */
+    suspend fun publishPost(
+        context: Context,
+        title: String,
+        /** HTML 正文。图片用 `<img src="…">` 嵌进去。 */
+        contentHtml: String,
+        partId: String,
+        scope: PostScope = PostScope.Public,
+        type: String = "1",
+        /** 同步分享一份到动态。官网默认关。 */
+        share: Boolean = false,
+    ): Res<String> {
+        if (title.isBlank()) return Res.Failed(null, "标题不能为空")
+        if (contentHtml.isBlank()) return Res.Failed(null, "正文不能为空")
+        if (partId.isBlank()) return Res.Failed(null, "要先选一个版块")
+        // 封面：正文里的图片，排除表情（static.web.sdo.com）。
+        val cover = Regex("""<img[^>]+src=['"]([^'"]+)['"]""")
+            .findAll(contentHtml)
+            .map { it.groupValues[1] }
+            .filterNot { it.startsWith("https://static.web.sdo.com") }
+            .toList()
+            .joinToString(",")
+        val json = request(
+            context, HOME_BASE, "posts/create",
+            body = mapOf(
+                "id" to "",
+                "updated_at" to "",
+                "type" to type,
+                "part_id" to partId,
+                "title" to title,
+                "is_share" to if (share) "1" else "0",
+                "content" to contentHtml,
+                "scope" to scope.code.toString(),
+                "cover_pic" to cover,
+                "has_vote" to "0",
+                // atInfo 故意不带，理由同 commentPost。
+            ),
+            method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        // 成功时 data.id 是新帖子的 id，界面可以直接跳过去。
+        return json.toRes { it.optJSONObject("data")?.optString("id").orEmpty() }
+    }
+
     /**
      * 楼中楼：一条顶层评论下面的子评论。
      *

@@ -674,6 +674,9 @@ private sealed interface SzjRoute {
     data class RecruitDetail(val kind: ShizhijiaRecruitKind, val id: String) : SzjRoute
     /** 发布招募（副本 / 新人 / 其他）。 */
     data class PublishRecruit(val kind: ShizhijiaRecruitKind) : SzjRoute
+
+    /** 发帖 / 发攻略。同一个界面，[strategy] 决定 type 和版块字典。 */
+    data class PublishPost(val strategy: Boolean = false) : SzjRoute
     /** 专项数据（官网的数据中心，7 个分类）。 */
     data object Statistics : SzjRoute
 }
@@ -984,6 +987,7 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             is SzjRoute.GuildPhotoDetail -> ShizhijiaGuildPhotoDetailScreen(route.photoId, pop, nav)
             is SzjRoute.RecruitDetail -> ShizhijiaRecruitDetailScreen(route.kind, route.id, pop, nav)
             is SzjRoute.PublishRecruit -> ShizhijiaPublishRecruitScreen(route.kind, recruitState, pop, nav)
+            is SzjRoute.PublishPost -> ShizhijiaPublishPostScreen(route.strategy, pop, nav)
             SzjRoute.Statistics -> ShizhijiaStatisticsScreen(pop, onLogin = { nav(SzjRoute.Login) })
         }
         // 屏顶一层极淡的水晶青环境光，只在深色模式出现。深色板岩底本身很死，
@@ -1258,6 +1262,43 @@ private fun ShizhijiaHomeScreen(
                         MAIN_RECRUIT -> ShizhijiaRecruitTab(nav, loggedIn, recruitState, brandRow, bar)
                         MAIN_GLAMOUR -> ShizhijiaGlamourTab(nav, loggedIn, glamourState, brandRow)
                         else -> ShizhijiaMeTab(state, nav, loggedIn, loginUser, barHeightDp, barBottomDp, onBarHeightChange, onBarBottomChange, brandRow)
+                    }
+                }
+            }
+            // 发帖入口。只在社区的"帖子"和"攻略"两个二级 Tab 上出现——
+            // 动态那一页是别人的动态流，在那儿放"发帖"是答错了问题。
+            // 收起/放出跟悬浮底栏同一个信号源（和招募页的发布按钮一致）。
+            if (mainTab == MAIN_COMMUNITY && subTab != SUB_DYNAMICS) {
+                val motion = szjMotionEnabled()
+                val hide = bar.hidden
+                val p by animateFloatAsState(
+                    if (hide) 1f else 0f,
+                    if (motion) tween(if (hide) 260 else 190, easing = FastOutSlowInEasing) else tween(0),
+                    label = "szjPostFabHide",
+                )
+                val strategy = subTab == SUB_GUIDE
+                SzjPressable(
+                    onClick = { nav(SzjRoute.PublishPost(strategy)) },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .padding(end = 18.dp, bottom = 108.dp)
+                        .graphicsLayer {
+                            alpha = 1f - p
+                            translationX = p * 40f
+                            translationY = p * 24f
+                            scaleX = 1f - p * 0.2f
+                            scaleY = 1f - p * 0.2f
+                        },
+                    shape = CircleShape,
+                ) {
+                    Row(
+                        Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                            .clip(SzjChipShape).background(SzjAccentFill)
+                            .padding(horizontal = 15.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ImageGlyph(R.drawable.ic_add, SzjOnAccent, Modifier.size(15.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (strategy) "发攻略" else "发帖", color = SzjOnAccent, style = SzjLabelStyle)
                     }
                 }
             }
@@ -4888,6 +4929,301 @@ private fun SzjSubCommentRow(
 }
 
 // ---------------------------------------------------------------------------
+// 发帖
+// ---------------------------------------------------------------------------
+
+/**
+ * 发帖 / 发攻略。两者接口同构，差别只是 `type`（1 帖子 / 2 攻略），
+ * 版块字典也各自一份，所以用同一个界面。
+ *
+ * **正文是 HTML**（官网那边是富文本编辑器）。这里不做富文本工具栏——
+ * 加粗斜体这些在手机上打字时用不到，而且要维护一套自己的编辑器状态。
+ * 做的是：纯文本按空行分段包成 `<p>`，图片和表情按插入顺序嵌进去。
+ * 这样发出去的正文在官网和我们自己的渲染器里都是正常的。
+ */
+@Composable
+private fun ShizhijiaPublishPostScreen(
+    isStrategy: Boolean,
+    pop: () -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
+    var parts by remember { mutableStateOf<List<ShizhijiaPostPart>>(emptyList()) }
+    var partId by remember { mutableStateOf("") }
+    var visibility by remember { mutableStateOf(ShizhijiaApi.PostScope.Public) }
+    var emojiOpen by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    var uploading by remember { mutableStateOf(false) }
+    // 已上传的图片 URL，按插入顺序。发的时候拼到正文末尾。
+    val pics = remember { mutableStateListOf<String>() }
+    val maxPics = 9
+
+    LaunchedEffect(isStrategy) {
+        parts = if (isStrategy) ShizhijiaApi.getStrategyParts(context) else ShizhijiaApi.getPostParts(context)
+        // 只有叶子版块能发（父版块是分组）。默认选第一个能选的。
+        val selectable = parts.filter { it.parentId.isNotBlank() && it.parentId != "0" }.ifEmpty { parts }
+        if (partId.isBlank()) partId = selectable.firstOrNull()?.id.orEmpty()
+    }
+
+    val insert: (String) -> Unit = { s ->
+        val t = body.text
+        val start = body.selection.start.coerceIn(0, t.length)
+        val end = body.selection.end.coerceIn(start, t.length)
+        val next = t.substring(0, start) + s + t.substring(end)
+        body = androidx.compose.ui.text.input.TextFieldValue(
+            text = next,
+            selection = androidx.compose.ui.text.TextRange(start + s.length),
+        )
+    }
+
+    val picker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        uploading = true
+        scope.launch {
+            when (val r = ShizhijiaCosUpload.upload(context, uri, channel = "posts")) {
+                is ShizhijiaApi.Res.Ok -> pics.add(r.value)
+                else -> szjToastWriteFail(context, r, nav)
+            }
+            uploading = false
+        }
+    }
+
+    ScreenFrame(background = SzjBg) {
+        SzjHeader(if (isStrategy) "发攻略" else "发帖", onBack = pop)
+        val selectable = parts.filter { it.parentId.isNotBlank() && it.parentId != "0" }.ifEmpty { parts }
+        LazyColumn(
+            Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp),
+        ) {
+            item(key = "title") {
+                SzjFormField(
+                    label = "标题", value = title, placeholder = "一句话说清这帖讲什么",
+                    required = true, maxLen = 60, onChange = { title = it },
+                )
+            }
+            item(key = "part") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("版块", color = SzjText, style = SzjLabelStyle)
+                        Text(" *", color = SzjAccent, style = SzjLabelStyle)
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    if (selectable.isEmpty()) {
+                        Text("正在读取版块", color = SzjMuted, style = SzjMetaStyle)
+                    } else {
+                        // 换行不横滑：横滑会藏住后面还有多少个版块。
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            selectable.chunked(3).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    row.forEach { p ->
+                                        SzjPartChip(p.name, partId == p.id) { partId = p.id }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item(key = "body") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("正文", color = SzjText, style = SzjLabelStyle)
+                        Text(" *", color = SzjAccent, style = SzjLabelStyle)
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    BasicTextField(
+                        value = body,
+                        onValueChange = { body = it },
+                        minLines = 8,
+                        textStyle = TextStyle(color = SzjText, fontSize = 14.sp, lineHeight = 22.sp),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(SzjAccent),
+                        decorationBox = { inner ->
+                            Box(
+                                Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCard)
+                                    .border(1.dp, SzjHairline, SzjInnerShape)
+                                    .padding(horizontal = 12.dp, vertical = 11.dp),
+                            ) {
+                                if (body.text.isEmpty()) {
+                                    Text("正文。空一行分段", color = SzjMuted, fontSize = 14.sp)
+                                }
+                                inner()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SzjComposerEmojiPreview(body.text)
+                }
+            }
+            if (pics.isNotEmpty() || uploading) {
+                item(key = "pics") {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                        Text("图片（会按顺序放在正文后面）", color = SzjMuted, style = SzjMetaStyle)
+                        Spacer(Modifier.height(7.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(pics.size, key = { pics[it] }) { i ->
+                                Box {
+                                    ShizhijiaRemoteImage(
+                                        url = pics[i],
+                                        modifier = Modifier.size(72.dp).clip(SzjInnerShape),
+                                        contentScale = ContentScale.Crop,
+                                        showPlaceholder = false,
+                                        collapseOnFail = false,
+                                    )
+                                    Box(
+                                        Modifier.align(Alignment.TopEnd).padding(3.dp)
+                                            .size(18.dp).clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = .55f))
+                                            .clickable { pics.removeAt(i) },
+                                        contentAlignment = Alignment.Center,
+                                    ) { ImageGlyph(R.drawable.ic_close, Color.White, Modifier.size(10.dp)) }
+                                }
+                            }
+                            if (uploading) {
+                                item(key = "up") {
+                                    Box(
+                                        Modifier.size(72.dp).clip(SzjInnerShape).background(SzjCardRaised),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item(key = "tools") {
+                Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SzjPressable(
+                        onClick = {
+                            if (pics.size >= maxPics) {
+                                android.widget.Toast.makeText(context, "最多 $maxPics 张", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                picker.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    )
+                                )
+                            }
+                        },
+                        shape = SzjChipShape,
+                        enabled = pics.size < maxPics && !uploading && !sending,
+                    ) {
+                        Row(
+                            Modifier.clip(SzjChipShape).background(SzjCardRaised).padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(14.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("加图片", color = SzjMuted, style = SzjMetaStyle)
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    SzjPressable(onClick = { emojiOpen = !emojiOpen }, shape = SzjChipShape) {
+                        Text(
+                            "表情",
+                            color = if (emojiOpen) SzjOnAccentSoft else SzjMuted,
+                            style = SzjMetaStyle,
+                            modifier = Modifier.clip(SzjChipShape)
+                                .background(if (emojiOpen) SzjAccentSoft else SzjCardRaised)
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+            }
+            if (emojiOpen) {
+                item(key = "emoji") {
+                    Box(Modifier.padding(bottom = 14.dp)) { SzjEmojiPanel(onPick = { insert(it) }) }
+                }
+            }
+            item(key = "scope") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
+                    Text("谁能看", color = SzjText, style = SzjLabelStyle)
+                    Spacer(Modifier.height(7.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        ShizhijiaApi.PostScope.entries.forEach { s ->
+                            SzjPartChip(s.label, visibility == s) { visibility = s }
+                        }
+                    }
+                }
+            }
+            item(key = "send") {
+                val canSend = title.isNotBlank() && body.text.isNotBlank() &&
+                    partId.isNotBlank() && !sending && !uploading
+                SzjPressable(
+                    onClick = {
+                        sending = true
+                        scope.launch {
+                            val html = szjComposeHtml(body.text, pics)
+                            when (
+                                val r = ShizhijiaApi.publishPost(
+                                    context, title.trim(), html, partId,
+                                    scope = visibility,
+                                    type = if (isStrategy) "2" else "1",
+                                )
+                            ) {
+                                is ShizhijiaApi.Res.Ok -> {
+                                    android.widget.Toast.makeText(context, "发布成功", android.widget.Toast.LENGTH_SHORT).show()
+                                    // 发完直接进新帖子（官网也是这个行为）。
+                                    if (r.value.isNotBlank()) nav(SzjRoute.PostDetail(r.value)) else pop()
+                                }
+                                else -> szjToastWriteFail(context, r, nav)
+                            }
+                            sending = false
+                        }
+                    },
+                    shape = SzjInnerShape,
+                    enabled = canSend,
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth().clip(SzjInnerShape)
+                            .background(if (canSend) SzjAccentFill else SzjCardRaised)
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (sending) {
+                            CircularProgressIndicator(color = SzjOnAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                        } else {
+                            Text(
+                                if (isStrategy) "发布攻略" else "发布",
+                                color = if (canSend) SzjOnAccent else SzjMuted,
+                                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 把输入框里的纯文本 + 图片拼成接口要的 HTML。
+ *
+ * 规则：空行分段（每段一个 `<p>`），段内换行成 `<br>`，图片按顺序接在正文后面。
+ * `&<>` 要转义——正文里出现 `<` 不转义会被当成标签，轻则丢内容重则破坏结构。
+ * 表情占位符 `[emoN]` **原样保留**：服务端和渲染端都认这个形式。
+ */
+private fun szjComposeHtml(text: String, pics: List<String>): String {
+    fun esc(s: String) = s
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    val paragraphs = text.trim()
+        .split(Regex("\n\\s*\n"))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString("") { p -> "<p>" + esc(p).replace("\n", "<br>") + "</p>" }
+    val imgs = pics.joinToString("") { """<p><img src="$it"></p>""" }
+    return paragraphs + imgs
+}
+
+// ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 
@@ -5173,10 +5509,25 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
 private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () -> Unit) {
     val context = LocalContext.current
     var d by remember { mutableStateOf<ShizhijiaDynamic?>(null) }
-    LaunchedEffect(id) { d = ShizhijiaApi.getDynamicDetail(context, id) }
+    // 拉完了没有：原来只有 `d == null` 一个状态，于是**失败和"正在加载"长得一样**，
+    // 骨架屏会一直转下去。真实原因（字段名不对导致内容为空）就被这个骨架屏盖住了，
+    // 看起来像"打不开"，其实是打开了但没东西。
+    var loaded by remember(id) { mutableStateOf(false) }
+    LaunchedEffect(id) {
+        d = ShizhijiaApi.getDynamicDetail(context, id)
+        loaded = true
+    }
     ScreenFrame(background = SzjBg) {
         SzjHeader("动态详情", onBack = { pop() })
         val item = d
+        if (item == null && loaded) {
+            // 拉完了但没有内容：说清楚，并给一条下一步。
+            SzjEmpty(
+                "这条动态没能打开",
+                "可能已被删除，或者关注的人设了权限。返回再试一次",
+            )
+            return@ScreenFrame
+        }
         if (item == null) {
             Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
