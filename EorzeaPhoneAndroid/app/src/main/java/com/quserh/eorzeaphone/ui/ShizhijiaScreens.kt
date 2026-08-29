@@ -1019,7 +1019,7 @@ fun ShizhijiaScreen(state: PhoneState) {
         when (route) {
 SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recruitState, glamourState, homeMainTab, homeSubTab, barHeightDp = barHeight, barBottomDp = barBottom, onBarHeightChange = { barHeight = it }, onBarBottomChange = { barBottom = it })
             is SzjRoute.PostDetail -> ShizhijiaPostDetailScreen(state, route.postId, pop, nav)
-            is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop)
+            is SzjRoute.DynamicDetail -> ShizhijiaDynamicDetailScreen(state, route.id, pop, nav)
             SzjRoute.Search -> ShizhijiaSearchScreen(state, pop, nav, searchState)
             SzjRoute.Login -> ShizhijiaLoginScreen(state, pop)
             SzjRoute.SignCalendar -> ShizhijiaSignCalendarScreen(state, pop)
@@ -5614,162 +5614,165 @@ private fun ShizhijiaPublishPostScreen(
                     }
                 }
             }
-            item(key = "tools") {
-                Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SzjPressable(
-                        onClick = {
-                            if (pics.size >= maxPics) {
-                                android.widget.Toast.makeText(context, "最多 $maxPics 张", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                picker.launch(
-                                    androidx.activity.result.PickVisualMediaRequest(
-                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                    )
+        }
+        // **工具行 / 可见范围 / 发布按钮固定在底部，不在滚动区里。**
+        //
+        // 原来它们是 LazyColumn 的 item：键盘一弹起来视口变矮，这几项就落到
+        // 折叠线以下——而人正在打字，不会去滚动找按钮，于是「表情/图片/是否公开」
+        // 全看不见，得先收键盘。这不是 padding 的问题，是**它们放错了层**。
+        //
+        // 放到滚动区外面之后，ScreenFrame 的 ime padding 一让位，
+        // 这一条就自然贴在键盘上方，永远可见。
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                SzjPressable(
+                    onClick = {
+                        if (pics.size >= maxPics) {
+                            android.widget.Toast.makeText(context, "最多 $maxPics 张", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            picker.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
                                 )
-                            }
-                        },
-                        shape = SzjChipShape,
-                        enabled = pics.size < maxPics && !uploading && !sending,
-                    ) {
-                        Row(
-                            Modifier.clip(SzjChipShape).background(SzjCardRaised).padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(14.dp))
-                            Spacer(Modifier.width(5.dp))
-                            Text("加图片", color = SzjMuted, style = SzjMetaStyle)
+                            )
                         }
+                    },
+                    shape = SzjChipShape,
+                    enabled = pics.size < maxPics && !uploading && !sending,
+                ) {
+                    Row(
+                        Modifier.clip(SzjChipShape).background(SzjCardRaised).padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(14.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("加图片", color = SzjMuted, style = SzjMetaStyle)
                     }
-                    Spacer(Modifier.width(8.dp))
-                    SzjPressable(onClick = { emojiOpen = !emojiOpen }, shape = SzjChipShape) {
-                        Text(
-                            "表情",
-                            color = if (emojiOpen) SzjOnAccentSoft else SzjMuted,
-                            style = SzjMetaStyle,
-                            modifier = Modifier.clip(SzjChipShape)
-                                .background(if (emojiOpen) SzjAccentSoft else SzjCardRaised)
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        )
-                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                SzjPressable(onClick = { emojiOpen = !emojiOpen }, shape = SzjChipShape) {
+                    Text(
+                        "表情",
+                        color = if (emojiOpen) SzjOnAccentSoft else SzjMuted,
+                        style = SzjMetaStyle,
+                        modifier = Modifier.clip(SzjChipShape)
+                            .background(if (emojiOpen) SzjAccentSoft else SzjCardRaised)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
                 }
             }
             if (emojiOpen) {
-                item(key = "emoji") {
-                    Box(Modifier.padding(bottom = 14.dp)) { SzjEmojiPanel(onPick = { insert(it) }) }
-                }
+                Box(Modifier.padding(bottom = 14.dp)) { SzjEmojiPanel(onPick = { insert(it) }) }
             }
-            item(key = "scope") {
-                Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
-                    // **这里原来是一个叫"谁能看"的选择器，带"仅自己可见"——那是错的，
-                    // 而且是会误导人的错：帖子发到版块本身就是公开的，石之家没有
-                    // 私密帖。用户选了"仅自己可见"，帖子照样公开，别人能看到。**
-                    //
-                    // 真相（PublishPost.DWDKRiEh.js）：那三个单选**只在"分享到动态"
-                    // 打开时才渲染**（`1 == et.value ? 单选组 : 不渲染`），
-                    // 也就是说 scope 管的是**那条动态**的可见范围，不是帖子的。
-                    // 我把它当帖子的可见性摆出来，是把两件事搞混了。
-                    //
-                    // 现在：先说清帖子是公开的，再把 scope 挂到它真正属于的开关下面。
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ImageGlyph(R.drawable.ic_info, SzjMuted, Modifier.size(13.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            "发到版块的帖子是公开的，谁都能看到",
-                            color = SzjMuted, style = SzjMetaStyle,
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    // 分享到动态：开关。关着的时候下面那三档不出现——
-                    // 照官网的条件渲染，因为那三档只对动态有意义。
-                    SzjPressable(onClick = { shareToDynamic = !shareToDynamic }, shape = SzjInnerShape) {
-                        Row(
-                            Modifier.fillMaxWidth().clip(SzjInnerShape)
-                                .background(if (shareToDynamic) SzjAccentSoft else SzjCardRaised)
-                                .padding(horizontal = 12.dp, vertical = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "同时分享到动态",
-                                    color = if (shareToDynamic) SzjOnAccentSoft else SzjText,
-                                    style = SzjLabelStyle,
-                                )
-                                Text(
-                                    "在你的动态里也发一条，指向这篇帖子",
-                                    color = if (shareToDynamic) SzjOnAccentSoft.copy(alpha = .75f) else SzjMuted,
-                                    style = SzjMetaStyle,
-                                )
-                            }
-                            ImageGlyph(
-                                if (shareToDynamic) R.drawable.ic_check_small else R.drawable.ic_radio_off,
-                                if (shareToDynamic) SzjOnAccentSoft else SzjMuted,
-                                Modifier.size(17.dp),
-                            )
-                        }
-                    }
-                    if (shareToDynamic) {
-                        Spacer(Modifier.height(10.dp))
-                        Text("这条动态谁能看", color = SzjText, style = SzjLabelStyle)
-                        Spacer(Modifier.height(7.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            ShizhijiaApi.PostScope.entries.forEach { s ->
-                                SzjPartChip(s.label, visibility == s) { visibility = s }
-                            }
-                        }
-                        Spacer(Modifier.height(5.dp))
-                        Text(
-                            "只影响这条动态。帖子本身在版块里仍然公开。",
-                            color = SzjMuted, style = SzjMetaStyle,
-                        )
-                    }
+            Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
+                // **这里原来是一个叫"谁能看"的选择器，带"仅自己可见"——那是错的，
+                // 而且是会误导人的错：帖子发到版块本身就是公开的，石之家没有
+                // 私密帖。用户选了"仅自己可见"，帖子照样公开，别人能看到。**
+                //
+                // 真相（PublishPost.DWDKRiEh.js）：那三个单选**只在"分享到动态"
+                // 打开时才渲染**（`1 == et.value ? 单选组 : 不渲染`），
+                // 也就是说 scope 管的是**那条动态**的可见范围，不是帖子的。
+                // 我把它当帖子的可见性摆出来，是把两件事搞混了。
+                //
+                // 现在：先说清帖子是公开的，再把 scope 挂到它真正属于的开关下面。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ImageGlyph(R.drawable.ic_info, SzjMuted, Modifier.size(13.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "发到版块的帖子是公开的，谁都能看到",
+                        color = SzjMuted, style = SzjMetaStyle,
+                    )
                 }
-            }
-            item(key = "send") {
-                val canSend = title.isNotBlank() && body.text.isNotBlank() &&
-                    partId.isNotBlank() && !sending && !uploading
-                SzjPressable(
-                    onClick = {
-                        sending = true
-                        scope.launch {
-                            val html = szjComposeHtml(body.text, pics)
-                            when (
-                                val r = ShizhijiaApi.publishPost(
-                                    context, title.trim(), html, partId,
-                                    // scope 只在分享到动态时才有意义；不分享就送默认值，
-                                    // 免得留一个看着像"设了可见范围"其实没用的值。
-                                    scope = if (shareToDynamic) visibility else ShizhijiaApi.PostScope.Public,
-                                    type = if (isStrategy) "2" else "1",
-                                    share = shareToDynamic,
-                                )
-                            ) {
-                                is ShizhijiaApi.Res.Ok -> {
-                                    android.widget.Toast.makeText(context, "发布成功", android.widget.Toast.LENGTH_SHORT).show()
-                                    // 发完直接进新帖子（官网也是这个行为）。
-                                    if (r.value.isNotBlank()) nav(SzjRoute.PostDetail(r.value)) else pop()
-                                }
-                                else -> szjToastWriteFail(context, r, nav)
-                            }
-                            sending = false
-                        }
-                    },
-                    shape = SzjInnerShape,
-                    enabled = canSend,
-                ) {
-                    Box(
+                Spacer(Modifier.height(12.dp))
+                // 分享到动态：开关。关着的时候下面那三档不出现——
+                // 照官网的条件渲染，因为那三档只对动态有意义。
+                SzjPressable(onClick = { shareToDynamic = !shareToDynamic }, shape = SzjInnerShape) {
+                    Row(
                         Modifier.fillMaxWidth().clip(SzjInnerShape)
-                            .background(if (canSend) SzjAccentFill else SzjCardRaised)
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
+                            .background(if (shareToDynamic) SzjAccentSoft else SzjCardRaised)
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (sending) {
-                            CircularProgressIndicator(color = SzjOnAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                        } else {
+                        Column(Modifier.weight(1f)) {
                             Text(
-                                if (isStrategy) "发布攻略" else "发布",
-                                color = if (canSend) SzjOnAccent else SzjMuted,
-                                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                                "同时分享到动态",
+                                color = if (shareToDynamic) SzjOnAccentSoft else SzjText,
+                                style = SzjLabelStyle,
+                            )
+                            Text(
+                                "在你的动态里也发一条，指向这篇帖子",
+                                color = if (shareToDynamic) SzjOnAccentSoft.copy(alpha = .75f) else SzjMuted,
+                                style = SzjMetaStyle,
                             )
                         }
+                        ImageGlyph(
+                            if (shareToDynamic) R.drawable.ic_check_small else R.drawable.ic_radio_off,
+                            if (shareToDynamic) SzjOnAccentSoft else SzjMuted,
+                            Modifier.size(17.dp),
+                        )
+                    }
+                }
+                if (shareToDynamic) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("这条动态谁能看", color = SzjText, style = SzjLabelStyle)
+                    Spacer(Modifier.height(7.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        ShizhijiaApi.PostScope.entries.forEach { s ->
+                            SzjPartChip(s.label, visibility == s) { visibility = s }
+                        }
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        "只影响这条动态。帖子本身在版块里仍然公开。",
+                        color = SzjMuted, style = SzjMetaStyle,
+                    )
+                }
+            }
+            val canSend = title.isNotBlank() && body.text.isNotBlank() &&
+                partId.isNotBlank() && !sending && !uploading
+            SzjPressable(
+                onClick = {
+                    sending = true
+                    scope.launch {
+                        val html = szjComposeHtml(body.text, pics)
+                        when (
+                            val r = ShizhijiaApi.publishPost(
+                                context, title.trim(), html, partId,
+                                // scope 只在分享到动态时才有意义；不分享就送默认值，
+                                // 免得留一个看着像"设了可见范围"其实没用的值。
+                                scope = if (shareToDynamic) visibility else ShizhijiaApi.PostScope.Public,
+                                type = if (isStrategy) "2" else "1",
+                                share = shareToDynamic,
+                            )
+                        ) {
+                            is ShizhijiaApi.Res.Ok -> {
+                                android.widget.Toast.makeText(context, "发布成功", android.widget.Toast.LENGTH_SHORT).show()
+                                // 发完直接进新帖子（官网也是这个行为）。
+                                if (r.value.isNotBlank()) nav(SzjRoute.PostDetail(r.value)) else pop()
+                            }
+                            else -> szjToastWriteFail(context, r, nav)
+                        }
+                        sending = false
+                    }
+                },
+                shape = SzjInnerShape,
+                enabled = canSend,
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().clip(SzjInnerShape)
+                        .background(if (canSend) SzjAccentFill else SzjCardRaised)
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (sending) {
+                        CircularProgressIndicator(color = SzjOnAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    } else {
+                        Text(
+                            if (isStrategy) "发布攻略" else "发布",
+                            color = if (canSend) SzjOnAccent else SzjMuted,
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             }
@@ -6092,9 +6095,24 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () -> Unit) {
+private fun ShizhijiaDynamicDetailScreen(
+    state: PhoneState,
+    id: String,
+    pop: () -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
     val context = LocalContext.current
+    val actionScope = rememberCoroutineScope()
     var d by remember { mutableStateOf<ShizhijiaDynamic?>(null) }
+    // **评论。之前这一屏压根没接评论**，只画了作者卡和图片——
+    // 所以"明明有评论，点进去什么都没有"。复用帖子那套 szjCommentSection，
+    // 行结构同族（dynamic/dynamicCommentDetail 的参数形状和帖子评论一样）。
+    var comments by remember(id) { mutableStateOf<List<ShizhijiaComment>>(emptyList()) }
+    var commentLoading by remember(id) { mutableStateOf(true) }
+    var commentOrder by remember(id) { mutableStateOf("earliest") }
+    var onlyAuthor by remember(id) { mutableStateOf(false) }
+    var composerOpen by remember(id) { mutableStateOf(false) }
+    var replyTo by remember(id) { mutableStateOf<ShizhijiaComment?>(null) }
     // 拉完了没有：原来只有 `d == null` 一个状态，于是**失败和"正在加载"长得一样**，
     // 骨架屏会一直转下去。真实原因（字段名不对导致内容为空）就被这个骨架屏盖住了，
     // 看起来像"打不开"，其实是打开了但没东西。
@@ -6102,6 +6120,14 @@ private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () 
     LaunchedEffect(id) {
         d = ShizhijiaApi.getDynamicDetail(context, id)
         loaded = true
+    }
+    // 评论单独拉一次，和详情并行——详情失败不该连评论一起没了。
+    LaunchedEffect(id, commentOrder, onlyAuthor) {
+        commentLoading = true
+        comments = ShizhijiaApi.getDynamicComments(
+            context, id, order = commentOrder, onlyLandlord = onlyAuthor,
+        ).rows
+        commentLoading = false
     }
     ScreenFrame(background = SzjBg) {
         SzjHeader("动态详情", onBack = { pop() })
@@ -6129,7 +6155,10 @@ private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () 
             }
             return@ScreenFrame
         }
-        LazyColumn(Modifier.fillMaxSize()) {
+        // **weight(1f) 不是 fillMaxSize()**：下面新加了固定的回帖入口，
+        // 用 fillMaxSize 会把剩余高度全吃掉、那一条被压成 0 高看不见。
+        // 这个坑我在这个项目里犯过六次以上，这次是加东西时当场想到的。
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             item {
                 SzjCardSurface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
                   Column(Modifier.padding(14.dp)) {
@@ -6149,10 +6178,75 @@ private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () 
                   }
                 }
             }
-            items(item.images) { img ->
-                ShizhijiaRemoteImage(url = img, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp).clip(SzjInnerShape))
+            itemsIndexed(item.images) { ii, img ->
+                ShizhijiaRemoteImage(
+                    url = img,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp).clip(SzjInnerShape),
+                    onClick = { SzjViewer.open(item.images, ii) },
+                )
+            }
+            // 评论接在图片后面，同一条流（和帖子详情一个形态）。
+            szjCommentSection(
+                comments = comments,
+                commentLoading = commentLoading,
+                onlyAuthor = onlyAuthor,
+                onToggleAuthor = { onlyAuthor = !onlyAuthor },
+                commentOrder = commentOrder,
+                onOrder = { commentOrder = it },
+                nav = nav,
+                onReply = { target -> replyTo = target; composerOpen = true },
+            )
+        }
+        // 底部回帖入口。动态没有点赞/收藏那一排，所以只给一个"回帖"。
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+        SzjPressable(
+            onClick = { replyTo = null; composerOpen = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = androidx.compose.ui.graphics.RectangleShape,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ImageGlyph(R.drawable.ic_comment, SzjMuted, Modifier.size(15.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("说点什么…", color = SzjMuted, fontSize = 14.sp)
             }
         }
+    }
+    if (composerOpen) {
+        val target = replyTo
+        SzjCommentComposer(
+            hint = if (target != null) "写你的回复…" else "说点什么…",
+            replyTo = target,
+            onDismiss = { composerOpen = false; replyTo = null },
+            onSend = { text, pics, done ->
+                actionScope.launch {
+                    when (
+                        val r = ShizhijiaApi.commentDynamic(
+                            context, id, text,
+                            parentId = target?.id ?: "0",
+                            rootParent = target?.rootParent ?: "0",
+                            pics = pics,
+                        )
+                    ) {
+                        is ShizhijiaApi.Res.Ok -> {
+                            android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
+                            composerOpen = false
+                            replyTo = null
+                            // 重拉：新评论要出现，楼中楼的计数也变了。
+                            commentLoading = true
+                            comments = ShizhijiaApi.getDynamicComments(
+                                context, id, order = commentOrder, onlyLandlord = onlyAuthor,
+                            ).rows
+                            commentLoading = false
+                        }
+                        else -> szjToastWriteFail(context, r, nav)
+                    }
+                    done()
+                }
+            },
+        )
     }
 }
 

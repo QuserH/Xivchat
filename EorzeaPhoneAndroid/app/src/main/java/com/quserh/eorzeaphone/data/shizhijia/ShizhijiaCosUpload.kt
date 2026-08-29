@@ -243,9 +243,26 @@ object ShizhijiaCosUpload {
     private fun sign(cred: Cred, method: String, path: String): String {
         val keyTime = "${cred.startTime};${cred.expiredTime}"
         val signKey = hmacSha1Hex(cred.tmpSecretKey, keyTime)
-        val headerList = "host"
-        val headers = "host=${cosEncode(HOST)}"
-        val httpString = "${method.lowercase()}\n$path\n\n$headers\n"
+        // **一个头都不签。** 这是 SignatureDoesNotMatch 的真正原因，我原来签了 host。
+        //
+        // 官方 SDK 的 Te() 算 SignHost 时有这么一步：
+        //
+        //     if (!e.Bucket || !e.Region) return "";
+        //     r = /^([a-z\d-]+-\d+\.)?(cos|cosv6|ci|pic)\.([a-z\d-]+)\.myqcloud\.com$/
+        //     return r.test(host) ? host : ""        ← 自定义域名不匹配就返回空
+        //
+        // 站点用的是自定义域名 ff14risingstones.gcloud.com.cn，**不匹配**那个正则，
+        // 于是 SignHost = ""，接着 we() 里 `!o && e.SignHost && r && (n.Host=…)`
+        // 因为 e.SignHost 是空串而不成立 —— **Host 根本没进签名**。
+        // （getAuth 里那个 `if (!c.Host && e.Bucket && e.Region) c.Host = 默认域名`
+        //   兜不住，因为 we() 调 getAuth 时没传 Bucket/Region。）
+        //
+        // 所以 HttpString 的头那一段是空的、q-header-list 也是空的：
+        //     put\n/路径\n\n\n
+        // 我之前签成 `host=…` + q-header-list=host，算出来的 signature 自然不一样。
+        // 用日志里的真实 keyTime 1787995324;1787997124 两种算法各算过一遍，确认不同。
+        val headerList = ""
+        val httpString = "${method.lowercase()}\n$path\n\n\n"
         val stringToSign = "sha1\n$keyTime\n${sha1Hex(httpString)}\n"
         // 留一份给失败时和 COS 的那份对比用（见 put() 里的日志）。
         lastStringToSign = stringToSign
@@ -259,15 +276,9 @@ object ShizhijiaCosUpload {
             "&q-signature=$signature"
     }
 
-    /**
-     * COS 要求的 URL 编码：标准 encodeURIComponent，但 `!'()*` 也要编码，
-     * 而 `/` 在 header value 里不编码。这几个例外是 403 的常见来源。
-     */
-    private fun cosEncode(v: String): String =
-        java.net.URLEncoder.encode(v, "UTF-8")
-            .replace("+", "%20")
-            .replace("*", "%2A")
-            .replace("%7E", "~")
+    // cosEncode 删了：它只服务于"给 host 的值做 URL 编码"这一件事，
+    // 而现在一个头都不签（见 sign() 的注释），没有值需要编码了。
+    // Key 里的文件名在 buildKey() 里已经只用 [0-9a-z_.] 这些字符，不需要编码。
 
     private fun hmacSha1Hex(key: String, data: String): String {
         val mac = Mac.getInstance("HmacSHA1")

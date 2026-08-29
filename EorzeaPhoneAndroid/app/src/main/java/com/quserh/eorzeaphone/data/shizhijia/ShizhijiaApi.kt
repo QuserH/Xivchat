@@ -704,6 +704,71 @@ object ShizhijiaApi {
     }
 
     /**
+     * 动态的评论。**参数形状和帖子评论一样**（官网 DynamicDetail 里是
+     * `{id, order, page, limit, pageTime, onlyLandlord}`，键名是 `id` 不是
+     * `dynamic_id`——`dynamic_id` 只在**发**评论时用）。
+     * 行结构也同族，所以直接复用 [ShizhijiaComment]。
+     *
+     * 之前动态详情页只画了作者卡和图片，**评论压根没接**——
+     * 所以"明明有评论，点进去什么都没有"。
+     */
+    suspend fun getDynamicComments(
+        context: Context,
+        dynamicId: String,
+        order: String = "earliest",
+        page: Int = 1,
+        pageTime: String = "",
+        onlyLandlord: Boolean = false,
+    ): ShizhijiaPage<ShizhijiaComment> {
+        if (dynamicId.isBlank()) return ShizhijiaPage(emptyList(), "")
+        val params = mutableMapOf(
+            "id" to dynamicId,
+            "order" to order,
+            "page" to page.toString(),
+            "onlyLandlord" to if (onlyLandlord) "1" else "0",
+        )
+        if (pageTime.isNotBlank()) params["pageTime"] = pageTime
+        val d = data(context, HOME_BASE, "dynamic/dynamicCommentDetail", params)
+            ?: return ShizhijiaPage(emptyList(), "")
+        return ShizhijiaPage(
+            rows = d.optJSONArray("rows")?.let { ShizhijiaComment.fromArray(it) } ?: emptyList(),
+            pageTime = d.optString("pageTime"),
+        )
+    }
+
+    /**
+     * 给动态发评论 / 回复。
+     *
+     * 官网 CommentBox 的 dynamic 分支：
+     * `{atInfo, content, dynamic_id, parent_id, root_parent, comment_pic}`
+     * ——**发的时候键名是 `dynamic_id`**，和读列表用 `id` 不一样，别混。
+     */
+    suspend fun commentDynamic(
+        context: Context,
+        dynamicId: String,
+        content: String,
+        parentId: String = "0",
+        rootParent: String = "0",
+        pics: String = "",
+    ): Res<String> {
+        if (dynamicId.isBlank()) return Res.Failed(null, "没有动态 id")
+        if (content.isBlank()) return Res.Failed(null, "评论不能为空")
+        val json = request(
+            context, HOME_BASE, "dynamic/comment",
+            body = mapOf(
+                "dynamic_id" to dynamicId,
+                "content" to content,
+                "parent_id" to parentId,
+                "root_parent" to rootParent,
+                "comment_pic" to pics,
+                // atInfo 不带，同 commentPost 那个坑。
+            ),
+            method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optString("msg").ifBlank { "已发布" } }
+    }
+
+    /**
      * 发动态。
      *
      * body（官网 `PublishDynamic.kSy1QIIC.js`）：
