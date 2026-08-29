@@ -145,6 +145,12 @@ object ShizhijiaApi {
     private fun <T> JSONObject.toRes(extract: (JSONObject) -> T): Res<T> {
         if (isOk()) return Res.Ok(extract(this))
         val code = optLong("code")
+        // **业务码不 OK 时打一行日志。**
+        // 写操作失败时界面只弹一个一闪而过的 Toast，抓不到也复现不了；
+        // 而"服务端到底回了什么码、什么话"是唯一能定位问题的东西
+        // （atInfo 那个"@信息格式不对"、scope 那个隐私 bug，都是靠原话找到的）。
+        // 只打 code 和 msg，不打 body——body 里可能有账号数据。
+        android.util.Log.w("SzjApi", "业务码 $code msg=${optString("msg")}")
         return when (code) {
             CODE_NEED_LOGIN -> Res.NeedLogin
             CODE_NEED_CHARACTER, CODE_NEED_CHARACTER_ALT -> Res.NeedCharacter
@@ -991,6 +997,12 @@ object ShizhijiaApi {
     ): Res<String> {
         if (title.isBlank()) return Res.Failed(null, "标题不能为空")
         if (mainImage.isBlank()) return Res.Failed(null, "要先选一张封面图")
+        // **种族和性别都是必填**——真机实测出来的，服务端逐个报：
+        // 不带 gender_ids → `10003 性别必填`；补上性别后 → `10003 种族必填`。
+        // 官网那个表单里这两项也是必选，我原来做成可选，所以发布一直失败。
+        // 在这里各拦一道，界面上也标了 *，别让人填完一整张表才知道少了什么。
+        if (raceIds.isEmpty()) return Res.Failed(null, "要选适用种族")
+        if (genderIds.isEmpty()) return Res.Failed(null, "要选适用性别")
         // 没传的槽一律补成空槽，并补上官网那两个固定的空槽。
         val allSlots = (SZJ_GLAMOUR_SLOTS + listOf("WAIST", "SOUL_CRYSTAL")).distinct()
         val picked = slots.associateBy { it.slot }

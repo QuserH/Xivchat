@@ -5351,7 +5351,11 @@ private fun ShizhijiaPublishGlamourScreen(
             }
             item(key = "race") {
                 Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-                    Text("适用种族", color = SzjText, style = SzjLabelStyle)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("适用种族", color = SzjText, style = SzjLabelStyle)
+                        // 服务端必填（实测回 10003 种族必填）。
+                        Text(" *", color = SzjAccent, style = SzjLabelStyle)
+                    }
                     Spacer(Modifier.height(7.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         raceNames.chunked(4).forEach { row ->
@@ -5368,7 +5372,11 @@ private fun ShizhijiaPublishGlamourScreen(
             }
             item(key = "gender") {
                 Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-                    Text("适用性别", color = SzjText, style = SzjLabelStyle)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("适用性别", color = SzjText, style = SzjLabelStyle)
+                        // 服务端必填（实测不带就回 10003 性别必填）。
+                        Text(" *", color = SzjAccent, style = SzjLabelStyle)
+                    }
                     Spacer(Modifier.height(7.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         listOf(1 to "男性", 2 to "女性").forEach { (id, name) ->
@@ -5389,8 +5397,12 @@ private fun ShizhijiaPublishGlamourScreen(
                     ImageGlyph(R.drawable.ic_info, SzjMuted, Modifier.size(14.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "这一版还不能逐件挑装备和染色，发出去的是外观图 + 标题 + 标签。" +
-                            "挑装备要用到物品库那套选择器，做好之后会接在这里。",
+                        // **实测的结论，不是猜的。** 我原来以为 equipment_id: -1
+                        // 是空槽、所以纯图也能发；真机一试服务端回
+                        // `10003 至少需要上传一件有效装备` —— 推断是错的。
+                        "石之家要求至少选一件装备才能发布（服务端会拒纯图片的幻化）。" +
+                            "挑装备的选择器还没做好，所以这一版发不出去——" +
+                            "在那之前请在网页版发。",
                         color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
                     )
                 }
@@ -5399,7 +5411,20 @@ private fun ShizhijiaPublishGlamourScreen(
         // 发布按钮钉在底部，不进滚动区（和发帖那屏同一个处理）。
         Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            val canSend = title.isNotBlank() && pics.isNotEmpty() && !sending && !uploading
+            // 性别必填：服务端会拒（10003），所以按钮就别亮着骗人。
+            // **暂时一律禁用。** 服务端要求至少一件有效装备（实测
+            // `10003 至少需要上传一件有效装备`），而装备选择器还没做，
+            // 所以现在无论怎么填都发不出去。
+            //
+            // 让按钮亮着、点了再失败，是最糟的状态——人会以为自己填错了，
+            // 反复改标题改标签试。宁可按钮是灰的、旁边写明为什么。
+            //
+            // 选择器做好之后把这里换回：
+            //   title.isNotBlank() && pics.isNotEmpty() &&
+            //   races.isNotEmpty() && genders.isNotEmpty() &&
+            //   slots.any { it.equipmentId > 0 } && !sending && !uploading
+            @Suppress("KotlinConstantConditions")
+            val canSend = false
             SzjPressable(
                 onClick = {
                     sending = true
