@@ -172,7 +172,14 @@ import com.quserh.eorzeaphone.ui.theme.BrandOnBubble
 import com.quserh.eorzeaphone.ui.theme.BrandOnFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
+import com.quserh.eorzeaphone.ui.theme.PhoneInfo
+import com.quserh.eorzeaphone.ui.theme.PhoneLine
+import com.quserh.eorzeaphone.ui.theme.PhoneMuted
+import com.quserh.eorzeaphone.ui.theme.PhoneSurface
+import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
+import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -207,9 +214,18 @@ private val AetherFill: Color @Composable get() = BrandFill
 /** 落在 [AetherFill] 上的字色。 */
 private val AetherOnFill: Color @Composable get() = BrandOnFill
 private val EmoteChatColor = Color(0xFFBEFFF1) // 情感动作文字颜色（游戏内 190,255,241）
-private val AetherPink = Color(0xFFF46DAA)
-private val AetherNavyTop = Color(0xFF12335E)
-private val AetherNavyBottom = Color(0xFF061423)
+// AetherPink 删了（原来是写死的粉 #F46DAA，复刻原版留下的）：它的两个用处是
+// 当前发言频道那个小胶囊，作用是"当前状态 + 可点开切换"，和别处的选中态
+// 是同一类东西，直接用 PhoneAccent。再留一个别名等于给同一个色两个名字，
+// 而且名字还叫"粉"，只会让下一个人以为这儿真有一支粉色。
+//
+// AetherNavyTop / AetherNavyBottom 也删了：那两个色标是职业屏写死的深蓝底，
+// 现在由 ThemedDataFrame 从 PhoneBackground 算出来（见那个函数的注释）。
+
+// ---- 下面这三个**不跟主题**，是有意的 ----
+// 活跃度三环代表三项指标（进度 / 冒险 / 财富），红绿青是它们各自的身份，
+// 就像聊天频道色代表频道。跟着主题变的话，换个主题三环全变一个色系，
+// 反而认不出哪环是哪项了。同理 EmoteChatColor 是游戏自己的情感动作色。
 private val ActivityRed = Color(0xFFE83454)
 private val ActivityGreen = Color(0xFF72B419)
 private val ActivityCyan = Color(0xFF4BAFC4)
@@ -2891,9 +2907,9 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                         val lightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
                         Box(
                             modifier = Modifier.width(58.dp).height(42.dp).clip(RoundedCornerShape(10.dp))
-                                .background(AetherPink.copy(alpha = if (lightTheme) 0.16f else 0.24f))
+                                .background(PhoneAccent.copy(alpha = if (lightTheme) 0.16f else 0.24f))
                                 .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
-                        ) { Text(state.currentChannelName, color = AetherPink, fontSize = 11.sp, maxLines = 1) }
+                        ) { Text(state.currentChannelName, color = PhoneAccent, fontSize = 11.sp, maxLines = 1) }
                         DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
                             outputChannels.forEach { channel ->
                                 DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
@@ -3632,17 +3648,17 @@ private fun ReminderEditor(state: PhoneState, reminder: LocalReminder?, close: (
 @Composable
 fun AetherphoneJobsScreen(state: PhoneState) {
     val categories = listOf("坦克", "治疗", "近战", "远程物理", "远程魔法", "生产", "采集", "战斗")
-    DarkDataFrame(AetherNavyTop, AetherNavyBottom) {
+    ThemedDataFrame {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, Color(0xFF78A7FF), Modifier.size(28.dp)) }
-                Text("职业", color = Color(0xFFE7EEF9), fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_character, Color.White, Modifier.size(19.dp)) }
+                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(28.dp)) }
+                Text("职业", color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                Box(Modifier.size(38.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_character, PhoneMuted, Modifier.size(19.dp)) }
                 Spacer(Modifier.width(9.dp))
-                Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_settings, Color.White, Modifier.size(19.dp)) }
+                Box(Modifier.size(38.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_settings, PhoneMuted, Modifier.size(19.dp)) }
             }
             if (state.jobs.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (state.connected) "正在读取职业套装" else "连接游戏后显示职业套装", color = Color(0xFF8FA1BA)) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (state.connected) "正在读取职业套装" else "连接游戏后显示职业套装", color = PhoneMuted) }
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
                     categories.forEach { category ->
@@ -3650,15 +3666,15 @@ fun AetherphoneJobsScreen(state: PhoneState) {
                         if (jobs.isNotEmpty()) {
                             item("category-$category") {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp, bottom = 9.dp)) {
-                                    Box(Modifier.width(4.dp).height(20.dp).background(Color(0xFF68A0FF), RoundedCornerShape(2.dp)))
-                                    Text(category, color = Color(0xFFE7EEF9), fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                                    Box(Modifier.width(4.dp).height(20.dp).background(PhoneAccent, RoundedCornerShape(2.dp)))
+                                    Text(category, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
                                 }
                             }
                             item("jobs-$category") {
-                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF142844)).animateContentSize()) {
+                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).animateContentSize()) {
                                     jobs.forEachIndexed { index, job ->
                                         AetherphoneJobRow(job, state)
-                                        if (index < jobs.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(Color.White.copy(alpha = .07f)))
+                                        if (index < jobs.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 20.dp).height(1.dp).background(PhoneLine))
                                     }
                                 }
                             }
@@ -3674,7 +3690,7 @@ fun AetherphoneJobsScreen(state: PhoneState) {
 @Composable
 private fun AetherphoneJobRow(job: GameJob, state: PhoneState) {
     var menu by remember { mutableStateOf(false) }
-    val activeBackground by animateColorAsState(if (job.active) Color.White.copy(alpha = .09f) else Color.Transparent, label = "job-active")
+    val activeBackground by animateColorAsState(if (job.active) PhoneAccent.copy(alpha = .12f) else Color.Transparent, label = "job-active")
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().background(activeBackground)
@@ -3684,19 +3700,19 @@ private fun AetherphoneJobRow(job: GameJob, state: PhoneState) {
         RemoteGameIcon(job.iconId, job.abbreviation, Modifier.size(50.dp))
         Column(Modifier.weight(1f).padding(start = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(job.name, color = Color(0xFFE6EDF8), fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (job.active) Text("当前", color = Color(0xFF7FA8FF), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp))
+                Text(job.name, color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (job.active) Text("当前", color = PhoneAccent, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp))
             }
             Text(
                 if (job.itemLevel >= 0) "${job.abbreviation} · Lv${job.level} · iLv${job.itemLevel}" else "${job.abbreviation} · Lv${job.level}",
-                color = Color(0xFF91A2BB), fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp),
+                color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp),
             )
         }
         Box {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menu = true },
                 contentAlignment = Alignment.Center,
-            ) { ImageGlyph(R.drawable.ic_more_horiz, Color(0xFF99ABC2), Modifier.size(18.dp)) }
+            ) { ImageGlyph(R.drawable.ic_more_horiz, PhoneMuted, Modifier.size(18.dp)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (job.active) "当前已装备" else if (job.gearsetId >= 0) "装备套装" else "没有装备套装") },
@@ -3713,10 +3729,10 @@ private fun RemoteGameIcon(iconId: Int, fallback: String, modifier: Modifier = M
     val context = LocalContext.current
     var bitmap by remember(iconId) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(iconId) { bitmap = ItemIconLoader.load(context.applicationContext, iconId) }
-    Box(modifier.clip(RoundedCornerShape(11.dp)).background(Color(0xFF2D4058)), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(RoundedCornerShape(11.dp)).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
         AnimatedContent(bitmap, label = "game-icon") { image ->
             if (image != null) Image(image.asImageBitmap(), contentDescription = fallback, modifier = Modifier.fillMaxSize())
-            else Text(fallback.take(2), color = Color(0xFFD7E2F2), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            else Text(fallback.take(2), color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -3725,23 +3741,23 @@ private fun RemoteGameIcon(iconId: Int, fallback: String, modifier: Modifier = M
 fun AetherphoneActivityScreen(state: PhoneState) {
     val activity = state.activity
     var history by remember { mutableStateOf(false) }
-    DarkDataFrame(Color(0xFF063454), Color(0xFF03111D)) {
+    ThemedDataFrame {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, Color(0xFF66ADD6), Modifier.size(28.dp)) }
+                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(28.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("活跃度", color = Color(0xFFAFC0D2), fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Text(listOf(state.profile?.jobName, state.profile?.level?.let { "Lv$it" }, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.joinToString(" · "), color = Color(0xFF6D879C), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                    Text("活跃度", color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text(listOf(state.profile?.jobName, state.profile?.level?.let { "Lv$it" }, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.joinToString(" · "), color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
-                ImageGlyph(R.drawable.ic_timer, Color(0xFF7897AA), Modifier.size(22.dp))
+                ImageGlyph(R.drawable.ic_timer, PhoneMuted, Modifier.size(22.dp))
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(42.dp).clip(CircleShape).background(Color(0xFF0D3C5B))) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(42.dp).clip(CircleShape).background(PhoneSurfaceRaised)) {
                 listOf("今天" to false, "历史" to true).forEach { (label, value) ->
-                    Text(label, color = Color(0xFF91A9BA), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(if (history == value) Color(0xFF176BA2) else Color.Transparent).clickable { history = value }.padding(top = 12.dp))
+                    Text(label, color = if (history == value) BrandOnFill else PhoneMuted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(if (history == value) BrandFill else Color.Transparent).clickable { history = value }.padding(top = 12.dp))
                 }
             }
             if (activity == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (state.connected) "正在读取活跃度" else "连接游戏后显示活跃度", color = Color(0xFF7891A5)) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (state.connected) "正在读取活跃度" else "连接游戏后显示活跃度", color = PhoneMuted) }
             } else if (history) {
                 ActivityHistory(activity)
             } else {
@@ -3764,14 +3780,14 @@ private fun ActivityToday(activity: GameActivity) {
                 ActivityLegend("冒险", "${activity.todayDutiesCompleted} / 3", ActivityGreen)
                 ActivityLegend("财富", "${compactNumber(activity.todayGilEarned)} / 50K", ActivityCyan)
             }
-            Text("今天", color = Color(0xFF88A2B7), fontSize = 12.sp, modifier = Modifier.padding(top = 24.dp, bottom = 10.dp))
+            Text("今天", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 24.dp, bottom = 10.dp))
         }
         item("card") {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xAA07131D)).padding(vertical = 6.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(vertical = 6.dp)) {
                 ActivityMetric(R.drawable.ic_bolt, "经验值", "+${compactNumber(activity.todayExpGained)}", progress, ActivityRed, "目前的 ${(progress * 100).toInt()}%")
                 ActivityMetric(R.drawable.ic_swords, "副本", "${activity.todayDutiesCompleted} / 3", adventure, ActivityGreen)
                 ActivityMetric(R.drawable.ic_coin, "获得金币", "+${compactNumber(activity.todayGilEarned)}", fortune, ActivityCyan)
-                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.todayPlaySeconds), null, Color(0xFF6C98C7))
+                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.todayPlaySeconds), null, PhoneInfo)
             }
         }
         item("bottom") { Spacer(Modifier.height(22.dp)) }
@@ -3782,17 +3798,17 @@ private fun ActivityToday(activity: GameActivity) {
 private fun ActivityHistory(activity: GameActivity) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Text("本次登录", color = Color(0xFF88A2B7), fontSize = 12.sp)
-            Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xAA07131D)).padding(vertical = 6.dp)) {
+            Text("本次登录", color = PhoneMuted, fontSize = 12.sp)
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(vertical = 6.dp)) {
                 ActivityMetric(R.drawable.ic_bolt, "经验值", "+${compactNumber(activity.sessionExpGained)}", null, ActivityRed)
                 ActivityMetric(R.drawable.ic_swords, "副本", activity.sessionDutiesCompleted.toString(), null, ActivityGreen)
                 ActivityMetric(R.drawable.ic_coin, "获得金币", "+${compactNumber(activity.sessionGilEarned)}", null, ActivityCyan)
-                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.sessionPlaySeconds), null, Color(0xFF6C98C7))
+                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.sessionPlaySeconds), null, PhoneInfo)
             }
         }
         item {
-            Text("收藏进度", color = Color(0xFF88A2B7), fontSize = 12.sp)
-            Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xAA07131D))) {
+            Text("收藏进度", color = PhoneMuted, fontSize = 12.sp)
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(PhoneSurface)) {
                 ActivitySimpleRow("坐骑", "${activity.mountsOwned} / ${activity.mountsTotal}")
                 ActivitySimpleRow("宠物", "${activity.minionsOwned} / ${activity.minionsTotal}")
                 ActivitySimpleRow("雇员", activity.retainerCount.toString())
@@ -3806,12 +3822,16 @@ private fun ActivityRings(progress: Float, adventure: Float, fortune: Float, mod
     val p by animateFloatAsState(progress, spring(dampingRatio = .9f, stiffness = 75f), label = "ring-progress")
     val a by animateFloatAsState(adventure, spring(dampingRatio = .9f, stiffness = 75f), label = "ring-adventure")
     val f by animateFloatAsState(fortune, spring(dampingRatio = .9f, stiffness = 75f), label = "ring-fortune")
+    // Canvas 的 DrawScope 不是 composable 作用域，读不到 Phone* 那些 getter，
+    // 所以轨道色要在外面先取出来再传进去（Theme.kt 里对 phoneAccentFor 有同样的说明）。
+    // 三环本身的红/绿/青**不动**：那是三项指标的身份，不是装饰色。
+    val ringTrack = PhoneLine
     Canvas(modifier) {
         val center = center
         val radii = listOf(size.minDimension * .30f, size.minDimension * .23f, size.minDimension * .16f)
         val values = listOf(p to ActivityRed, a to ActivityGreen, f to ActivityCyan)
         radii.zip(values).forEach { (radius, value) ->
-            drawArc(Color(0xFF17394E), -90f, 360f, false, topLeft = androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius), size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2), style = Stroke(13.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(ringTrack, -90f, 360f, false, topLeft = androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius), size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2), style = Stroke(13.dp.toPx(), cap = StrokeCap.Round))
             if (value.first > 0f) drawArc(value.second, -90f, value.first * 360f, false, topLeft = androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius), size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2), style = Stroke(13.dp.toPx(), cap = StrokeCap.Round))
         }
     }
@@ -3822,9 +3842,9 @@ private fun ActivityLegend(label: String, value: String, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(13.dp).clip(CircleShape).background(color))
-            Text(label, color = Color(0xFF7F98AB), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+            Text(label, color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
         }
-        Text(value, color = Color(0xFFAAB8C5), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+        Text(value, color = PhoneText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
     }
 }
 
@@ -3834,11 +3854,11 @@ private fun ActivityMetric(@DrawableRes icon: Int, label: String, value: String,
         Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(color.copy(alpha = .85f)), contentAlignment = Alignment.Center) { ImageGlyph(icon, Color.White, Modifier.size(22.dp)) }
         Column(Modifier.weight(1f).padding(start = 15.dp)) {
             Row(Modifier.fillMaxWidth()) {
-                Text(label, color = Color(0xFFA9B8C5), fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(label, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(value, color = color, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
-            if (detail != null) Text(detail, color = Color(0xFF70899B), fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
-            if (fraction != null) LinearProgressIndicator(progress = { fraction }, color = color, trackColor = Color(0xFF152B38), modifier = Modifier.fillMaxWidth().padding(top = 9.dp).height(5.dp).clip(CircleShape))
+            if (detail != null) Text(detail, color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+            if (fraction != null) LinearProgressIndicator(progress = { fraction }, color = color, trackColor = PhoneLine, modifier = Modifier.fillMaxWidth().padding(top = 9.dp).height(5.dp).clip(CircleShape))
         }
     }
 }
@@ -3846,25 +3866,58 @@ private fun ActivityMetric(@DrawableRes icon: Int, label: String, value: String,
 @Composable
 private fun ActivitySimpleRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 17.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Color(0xFFA9B8C5), modifier = Modifier.weight(1f))
-        Text(value, color = Color(0xFF7FA7C4), fontWeight = FontWeight.Bold)
+        Text(label, color = PhoneMuted, modifier = Modifier.weight(1f))
+        Text(value, color = PhoneText, fontWeight = FontWeight.Bold)
     }
 }
 
-@Composable
 /**
- * 固定深色的数据面板（职业等级、活跃度）。
+ * 数据屏的底：竖向渐变，但两个色标**从主题算出来**，不再写死深蓝。
  *
- * **这两屏刻意不跟深浅主题**——它们复刻的是游戏里的深色数据面板，
- * 所以里面那些写死的蓝灰色（#E6EDF8 / #91A2BB / #99ABC2 …）是有意的，
- * 不是漏改。要动的话整屏一起重新设计，别只把单个色换成 token。
+ * （这里原来有段注释说"这两屏刻意不跟深浅主题、那些写死的蓝灰是有意的"——
+ * 现在不成立了，一并删掉。留着一段和代码相反的说明，比没有说明更坏。）
+ *
+ * 这两屏（职业、活跃度）原来是照原版 Aetherphone 复刻的，自带一套固定
+ * 深蓝底（#12335E→#061423 和 #063454→#03111D），不管用户选什么主题、
+ * 开不开浅色模式都是那个蓝。收进主题体系之后：
+ *
+ * - 渐变这个**形式**留着——它是这两屏的性格，去掉就成了平底页，
+ *   和别的界面没区别了；数据屏本来就该有点"仪表盘"的气质。
+ * - 但色相跟着主题走：底色取 PhoneBackground，上端按明暗模式往
+ *   亮/暗各推一点，形成那道落差。深色模式落差大一些（0.045），
+ *   浅色模式只要极轻一层（0.02），否则浅底上的渐变会显脏。
+ *
+ * 之前那两组蓝的差别（一个偏navy一个偏teal）没有信息含量，
+ * 所以统一成一个，不再给调用方传色标。
  */
-private fun DarkDataFrame(top: Color, bottom: Color, content: @Composable () -> Unit) {
+@Composable
+private fun ThemedDataFrame(content: @Composable () -> Unit) {
+    val base = PhoneBackground
+    val dark = base.luminance() < 0.5f
+    val lift = if (dark) 0.045f else 0.02f
+    val top = if (dark) base.lighten(lift) else base.darken(lift * 0.6f)
+    val bottom = if (dark) base.darken(lift * 0.5f) else base
     Box(
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(top, bottom)))
             .windowInsetsPadding(WindowInsets.statusBars).windowInsetsPadding(WindowInsets.navigationBars),
     ) { content() }
 }
+
+/** 往白里推一点。用加法而不是乘法：近黑色乘任何倍数都还是近黑。 */
+private fun Color.lighten(amount: Float): Color = Color(
+    (red + amount).coerceIn(0f, 1f),
+    (green + amount).coerceIn(0f, 1f),
+    (blue + amount).coerceIn(0f, 1f),
+    alpha,
+)
+
+/** 往黑里推一点。 */
+private fun Color.darken(amount: Float): Color = Color(
+    (red - amount).coerceIn(0f, 1f),
+    (green - amount).coerceIn(0f, 1f),
+    (blue - amount).coerceIn(0f, 1f),
+    alpha,
+)
 
 @Composable
 private fun lightConversationColor(category: ChatCategory): Color {
