@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -42,7 +43,15 @@ private data class RichRun(val text: String, val bold: Boolean, val italic: Bool
 
 // Comment emoji: the backend sends placeholders like <span class="at-emo">[emo2]</span>
 // which must become a small emoji image on the official CDN.
-private const val EMO_BASE = "https://static.web.sdo.com/jijiamobile/pic/ff14/2023ffstone/emo"
+/**
+ * 表情图片的 URL 前缀，拼上编号和 `.png`。
+ *
+ * 发表情的选择器（ShizhijiaScreens.kt 的 SzjEmojiPanel）也要用同一个前缀，
+ * 所以是 internal 而不是 private —— 同一个 URL 别抄两份。
+ */
+internal const val SZJ_EMO_BASE = "https://static.web.sdo.com/jijiamobile/pic/ff14/2023ffstone/emo"
+
+private const val EMO_BASE = SZJ_EMO_BASE
 private val EMO_RE = Regex("\\[(emo\\d+)\\]")
 
 private class RichParagraphBuilder {
@@ -233,13 +242,26 @@ private fun handleTag(tag: String, p: RichParagraphBuilder, flush: () -> Unit, b
 /** Render parsed blocks as native Compose content (text + async images). */
 @Composable
 fun ShizhijiaRichContent(html: String, modifier: Modifier = Modifier, placeholder: Boolean = false, imgMaxWidth: androidx.compose.ui.unit.Dp? = null) {
+    // **解析结果必须 remember。**
+    //
+    // 这里原来直接写 `parseRichHtml(html).forEach`，也就是**每次重组都把整篇
+    // HTML 重新解析一遍**——parseRichHtml 是全文正则扫描 + 建列表，
+    // 一篇长帖不便宜。调用方有两处：帖子正文（一大坨 HTML）和**每一条评论**。
+    //
+    // 后果是左滑跳评论时卡：animateScrollToItem 要滚过正文那个超高的 item，
+    // 滚动过程中可见的正文和评论不断重组，于是每一帧都在重新解析 HTML。
+    // 加上 remember(html) 之后同一段 HTML 只解析一次。
+    val blocks = remember(html) { parseRichHtml(html) }
     // 石之家专属正文色，跟随深/浅主题，避免富文本内容显示成全局主题色。
     // 与 ShizhijiaScreens.kt 的 SzjText 保持同值（板岩体系的正文色）。
-    val textColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFF1B2129) else Color(0xFFE8EDF2)
+    // 这两个色原来一个在外面算、一个在循环里逐张图算，统一提到外面。
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val textColor = if (light) Color(0xFF1B2129) else Color(0xFFE8EDF2)
+    val imgPlaceholder = if (light) Color(0xFFE3E8ED) else Color(0xFF232932)
     // Tight inter-block spacing keeps the article/comment body dense like a
     // forum thread; paragraphs already carry their own line structure.
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        parseRichHtml(html).forEach { block ->
+        blocks.forEach { block ->
             if (block.url != null) {
                 val isEmo = block.url.contains("/2023ffstone/emo")
                 ShizhijiaRemoteImage(
@@ -254,7 +276,7 @@ fun ShizhijiaRichContent(html: String, modifier: Modifier = Modifier, placeholde
                             .then(if (imgMaxWidth != null) Modifier.widthIn(max = imgMaxWidth) else Modifier.fillMaxWidth())
                     },
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    placeholderColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFE3E8ED) else Color(0xFF232932),
+                    placeholderColor = imgPlaceholder,
                     showPlaceholder = false,
                     collapseOnFail = true,
                     onClick = if (isEmo) null else { url -> SzjViewer.url = url },

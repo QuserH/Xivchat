@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!--
+      保存图片到相册。Android 10（API 29）起 MediaStore 写入自己的 Pictures
+      子目录不需要任何权限，所以这条只对 API 24~28 有意义，加 maxSdkVersion
+      把它挡在 28——不加的话新系统上会白要一个权限，商店和用户都会问为什么。
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />

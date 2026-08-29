@@ -1,0 +1,10 @@
+<!-- 保存到相册（Material download）。图片查看器的保存按钮在用。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,15.58L17.59,10 16.17,8.59 13,11.76V4h-2v7.76L7.83,8.59 6.41,10 12,15.58zM5,18v2h14v-2H5z" />
+</vector>

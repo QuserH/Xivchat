@@ -1047,6 +1047,32 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
     // never scrolls while the viewer is open.
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    // 保存到相册。长按和右下角的按钮走同一个动作——**长按是不可见的入口**，
+    // 只做长按的话没人知道能存（用户就是这么报上来的），所以两个都给。
+    val saveScope = rememberCoroutineScope()
+    var saving by remember(url) { mutableStateOf(false) }
+    val doSave: () -> Unit = {
+        val b = bmp
+        when {
+            saving -> Unit
+            b == null -> android.widget.Toast.makeText(context, "图片还没加载完", android.widget.Toast.LENGTH_SHORT).show()
+            else -> {
+                saving = true
+                saveScope.launch {
+                    // 压缩 + 写文件放到 IO 线程，别卡住手势和动画。
+                    val err = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        SaveImage.toGallery(context, b, SaveImage.nameFromUrl(url))
+                    }
+                    android.widget.Toast.makeText(
+                        context,
+                        err ?: "已保存到相册",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                    saving = false
+                }
+            }
+        }
+    }
     Box(Modifier.fillMaxSize().background(Color(0xE6000000))
         .pointerInput(Unit) {
             detectTransformGestures { _, pan, zoom, _ ->
@@ -1054,9 +1080,10 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
                 offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
             }
         }
-        .pointerInput(Unit) {
+        .pointerInput(url) {
             detectTapGestures(
                 onDoubleTap = { scale = if (scale > 1f) 1f else 2.5f },
+                onLongPress = { doSave() },
             )
         }
     ) {
@@ -1068,9 +1095,31 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(30.dp)) }
         }
-        // Close button at the bottom-right corner. 查看器始终是暗底，
-        // 所以这里固定用亮色，不跟随浅色主题。
-        Box(Modifier.align(Alignment.BottomEnd).padding(18.dp)) {
+        // 右下角：保存 + 关闭。查看器始终是暗底，所以这里固定用亮色，
+        // 不跟随浅色主题（和传送横幅同一个理由）。
+        Row(
+            Modifier.align(Alignment.BottomEnd).padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SzjPressable(onClick = doSave, shape = SzjChipShape) {
+                Row(
+                    Modifier.clip(SzjChipShape).background(Color(0xB3232932))
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (saving) {
+                        CircularProgressIndicator(
+                            color = Color(0xFFE8EDF2), strokeWidth = 2.dp,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    } else {
+                        ImageGlyph(R.drawable.ic_download, Color(0xFFE8EDF2), Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.width(7.dp))
+                    Text(if (saving) "保存中" else "保存", color = Color(0xFFE8EDF2), style = SzjLabelStyle)
+                }
+            }
             SzjPressable(onClick = onClose, shape = CircleShape) {
                 Box(
                     Modifier.clip(CircleShape).background(Color(0xB3232932))
@@ -3865,8 +3914,18 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                             SzjAvatar(d.characterName, d.avatar, d.uuid, 36)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(d.characterName, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                SzjMetaLine(d.areaName, d.groupName, d.createdAt, d.ipLocation)
+                                // 属地挂在名字行右端：那一行右边本来空着，
+                                // 放这儿既不占新行、也不再挤压下面的区服。
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        d.characterName, color = SzjText, fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    SzjIpTail(d.ipLocation)
+                                }
+                                SzjMetaLine(d.areaName, d.groupName, d.createdAt)
                             }
                         }
                         // 四个计数排成一行小标签，用点分隔而不是各自留白。
@@ -4074,10 +4133,27 @@ private fun SzjCommentComposer(
     onDismiss: () -> Unit,
     onSend: (String, () -> Unit) -> Unit,
 ) {
-    var text by remember { mutableStateOf("") }
+    // 用 TextFieldValue 而不是 String：插表情要往**光标处**插，
+    // 只存 String 的话拿不到光标位置，只能往末尾拼——那样在中间打字时很别扭。
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
+    val text = field.text
     var sending by remember { mutableStateOf(false) }
+    var emojiOpen by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val maxLen = 500
+    /** 往光标处插一段文本，并把光标移到插入内容之后。 */
+    val insert: (String) -> Unit = { s ->
+        val t = field.text
+        val start = field.selection.start.coerceIn(0, t.length)
+        val end = field.selection.end.coerceIn(start, t.length)
+        val next = t.substring(0, start) + s + t.substring(end)
+        if (next.length <= maxLen) {
+            field = androidx.compose.ui.text.input.TextFieldValue(
+                text = next,
+                selection = androidx.compose.ui.text.TextRange(start + s.length),
+            )
+        }
+    }
     // 一进来就聚焦并弹键盘：这一层唯一的用途就是打字，还要人再点一下才起键盘
     // 等于白占一步。
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -4100,8 +4176,8 @@ private fun SzjCommentComposer(
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 BasicTextField(
-                    value = text,
-                    onValueChange = { if (it.length <= maxLen) text = it },
+                    value = field,
+                    onValueChange = { if (it.text.length <= maxLen) field = it },
                     textStyle = TextStyle(color = SzjText, fontSize = 15.sp, lineHeight = 23.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(SzjAccent),
                     enabled = !sending,
@@ -4114,8 +4190,27 @@ private fun SzjCommentComposer(
                     },
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
+                // 已插入的 [emoN] 在输入框里是文本，这里给一条预览让人看到实际效果，
+                // 否则打完一串 [emo12][emo3] 完全不知道发出去长什么样。
+                SzjComposerEmojiPreview(text)
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 表情入口。选中态高亮，再点一下收起。
+                    SzjPressable(onClick = { emojiOpen = !emojiOpen }, shape = CircleShape) {
+                        Box(
+                            Modifier.size(34.dp).clip(CircleShape)
+                                .background(if (emojiOpen) SzjAccentSoft else SzjCardRaised),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "颜",
+                                color = if (emojiOpen) SzjOnAccentSoft else SzjMuted,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
                     // 字数只在快满时才出现——一直显示 0/500 是噪音。
                     if (text.length > maxLen - 100) {
                         Text("${text.length}/$maxLen", color = SzjMuted, style = SzjMetaStyle)
@@ -4145,6 +4240,87 @@ private fun SzjCommentComposer(
                         }
                     }
                 }
+                // 表情面板展开在最下面：键盘之上、发送按钮之下，
+                // 收起时完全不占位（不是隐藏一个占着高度的空盒子）。
+                if (emojiOpen) {
+                    Spacer(Modifier.height(8.dp))
+                    SzjEmojiPanel(onPick = { insert(it) })
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 表情面板。石之家的表情就是 `[emoN]` 这种文本占位符，
+ * 发出去之后服务端/客户端再渲染成图片（[EMO_BASE] 那一套）。
+ *
+ * **一共 46 个（emo1~emo46），不是我猜的**：来自移动站自己的全局配置
+ * `https://ff14risingstones.web.sdo.com/mob/actConfig.js`，里面
+ * `emoarr: [1..46]`，移动站的选择器就是遍历它。我另外实测过
+ * emo1/emo23/emo46 都是 200、**emo47 是 404**，确认边界。
+ */
+private const val SZJ_EMOJI_COUNT = 46
+
+@Composable
+private fun SzjEmojiPanel(onPick: (String) -> Unit) {
+    // 固定高度 + 自己滚动：面板不能顶走输入框，也不能长到把发送按钮挤出屏幕。
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(7),
+        modifier = Modifier.fillMaxWidth().height(184.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items(SZJ_EMOJI_COUNT, key = { it }) { idx ->
+            val n = idx + 1
+            SzjPressable(onClick = { onPick("[emo$n]") }, shape = SzjInnerShape) {
+                Box(
+                    Modifier.aspectRatio(1f).clip(SzjInnerShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ShizhijiaRemoteImage(
+                        url = "$SZJ_EMO_BASE$n.png",
+                        modifier = Modifier.fillMaxSize().padding(3.dp),
+                        contentScale = ContentScale.Fit,
+                        showPlaceholder = false,
+                        collapseOnFail = false,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 输入框下面的表情预览。把已经插进去的 `[emoN]` 按顺序画成小图。
+ *
+ * 为什么需要：表情在输入框里是**文本**（`[emo12]`），一串下来完全看不出
+ * 发出去什么样。这一条只在真的插了表情时出现，没插就不占位。
+ */
+@Composable
+private fun SzjComposerEmojiPreview(text: String) {
+    // 解析很便宜，但每次打字都会重组，所以还是 remember 一下——
+    // 这个文件里刚因为"composable 里不 remember 的解析"出过性能问题。
+    val codes = remember(text) {
+        Regex("""\[emo(\d+)]""").findAll(text)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .filter { it in 1..SZJ_EMOJI_COUNT }
+            .toList()
+    }
+    if (codes.isEmpty()) return
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("表情", color = SzjMuted, style = SzjMetaStyle)
+        Spacer(Modifier.width(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(codes.size, key = { it }) { i ->
+                ShizhijiaRemoteImage(
+                    url = "$SZJ_EMO_BASE${codes[i]}.png",
+                    modifier = Modifier.size(26.dp),
+                    contentScale = ContentScale.Fit,
+                    showPlaceholder = false,
+                    collapseOnFail = false,
+                )
             }
         }
     }
@@ -4293,15 +4469,22 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(c.characterName.ifBlank { "匿名玩家" }, color = SzjText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        c.characterName.ifBlank { "匿名玩家" }, color = SzjText, fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
                     // 作者标记做成实心小标签，比灰字更容易在长评论列里认出楼主。
                     if (c.isPostsAuthor) {
                         Spacer(Modifier.width(6.dp))
                         Text("作者", color = SzjOnAccentSoft, fontSize = 10.sp, fontWeight = FontWeight.Medium,
                             modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(SzjAccentSoft).padding(horizontal = 5.dp, vertical = 1.dp))
                     }
+                    // 属地挂在名字行右端，不进下面的元信息行（否则挤掉区服）。
+                    SzjIpTail(c.ipLocation)
                 }
-                SzjMetaLine(c.areaName, c.groupName, c.createdAt, c.ipLocation)
+                SzjMetaLine(c.areaName, c.groupName, c.createdAt)
             }
             // 点赞：评论走 posts/like 的 type=2（和帖子同一个端点）。
             // 状态和计数在本地跟着切换接口的返回值走，不重拉整页评论。
@@ -5301,46 +5484,69 @@ internal fun szjShortTime(raw: String): String {
 }
 
 /**
- * 作者/评论的元信息行：`📍区服 · 时间 · 属地X`，一行装完。
+ * 名字行右端的 IP 属地。空就不画。
  *
- * 为什么不给 IP 属地单开一行（我上一版就是那么干的，难看在这儿）：
+ * 为什么放在名字行而不是元信息行：见 [SzjMetaLine] 的注释——三段挤一行会把
+ * 区服挤掉。名字通常只有几个字，那一行右边本来是空的，正好放这个次要信息，
+ * 而且**不增加行数**（头像高度靠名字 + 元信息两行撑满，多一行就错位）。
+ */
+@Composable
+private fun SzjIpTail(ipLocation: String) {
+    val ip = szjIpShort(ipLocation)
+    if (ip.isBlank()) return
+    Text(
+        "属地 $ip",
+        color = SzjMuted,
+        style = SzjMetaStyle,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(start = 8.dp),
+    )
+}
+
+/**
+ * 作者/评论的元信息行：`📍区服 · 时间`。
+ *
+ * 为什么不给 IP 属地单开一行（0.7.238 那版就是那么干的，难看在这儿）：
  * 头像是 30~36dp，名字 + 元信息刚好两行填满它；加第三行文字块就比头像高，
  * 头像顶在上面、右侧点赞按钮居中对齐整行，三者全错开。
- * 元信息本来就是同一类东西（都在回答"谁、什么时候、在哪"），
- * 挤成三行不是信息更清楚，是把一件事拆成三份。
  *
- * 定位针只领"游戏区服"那一段：属地是现实地区，跟区服不是一回事，
- * 靠"属地"这个词区分，不再多给一个图标（一行两个图标就开始像工具栏了）。
+ * 为什么也不塞进这一行（0.7.239 那版，用户报"服务器名被省略了"）：
+ * 见下面的注释——一行三段的时候唯一能被压缩的是区服，而那是最该看清的。
+ * 现在属地挪到名字行右端（[SzjIpTail]），总行数不变。
  */
 @Composable
 private fun SzjMetaLine(
     areaName: String,
     groupName: String,
     createdAt: String,
-    ipLocation: String,
 ) {
     val server = listOf(areaName, groupName).filter { it.isNotBlank() }.joinToString(" ")
     val time = szjShortTime(createdAt)
-    val ip = szjIpShort(ipLocation)
-    if (server.isBlank() && time.isBlank() && ip.isBlank()) return
+    if (server.isBlank() && time.isBlank()) return
+    // 三段塞一行装不下，**区服被省略号吃掉了**——这是上一版的回归。
+    //
+    // 根因不是宽度不够，是我给区服加了 weight：Row 先按本身宽度量那些没有
+    // weight 的兄弟（时间、属地），剩下多少才给区服。于是一行里唯一能被压缩的
+    // 就是区服，而区服恰恰是最该看清的那个（"猫小胖 神意之地"被截成"猫小胖 神…"
+    // 就没意义了）。
+    //
+    // 现在分两行，但**总行数不变**（还是名字 + 元信息两行，头像高度对得上）：
+    //   第一行末尾  属地X        ← 名字那行右边本来是空的，把它用起来
+    //   第二行      📍区服 · 时间  ← 区服拿回整行宽度
+    // 属地是次要信息，放在名字行右端既不抢主体、又不再挤压区服。
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (server.isNotBlank()) {
             SzjLocPin()
-            // 区服可能很长，只让它被压缩，后面的时间和属地是定长的、不该被吃掉。
             Text(
                 server, color = SzjMuted, style = SzjMetaStyle,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
             )
         }
-        // 分隔点只出现在两段**之间**：没有区服时第一段前面不能挂一个点。
-        var first = server.isBlank()
-        listOf(time, if (ip.isNotBlank()) "属地 $ip" else "")
-            .filter { it.isNotBlank() }
-            .forEach { t ->
-                if (first) first = false else Text(" · ", color = SzjLine, style = SzjMetaStyle)
-                Text(t, color = SzjMuted, style = SzjMetaStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+        if (time.isNotBlank()) {
+            if (server.isNotBlank()) Text(" · ", color = SzjLine, style = SzjMetaStyle)
+            Text(time, color = SzjMuted, style = SzjMetaStyle, maxLines = 1)
+        }
     }
 }
 
