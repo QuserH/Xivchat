@@ -2512,7 +2512,11 @@ private fun SzjDynamicRow(d: ShizhijiaDynamic, onClick: () -> Unit) {
         }
         if (d.contentText.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
-            Text(d.contentText, color = SzjText, fontSize = 14.sp, lineHeight = 21.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            // **动态正文是 HTML，得走富文本渲染。**
+            // 原来是纯 Text，于是 `<p>` 这些标签和 `[emoN]` 占位符都原样显示成
+            // 字符——用户看到的"[emo34]"和"<p>"就是这么来的。
+            // ShizhijiaRichContent 会去标签、把 [emoN] 换成真表情图。
+            ShizhijiaRichContent(d.contentText)
         }
         d.images.firstOrNull()?.let { first ->
             Spacer(Modifier.height(10.dp))
@@ -4471,6 +4475,8 @@ private fun SzjCommentComposer(
         onDismissRequest = { if (!sending) onDismiss() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // 让这一层能收到键盘 inset，否则下面的 windowInsetsPadding(ime) 拿到 0。
+        SzjDialogImeFix()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             // 点空白处收起。
             Box(
@@ -5258,6 +5264,8 @@ private fun SzjDynamicComposer(
         onDismissRequest = { if (!sending) onDismiss() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // 让这一层能收到键盘 inset，否则下面的 windowInsetsPadding(ime) 拿到 0。
+        SzjDialogImeFix()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f))
@@ -5777,11 +5785,22 @@ private fun szjComposeHtml(text: String, pics: List<String>): String {
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
+    // 表情占位符要**在转义之后再包回标签**，顺序不能反：
+    // 先包标签再转义会把 <span> 的尖括号也转掉，发出去就是一串
+    // "&lt;span class=..." 的可见字符。
+    //
+    // 包成 `<span class="at-emo">[emoN]</span>` 是照官网发送前的处理
+    // （PublishDynamic / CommentBox 里都是这个 replaceAll）。裸 [emoN] 我们
+    // 自己的渲染器认，但官网客户端认的是这个形式——发出去的东西要让**两边**
+    // 都能正确显示，不能只顾自己。
+    fun wrapEmoji(s: String) = Regex("""\[(emo\d+)]""").replace(s) { m ->
+        """<span class="at-emo">[${m.groupValues[1]}]</span>&nbsp;"""
+    }
     val paragraphs = text.trim()
         .split(Regex("\n\\s*\n"))
         .map { it.trim() }
         .filter { it.isNotBlank() }
-        .joinToString("") { p -> "<p>" + esc(p).replace("\n", "<br>") + "</p>" }
+        .joinToString("") { p -> "<p>" + wrapEmoji(esc(p).replace("\n", "<br>")) + "</p>" }
     val imgs = pics.joinToString("") { """<p><img src="$it"></p>""" }
     return paragraphs + imgs
 }
@@ -6118,7 +6137,11 @@ private fun ShizhijiaDynamicDetailScreen(state: PhoneState, id: String, pop: () 
                             if (item.createdAt.isNotBlank()) Text(item.createdAt, color = SzjMuted, style = SzjMetaStyle)
                         }
                     }
-                    if (item.contentText.isNotBlank()) { Spacer(Modifier.height(12.dp)); Text(item.contentText, color = SzjText, fontSize = 15.sp, lineHeight = 23.sp) }
+                    // 同上：动态正文是 HTML，纯 Text 会把标签和 [emoN] 原样显示。
+                    if (item.contentText.isNotBlank()) {
+                        Spacer(Modifier.height(12.dp))
+                        ShizhijiaRichContent(item.contentText)
+                    }
                   }
                 }
             }
@@ -6695,6 +6718,35 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * 让 Dialog 这一层能收到键盘的 inset。
+ *
+ * **这是"键盘挡住输入框底部按钮"的真正原因**：Compose 的 `Dialog` 会自己开一个
+ * Window，而 `WindowInsets.ime` 只在**该 Window 自己**声明了
+ * `decorFitsSystemWindows = false` 时才有值。我在 Activity 上设过、在
+ * `ScreenFrame` 里也让过 ime，但那些对 Dialog 的窗口都不生效——所以在
+ * 对话框里写 `windowInsetsPadding(ime)` 看着对、实际拿到的是 0，
+ * 表情/图片/可见范围那一排就一直被键盘压在下面。
+ *
+ * 顺带把 softInputMode 设成 ADJUST_RESIZE：有些 ROM 的对话框默认是
+ * ADJUST_PAN（整层往上推），那样底部按钮会被顶出屏幕外，同样看不见。
+ *
+ * 在每个带输入框的 Dialog 里调一次。
+ */
+@Composable
+private fun SzjDialogImeFix() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.SideEffect {
+        // 只认对话框自己的 window（DialogWindowProvider）。
+        // **不要退回 Activity 的 window**：那是另一个窗口，在这儿改它既解决不了
+        // 对话框的 inset，还会把副作用甩到不相干的地方（Activity 那份
+        // MainActivity 里已经设好了）。拿不到就什么都不做。
+        val w = (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window ?: return@SideEffect
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(w, false)
+        w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 }
 
