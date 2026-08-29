@@ -685,6 +685,9 @@ private sealed interface SzjRoute {
 
     /** 发帖 / 发攻略。同一个界面，[strategy] 决定 type 和版块字典。 */
     data class PublishPost(val strategy: Boolean = false) : SzjRoute
+
+    /** 发幻化。 */
+    data object PublishGlamour : SzjRoute
     /** 专项数据（官网的数据中心，7 个分类）。 */
     data object Statistics : SzjRoute
 }
@@ -1034,6 +1037,7 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
             is SzjRoute.RecruitDetail -> ShizhijiaRecruitDetailScreen(route.kind, route.id, pop, nav)
             is SzjRoute.PublishRecruit -> ShizhijiaPublishRecruitScreen(route.kind, recruitState, pop, nav)
             is SzjRoute.PublishPost -> ShizhijiaPublishPostScreen(route.strategy, pop, nav)
+            is SzjRoute.PublishGlamour -> ShizhijiaPublishGlamourScreen(pop, nav)
             SzjRoute.Statistics -> ShizhijiaStatisticsScreen(pop, onLogin = { nav(SzjRoute.Login) })
         }
         // 屏顶一层极淡的水晶青环境光，只在深色模式出现。深色板岩底本身很死，
@@ -5196,6 +5200,254 @@ private fun SzjSubCommentRow(
 }
 
 // ---------------------------------------------------------------------------
+// 发幻化
+// ---------------------------------------------------------------------------
+
+/**
+ * 发幻化。
+ *
+ * **这一版不含"挑装备"**，说清楚为什么：`createGlamour` 的 `equipments` 里
+ * `equipment_id: -1` 就是"这个槽空着"，所以一件不选也能发——那是
+ * "只发外观图 + 标题 + 种族/职业标签"的幻化，本身是站点上最常见的形态。
+ * 挑装备要一个 5 万件物品的选择器（wiki 那套本地库正好有），
+ * 那一块单独做，做好了接进来就行，接口这边已经留好了 [ShizhijiaApi.GlamourSlotPick]。
+ *
+ * 先能发、再能发得细——半个装备选择器发出去一套错的搭配，比没有更糟。
+ */
+@Composable
+private fun ShizhijiaPublishGlamourScreen(
+    pop: () -> Unit,
+    nav: (SzjRoute) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }
+    var desc by remember { mutableStateOf("") }
+    // 第一张是封面（main_image），其余进 images。官网也是这个规则。
+    val pics = remember { mutableStateListOf<Pair<android.graphics.Bitmap?, String>>() }
+    var uploading by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    val races = remember { mutableStateListOf<Int>() }
+    val genders = remember { mutableStateListOf<Int>() }
+    val maxPics = 9
+
+    // 种族/性别字典：站点的 race_ids 是 1..8，gender 1 男 2 女。
+    val raceNames = remember {
+        listOf(
+            1 to "人族", 2 to "精灵族", 3 to "拉拉菲尔族", 4 to "猫魅族",
+            5 to "鲁加族", 6 to "敖龙族", 7 to "硌狮族", 8 to "维埃拉族",
+        )
+    }
+
+    val picker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        uploading = true
+        scope.launch {
+            when (val r = ShizhijiaCosUpload.upload(context, uri, channel = "glamour")) {
+                is ShizhijiaApi.Res.Ok -> {
+                    val thumb = runCatching {
+                        context.contentResolver.openInputStream(uri)?.use {
+                            android.graphics.BitmapFactory.decodeStream(it)
+                        }
+                    }.getOrNull()
+                    pics.add(thumb to r.value)
+                }
+                else -> szjToastWriteFail(context, r, nav)
+            }
+            uploading = false
+        }
+    }
+
+    ScreenFrame(background = SzjBg) {
+        SzjHeader("发幻化", onBack = pop)
+        LazyColumn(
+            Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
+        ) {
+            item(key = "pics") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("外观图", color = SzjText, style = SzjLabelStyle)
+                        Text(" *", color = SzjAccent, style = SzjLabelStyle)
+                        Spacer(Modifier.width(6.dp))
+                        Text("第一张是封面", color = SzjMuted, style = SzjMetaStyle)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        items(pics.size, key = { pics[it].second }) { i ->
+                            Box {
+                                val thumb = pics[i].first
+                                if (thumb != null) {
+                                    Image(
+                                        thumb.asImageBitmap(), contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(84.dp).clip(SzjInnerShape),
+                                    )
+                                } else {
+                                    Box(Modifier.size(84.dp).clip(SzjInnerShape).background(SzjCardRaised))
+                                }
+                                // 封面角标：第一张就是封面，明说比让人猜好。
+                                if (i == 0) {
+                                    Text(
+                                        "封面", color = SzjOnAccent, fontSize = 9.sp,
+                                        modifier = Modifier.align(Alignment.BottomStart).padding(3.dp)
+                                            .clip(RoundedCornerShape(4.dp)).background(SzjAccentFill)
+                                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                                    )
+                                }
+                                Box(
+                                    Modifier.align(Alignment.TopEnd).padding(3.dp)
+                                        .size(18.dp).clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = .55f))
+                                        .clickable { pics.removeAt(i) },
+                                    contentAlignment = Alignment.Center,
+                                ) { ImageGlyph(R.drawable.ic_close, Color.White, Modifier.size(10.dp)) }
+                            }
+                        }
+                        if (pics.size < maxPics) {
+                            item(key = "add") {
+                                SzjPressable(
+                                    onClick = {
+                                        picker.launch(
+                                            androidx.activity.result.PickVisualMediaRequest(
+                                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                            )
+                                        )
+                                    },
+                                    shape = SzjInnerShape,
+                                    enabled = !uploading && !sending,
+                                ) {
+                                    Box(
+                                        Modifier.size(84.dp).clip(SzjInnerShape)
+                                            .background(SzjCardRaised)
+                                            .border(1.dp, SzjLine, SzjInnerShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (uploading) {
+                                            CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                        } else {
+                                            ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(20.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item(key = "title") {
+                SzjFormField(
+                    label = "标题", value = title, placeholder = "给这套搭配起个名字",
+                    required = true, maxLen = 40, onChange = { title = it },
+                )
+            }
+            item(key = "desc") {
+                SzjFormField(
+                    label = "说明", value = desc, placeholder = "灵感、场景、搭配思路（可留空）",
+                    lines = 4, maxLen = 500, onChange = { desc = it },
+                )
+            }
+            item(key = "race") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Text("适用种族", color = SzjText, style = SzjLabelStyle)
+                    Spacer(Modifier.height(7.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        raceNames.chunked(4).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                row.forEach { (id, name) ->
+                                    SzjPartChip(name, races.contains(id)) {
+                                        if (races.contains(id)) races.remove(id) else races.add(id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item(key = "gender") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Text("适用性别", color = SzjText, style = SzjLabelStyle)
+                    Spacer(Modifier.height(7.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        listOf(1 to "男性", 2 to "女性").forEach { (id, name) ->
+                            SzjPartChip(name, genders.contains(id)) {
+                                if (genders.contains(id)) genders.remove(id) else genders.add(id)
+                            }
+                        }
+                    }
+                }
+            }
+            item(key = "gearnote") {
+                // 如实说清这一版少了什么，别让人以为是自己没找到入口。
+                Row(
+                    Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCardRaised)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    ImageGlyph(R.drawable.ic_info, SzjMuted, Modifier.size(14.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "这一版还不能逐件挑装备和染色，发出去的是外观图 + 标题 + 标签。" +
+                            "挑装备要用到物品库那套选择器，做好之后会接在这里。",
+                        color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
+                    )
+                }
+            }
+        }
+        // 发布按钮钉在底部，不进滚动区（和发帖那屏同一个处理）。
+        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            val canSend = title.isNotBlank() && pics.isNotEmpty() && !sending && !uploading
+            SzjPressable(
+                onClick = {
+                    sending = true
+                    scope.launch {
+                        val r = ShizhijiaApi.publishGlamour(
+                            context,
+                            title = title.trim(),
+                            desc = desc.trim(),
+                            mainImage = pics.first().second,
+                            images = pics.drop(1).joinToString(",") { it.second },
+                            raceIds = races.toList(),
+                            genderIds = genders.toList(),
+                        )
+                        when (r) {
+                            is ShizhijiaApi.Res.Ok -> {
+                                android.widget.Toast.makeText(context, "发布成功", android.widget.Toast.LENGTH_SHORT).show()
+                                if (r.value.isNotBlank()) nav(SzjRoute.GlamourDetail(r.value)) else pop()
+                            }
+                            else -> szjToastWriteFail(context, r, nav)
+                        }
+                        sending = false
+                    }
+                },
+                shape = SzjInnerShape,
+                enabled = canSend,
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().clip(SzjInnerShape)
+                        .background(if (canSend) SzjAccentFill else SzjCardRaised)
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (sending) {
+                        CircularProgressIndicator(color = SzjOnAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    } else {
+                        Text(
+                            "发布",
+                            color = if (canSend) SzjOnAccent else SzjMuted,
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 发动态
 // ---------------------------------------------------------------------------
 
@@ -9109,7 +9361,26 @@ private fun ShizhijiaGlamourTab(
                             }
                         }
                         if (tab == 0) {
-                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.End) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // 发布按钮放这一行**左端**，不用右下角那个悬浮位。
+                                // 理由（用户指定的位置，也讲得通）：幻化是瀑布流，
+                                // 右下角的悬浮钮会一直压在图片上；而这一行本来右边
+                                // 只有排序、左边整段空着，正好安置。
+                                SzjPressable(onClick = { nav(SzjRoute.PublishGlamour) }, shape = SzjChipShape) {
+                                    Row(
+                                        Modifier.clip(SzjChipShape).background(SzjAccentFill)
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        ImageGlyph(R.drawable.ic_add, SzjOnAccent, Modifier.size(13.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("发幻化", color = SzjOnAccent, style = SzjLabelStyle)
+                                    }
+                                }
+                                Spacer(Modifier.weight(1f))
                                 Row(Modifier.clip(SzjChipShape).background(SzjCardRaised)) {
                                     listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
                                         SzjSmallOption(label, sort == id) { if (sort != id) sort = id }

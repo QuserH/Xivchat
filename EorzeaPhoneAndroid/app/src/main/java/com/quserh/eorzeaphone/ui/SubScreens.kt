@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -129,21 +130,26 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 @Composable
 fun ScreenFrame(background: Color = PhoneBackground, content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize().background(background)) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                // 键盘也要让位。**原来只让了导航栏**，所以任何带输入框的界面
-                // 键盘一弹起来就把底部内容盖住——发帖那一屏的"加图片/表情"
-                // 就在底下，被盖住了还滑不出来（LazyColumn 的高度没变，
-                // 底部那些项是在键盘后面，不是在可滚动区里）。
-                //
-                // 用 union 而不是再叠一个 imePadding()：ime 的 inset 本身就
-                // 包含导航栏那一段，两个分开叠会**多让一次**，键盘上方空一条。
-                // union 取每边的较大值——键盘起来时用 ime，收起时用导航栏。
-                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
-        ) {
+    // 系统栏在**外层 Box** 上让位，键盘在**内层 Column** 上让位——
+    // 两个分开的布局节点，不是叠在一条 modifier 链上。
+    //
+    // 这个形状是抄聊天会话的（AetherphoneParityScreens 的 LightFrame +
+    // `Column(fillMaxSize().imePadding())`）——**那个是全项目唯一确认能正常
+    // 被键盘顶起来的**，所以照它来，不再自己发明。
+    //
+    // 我上一版写的是一条链上 `statusBars` + `navigationBars.union(ime)`。
+    // 理论上 union 取每边较大值也对，但实测发帖那屏就是顶不起来。
+    // 与其继续论证我那版为什么应该对，不如照抄一个确认工作的形状。
+    //
+    // 为什么分开不会**多让一次**：`windowInsetsPadding` 会**消费**它用掉的
+    // inset。外层 Box 消费了导航栏，内层的 imePadding() 拿到的是
+    // "ime 减去已消费的导航栏"，所以键盘起来时不会在上面空出一条。
+    Box(
+        Modifier.fillMaxSize().background(background)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+    ) {
+        Column(Modifier.fillMaxSize().imePadding()) {
             content()
         }
         // soft fade-in right under the status bar so the top of the content

@@ -939,6 +939,88 @@ object ShizhijiaApi {
         ) { ShizhijiaComment.fromArray(it) }
     }
 
+    /**
+     * 幻化的装备槽位，顺序照官网。发布时没选的槽补 equipment_id = -1。
+     * WAIST / SOUL_CRYSTAL 官网固定补空，所以不列在这里、由 publishGlamour 追加。
+     */
+    internal val SZJ_GLAMOUR_SLOTS = listOf(
+        "MAIN_HAND", "OFF_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET",
+        "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT",
+    )
+
+    /** 一个装备槽的选择。[equipmentId] 为 -1 表示这个槽空着。 */
+    data class GlamourSlotPick(
+        val slot: String,
+        val equipmentId: Long = -1L,
+        val dyeIds: List<Long> = emptyList(),
+    )
+
+    /**
+     * 发幻化。
+     *
+     * body（官网 `PublishGlamour.Ce8u-l5I.js`）：
+     * ```
+     * {main_image, images, title, desc, race_ids, gender_ids, is_share, scope,
+     *  job_ids, equipments, is_hidden, ornaments, fashion_coupon?}
+     * ```
+     * - `race_ids` / `gender_ids` / `job_ids` 都是**逗号分隔的字符串**
+     * - `equipments` 是 **JSON 字符串**，元素 `{equipment_id, slot, dye_ids}`；
+     *   官网还会额外补两个空槽 `WAIST` 和 `SOUL_CRYSTAL`
+     * - `ornaments` 也是 JSON 字符串：`[{glasses_id}, {ornament_id}]`
+     * - `scope` 官网写死 `"1"`，`is_hidden` 写死 `"0"`
+     *
+     * **`equipment_id: -1` 表示这个槽空着**，所以一件装备都不选也能发——
+     * 那就是"只发外观图 + 标题"的幻化。装备清单是加分项不是必填项，
+     * 这也是这一版能先上的原因（挑装备要 5 万件物品的选择器，见 wiki 那套库）。
+     */
+    suspend fun publishGlamour(
+        context: Context,
+        title: String,
+        desc: String,
+        /** 封面图 URL（必填，要先上传）。 */
+        mainImage: String,
+        /** 其余图片 URL，逗号分隔。 */
+        images: String = "",
+        raceIds: List<Int> = emptyList(),
+        genderIds: List<Int> = emptyList(),
+        jobIds: List<String> = emptyList(),
+        slots: List<GlamourSlotPick> = emptyList(),
+        glassesId: Long = -1L,
+        ornamentId: Long = -1L,
+        share: Boolean = false,
+    ): Res<String> {
+        if (title.isBlank()) return Res.Failed(null, "标题不能为空")
+        if (mainImage.isBlank()) return Res.Failed(null, "要先选一张封面图")
+        // 没传的槽一律补成空槽，并补上官网那两个固定的空槽。
+        val allSlots = (SZJ_GLAMOUR_SLOTS + listOf("WAIST", "SOUL_CRYSTAL")).distinct()
+        val picked = slots.associateBy { it.slot }
+        val equipJson = allSlots.joinToString(",", "[", "]") { slot ->
+            val p = picked[slot]
+            val dyes = p?.dyeIds?.joinToString(",", "[", "]") ?: "[]"
+            """{"equipment_id":${p?.equipmentId ?: -1},"slot":"$slot","dye_ids":$dyes}"""
+        }
+        val ornJson = """[{"glasses_id":"$glassesId"},{"ornament_id":"$ornamentId"}]"""
+        val json = request(
+            context, HOME_BASE, "glamour/createGlamour",
+            body = mapOf(
+                "main_image" to mainImage,
+                "images" to images,
+                "title" to title,
+                "desc" to desc,
+                "race_ids" to raceIds.joinToString(","),
+                "gender_ids" to genderIds.joinToString(","),
+                "job_ids" to jobIds.joinToString(","),
+                "is_share" to if (share) "1" else "0",
+                "scope" to "1",
+                "is_hidden" to "0",
+                "equipments" to equipJson,
+                "ornaments" to ornJson,
+            ),
+            method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optJSONObject("data")?.optString("id").orEmpty() }
+    }
+
     /** 幻化点赞（切换）。 */
     suspend fun likeGlamour(context: Context, id: String): Res<Toggle> {
         if (id.isBlank()) return Res.Failed(null, "没有幻化 id")
