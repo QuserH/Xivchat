@@ -86,6 +86,9 @@ object ShizhijiaApi {
         runCatching {
             val url = base + path + query
             val conn = connect(url, context, method, cookie)
+            // DELETE 也可能带 body（删帖就是 DELETE + {posts_id}）。
+            // HttpURLConnection 对 DELETE 开 doOutput 是允许的，只要
+            // requestMethod 已经设好——connect() 里先设的就是 method。
             if (body.isNotEmpty() || method == "POST" || method == "PUT") {
                 // 站点的 axios 请求拦截器（index bundle 里）对 POST 做两件事：
                 //   t.data = {...t.data, tempsuid: uuid()}   ← body 里也要有一个
@@ -698,6 +701,22 @@ object ShizhijiaApi {
             method = "POST",
         ) ?: return Res.Failed(null, "网络没通")
         return json.toRes { it.optString("msg").ifBlank { "已发布" } }
+    }
+
+    /**
+     * 删帖。**方法是 DELETE，body 是 `{posts_id}`**（官网 PostInfo 里就是
+     * `await n({posts_id: item.posts_id})`，函数定义 `method:"delete"`）。
+     *
+     * 攻略共用这个端点（`posts/deletePosts`，攻略也是 posts）。
+     */
+    suspend fun deletePost(context: Context, postId: String): Res<String> {
+        if (postId.isBlank()) return Res.Failed(null, "没有帖子 id")
+        val json = request(
+            context, HOME_BASE, "posts/deletePosts",
+            body = mapOf("posts_id" to postId),
+            method = "DELETE",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optString("msg").ifBlank { "已删除" } }
     }
 
     /** 帖子可见范围。取值来自官网 PublishPost 的三个单选。 */

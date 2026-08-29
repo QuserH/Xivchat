@@ -44,6 +44,13 @@ object ShizhijiaCosUpload {
     /** 单张上限，和站点一致（22020096 = 21MB）。 */
     const val MAX_BYTES = 22_020_096
 
+    /**
+     * 最近一次算出来的 StringToSign，只用于失败时和 COS 返回的那份对比。
+     * 不含密钥，打日志安全（SignKey 和 SecretKey 都不在里面）。
+     */
+    @Volatile
+    private var lastStringToSign: String = ""
+
     data class Cred(
         val tmpSecretId: String,
         val tmpSecretKey: String,
@@ -67,16 +74,28 @@ object ShizhijiaCosUpload {
         return ShizhijiaApi.resOf(json) { root ->
             val d = root.optJSONObject("data") ?: return@resOf null
             val c = d.optJSONObject("credentials") ?: return@resOf null
+            // 字段名两种写法都认（camelCase / snake_case）：官网前端读的是
+            // camelCase，但服务端换个写法我们就会静默拿到 0 —— 而 0 会直接
+            // 导致 SignatureDoesNotMatch，且错误里看不出是这个原因。
+            fun long(vararg names: String): Long =
+                names.firstNotNullOfOrNull { n -> d.opt(n)?.toString()?.toLongOrNull()?.takeIf { it > 0 } } ?: 0L
+            fun str(o: org.json.JSONObject, vararg names: String): String =
+                names.firstNotNullOfOrNull { n -> o.opt(n)?.toString()?.takeIf { it.isNotBlank() && it != "null" } }.orEmpty()
             Cred(
-                tmpSecretId = c.optString("tmpSecretId"),
-                tmpSecretKey = c.optString("tmpSecretKey"),
-                sessionToken = c.optString("sessionToken"),
-                startTime = d.optLong("startTime"),
-                expiredTime = d.optLong("expiredTime"),
-                keyDir = d.optString("keyDir").trim('/'),
+                tmpSecretId = str(c, "tmpSecretId", "tmp_secret_id", "TmpSecretId"),
+                tmpSecretKey = str(c, "tmpSecretKey", "tmp_secret_key", "TmpSecretKey"),
+                sessionToken = str(c, "sessionToken", "session_token", "SessionToken", "Token"),
+                // **必须是 10 位的秒**。官方 SDK 自己就断言这一点
+                // （"ExpiredTime should be 10 digits"）。毫秒传进签名 → 必然 403。
+                startTime = long("startTime", "start_time", "StartTime").toSeconds(),
+                expiredTime = long("expiredTime", "expiredTime", "expired_time", "ExpiredTime").toSeconds(),
+                keyDir = str(d, "keyDir", "key_dir", "KeyDir").trim('/'),
             )
         }
     }
+
+    /** 13 位当毫秒除掉，10 位原样。签名里的时间必须是秒。 */
+    private fun Long.toSeconds(): Long = if (this > 9_999_999_999L) this / 1000 else this
 
     /**
      * 传一张本地图片，返回最终 URL。
@@ -139,6 +158,20 @@ object ShizhijiaCosUpload {
     }
 
     private fun put(cred: Cred, body: ByteArray): ShizhijiaApi.Res<String> {
+        // 凭证本身先自检。这几样缺一个都会变成 SignatureDoesNotMatch，
+        // 而那个错误看不出是"少了字段"还是"算错了"——先在这儿分开。
+        if (cred.tmpSecretId.isBlank() || cred.tmpSecretKey.isBlank()) {
+            return ShizhijiaApi.Res.Failed(null, "凭证里没有密钥（字段名可能变了）")
+        }
+        if (cred.startTime <= 0L || cred.expiredTime <= cred.startTime) {
+            return ShizhijiaApi.Res.Failed(
+                null,
+                "凭证时间不对（start=${cred.startTime} expire=${cred.expiredTime}）",
+            )
+        }
+        if (cred.keyDir.isBlank()) {
+            return ShizhijiaApi.Res.Failed(null, "凭证里没有 keyDir，不知道该传到哪个目录")
+        }
         val key = buildKey(cred.keyDir)
         val path = "/$key"
         val auth = sign(cred, "put", path)
@@ -167,10 +200,25 @@ object ShizhijiaCosUpload {
                 }.getOrDefault("")
                 conn.disconnect()
                 val reason = Regex("<Code>(.*?)</Code>").find(err)?.groupValues?.get(1)
+                // **签名不匹配时把双方的 StringToSign 都打出来。**
+                // COS 的错误 XML 里带着它算出来的那一份，和我们自己算的一比
+                // 就能立刻看出差在哪（时间？路径？签了哪些头？），
+                // 不然只有"SignatureDoesNotMatch"六个字，只能靠猜。
+                if (reason == "SignatureDoesNotMatch") {
+                    val theirs = Regex("<StringToSign>(.*?)</StringToSign>", RegexOption.DOT_MATCHES_ALL)
+                        .find(err)?.groupValues?.get(1)?.replace("\n", "\\n")
+                    android.util.Log.e("SzjCos", "签名不匹配")
+                    android.util.Log.e("SzjCos", "我们的 StringToSign: ${lastStringToSign.replace("\n", "\\n")}")
+                    android.util.Log.e("SzjCos", "COS 的 StringToSign: $theirs")
+                    android.util.Log.e("SzjCos", "keyTime=${cred.startTime};${cred.expiredTime} path=$path")
+                }
                 ShizhijiaApi.Res.Failed(
                     code.toLong(),
                     when {
                         reason == "RequestTimeTooSkewed" -> "手机时间和服务器差太多，校对一下时间"
+                        reason == "SignatureDoesNotMatch" ->
+                            "签名不匹配。keyTime=${cred.startTime};${cred.expiredTime}（详情在 logcat 的 SzjCos 标签）"
+                        reason == "AccessDenied" -> "凭证被拒（可能已过期，退出重进再试）"
                         reason != null -> "上传失败：$reason"
                         else -> "上传失败（HTTP $code）"
                     },
@@ -199,6 +247,8 @@ object ShizhijiaCosUpload {
         val headers = "host=${cosEncode(HOST)}"
         val httpString = "${method.lowercase()}\n$path\n\n$headers\n"
         val stringToSign = "sha1\n$keyTime\n${sha1Hex(httpString)}\n"
+        // 留一份给失败时和 COS 的那份对比用（见 put() 里的日志）。
+        lastStringToSign = stringToSign
         val signature = hmacSha1Hex(signKey, stringToSign)
         return "q-sign-algorithm=sha1" +
             "&q-ak=${cred.tmpSecretId}" +

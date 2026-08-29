@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
@@ -70,6 +71,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -3886,8 +3888,68 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         }
     }
 
+    // 删帖入口：**只在这是自己的帖子时出现**。判据是帖子的 uuid 和登录账号的
+    // uuid 相同——官网那边是父组件决定要不要渲染删除项，同一个意思。
+    // 拿不到登录 uuid（没登录）时一律不显示。
+    val myUuid = remember(postId) {
+        com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSession.cachedLoginUser(context)?.uuid.orEmpty()
+    }
+    var confirmDelete by remember(postId) { mutableStateOf(false) }
+    var deleting by remember(postId) { mutableStateOf(false) }
+
     ScreenFrame(background = SzjBg) {
-        SzjHeader("帖子详情", onBack = { pop() })
+        val d0 = detail
+        val isMine = d0 != null && myUuid.isNotBlank() && d0.uuid == myUuid
+        SzjHeader(
+            "帖子详情",
+            onBack = { pop() },
+            trailing = if (!isMine) null else ({
+                SzjPressable(onClick = { confirmDelete = true }, shape = SzjChipShape) {
+                    Row(
+                        Modifier.clip(SzjChipShape).padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ImageGlyph(R.drawable.ic_trash, com.quserh.eorzeaphone.ui.theme.PhoneDanger, Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("删除", color = com.quserh.eorzeaphone.ui.theme.PhoneDanger, style = SzjMetaStyle)
+                    }
+                }
+            }),
+        )
+        if (confirmDelete) {
+            // 删帖不可撤销，所以要二次确认，而且确认按钮就叫"删除"不叫"确定"——
+            // 按钮说清它做什么，别让人回去读标题才知道点下去会发生什么。
+            AlertDialog(
+                onDismissRequest = { if (!deleting) confirmDelete = false },
+                title = { Text("删除这篇帖子？", color = SzjText) },
+                text = { Text("删了就找不回来了，评论也会一起消失。", color = SzjMuted, fontSize = 13.sp) },
+                confirmButton = {
+                    TextButton(
+                        enabled = !deleting,
+                        onClick = {
+                            deleting = true
+                            actionScope.launch {
+                                when (val r = ShizhijiaApi.deletePost(context, postId)) {
+                                    is ShizhijiaApi.Res.Ok -> {
+                                        android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
+                                        confirmDelete = false
+                                        pop()
+                                    }
+                                    else -> szjToastWriteFail(context, r, nav)
+                                }
+                                deleting = false
+                            }
+                        },
+                    ) { Text(if (deleting) "删除中" else "删除", color = com.quserh.eorzeaphone.ui.theme.PhoneDanger) }
+                },
+                dismissButton = {
+                    TextButton(enabled = !deleting, onClick = { confirmDelete = false }) {
+                        Text("再想想", color = SzjMuted)
+                    }
+                },
+                containerColor = SzjCard,
+            )
+        }
         if (loading && detail == null) {
             // 详情骨架：标题两行 + 作者行 + 正文块，位置和真内容对齐。
             Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -4284,8 +4346,9 @@ private fun SzjCommentComposer(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                     .background(SzjCard)
-                    .windowInsetsPadding(WindowInsets.ime)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    // union 取每边较大值：键盘起来时用 ime（它已包含导航栏那一段），
+                    // 收起时用导航栏。两个分开叠会多让一次，键盘上方空一条。
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 // 回复谁：一条引用，打字过程中一直在。
