@@ -107,6 +107,8 @@ import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
+import com.quserh.eorzeaphone.ui.theme.CanvasLabelScrim
+import com.quserh.eorzeaphone.ui.theme.CanvasLabelShadow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -803,10 +805,10 @@ private fun FishingMapScreen(spot: FishingSpot, state: PhoneState, onBack: () ->
                                         maxLines = 1,
                                         modifier = Modifier.padding(top = 1.dp)
                                             .clip(RoundedCornerShape(3.dp))
-                                            .background(Color(0x8C000000))
+                                            .background(CanvasLabelScrim)
                                             .padding(horizontal = 3.dp, vertical = 1.dp),
                                         style = androidx.compose.ui.text.TextStyle(
-                                            shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC000000), Offset.Zero, 3f),
+                                            shadow = androidx.compose.ui.graphics.Shadow(CanvasLabelShadow, Offset.Zero, 3f),
                                         ),
                                     )
                                 }

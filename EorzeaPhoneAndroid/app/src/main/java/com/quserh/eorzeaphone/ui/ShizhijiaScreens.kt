@@ -3640,6 +3640,10 @@ private fun SzjSheet(title: String, onClose: () -> Unit, content: @Composable Co
     BackHandler { onClose() }
     val noRipple = remember { MutableInteractionSource() }
     Box(
+        // **这个 0x8C000000 和 theme 里的 CanvasLabelScrim 数值相同，但不是同一件事**
+        // ——那个是压在地图底图上的文字底衬，这个是模态层的遮罩。
+        // 换成同一个 token 会把两者绑在一起：以后调标签底衬的深浅，
+        // 会连带把所有弹层的遮罩一起改掉。**同值不等于同义，不合并。**
         Modifier.fillMaxSize().background(Color(0x8C000000))
             .pointerInput(Unit) { detectTapGestures { onClose() } },
         contentAlignment = Alignment.BottomCenter,

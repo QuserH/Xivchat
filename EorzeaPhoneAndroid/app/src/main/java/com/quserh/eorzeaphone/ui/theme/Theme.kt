@@ -139,6 +139,32 @@ val PhoneHairline: Color @Composable get() = if (phoneLight) PhoneHairlineLight 
 /** 卡片顶边高光。深色下是那一线反光，浅色下是一道极淡的压边。 */
 val PhoneEdge: Color @Composable get() = if (phoneLight) PhoneEdgeLight else PhoneEdgeDark
 
+// ---- 压在图上的浮层 ----
+// 这一组**有意不跟主题**，理由和 §6「哪些颜色有意不跟主题」一致：它们压在
+// 游戏地图底图或任务图画布上，底下那层的颜色我们控制不了（羊皮纸黄、植被绿、
+// 深色海图都有），所以浮层必须自带固定深底 + 固定亮字，任何底图上都读得清。
+// 跟着强调色变的话，青/绿主题下针会和地图植被混掉。
+//
+// 之所以抽成 token 而不是就地写：同一个值散在 5 个文件里
+// （GatherClock / WikiLink / QuestTree / Fishing / Shizhijia），改一处漏四处。
+// 都是定值 val 而非 @Composable getter —— Canvas / DrawScope 是非 composable
+// 作用域，读不到 getter（和 [PhoneGreen]、[PhoneOutline] 一样的处理）。
+
+/** 地图定位针。站点用的也是这个红，采集点和任务 NPC 共用一个值。 */
+val MapPin = Color(0xFFE0453D)
+
+/** 图上文字标签的底衬（地名、采集点名）。半透明，底图纹理还透得出来。 */
+val CanvasLabelScrim = Color(0x8C000000)
+
+/** 图上文字的描边阴影。标签底衬之外再兜一层，压在亮底图上也不糊。 */
+val CanvasLabelShadow = Color(0xCC000000)
+
+/** 画布上实心小控件的底（缩放钮、节点角标）。比标签底衬重一档，要能点。 */
+val CanvasControlScrim = Color(0x99000000)
+
+/** 浮层底衬上的字。纯白偏刺眼，压到 80%。 */
+val OnCanvasScrim = Color(0xCCFFFFFF)
+
 // 中性色跟着石之家走：#f2f2f2 页底、#fff 卡片、#f5f5f5 抬升层、
 // #1f1f1f 正文、#e5e5e5 分割线、#c2c2c2 描边——都是从它的 app.css 里读的。
 // 原来是蓝灰一套（配水晶青），底色偏冷，配金会显脏。现在中性色也退到中性偏暖。
