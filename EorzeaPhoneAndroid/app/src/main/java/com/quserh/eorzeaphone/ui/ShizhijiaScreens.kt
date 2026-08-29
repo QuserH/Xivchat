@@ -4071,9 +4071,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
     if (composerOpen) {
         val target = replyTo
         SzjCommentComposer(
-            // 回复谁要写在提示里：输入框弹起来之后原来那条评论被盖住了，
-            // 不写的话不知道自己在回谁。
-            hint = if (target != null) "回复 ${target.characterName.ifBlank { "这条评论" }}…" else "说点什么…",
+            // 回复谁交给上面那条引用说（placeholder 一打字就消失，靠不住）。
+            hint = if (target != null) "写你的回复…" else "说点什么…",
+            replyTo = target,
             onDismiss = { composerOpen = false; replyTo = null },
             onSend = { text, pics, done ->
                 actionScope.launch {
@@ -4201,6 +4201,15 @@ private fun SzjPostActionBar(
 private fun SzjCommentComposer(
     hint: String,
     onDismiss: () -> Unit,
+    /**
+     * 正在回复的那条评论。非 null 时输入框顶上显示一条**引用**：
+     * 谁说的 + 说了什么。
+     *
+     * 为什么必须有：输入框是从底部升起来的，一升起来就把被回复的那条评论
+     * 盖住了。原来只把名字塞进 placeholder，而 placeholder **一开始打字就消失**
+     * ——于是打到一半完全不知道自己在回谁、回的哪句话。
+     */
+    replyTo: ShizhijiaComment? = null,
     /** 第二个参数是已上传好的图片 URL（逗号分隔，没图时空串）。 */
     onSend: (String, String, () -> Unit) -> Unit,
 ) {
@@ -4279,6 +4288,11 @@ private fun SzjCommentComposer(
                     .windowInsetsPadding(WindowInsets.navigationBars)
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
+                // 回复谁：一条引用，打字过程中一直在。
+                if (replyTo != null) {
+                    SzjReplyQuote(replyTo)
+                    Spacer(Modifier.height(10.dp))
+                }
                 BasicTextField(
                     value = field,
                     onValueChange = { if (it.text.length <= maxLen) field = it },
@@ -4294,9 +4308,13 @@ private fun SzjCommentComposer(
                     },
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
-                // 已插入的 [emoN] 在输入框里是文本，这里给一条预览让人看到实际效果，
-                // 否则打完一串 [emo12][emo3] 完全不知道发出去长什么样。
-                SzjComposerEmojiPreview(text)
+                // 效果预览。**只在插了表情时出现**——纯文字不需要预览，
+                // 输入框里看到的就是发出去的样子。
+                //
+                // 原来这儿是一条"表情 + 一排小图"的独立条：那是把表情单独列出来，
+                // 而人想知道的是"这句话连着表情长什么样"。现在直接用渲染帖子/评论
+                // 的那个渲染器画一遍，所见即所得，不用再自己拼一套。
+                SzjComposerPreview(text)
                 // 已选的图。缩略图右上角一个叉可以去掉——传上去了但不想要，
                 // 总得有办法撤。
                 if (pics.isNotEmpty() || uploading) {
@@ -4338,6 +4356,11 @@ private fun SzjCommentComposer(
                         }
                     }
                 }
+                // 工具行和上面的内容之间拉一道发丝线：原来四块（输入框、预览、
+                // 图片、工具）等距堆着，谁也不领谁，看着散。一条线把它分成
+                // "在写的东西"和"操作"两部分，工具行就成了页脚而不是第四块。
+                Spacer(Modifier.height(12.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 加图。上限 9 张（和站点一致），到上限就禁用而不是消失——
@@ -4371,17 +4394,18 @@ private fun SzjCommentComposer(
                     }
                     Spacer(Modifier.width(10.dp))
                     // 表情入口。选中态高亮，再点一下收起。
+                    // 原来这儿放的是一个"颜"字——字形和旁边的真图标不齐（基线、
+                    // 粗细、视觉重量全不一样），一眼就看出是凑的。换成真图标。
                     SzjPressable(onClick = { emojiOpen = !emojiOpen }, shape = CircleShape) {
                         Box(
                             Modifier.size(34.dp).clip(CircleShape)
                                 .background(if (emojiOpen) SzjAccentSoft else SzjCardRaised),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                "颜",
-                                color = if (emojiOpen) SzjOnAccentSoft else SzjMuted,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
+                            ImageGlyph(
+                                R.drawable.ic_emoji,
+                                if (emojiOpen) SzjOnAccentSoft else SzjMuted,
+                                Modifier.size(17.dp),
                             )
                         }
                     }
@@ -4470,37 +4494,72 @@ private fun SzjEmojiPanel(onPick: (String) -> Unit) {
 }
 
 /**
- * 输入框下面的表情预览。把已经插进去的 `[emoN]` 按顺序画成小图。
+ * 输入框顶上的"正在回复"引用条。
  *
- * 为什么需要：表情在输入框里是**文本**（`[emo12]`），一串下来完全看不出
- * 发出去什么样。这一条只在真的插了表情时出现，没插就不占位。
+ * 左边一道竖条 + 名字 + 内容摘要，两行封顶。竖条是引用的通用记号，
+ * 比给整块加底色轻——输入框本身已经是一块浮起的面，再叠个色块就是两层。
+ *
+ * 内容用纯文本摘要而不是 [ShizhijiaRichContent]：这里要的是"哪一句话"，
+ * 把图片和表情也渲染出来会让这条引用比输入框还高。
  */
 @Composable
-private fun SzjComposerEmojiPreview(text: String) {
-    // 解析很便宜，但每次打字都会重组，所以还是 remember 一下——
-    // 这个文件里刚因为"composable 里不 remember 的解析"出过性能问题。
-    val codes = remember(text) {
-        Regex("""\[emo(\d+)]""").findAll(text)
-            .mapNotNull { it.groupValues[1].toIntOrNull() }
-            .filter { it in 1..SZJ_EMOJI_COUNT }
-            .toList()
+private fun SzjReplyQuote(c: ShizhijiaComment) {
+    // 去标签 + 把表情占位符换成"[表情]"，免得引用里出现一串 [emo12][emo3]。
+    val summary = remember(c.contentHtml) {
+        c.contentHtml
+            .replace(Regex("<[^>]+>"), "")
+            .replace(Regex("""\[emo\d+]"""), "[表情]")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .ifBlank { if (c.commentPic.isNotBlank()) "[图片]" else "" }
     }
-    if (codes.isEmpty()) return
-    Spacer(Modifier.height(8.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("表情", color = SzjMuted, style = SzjMetaStyle)
-        Spacer(Modifier.width(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            items(codes.size, key = { it }) { i ->
-                ShizhijiaRemoteImage(
-                    url = "$SZJ_EMO_BASE${codes[i]}.png",
-                    modifier = Modifier.size(26.dp),
-                    contentScale = ContentScale.Fit,
-                    showPlaceholder = false,
-                    collapseOnFail = false,
+    Row(Modifier.fillMaxWidth()) {
+        Box(Modifier.width(2.dp).heightIn(min = 30.dp).fillMaxHeight().background(SzjAccent))
+        Column(Modifier.padding(start = 9.dp)) {
+            Text(
+                "回复 ${c.characterName.ifBlank { "匿名玩家" }}",
+                color = SzjAccent, style = SzjMetaStyle,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            if (summary.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    summary, color = SzjMuted, style = SzjMetaStyle,
+                    lineHeight = 16.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+    }
+}
+
+/**
+ * 输入框下面的效果预览：把正在写的内容按**发出去之后的样子**画一遍。
+ *
+ * 只在插了表情时出现。纯文字不需要预览——输入框里看到的就是结果，
+ * 多一块空白的"预览"是噪音。
+ *
+ * 用的是渲染帖子/评论的同一个 [ShizhijiaRichContent]，所以预览和最终显示
+ * 一定一致；自己另拼一套小图排版，迟早和真正的渲染跑偏。
+ */
+@Composable
+private fun SzjComposerPreview(text: String) {
+    val hasEmoji = remember(text) {
+        Regex("""\[emo(\d+)]""").find(text)
+            ?.groupValues?.get(1)?.toIntOrNull()
+            ?.let { it in 1..SZJ_EMOJI_COUNT } == true
+    }
+    if (!hasEmoji) return
+    Spacer(Modifier.height(10.dp))
+    Column(
+        Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCardRaised)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Text("发出去的样子", color = SzjMuted, style = SzjMetaStyle)
+        Spacer(Modifier.height(4.dp))
+        // 把纯文本换行变成段落，交给正文渲染器——表情会变成真图。
+        ShizhijiaRichContent(remember(text) { text.replace("\n", "<br>") })
     }
 }
 
@@ -5056,7 +5115,7 @@ private fun ShizhijiaPublishPostScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    SzjComposerEmojiPreview(body.text)
+                    SzjComposerPreview(body.text)
                 }
             }
             if (pics.isNotEmpty() || uploading) {
