@@ -93,6 +93,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
@@ -162,7 +163,22 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
     }
 }
 @Composable
-fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> Unit)? = null, onBack: (() -> Unit)? = null, showBack: Boolean = true) {
+fun ScreenHeader(
+    title: String,
+    state: PhoneState,
+    trailing: (@Composable () -> Unit)? = null,
+    onBack: (() -> Unit)? = null,
+    showBack: Boolean = true,
+    /**
+     * 标题色。默认 [PhoneText]。
+     *
+     * 给 wiki 物品详情用的：物品名带**稀有度色**（白/绿/蓝/紫/以太），
+     * 那是这个领域里唯一有含义的彩色。原来 hero 里再写一遍名字来承载这个色，
+     * 结果头部 20sp、hero 17sp 显示同一串字——外壳比主体还大。
+     * 色交给头部之后 hero 就不用重复名字了。
+     */
+    titleColor: Color = Color.Unspecified,
+) {
     val margin = LocalContentMargin.current
     val sidePad = (margin.coerceAtLeast(2) - 2).dp
     // 三栏 Row。原来是 Box + 三个 alignment 叠，标题靠写死的 horizontal 50dp
@@ -180,7 +196,7 @@ fun ScreenHeader(title: String, state: PhoneState, trailing: (@Composable () -> 
         }
         Text(
             title,
-            color = PhoneText,
+            color = titleColor.takeOrElse { PhoneText },
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,

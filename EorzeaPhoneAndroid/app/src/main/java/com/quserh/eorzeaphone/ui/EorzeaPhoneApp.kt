@@ -193,6 +193,8 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
             "maps" -> MapsScreen(state)
             "health" -> HealthScreen(state)
             "shizhijia" -> ShizhijiaScreen(state)
+            "wiki" -> WikiScreen(state)
+            "gatherclock" -> GatherClockScreen(state)
             "appstore" -> AppStoreScreen(state)
             else -> GenericAppScreen(state)
             }

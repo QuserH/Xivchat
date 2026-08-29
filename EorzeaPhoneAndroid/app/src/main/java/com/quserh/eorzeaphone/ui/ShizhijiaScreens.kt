@@ -123,6 +123,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.quserh.eorzeaphone.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaCosUpload
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
@@ -5036,6 +5037,16 @@ private fun SzjCommentReplies(
     var subs by remember(c.id) { mutableStateOf<List<ShizhijiaComment>?>(null) }
     var loading by remember(c.id) { mutableStateOf(false) }
     var status by remember(c.id) { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaComment>>?>(null) }
+    // 已经拉到第几页。接口 limit 是 10（照官网），超过 10 条回复的楼
+    // 不给「加载更多」的话第 11 条起就永远看不到，界面上也没有任何提示。
+    var page by remember(c.id) { mutableStateOf(1) }
+    var appending by remember(c.id) { mutableStateOf(false) }
+    // 续页失败要单独存：`status` 只在列表为空那个分支渲染，
+    // 而续页失败时列表非空，写进 status 等于把错误咽掉了。
+    var appendError by remember(c.id) { mutableStateOf("") }
+    // 「真的没有了」和「这次没拉到」要分开：前者该把按钮收掉，
+    // 后者必须留着按钮让人重试 —— 一次网络抖动不该让剩下的回复永久看不到。
+    var exhausted by remember(c.id) { mutableStateOf(false) }
 
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -5063,6 +5074,11 @@ private fun SzjCommentReplies(
                             val r = ShizhijiaApi.getSubComments(context, c.rootParent)
                             status = r
                             subs = (r as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+                            // 重新从第一页拉了，页码跟着回到 1，
+                            // 否则续页会从旧的页码接着走、跳过中间几页。
+                            page = 1
+                            appendError = ""
+                            exhausted = false
                             loading = false
                         }
                     }
@@ -5112,9 +5128,74 @@ private fun SzjCommentReplies(
                     color = SzjMuted, style = SzjMetaStyle,
                     modifier = Modifier.padding(vertical = 8.dp),
                 )
-                else -> list.forEachIndexed { i, s ->
-                    if (i > 0) Spacer(Modifier.height(10.dp))
-                    SzjSubCommentRow(s, nav, onReply)
+                else -> {
+                    list.forEachIndexed { i, s ->
+                        if (i > 0) Spacer(Modifier.height(10.dp))
+                        SzjSubCommentRow(s, nav, onReply)
+                    }
+                    // 还有没拉到的：判据用 childrenCount 而不是「上一页满 10 条」——
+                    // 后者在恰好 10 条时会多发一次空请求，而且那次返回空之后
+                    // 按钮该消失还是该留着没有依据。计数是服务端给的，直接用。
+                    if (list.size < c.childrenCount && !exhausted) {
+                        Spacer(Modifier.height(8.dp))
+                        SzjPressable(
+                            onClick = {
+                                if (appending) return@SzjPressable
+                                appending = true
+                                appendError = ""
+                                scope.launch {
+                                    val next = page + 1
+                                    val r = ShizhijiaApi.getSubComments(
+                                        context, c.rootParent, page = next,
+                                    )
+                                    when (r) {
+                                        is ShizhijiaApi.Res.Ok -> {
+                                            // 去重：翻页期间有人删回复会让分页错位，
+                                            // 同一条可能在两页里都出现。
+                                            val have = list.mapTo(mutableSetOf()) { it.id }
+                                            val add = r.value.filter { it.id !in have }
+                                            subs = list + add
+                                            page = next
+                                            // 计数说还有、但这一页一条新的都没有：
+                                            // 多半是回复被删了而计数没跟着降。
+                                            // 不说一声的话按钮会一直亮着点不出东西。
+                                            if (add.isEmpty()) {
+                                                appendError = "没有更多了"
+                                                exhausted = true
+                                            }
+                                        }
+                                        is ShizhijiaApi.Res.NeedLogin -> appendError = "登录后能看更多回复"
+                                        is ShizhijiaApi.Res.Failed -> appendError = r.msg.ifBlank { "没读取到更多回复" }
+                                        else -> appendError = "没读取到更多回复"
+                                    }
+                                    appending = false
+                                }
+                            },
+                            shape = SzjChipShape,
+                        ) {
+                            Row(
+                                Modifier.clip(SzjChipShape).padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (appending) {
+                                    CircularProgressIndicator(
+                                        color = SzjAccent, strokeWidth = 1.5.dp,
+                                        modifier = Modifier.size(11.dp),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    // 说清还剩几条，比光写「加载更多」更有用。
+                                    "还有 ${c.childrenCount - list.size} 条回复",
+                                    color = SzjAccent, style = SzjMetaStyle,
+                                )
+                            }
+                        }
+                    }
+                    if (appendError.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(appendError, color = SzjMuted, style = SzjMetaStyle)
+                    }
                 }
             }
         }
@@ -5229,6 +5310,9 @@ private fun ShizhijiaPublishGlamourScreen(
     var sending by remember { mutableStateOf(false) }
     val races = remember { mutableStateListOf<Int>() }
     val genders = remember { mutableStateListOf<Int>() }
+    // slot → 选了什么。服务端要求至少一件（实测 10003），发布时按
+    // SZJ_GLAMOUR_SLOTS 的顺序拼，没选的槽补 equipment_id = -1。
+    val slotPicks = remember { mutableStateMapOf<String, GlamourPick>() }
     val maxPics = 9
 
     // 种族/性别字典：站点的 race_ids 是 1..8，gender 1 男 2 女。
@@ -5387,44 +5471,39 @@ private fun ShizhijiaPublishGlamourScreen(
                     }
                 }
             }
-            item(key = "gearnote") {
-                // 如实说清这一版少了什么，别让人以为是自己没找到入口。
-                Row(
-                    Modifier.fillMaxWidth().clip(SzjInnerShape).background(SzjCardRaised)
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    ImageGlyph(R.drawable.ic_info, SzjMuted, Modifier.size(14.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        // **实测的结论，不是猜的。** 我原来以为 equipment_id: -1
-                        // 是空槽、所以纯图也能发；真机一试服务端回
-                        // `10003 至少需要上传一件有效装备` —— 推断是错的。
-                        "石之家要求至少选一件装备才能发布（服务端会拒纯图片的幻化）。" +
-                            "挑装备的选择器还没做好，所以这一版发不出去——" +
-                            "在那之前请在网页版发。",
-                        color = SzjMuted, style = SzjMetaStyle, lineHeight = 17.sp,
-                    )
+            item(key = "gear") {
+                SzjGlamourSlotSection(picks = slotPicks) { slot, pick ->
+                    if (pick == null) slotPicks.remove(slot) else slotPicks[slot] = pick
                 }
             }
         }
         // 发布按钮钉在底部，不进滚动区（和发帖那屏同一个处理）。
         Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            // 性别必填：服务端会拒（10003），所以按钮就别亮着骗人。
-            // **暂时一律禁用。** 服务端要求至少一件有效装备（实测
-            // `10003 至少需要上传一件有效装备`），而装备选择器还没做，
-            // 所以现在无论怎么填都发不出去。
+            // 四项都是服务端必填，缺一样就回 10003。按钮亮着、点了才失败
+            // 是最糟的状态——人会以为自己填错了，反复改标题改标签试。
+            // 所以条件不满足就常灰，下面写明还缺什么。
             //
-            // 让按钮亮着、点了再失败，是最糟的状态——人会以为自己填错了，
-            // 反复改标题改标签试。宁可按钮是灰的、旁边写明为什么。
-            //
-            // 选择器做好之后把这里换回：
-            //   title.isNotBlank() && pics.isNotEmpty() &&
-            //   races.isNotEmpty() && genders.isNotEmpty() &&
-            //   slots.any { it.equipmentId > 0 } && !sending && !uploading
-            @Suppress("KotlinConstantConditions")
-            val canSend = false
+            // `slotPicks.isNotEmpty()` 对应「至少需要上传一件有效装备」，
+            // 这条是真机实测出来的，不是推断（原来以为全空槽也能发）。
+            val canSend = title.isNotBlank() && pics.isNotEmpty() &&
+                races.isNotEmpty() && genders.isNotEmpty() &&
+                slotPicks.isNotEmpty() && !sending && !uploading
+            // 缺什么直接说，别让人自己对照星号找。
+            val missing = buildList {
+                if (pics.isEmpty()) add("外观图")
+                if (title.isBlank()) add("标题")
+                if (races.isEmpty()) add("种族")
+                if (genders.isEmpty()) add("性别")
+                if (slotPicks.isEmpty()) add("至少一件装备")
+            }
+            if (missing.isNotEmpty()) {
+                Text(
+                    "还差：${missing.joinToString("、")}",
+                    color = SzjMuted, style = SzjMetaStyle,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
             SzjPressable(
                 onClick = {
                     sending = true
@@ -5437,6 +5516,17 @@ private fun ShizhijiaPublishGlamourScreen(
                             images = pics.drop(1).joinToString(",") { it.second },
                             raceIds = races.toList(),
                             genderIds = genders.toList(),
+                            // 按 SZJ_GLAMOUR_SLOTS 的顺序拼，没选的槽补 -1。
+                            // 顺序由 API 那边负责，这里只给选了的。
+                            slots = slotPicks.map { (slot, pick) ->
+                                ShizhijiaApi.GlamourSlotPick(
+                                    slot = slot,
+                                    equipmentId = pick.item.id.toLong(),
+                                    // 按孔位、空孔补 -1、截到孔数 —— 照站点
+                                    // PublishGlamour 的写法，见 GlamourPick.dyeIdsForSubmit。
+                                    dyeIds = pick.dyeIdsForSubmit(),
+                                )
+                            },
                         )
                         when (r) {
                             is ShizhijiaApi.Res.Ok -> {

@@ -58,6 +58,8 @@ object AppCatalog {
         PhoneAppItem("muster", "Muster", R.drawable.app_muster, teal),
         PhoneAppItem("yellowpages", "黄页", R.drawable.app_yellowpages, gold),
         PhoneAppItem("housing", "房屋", R.drawable.app_housing, teal),
+        PhoneAppItem("wiki", "WiKi", R.drawable.app_appstore, teal),
+        PhoneAppItem("gatherclock", "采集时钟", R.drawable.app_timers, lime),
     )
 
     val dock = listOf(
