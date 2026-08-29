@@ -99,6 +99,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -153,6 +154,7 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSearchUser
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaSearchGlamour
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaUserProfile
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourDetail
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourDye
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaGlamourCard
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaRecentEvent
 import kotlinx.coroutines.launch
@@ -7715,14 +7717,9 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
         }
     }
 
-    val slotLabels = mapOf(
-        "MAIN_HAND" to "主手", "OFF_HAND" to "副手", "HEAD" to "头部", "EARS" to "耳坠",
-        "BODY" to "上衣", "NECK" to "项链", "GLOVES" to "手部", "WRISTS" to "手镯",
-        "LEGS" to "腿部", "FINGER_LEFT" to "戒指", "FEET" to "脚部", "FINGER_RIGHT" to "戒指",
-        "GLASSES" to "面部配饰", "ORNAMENT" to "时尚配饰",
-    )
-    val leftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET", "GLASSES")
-    val rightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT", "ORNAMENT")
+    val slotLabels = SzjSlotLabels
+    val leftSlots = SzjLeftSlots
+    val rightSlots = SzjRightSlots
 
     ScreenFrame(background = SzjBg) {
         SzjHeader("幻化详情", onBack = pop)
@@ -8029,6 +8026,101 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
     }
 }
 
+// 装备槽位的字典和左右两列顺序。**详情页和分享卡共用这一份**——
+// 原来它们是详情页里的局部变量，分享卡只好自己按 equips 的原始顺序列，
+// 于是分享出去的图既没有槽位名也没有染色。
+internal val SzjSlotLabels = mapOf(
+    "MAIN_HAND" to "主手", "OFF_HAND" to "副手", "HEAD" to "头部", "EARS" to "耳坠",
+    "BODY" to "上衣", "NECK" to "项链", "GLOVES" to "手部", "WRISTS" to "手镯",
+    "LEGS" to "腿部", "FINGER_LEFT" to "戒指", "FEET" to "脚部", "FINGER_RIGHT" to "戒指",
+    "GLASSES" to "面部配饰", "ORNAMENT" to "时尚配饰",
+)
+internal val SzjLeftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET", "GLASSES")
+internal val SzjRightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT", "ORNAMENT")
+
+/** 染剂色字符串（"#RRGGBB"）转 Color，解不出来给 null。 */
+private fun szjDyeColor(raw: String): Color? =
+    raw.takeIf { it.startsWith("#") }
+        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+
+/**
+ * 分享卡里一个槽位要画的东西：名字、图标、染色。
+ *
+ * 面部配饰和时尚配饰**不在 equips 里**（服务端放在 ortInfo），
+ * 所以要单独取——原来的分享卡只遍历 equips，这两样必然漏掉。
+ */
+private data class SzjShareSlotItem(
+    val name: String,
+    val iconUrl: String,
+    val dyes: List<ShizhijiaGlamourDye>,
+    val dyeHoles: Int,
+)
+
+/** 取某个槽位的内容；这个槽没东西就返回 null（空槽不进分享图）。 */
+private fun szjShareSlot(d: ShizhijiaGlamourDetail, slot: String): SzjShareSlotItem? {
+    d.equips.firstOrNull { it.slot == slot && it.name.isNotBlank() }?.let {
+        return SzjShareSlotItem(it.name, it.iconUrl, it.dyes, maxOf(it.dyeHoleCount, 0))
+    }
+    return when (slot) {
+        "GLASSES" -> d.glassesName.takeIf { it.isNotBlank() }
+            ?.let { SzjShareSlotItem(it, d.glassesIconUrl, emptyList(), 0) }
+        "ORNAMENT" -> d.ornamentName.takeIf { it.isNotBlank() }
+            ?.let { SzjShareSlotItem(it, d.ornamentIconUrl, emptyList(), 0) }
+        else -> null
+    }
+}
+
+/**
+ * 分享卡里的一个槽位格：槽位名 + 图标 + 部件名 + 染色点。
+ *
+ * 比详情页那版紧凑（图标 26dp、字 10sp）——分享卡要在一屏里装完十几个槽，
+ * 详情页的 40dp 图标放这儿会撑爆。染色只画色点加名字，不画"无染色"占位：
+ * 分享图里每一行都该是信息。
+ */
+@Composable
+private fun SzjShareSlotCell(slot: String, item: SzjShareSlotItem) {
+    Row(verticalAlignment = Alignment.Top) {
+        if (item.iconUrl.isNotBlank()) {
+            ShizhijiaRemoteImage(
+                url = item.iconUrl,
+                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(5.dp)),
+                showPlaceholder = false,
+                collapseOnFail = false,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(SzjSlotLabels[slot] ?: slot, color = SzjMuted, fontSize = 9.sp, maxLines = 1)
+            Text(
+                item.name, color = SzjText, fontSize = 10.sp,
+                lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            // 染色：有几个染色孔就画几个，只画真染了的。
+            val shown = (0 until item.dyeHoles).mapNotNull { item.dyes.getOrNull(it) }
+                .filter { it.name.isNotBlank() }
+            if (shown.isNotEmpty()) {
+                Spacer(Modifier.height(2.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    shown.forEach { dy ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(8.dp).clip(CircleShape)
+                                    .background(szjDyeColor(dy.color) ?: SzjCardRaised)
+                                    .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape),
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            Text(
+                                dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 9.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * 幻化分享卡的预览 + 生成。
  *
@@ -8048,6 +8140,7 @@ private fun SzjGlamourShareSheet(
     val scope = rememberCoroutineScope()
     val layer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     var sharing by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
     androidx.compose.ui.window.Dialog(
         onDismissRequest = { if (!sharing) onDismiss() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
@@ -8073,10 +8166,17 @@ private fun SzjGlamourShareSheet(
                         .background(SzjCard),
                 ) {
                     if (d.images.isNotEmpty()) {
+                        // **必须限高。** 原来是 fillMaxWidth + FillWidth，而幻化图
+                        // 基本都是竖图（1080×1920 那种），在 360dp 宽的屏上会撑到
+                        // 600dp+ 高——整张卡被顶出屏幕，下面的搭配清单既看不见、
+                        // 也录不进图层（drawWithContent 只录布局范围内画出来的东西）。
+                        // 这就是"搭配没显示出来"的真正原因，不是数据没解析到。
+                        //
+                        // 限到 200dp 并裁切：外观图是引子，真正要传达的是下面的清单。
                         ShizhijiaRemoteImage(
                             url = d.images.first(),
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier.fillMaxWidth().height(200.dp),
+                            contentScale = ContentScale.Crop,
                             showPlaceholder = true,
                         )
                     }
@@ -8108,32 +8208,41 @@ private fun SzjGlamourShareSheet(
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
                             )
                         }
-                        // 装备清单进图：这是这套幻化真正要传达的信息，
-                        // 只发一张外观图别人还得追问"用的什么部件"。
-                        val listed = d.equips.filter { it.name.isNotBlank() }.take(12)
-                        if (listed.isNotEmpty()) {
+                        // 搭配清单：**这是这套幻化真正要传达的东西**，
+                        // 只发一张外观图别人还得追问"用的什么部件、染的什么色"。
+                        //
+                        // 原来这儿是按 equips 原始顺序两列平铺、只有名字：没有槽位名
+                        // （分不清哪件是上衣哪件是腿）、**没有染色**、也漏了面部/时尚配饰
+                        // （那两个不在 equips 里，是 ortInfo 单独给的）。
+                        // 现在和详情页共用槽位字典，按左右两列的固定顺序走，
+                        // 只画有内容的槽——空槽在分享图里没有意义。
+                        val rows = remember(d.id) {
+                            SzjLeftSlots.zip(SzjRightSlots).map { (l, r) -> l to r }
+                        }
+                        val filled = remember(d.id) {
+                            (SzjLeftSlots + SzjRightSlots).any { slot ->
+                                d.equips.any { it.slot == slot && it.name.isNotBlank() } ||
+                                    (slot == "GLASSES" && d.glassesName.isNotBlank()) ||
+                                    (slot == "ORNAMENT" && d.ornamentName.isNotBlank())
+                            }
+                        }
+                        if (filled) {
                             Spacer(Modifier.height(12.dp))
                             Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
                             Spacer(Modifier.height(10.dp))
-                            listed.chunked(2).forEach { pair ->
-                                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    pair.forEach { e ->
-                                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                            if (e.iconUrl.isNotBlank()) {
-                                                ShizhijiaRemoteImage(
-                                                    url = e.iconUrl,
-                                                    modifier = Modifier.size(22.dp).clip(RoundedCornerShape(5.dp)),
-                                                    showPlaceholder = false,
-                                                )
-                                                Spacer(Modifier.width(6.dp))
-                                            }
-                                            Text(
-                                                e.name, color = SzjText, fontSize = 10.sp,
-                                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                            )
+                            rows.forEach { (l, r) ->
+                                val le = szjShareSlot(d, l)
+                                val re = szjShareSlot(d, r)
+                                if (le == null && re == null) return@forEach
+                                Row(
+                                    Modifier.fillMaxWidth().padding(bottom = 7.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    listOf(l to le, r to re).forEach { (slot, item) ->
+                                        Box(Modifier.weight(1f)) {
+                                            if (item != null) SzjShareSlotCell(slot, item)
                                         }
                                     }
-                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                                 }
                             }
                         }
@@ -8147,6 +8256,52 @@ private fun SzjGlamourShareSheet(
                         modifier = Modifier.clip(SzjInnerShape).clickable(enabled = !sharing) { onDismiss() }
                             .padding(horizontal = 18.dp, vertical = 11.dp),
                     )
+                    // 保存到相册。**之前只有"分享"**——分享是把图交给别的 App，
+                    // 想自己留一张反而没有办法（走系统分享再挑"保存到相册"要绕，
+                    // 而且不是每台机器都有那个选项）。
+                    // 用的是公共的 SaveImage（图片长按保存那套），不另写一遍写相册。
+                    SzjPressable(
+                        onClick = {
+                            if (sharing || saving) return@SzjPressable
+                            saving = true
+                            scope.launch {
+                                val err = runCatching {
+                                    val bmp = layer.toImageBitmap().asAndroidBitmap()
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        SaveImage.toGallery(
+                                            context, bmp,
+                                            d.title.ifBlank { "glamour-${d.id}" },
+                                        )
+                                    }
+                                }.getOrElse { it.message?.take(50) ?: "保存失败" }
+                                saving = false
+                                android.widget.Toast.makeText(
+                                    context,
+                                    err ?: "已保存到相册",
+                                    android.widget.Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        shape = SzjInnerShape,
+                    ) {
+                        Row(
+                            Modifier.clip(SzjInnerShape)
+                                .border(1.dp, Color.White.copy(alpha = .45f), SzjInnerShape)
+                                .padding(horizontal = 15.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (saving) {
+                                CircularProgressIndicator(
+                                    color = Color.White, strokeWidth = 2.dp,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            } else {
+                                ImageGlyph(R.drawable.ic_download, Color.White, Modifier.size(15.dp))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (saving) "保存中" else "保存", color = Color.White, fontSize = 14.sp)
+                        }
+                    }
                     SzjPrimaryButton(
                         if (sharing) "生成中…" else "分享图片",
                         onClick = {
