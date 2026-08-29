@@ -704,6 +704,50 @@ object ShizhijiaApi {
     }
 
     /**
+     * 发动态。
+     *
+     * body（官网 `PublishDynamic.kSy1QIIC.js`）：
+     * ```
+     * {atInfo, content, scope: "1"|"2"|"3", pic_url: "a.jpg,b.jpg"}
+     * ```
+     *
+     * **这里的 [scope] 和发帖那个不一样，它是真正生效的可见范围。**
+     * 官网发动态的三个单选**没有外层条件渲染**（默认 `w("1")` = 公开），
+     * 而发帖那三个只在"分享到动态"打开时才出现——那个约束的是动态、不是帖子。
+     * 所以"只给自己看"这件事，**只有发动态能做到**，发到版块的帖子永远公开。
+     * 见 [PostScope] 的说明和 API_WRITE_ENDPOINTS.md 里那一节。
+     *
+     * **内容和图片至少有一个**就能发（官网是
+     * `if (!content && 0 == pics.length) 才拦`），所以允许只发图——
+     * 和 [commentPost] 要求 content 非空不同。
+     *
+     * `scope` 官网是拼成字符串发的（`G.value + ""`），这里也送字符串。
+     * `atInfo` 是数组，没有 @ 时**整个键不发**（同 [commentPost] 那个坑）。
+     */
+    suspend fun publishDynamic(
+        context: Context,
+        content: String,
+        /** 图片 URL，逗号分隔。可以为空（那时 [content] 必须非空）。 */
+        pics: String = "",
+        scope: PostScope = PostScope.Public,
+    ): Res<String> {
+        if (content.isBlank() && pics.isBlank()) {
+            return Res.Failed(null, "写点什么，或者加一张图")
+        }
+        val json = request(
+            context, HOME_BASE, "dynamic/create",
+            body = mapOf(
+                "content" to content,
+                "scope" to scope.code.toString(),
+                "pic_url" to pics,
+                // atInfo 故意不带，理由同 commentPost。
+            ),
+            method = "POST",
+        ) ?: return Res.Failed(null, "网络没通")
+        return json.toRes { it.optString("msg").ifBlank { "已发布" } }
+    }
+
+    /**
      * 删帖。**方法是 DELETE，body 是 `{posts_id}`**（官网 PostInfo 里就是
      * `await n({posts_id: item.posts_id})`，函数定义 `method:"delete"`）。
      *
