@@ -23,25 +23,50 @@ ls -la --time-style=+%H:%M:%S app/src/main/java/com/quserh/eorzeaphone/ui/
 **已约定的协议**（继续遵守）：
 
 1. **出包前先问一句**"我要出包了，你手上的能编译吗"，等回复。对方没做完就等。
-2. **版本号分段**，别撞。我用到 263 / 0.7.241，下一个从 264 起。改前 `git pull`。
+2. **版本号分段**，别撞。我用到 279 / 0.7.257，下一个从 280 起。改前 `git pull`。
 3. **提交只 stage 自己的文件**，显式列路径，**绝不 `git add -A`**。
 4. 对方长时间不回（我等过 4.5 小时 + 问两次）可以出包，但要在 commit 里
    写明包含了谁的未完成代码，且**不提交对方的文件**。
+5. **⚠️ 显式列路径不等于只提交了自己的改动。** `git add <路径>` 提交的是
+   那个文件**当前磁盘上的全部内容**，包括对方刚写进同一个文件的部分。
+   0.7.257 就是这么把对方那一轮（幻化职业筛 + 热门排序）整批带进了我的
+   提交，commit message 里一句没提 —— 557 行的 `ShizhijiaScreens.kt` 里
+   我自己只写了一小半。
+
+   **所以 stage 之后、commit 之前，必须 `git diff --cached` 逐个文件看一眼。**
+   看到不是自己写的东西：要么撤出来（`git restore --staged`），要么在
+   commit message 里写明"本次含另一个会话的 X"。文件级归属在两个会话
+   同时写同一个文件时是失效的，只有看 diff 才靠得住。
 
 **文件归属**（截至交接时）：
 
+**文件归属是按"谁在设计这一块"分的，不是排他锁** —— 见上面第 5 条。
+2026-08-29 之后两个会话都在改 `ShizhijiaScreens.kt`（一个做 UI 排版、
+一个做幻化流的功能），所以这张表只说明**谁负责哪块的判断**，
+不代表另一方不会动这个文件。
+
 | 谁的 | 文件 |
 |---|---|
-| 我（石之家 + 壳层 UI） | `ShizhijiaScreens.kt`、`Shizhijia*`、`Szj*`、`SubScreens.kt`、`ui/theme/*`、`AetherphoneParityScreens.kt`、`AppStore*`、`ClockAndTimersScreens.kt` |
-| 另一个会话 | `QuestTreeScreen.kt`、`GatherClockScreen.kt`、`WikiScreens.kt`、`WikiLinkScreens.kt`、`data/wiki/`、`assets/wiki/` |
+| 我（UI 设计 + 石之家/壳层排版） | `ShizhijiaScreens.kt` 的排版部分、`Szj*` 视觉原语、`SubScreens.kt`、`ui/theme/*`、`AetherphoneParityScreens.kt`、`AppStore*`、`WikiScreens.kt`/`WikiLinkScreens.kt` 的排版 |
+| 另一个会话（功能实现 + 数据层） | `data/wiki/`、`assets/wiki/`、`QuestTreeScreen.kt`、`GatherClockScreen.kt`、`GlamourPickerScreens.kt`、`ShizhijiaScreens.kt` 的幻化流功能、`ShizhijiaApi.kt` 的接口实测 |
 | **共用，动前必须问** | `AppCatalog.kt`、`EorzeaPhoneApp.kt`（加应用格子 / 加路由都在这两个文件） |
 
-交接时 `AppCatalog.kt` 和 `EorzeaPhoneApp.kt` 各有对方**未提交**的 +2 行
-（wiki / gatherclock 的格子和路由）。别顺手提交，也别覆盖。
+分工是用户定的：我做 UI 设计并调度，另一个会话做功能实现。
+视觉规格（列数、尺寸、用哪个卡片原语、选中态、空态文案）由我给，
+它不自己定配色和排版；数据映射和接口实测归它。
 
-另有一个**与本工作无关**的删除一直挂在 `git status` 里：
-`../XIVChatPlugin/Resources/lib/xivchat_native_tools.dll`。
-十几个提交都刻意没带上它，保持原样。
+`XIVChatPlugin/Resources/lib/xivchat_native_tools.dll` 那个删除**一直挂在
+`git status` 里，别提交**。根因查清了（0.7.256）：**Windows Defender 在隔离它**，
+报 `Trojan:Win32/Cobaltstrike.MKRT!MTB`，8/19 起吃了 6 次，每个出现过它的
+位置都清过。不落盘做过 PE 分析（`git cat-file blob … | python`），
+**证据指向误报**：导出只有 `wrap`/`wrap_free`/`rust_eh_personality`，
+导入只有 KERNEL32 + VCRUNTIME140 + CRT —— 没有 WinSock、没有 WinHTTP、
+没有 `VirtualAllocEx`/`WriteProcessMemory`/`CreateRemoteThread`、
+没有注册表和服务 API。一个不能出网的二进制做不了 C2 beacon。
+它是 Rust 写的文字折行库（带 `unicode-linebreak` 字样），
+唯一调用点是 `Server.cs:2567`（发游戏内长消息时切成几条）。
+要用它得给 Defender 加窄路径排除 —— **那是用户的安全决定，不替他做**。
+git 里的 blob 完好，随时能取回。
 
 ---
 
@@ -127,6 +152,33 @@ JSON 落在 `/tmp/szj_authed/`（含账号数据，看完 `rm -rf`）。
 ---
 
 ## 4. 已完成的工作
+
+### 0.7.255 ~ 0.7.257 这三版（含另一个会话的部分，补记归属）
+
+| 版本 | 谁做的 | 内容 |
+|---|---|---|
+| 0.7.255 `481815d` | 我 | wiki 模块整批入库；wiki 排版重做（详情页分区顺序、名字重复、品级成列、首页两格）；`ScreenHeader` 加 `titleColor`；`.gitattributes` 补二进制豁免（顺带修好已损坏的 `wallpaper_dusk_dark.jpg`） |
+| 0.7.255 | 另一个会话 | 装备选择器 `GlamourPickerScreens.kt`；楼中楼子评论；染剂 125 色调色板 |
+| 0.7.256 `c7171e2` | 我 | 染色孔位画反（`dyes` 改成按孔位定长）；分享图补空孔；「无染色」→「无」 |
+| 0.7.257 `02068b8` | 我 | 装备选择器提到屏幕层（连带修好"搜索看不见结果"）；分享图右栏不再裁掉配饰、改按类别分段；发幻化补封面图/细节图/分享到动态开关 |
+| 0.7.257 `02068b8` | **另一个会话** | **幻化流：客户端职业筛（两级，`jobIds` + `universalJob`）、补「热门」排序（`order=hottest`）、修 `sort=1` 发假值 `"time"`、修筛选面板重复拉取。这一批被我的提交带进去了，commit message 里没写，在此补记。** |
+
+**为什么会漏**：我 stage 时显式列了路径（符合协议第 3 条），但没有
+`git diff --cached` 逐个看。`ShizhijiaScreens.kt` 那 557 行里我只写了一小半。
+协议已补第 5 条。
+
+另一个会话在 0.7.257 那轮实测出来的三条结论（影响文案，写 UI 时用得上）：
+
+- **`job_ids` 空 = 没主手 = 通用款**。null 的 5 篇详情里 MAIN_HAND 全空，
+  窄表的 4 篇全都有主手。但**42 项全勾的那种不能反推成没主手** ——
+  那是 2018-19 老帖手动全勾的，取样 4 篇里 2 篇其实有主手，
+  42 项只能当"作者声明谁都能穿"。
+- **通用款占比按流差很多**：最新 71%、推荐 60%、热门 23%。所以职业筛
+  **默认必须带上通用款**，否则最新流一筛几乎全空。勾了「只看专属」之后
+  最新流 22 个职业里 9 个凑不出一条，热门流只有 2 个。
+- **筛空了要主动翻页**，否则列表空着滚不动、分页永远不触发。
+  套路和 `ShizhijiaScreens.kt` 2200 行附近（推荐流"这一页都被你屏蔽了"）
+  一样，但**加了 5 轮上限** —— 那边不封顶没事，这边冷门职业会一路翻到尽头。
 
 ### 石之家：收藏页四类 + 幻化收藏修复
 
@@ -329,6 +381,28 @@ Kotlin 的块注释**可嵌套**，KDoc 里写 `posts/*` 那个序列会开一�
 `AnimatedContent` + `when`，没有 per-screen 的状态保持器，所以
 `rememberSaveable` **活不过屏幕切换**。状态要提到 `PhoneState` 里
 （`accentId`、`accentCustom` 就是这么处理的）。
+
+### 5.13 `check_imports.py` 曾把 URL 里的 `//` 当行注释（已修）
+
+原来的删除顺序是「块注释 → 行注释 → 字符串」，于是 `"https://…"` 里的
+`//` 被当成行注释开头，**把后半行连右引号一起删掉**；剩一个落单的左引号，
+字符串正则接着从它一路匹配到很远处的下一个引号，把中间的真代码吞了。
+
+实测 `ShizhijiaScreens.kt` 全文只有 4 个带 `//` 的 URL 字符串，
+却骗走 226 个引号、吞掉约 74KB 正文 —— 报的 13 条"多余 import"里
+**10 条是假阳性**（`WikiDicts`、`WebView`、`slideOutVertically` 都在用）。
+
+已改成**字符串先删**（三引号也要先处理，它跨行）。13 条降到 3 条。
+发现它的线索是"gradle 过了但脚本说 `WikiDicts` 没用"这个矛盾 ——
+**脚本和编译器打架时，信编译器**。
+
+还剩两类已知假阳性，别照着改：
+
+- **「可能缺 import」里的枚举成员**。`Glamour`/`Posts`/`Rp`/`Strats` 其实是
+  `SzjFavTab.Glamour` 这样的限定名，脚本只看裸标识符。
+- **不带参数跑等于什么都没查**。它从 `sys.argv[1:]` 取文件，
+  不给路径时输出「多余 0 条」，那是空集不是干净。要显式传文件：
+  `python check_imports.py <那些 .kt>`。
 
 ---
 
