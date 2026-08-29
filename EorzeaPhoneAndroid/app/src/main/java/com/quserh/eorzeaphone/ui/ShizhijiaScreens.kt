@@ -47,9 +47,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
@@ -89,6 +93,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1447,6 +1452,18 @@ private fun ShizhijiaHomeScreen(
                     }
                 }
             }
+            SzjBottomBar(
+                mainTab,
+                onSelect = { SzjNav.selectTab(it) },
+                barHeightDp = barHeightDp,
+                barBottomDp = barBottomDp,
+                hidden = bar.hidden,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+            // **必须排在底栏之后。** 它以前是 `Dialog`（独立窗口），天然盖住一切；
+            // 改成窗口内浮层之后层级只由**组合顺序**决定 —— 排在底栏前面时，
+            // 底栏会画在遮罩之上而且还能点，打字打一半能切到「招募」tab
+            // （真机 dump 里 y=1510 那一行就压在遮罩上面）。
             if (dynamicComposerOpen) {
                 SzjDynamicComposer(
                     onDismiss = { dynamicComposerOpen = false },
@@ -1458,14 +1475,6 @@ private fun ShizhijiaHomeScreen(
                     nav = nav,
                 )
             }
-            SzjBottomBar(
-                mainTab,
-                onSelect = { SzjNav.selectTab(it) },
-                barHeightDp = barHeightDp,
-                barBottomDp = barBottomDp,
-                hidden = bar.hidden,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
         }
     }
 }
@@ -5747,12 +5756,27 @@ private fun SzjDynamicComposer(
         }
     }
 
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = { if (!sending) onDismiss() },
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        // 让这一层能收到键盘 inset，否则下面的 windowInsetsPadding(ime) 拿到 0。
-        SzjDialogImeFix()
+    // **不用 Dialog。** 原来这一层是 `androidx.compose.ui.window.Dialog`，
+    // 而 Dialog 是**独立的窗口**：MainActivity 那个窗口的 `adjustResize` +
+    // `setDecorFitsSystemWindows(false)`（聊天会话靠它正常工作）对它一概无效。
+    //
+    // 我原来加了 `SzjDialogImeFix()` 去补：给 Dialog 的 window 同时设
+    // `setDecorFitsSystemWindows(false)` 和 `SOFT_INPUT_ADJUST_RESIZE`。
+    // **那两个是互相矛盾的一对** —— 前者是"我自己处理 inset，别 resize 我"，
+    // 后者是"请 resize 我"。结果 Dialog 窗口既不 resize、`WindowInsets.ime`
+    // 也拿不到有效值，下面那句 `windowInsetsPadding(navigationBars.union(ime))`
+    // 等于加了 0。用户报的就是这个："导航栏被顶上去了（那是 Activity 窗口里的
+    // 底栏），而输入框还是没有任何反应，完全被软键盘覆盖住了"。
+    //
+    // 现在改成 Activity 窗口内的一层浮层。调用点在社区屏的 `ScreenFrame` 里面，
+    // 而 `ScreenFrame` 的内层 Column 已经带 `imePadding()` —— **那是全项目
+    // 唯一确认能被键盘顶起来的形状**。所以这一层不再自己让 ime，
+    // 交给外面统一让，它只负责贴在可用区底部。
+    //
+    // Dialog 顺带提供的两件事要自己接回来：返回键（BackHandler）、
+    // 以及"盖住一切"（靠**组合顺序**，见调用点的注释：必须排在底栏之后）。
+    BackHandler(enabled = !sending) { onDismiss() }
+    run {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Box(
                 Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f))
@@ -5762,7 +5786,6 @@ private fun SzjDynamicComposer(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                     .background(SzjCard)
-                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Text("发动态", color = SzjText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -5939,6 +5962,7 @@ private fun SzjDynamicComposer(
  * 这样发出去的正文在官网和我们自己的渲染器里都是正常的。
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun ShizhijiaPublishPostScreen(
     isStrategy: Boolean,
     pop: () -> Unit,
@@ -5960,6 +5984,12 @@ private fun ShizhijiaPublishPostScreen(
     // 已上传的图片 URL，按插入顺序。发的时候拼到正文末尾。
     val pics = remember { mutableStateListOf<String>() }
     val maxPics = 9
+    // 正文框的"滚进视野"请求器。**键盘弹起来时要手动触发一次** ——
+    // 聚焦在弹键盘之前发生（点输入框才弹键盘），那一刻视口还是全高，
+    // Compose 自带的 bringIntoView 已经跑完；等视口真的矮下来，
+    // 没有任何事件再触发一次滚动。
+    val bodyBring = remember { BringIntoViewRequester() }
+    var bodyFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(isStrategy) {
         parts = if (isStrategy) ShizhijiaApi.getStrategyParts(context) else ShizhijiaApi.getPostParts(context)
@@ -6054,7 +6084,12 @@ private fun ShizhijiaPublishPostScreen(
                                 inner()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth()
+                            // 键盘弹起来时把这个框滚进视野。见下面 imeVisible 那段
+                            // LaunchedEffect —— 光靠 imePadding 不够：
+                            // LazyColumn 只是视口变矮，里面的内容不会自己滚。
+                            .bringIntoViewRequester(bodyBring)
+                            .onFocusChanged { bodyFocused = it.isFocused },
                     )
                     SzjComposerPreview(body.text)
                 }
@@ -6106,6 +6141,34 @@ private fun ShizhijiaPublishPostScreen(
         //
         // 放到滚动区外面之后，ScreenFrame 的 ime padding 一让位，
         // 这一条就自然贴在键盘上方，永远可见。
+        //
+        // ---- 但这么放会**饿死上面的滚动区**（0.7.258 修的就是这个）----
+        //
+        // 真机实测（900×1600）：这一整块底部区是 y=1300..1600，**约 300px**。
+        // 键盘起来占掉约 700px 之后总高只剩 900：
+        //     头部 110 + 底部 300  →  LazyColumn 只剩约 490px
+        // 而正文输入框在 y=568 起 —— **整个落在视口外面**。
+        // 用户报的就是这个："导航栏被顶上去了，而输入框还是没有任何反应，
+        // 完全被软键盘覆盖住了"。底部栏被抬起是对的（它在 imePadding 里面），
+        // 输入框没动是因为 LazyColumn 只是**视口变矮**，不会自动滚。
+        //
+        // 两个修法一起用：
+        // 1. 键盘起来时**只留工具行**（表情/图片），把可见范围说明、分享开关、
+        //    发布按钮收起来 —— 正在打字的人不需要「发布」，那是打完才点的。
+        //    300px 收到约 60px，还给滚动区 240px。
+        // 2. 正文框加 bringIntoViewRequester（见上面那个 modifier）。
+        val imeVisible = WindowInsets.isImeVisible
+        // 键盘可见性一变、且正文框正被聚焦，就把它滚进视野。
+        // 照聊天会话那个确认能工作的形状（AetherphoneParityScreens 里也是
+        // `WindowInsets.isImeVisible` + LaunchedEffect）。
+        LaunchedEffect(imeVisible, bodyFocused) {
+            if (imeVisible && bodyFocused) {
+                // 等一帧：视口收缩和 inset 变化不在同一帧完成，
+                // 立刻滚会按旧的视口高度算。
+                withFrameNanos {}
+                runCatching { bodyBring.bringIntoView() }
+            }
+        }
         Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -6148,6 +6211,9 @@ private fun ShizhijiaPublishPostScreen(
             if (emojiOpen) {
                 Box(Modifier.padding(bottom = 14.dp)) { SzjEmojiPanel(onPick = { insert(it) }) }
             }
+            // 键盘起来时这一段整体收起（说明 + 分享开关 + 发布按钮，约 240px）。
+            // 打字的时候不需要它们，而它们占的高度正是输入框被挤出视口的原因。
+            if (!imeVisible) {
             Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
                 // **这里原来是一个叫"谁能看"的选择器，带"仅自己可见"——那是错的，
                 // 而且是会误导人的错：帖子发到版块本身就是公开的，石之家没有
@@ -6258,6 +6324,7 @@ private fun ShizhijiaPublishPostScreen(
                         )
                     }
                 }
+            }
             }
         }
     }
