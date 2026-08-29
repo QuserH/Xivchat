@@ -719,7 +719,20 @@ object ShizhijiaApi {
         return json.toRes { it.optString("msg").ifBlank { "已删除" } }
     }
 
-    /** 帖子可见范围。取值来自官网 PublishPost 的三个单选。 */
+    /**
+     * **"分享到动态"那条动态的可见范围，不是帖子的。**
+     *
+     * 这一点我一开始搞错了，而且错得会误导人：我把它当成帖子的可见性
+     * 摆在发帖界面上（标题写"谁能看"、含"仅自己可见"），于是用户以为
+     * 自己发了一条私密帖，实际帖子照常公开、别人能看到。
+     *
+     * 真相在官网 PublishPost.DWDKRiEh.js 里：那三个单选写成
+     * `1 == et.value ? 单选组 : 不渲染`，`et` 就是 `is_share`
+     * （分享到动态开关，默认 0）。也就是说**只有打开"分享到动态"时
+     * 这三档才出现**，它约束的是那条动态。
+     *
+     * **发到版块的帖子本身是公开的，石之家没有"私密帖"。**
+     */
     enum class PostScope(val code: Int, val label: String) {
         Public(1, "公开"),
         Mutual(2, "仅互关可见"),
@@ -749,9 +762,13 @@ object ShizhijiaApi {
         /** HTML 正文。图片用 `<img src="…">` 嵌进去。 */
         contentHtml: String,
         partId: String,
+        /**
+         * 只在 [share] 为 true 时有意义 —— 它是**那条动态**的可见范围。
+         * 见 [PostScope] 的说明：帖子本身在版块里永远是公开的。
+         */
         scope: PostScope = PostScope.Public,
         type: String = "1",
-        /** 同步分享一份到动态。官网默认关。 */
+        /** 同时在动态里发一条指向这篇帖子。官网默认关。 */
         share: Boolean = false,
     ): Res<String> {
         if (title.isBlank()) return Res.Failed(null, "标题不能为空")

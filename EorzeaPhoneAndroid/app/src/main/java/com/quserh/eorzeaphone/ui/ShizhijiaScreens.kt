@@ -5176,6 +5176,9 @@ private fun ShizhijiaPublishPostScreen(
     var parts by remember { mutableStateOf<List<ShizhijiaPostPart>>(emptyList()) }
     var partId by remember { mutableStateOf("") }
     var visibility by remember { mutableStateOf(ShizhijiaApi.PostScope.Public) }
+    // 分享到动态。官网默认关（is_share 的初值是 0），保持一致。
+    // scope 只在这个打开时才有意义——它管那条动态，不管帖子。
+    var shareToDynamic by remember { mutableStateOf(false) }
     var emojiOpen by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
@@ -5365,12 +5368,67 @@ private fun ShizhijiaPublishPostScreen(
             }
             item(key = "scope") {
                 Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
-                    Text("谁能看", color = SzjText, style = SzjLabelStyle)
-                    Spacer(Modifier.height(7.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        ShizhijiaApi.PostScope.entries.forEach { s ->
-                            SzjPartChip(s.label, visibility == s) { visibility = s }
+                    // **这里原来是一个叫"谁能看"的选择器，带"仅自己可见"——那是错的，
+                    // 而且是会误导人的错：帖子发到版块本身就是公开的，石之家没有
+                    // 私密帖。用户选了"仅自己可见"，帖子照样公开，别人能看到。**
+                    //
+                    // 真相（PublishPost.DWDKRiEh.js）：那三个单选**只在"分享到动态"
+                    // 打开时才渲染**（`1 == et.value ? 单选组 : 不渲染`），
+                    // 也就是说 scope 管的是**那条动态**的可见范围，不是帖子的。
+                    // 我把它当帖子的可见性摆出来，是把两件事搞混了。
+                    //
+                    // 现在：先说清帖子是公开的，再把 scope 挂到它真正属于的开关下面。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ImageGlyph(R.drawable.ic_info, SzjMuted, Modifier.size(13.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "发到版块的帖子是公开的，谁都能看到",
+                            color = SzjMuted, style = SzjMetaStyle,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    // 分享到动态：开关。关着的时候下面那三档不出现——
+                    // 照官网的条件渲染，因为那三档只对动态有意义。
+                    SzjPressable(onClick = { shareToDynamic = !shareToDynamic }, shape = SzjInnerShape) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(SzjInnerShape)
+                                .background(if (shareToDynamic) SzjAccentSoft else SzjCardRaised)
+                                .padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "同时分享到动态",
+                                    color = if (shareToDynamic) SzjOnAccentSoft else SzjText,
+                                    style = SzjLabelStyle,
+                                )
+                                Text(
+                                    "在你的动态里也发一条，指向这篇帖子",
+                                    color = if (shareToDynamic) SzjOnAccentSoft.copy(alpha = .75f) else SzjMuted,
+                                    style = SzjMetaStyle,
+                                )
+                            }
+                            ImageGlyph(
+                                if (shareToDynamic) R.drawable.ic_check_small else R.drawable.ic_radio_off,
+                                if (shareToDynamic) SzjOnAccentSoft else SzjMuted,
+                                Modifier.size(17.dp),
+                            )
                         }
+                    }
+                    if (shareToDynamic) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("这条动态谁能看", color = SzjText, style = SzjLabelStyle)
+                        Spacer(Modifier.height(7.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            ShizhijiaApi.PostScope.entries.forEach { s ->
+                                SzjPartChip(s.label, visibility == s) { visibility = s }
+                            }
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            "只影响这条动态。帖子本身在版块里仍然公开。",
+                            color = SzjMuted, style = SzjMetaStyle,
+                        )
                     }
                 }
             }
@@ -5385,8 +5443,11 @@ private fun ShizhijiaPublishPostScreen(
                             when (
                                 val r = ShizhijiaApi.publishPost(
                                     context, title.trim(), html, partId,
-                                    scope = visibility,
+                                    // scope 只在分享到动态时才有意义；不分享就送默认值，
+                                    // 免得留一个看着像"设了可见范围"其实没用的值。
+                                    scope = if (shareToDynamic) visibility else ShizhijiaApi.PostScope.Public,
                                     type = if (isStrategy) "2" else "1",
+                                    share = shareToDynamic,
                                 )
                             ) {
                                 is ShizhijiaApi.Res.Ok -> {

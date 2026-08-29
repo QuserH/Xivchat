@@ -1624,6 +1624,25 @@ val PhoneCardShape = RoundedCornerShape(14.dp)
 val PhoneInnerShape = RoundedCornerShape(10.dp)
 
 /**
+ * 一道发丝线。列表项之间、卡内分组之间用这个。
+ *
+ * 为什么不用 M3 的 `Divider`：它已经废弃（换成 HorizontalDivider），
+ * 而且每个调用点都要自己写 `color = PhoneLine` 和缩进——项目里数出 11 处，
+ * 缩进有 12dp / 18dp / 0 三种，同一条线在不同界面粗细起止都不一样。
+ *
+ * [indent] 是左右缩进：列表里通常缩到文字起点，让线不横穿图标那一列。
+ */
+@Composable
+fun PhoneHairlineRow(indent: androidx.compose.ui.unit.Dp = 0.dp) {
+    Box(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = indent)
+            .height(1.dp)
+            .background(PhoneLine),
+    )
+}
+
+/**
  * 卡片。**壳层以前没有这个**——石之家里所有卡都走 SzjCardSurface，
  * 出了石之家全是就地 `clip(RoundedCornerShape(x)).background(y)`
  * （壳层里数了 148 处），圆角、底色、有没有描边各写各的。
