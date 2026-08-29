@@ -164,6 +164,30 @@ object ShizhijiaApi {
         return json.toRes(extract)
     }
 
+    /**
+     * 给同包的 [ShizhijiaCosUpload] 用的两个出口。
+     *
+     * 图片上传要打的是 `/api/common/getCOSTokenI`——**base 不是 HOME_BASE**
+     * （那个是 `/api/home/`），而且返回体要自己挑字段，套不进现成的
+     * dataRes/rowsRes。所以开两个薄口子，而不是把 request/toRes 整个放开：
+     * 请求的组装（tempsuid、cookie、UA、Referer）还是只有这里知道。
+     */
+    internal suspend fun rawGet(
+        context: Context,
+        base: String,
+        path: String,
+        params: Map<String, String> = emptyMap(),
+    ): JSONObject? = request(context, base, path, params)
+
+    /** 把业务码翻成 [Res]，[extract] 返回 null 视为"响应缺字段"。 */
+    internal fun <T> resOf(json: JSONObject, extract: (JSONObject) -> T?): Res<T> =
+        when (val r = json.toRes { extract(it) }) {
+            is Res.Ok -> r.value?.let { Res.Ok(it) } ?: Res.Failed(null, "响应缺字段")
+            is Res.NeedLogin -> Res.NeedLogin
+            is Res.NeedCharacter -> Res.NeedCharacter
+            is Res.Failed -> r
+        }
+
     /** rows 数组的便捷版本；data 为 null 或没有 rows 时给空列表。 */
     private suspend fun <T> rowsRes(
         context: Context,

@@ -114,7 +114,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.quserh.eorzeaphone.R
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.runtime.mutableStateListOf
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaCosUpload
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaCareer
@@ -1353,11 +1356,15 @@ internal fun SzjPressable(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = SzjChipShape,
+    // PhonePressable 本来就支持 enabled，这个包装以前没往外露，
+    // 于是想做"禁用态"的地方只能自己在 onClick 里判断（点了没反应，也没有
+    // 按压反馈上的区别）。补上，默认值不变所以现有调用点不受影响。
+    enabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     // 实现已经提升成全局的 PhonePressable（这套手感是全模块标杆，
     // 其他模块现在向它看齐）。这里保留名字，省得改几十个调用点。
-    PhonePressable(onClick = onClick, modifier = modifier, shape = shape, content = content)
+    PhonePressable(onClick = onClick, modifier = modifier, shape = shape, enabled = enabled, content = content)
 }
 
 /** Second-level tab row inside the Community section: 帖子 / 动态 / 攻略. */
@@ -4017,9 +4024,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         SzjCommentComposer(
             hint = "说点什么…",
             onDismiss = { composerOpen = false },
-            onSend = { text, done ->
+            onSend = { text, pics, done ->
                 actionScope.launch {
-                    when (val r = ShizhijiaApi.commentPost(context, postId, text)) {
+                    when (val r = ShizhijiaApi.commentPost(context, postId, text, pics = pics)) {
                         is ShizhijiaApi.Res.Ok -> {
                             android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
                             composerOpen = false
@@ -4131,7 +4138,8 @@ private fun SzjPostActionBar(
 private fun SzjCommentComposer(
     hint: String,
     onDismiss: () -> Unit,
-    onSend: (String, () -> Unit) -> Unit,
+    /** 第二个参数是已上传好的图片 URL（逗号分隔，没图时空串）。 */
+    onSend: (String, String, () -> Unit) -> Unit,
 ) {
     // 用 TextFieldValue 而不是 String：插表情要往**光标处**插，
     // 只存 String 的话拿不到光标位置，只能往末尾拼——那样在中间打字时很别扭。
@@ -4141,6 +4149,39 @@ private fun SzjCommentComposer(
     var emojiOpen by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val maxLen = 500
+    val ctx = LocalContext.current
+    val picScope = rememberCoroutineScope()
+    // 已上传成功的图片：(本地缩略图, 远端 URL)。
+    // 选完就立刻上传，不等到点发送——发送时才传的话，人点了发送要干等，
+    // 而且传失败了内容还在手里不知道该怎么办。
+    val pics = remember { mutableStateListOf<Pair<android.graphics.Bitmap?, String>>() }
+    var uploading by remember { mutableStateOf(false) }
+    val maxPics = 9
+    val picker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        uploading = true
+        picScope.launch {
+            when (val r = ShizhijiaCosUpload.upload(ctx, uri, channel = "posts")) {
+                is ShizhijiaApi.Res.Ok -> {
+                    val thumb = runCatching {
+                        ctx.contentResolver.openInputStream(uri)?.use {
+                            android.graphics.BitmapFactory.decodeStream(it)
+                        }
+                    }.getOrNull()
+                    pics.add(thumb to r.value)
+                }
+                is ShizhijiaApi.Res.NeedLogin ->
+                    android.widget.Toast.makeText(ctx, "要先登录石之家", android.widget.Toast.LENGTH_SHORT).show()
+                is ShizhijiaApi.Res.NeedCharacter ->
+                    android.widget.Toast.makeText(ctx, "账号要先绑定角色才能传图", android.widget.Toast.LENGTH_LONG).show()
+                is ShizhijiaApi.Res.Failed ->
+                    android.widget.Toast.makeText(ctx, r.msg.ifBlank { "上传失败" }, android.widget.Toast.LENGTH_LONG).show()
+            }
+            uploading = false
+        }
+    }
     /** 往光标处插一段文本，并把光标移到插入内容之后。 */
     val insert: (String) -> Unit = { s ->
         val t = field.text
@@ -4193,8 +4234,79 @@ private fun SzjCommentComposer(
                 // 已插入的 [emoN] 在输入框里是文本，这里给一条预览让人看到实际效果，
                 // 否则打完一串 [emo12][emo3] 完全不知道发出去长什么样。
                 SzjComposerEmojiPreview(text)
+                // 已选的图。缩略图右上角一个叉可以去掉——传上去了但不想要，
+                // 总得有办法撤。
+                if (pics.isNotEmpty() || uploading) {
+                    Spacer(Modifier.height(10.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(pics.size, key = { pics[it].second }) { i ->
+                            Box {
+                                val thumb = pics[i].first
+                                if (thumb != null) {
+                                    Image(
+                                        thumb.asImageBitmap(), contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(62.dp).clip(SzjInnerShape),
+                                    )
+                                } else {
+                                    Box(Modifier.size(62.dp).clip(SzjInnerShape).background(SzjCardRaised))
+                                }
+                                Box(
+                                    Modifier.align(Alignment.TopEnd).padding(3.dp)
+                                        .size(18.dp).clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = .55f))
+                                        .clickable { pics.removeAt(i) },
+                                    contentAlignment = Alignment.Center,
+                                ) { ImageGlyph(R.drawable.ic_close, Color.White, Modifier.size(10.dp)) }
+                            }
+                        }
+                        if (uploading) {
+                            item(key = "uploading") {
+                                Box(
+                                    Modifier.size(62.dp).clip(SzjInnerShape).background(SzjCardRaised),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = SzjAccent, strokeWidth = 2.dp,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 加图。上限 9 张（和站点一致），到上限就禁用而不是消失——
+                    // 消失了人会以为功能没了。
+                    val canAddPic = pics.size < maxPics && !uploading && !sending
+                    SzjPressable(
+                        onClick = {
+                            if (pics.size >= maxPics) {
+                                android.widget.Toast.makeText(ctx, "最多 $maxPics 张", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                picker.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    )
+                                )
+                            }
+                        },
+                        shape = CircleShape,
+                        enabled = canAddPic,
+                    ) {
+                        Box(
+                            Modifier.size(34.dp).clip(CircleShape).background(SzjCardRaised),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ImageGlyph(
+                                R.drawable.ic_add,
+                                if (canAddPic) SzjMuted else SzjLine,
+                                Modifier.size(15.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
                     // 表情入口。选中态高亮，再点一下收起。
                     SzjPressable(onClick = { emojiOpen = !emojiOpen }, shape = CircleShape) {
                         Box(
@@ -4216,13 +4328,16 @@ private fun SzjCommentComposer(
                         Text("${text.length}/$maxLen", color = SzjMuted, style = SzjMetaStyle)
                     }
                     Spacer(Modifier.weight(1f))
-                    val canSend = text.isNotBlank() && !sending
+                    // 有图但没文字也不让发：接口要求 content 非空，
+                    // 空内容发出去服务端会拒，不如按钮就别亮。
+                    val canSend = text.isNotBlank() && !sending && !uploading
                     Box(
                         Modifier.size(38.dp).clip(CircleShape)
                             .background(if (canSend) SzjAccentFill else SzjCardRaised)
                             .clickable(enabled = canSend) {
                                 sending = true
-                                onSend(text.trim()) { sending = false }
+                                // 图片 URL 逗号分隔，和站点的 comment_pic 一致。
+                                onSend(text.trim(), pics.joinToString(",") { it.second }) { sending = false }
                             },
                         contentAlignment = Alignment.Center,
                     ) {
