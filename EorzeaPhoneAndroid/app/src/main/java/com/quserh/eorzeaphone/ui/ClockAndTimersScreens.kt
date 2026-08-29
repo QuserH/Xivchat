@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.BrandFill
+import com.quserh.eorzeaphone.ui.theme.BrandOnFill
+import com.quserh.eorzeaphone.ui.theme.PhoneLine
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
@@ -260,7 +262,7 @@ fun ClockScreen(state: PhoneState) {
     var detail by remember { mutableStateOf<ClockDetail?>(null) }
     BackHandler(enabled = detail != null) { detail = null }
 
-    ScreenFrame(background = Color(0xFF111117)) {
+    ScreenFrame {
         AnimatedContent(
             targetState = detail,
             modifier = Modifier.fillMaxSize(),
@@ -316,7 +318,7 @@ private fun ClockRoot(
 private fun ClockTabStrip(selected: ClockTab, onSelected: (ClockTab) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurfaceRaised).padding(3.dp)) {
         ClockTab.entries.forEach { tab ->
-            Text(tab.label, color = if (selected == tab) Color.White else PhoneMuted, fontSize = 12.sp, textAlign = TextAlign.Center,
+            Text(tab.label, color = if (selected == tab) BrandOnFill else PhoneMuted, fontSize = 12.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(if (selected == tab) BrandFill else Color.Transparent).clickable { onSelected(tab) }.padding(vertical = 8.dp))
         }
     }
@@ -351,24 +353,30 @@ private fun WorldClockTab(store: ClockStore) {
 private fun AnalogClock(hour: Int, minute: Int, second: Int, modifier: Modifier = Modifier) {
     // Canvas 的 lambda 不是 composable，读不到 PhoneAccent 那个 getter，先在外面取好。
     val accent = PhoneAccent
+    // 表盘原来假设一定是深底（盘面写死 #272731、外圈刻度指针都是白的）。
+    // 页底跟主题之后浅色模式下白指针就没了，所以这四个也从 token 取。
+    val dialFace = PhoneSurfaceRaised
+    val dialRim = PhoneLine
+    val dialTick = PhoneMuted
+    val dialHand = PhoneText
     Canvas(modifier) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.minDimension / 2f - 5.dp.toPx()
-        drawCircle(Color(0xFF272731), radius, center)
-        drawCircle(Color.White.copy(alpha = .12f), radius, center, style = Stroke(1.dp.toPx()))
+        drawCircle(dialFace, radius, center)
+        drawCircle(dialRim, radius, center, style = Stroke(1.dp.toPx()))
         repeat(12) { index ->
             val angle = Math.toRadians(index * 30.0 - 90.0)
             val outer = Offset(center.x + cos(angle).toFloat() * radius * .88f, center.y + sin(angle).toFloat() * radius * .88f)
             val inner = Offset(center.x + cos(angle).toFloat() * radius * .78f, center.y + sin(angle).toFloat() * radius * .78f)
-            drawLine(Color.White.copy(alpha = .55f), inner, outer, 1.5.dp.toPx(), StrokeCap.Round)
+            drawLine(dialTick, inner, outer, 1.5.dp.toPx(), StrokeCap.Round)
         }
         fun hand(value: Float, units: Float, length: Float, width: Float, color: Color) {
             val angle = Math.toRadians(value / units * 360.0 - 90.0)
             val end = Offset(center.x + cos(angle).toFloat() * radius * length, center.y + sin(angle).toFloat() * radius * length)
             drawLine(color, center, end, width.dp.toPx(), StrokeCap.Round)
         }
-        hand((hour % 12) + minute / 60f, 12f, .48f, 4f, Color.White)
-        hand(minute + second / 60f, 60f, .68f, 3f, Color.White)
+        hand((hour % 12) + minute / 60f, 12f, .48f, 4f, dialHand)
+        hand(minute + second / 60f, 60f, .68f, 3f, dialHand)
         hand(second.toFloat(), 60f, .76f, 1.2f, accent)
         drawCircle(accent, 3.dp.toPx(), center)
     }
@@ -446,7 +454,7 @@ private fun AlarmEditorScreen(store: ClockStore, alarm: LocalAlarm?, close: () -
                 listOf("一", "二", "三", "四", "五", "六", "日").forEachIndexed { index, day ->
                     val selected = repeat and (1 shl index) != 0
                     Box(Modifier.size(38.dp).clip(CircleShape).background(if (selected) BrandFill else PhoneSurface).clickable { repeat = repeat xor (1 shl index) }, contentAlignment = Alignment.Center) {
-                        Text(day, color = if (selected) Color.White else PhoneMuted, fontSize = 13.sp)
+                        Text(day, color = if (selected) BrandOnFill else PhoneMuted, fontSize = 13.sp)
                     }
                 }
             }
@@ -489,10 +497,12 @@ private fun StopwatchTab(store: ClockStore) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(formatStopwatch(elapsed), color = PhoneText, fontSize = 48.sp, fontWeight = FontWeight.Light, modifier = Modifier.padding(top = 44.dp))
         Row(Modifier.fillMaxWidth().padding(top = 35.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            CircleAction(if (store.stopwatchRunning) "计次" else "复位", Color(0xFF66666F), store.stopwatchRunning || elapsed > 0L) {
+            CircleAction(if (store.stopwatchRunning) "计次" else "复位", PhoneMuted, store.stopwatchRunning || elapsed > 0L) {
                 if (store.stopwatchRunning) store.lap(now) else store.resetStopwatch()
             }
-            CircleAction(if (store.stopwatchRunning) "停止" else "开始", if (store.stopwatchRunning) Color(0xFFE04444) else PhoneGreen, true) { store.toggleStopwatch(now); now = System.currentTimeMillis() }
+            // "停止"用 PhoneDanger，不再写死 #E04444。Theme.kt 里定的规矩是
+            // 同一种语义只有一个色值（当时清掉过三个各自为政的红），这是第四个。
+            CircleAction(if (store.stopwatchRunning) "停止" else "开始", if (store.stopwatchRunning) PhoneDanger else PhoneGreen, true) { store.toggleStopwatch(now); now = System.currentTimeMillis() }
         }
         if (store.laps.isNotEmpty() || store.stopwatchRunning) {
             LazyColumn(Modifier.fillMaxWidth().padding(top = 24.dp)) {
@@ -541,19 +551,20 @@ private fun CountdownTab(store: ClockStore) {
     } else {
         val fraction = if (store.timerDuration <= 0L) 0f else (remaining.toFloat() / store.timerDuration).coerceIn(0f, 1f)
         val accent = PhoneAccent   // 同上：进度弧在 Canvas 里画，颜色得先提出来
+        val trackColor = PhoneLine // 轨道原来是白色 9%，浅底上等于没有
         Column(Modifier.fillMaxSize().padding(horizontal = 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(238.dp).padding(top = 30.dp), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
                     val stroke = 8.dp.toPx()
                     val arcSize = Size(size.width - stroke, size.height - stroke)
                     val top = Offset(stroke / 2f, stroke / 2f)
-                    drawArc(Color.White.copy(alpha = .09f), -90f, 360f, false, top, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                    drawArc(trackColor, -90f, 360f, false, top, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
                     drawArc(accent, -90f, 360f * fraction, false, top, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(formatClockDuration(remaining), color = PhoneText, fontSize = 38.sp, fontWeight = FontWeight.Light); if (remaining == 0L) Text("计时结束", color = PhoneAccent) }
             }
             Row(Modifier.fillMaxWidth().padding(top = 34.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                CircleAction("取消", Color(0xFF777780), true) { store.cancelTimer() }
+                CircleAction("取消", PhoneMuted, true) { store.cancelTimer() }
                 if (remaining == 0L) CircleAction("复位", PhoneGreen, true) { store.cancelTimer() }
                 else if (store.timerPausedRemaining > 0L) CircleAction("继续", PhoneGreen, true) { store.resumeTimer(System.currentTimeMillis()); now = System.currentTimeMillis() }
                 else CircleAction("暂停", PhoneAccent, true) { store.pauseTimer(System.currentTimeMillis()); now = System.currentTimeMillis() }
@@ -580,6 +591,10 @@ fun TimersScreen(state: PhoneState) {
     val cactpot = nextWeekly(now, DayOfWeek.SATURDAY, 8)
     val ocean = oceanVoyage(now)
 
+    // 下面每条计时项各带一个颜色（重置橙、部队红、每周蓝、时尚粉、仙人彩金、
+    // 海钓青）——这些**有意不跟主题**：它们是各项自己的身份，一列里靠颜色
+    // 认出哪条是哪个。跟着主题变的话整列会变成一个色系，反而分不出来。
+    // 和活跃度三环、聊天频道色是同一个道理。
     FeatureFrame("计时器", state) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { TimerHero("每日重置", Duration.between(now, daily)) }
@@ -621,16 +636,20 @@ private data class TimerItem(val name: String, val subtitle: String, val value: 
 private fun TimerHero(title: String, remaining: Duration) {
     val seconds = remaining.seconds.coerceAtLeast(0L)
     val fraction = (1f - seconds / 86_400f).coerceIn(0f, 1f)
-    Row(Modifier.fillMaxWidth().height(154.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF183F43)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+    // 这张卡原来是写死的墨青底 + 白字 + 青色进度弧，一屏就它一块青。
+    // 现在是卡面 + 强调色圆环：这一屏其余都是卡，它靠尺寸和圆环当主角就够了。
+    val heroTrack = PhoneLine
+    val heroArc = PhoneAccent
+    Row(Modifier.fillMaxWidth().height(154.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 val stroke = 7.dp.toPx(); val inset = stroke / 2f; val arc = Size(size.width - stroke, size.height - stroke)
-                drawArc(Color.White.copy(alpha = .12f), -90f, 360f, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Round))
-                drawArc(Color(0xFF62D0BF), -90f, 360f * fraction, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(heroTrack, -90f, 360f, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(heroArc, -90f, 360f * fraction, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Round))
             }
-            Text(heroDuration(seconds), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(heroDuration(seconds), color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
-        Column(Modifier.padding(start = 20.dp)) { Text(title, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text(relative(remaining), color = Color.White.copy(alpha = .68f), fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp)) }
+        Column(Modifier.padding(start = 20.dp)) { Text(title, color = PhoneText, fontSize = 21.sp, fontWeight = FontWeight.Bold); Text(relative(remaining), color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp)) }
     }
 }
 
@@ -646,7 +665,7 @@ private fun TimerCard(rows: List<TimerItem>) {
                 Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(row.name, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(row.subtitle, color = PhoneMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Text(row.value, color = row.color, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
-            if (index < rows.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 59.dp).height(1.dp).background(Color.White.copy(alpha = .07f)))
+            if (index < rows.lastIndex) Box(Modifier.fillMaxWidth().padding(start = 59.dp).height(1.dp).background(PhoneLine))
         }
     }
 }
