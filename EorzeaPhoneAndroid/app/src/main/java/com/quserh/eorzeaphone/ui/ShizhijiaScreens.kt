@@ -124,6 +124,9 @@ import com.quserh.eorzeaphone.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+// 职业名/分组用 Wiki 的本地字典：石之家自己的 ShizhijiaJob 要现拉 recruit 接口，
+// 而且 id 是另一套字符串。WikiDicts 的 id 空间和幻化 job_ids 对得上（拿 8 篇真帖验过）。
+import com.quserh.eorzeaphone.data.wiki.WikiDicts
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaCosUpload
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
@@ -939,18 +942,32 @@ private class SzjRecruitState {
 /** Hoisted glamour feed state so it survives detail push/pop. */
 private class SzjGlamourState {
     val tab = mutableStateOf(0)        // 0=全部 1=关注
-    val sort = mutableStateOf(0)       // 0=推荐 1=最新
+    val sort = mutableStateOf(0)       // 0=推荐 1=最新 2=热门
     val items = mutableStateOf(listOf<ShizhijiaGlamourCard>())
     val loading = mutableStateOf(false)
     val page = mutableStateOf(1)
     val ended = mutableStateOf(false)
     val loadedKey = mutableStateOf("")
     val gridState = androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState()
-    // 筛选
+    // 筛选（服务端）
     val raceId = mutableStateOf(-1)
     val genderId = mutableStateOf(-1)
     val createTimeIdx = mutableStateOf(0)
     val filterOpen = mutableStateOf(false)
+    /**
+     * 职业筛（**客户端**）。-1 = 不限。
+     *
+     * 和上面三个不是一类：服务端的职业筛已经拆掉了（七个参数名都试过，
+     * 见 [ShizhijiaApi.getGlamours]），只能拿返回里的 `job_ids` 自己滤。
+     * 所以它**不进 [loadedKey]** —— 改职业不该重新拉流，只是把已有的行藏一部分。
+     */
+    val jobId = mutableStateOf(-1)
+    /** 职业面板里当前展开的定位（"坦克"…）。只影响面板长什么样，不影响结果。 */
+    val jobRole = mutableStateOf("")
+    /** 勾上＝只看专属这个职业的，把通用款也滤掉。默认不勾，理由见 [ShizhijiaGlamourCard.universalJob]。 */
+    val jobExclusive = mutableStateOf(false)
+    /** 职业筛开着时自动翻了几页。给 [SzjGlamourTab] 的自动加载兜底，别一路翻到服务端尽头。 */
+    val jobAutoPages = mutableStateOf(0)
 }
 
 // 搜索状态提升到模块根部：进详情再返回时保留关键词/类型/结果与滚动位置
@@ -5304,8 +5321,18 @@ private fun ShizhijiaPublishGlamourScreen(
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
-    // 第一张是封面（main_image），其余进 images。官网也是这个规则。
-    val pics = remember { mutableStateListOf<Pair<android.graphics.Bitmap?, String>>() }
+    // **封面和细节图分开两个槽**，照官网的表单：封面 1 张（`main_image`，必填），
+    // 细节图最多 2 张（`images`），都进详情页的图片区。
+    //
+    // 原来是一个 9 格的多选、约定"第一张算封面"。那样封面是个隐式规则：
+    // 想换封面得先删掉前面几张再按顺序重传，而且删掉第一张时封面会**静默改变**。
+    // 官网把封面单独摆一个大格子就是为了避免这件事。
+    val cover = remember { mutableStateOf<Pair<android.graphics.Bitmap?, String>?>(null) }
+    val details = remember { mutableStateListOf<Pair<android.graphics.Bitmap?, String>>() }
+    // 分享到动态。官网这个表单底部有这个开关，默认关。
+    var shareToDynamic by remember { mutableStateOf(false) }
+    // 正在传的是封面还是细节图 —— 一个 picker 两个用途，得记住回调该写哪儿。
+    var pickingCover by remember { mutableStateOf(true) }
     var uploading by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     val races = remember { mutableStateListOf<Int>() }
@@ -5313,7 +5340,10 @@ private fun ShizhijiaPublishGlamourScreen(
     // slot → 选了什么。服务端要求至少一件（实测 10003），发布时按
     // SZJ_GLAMOUR_SLOTS 的顺序拼，没选的槽补 equipment_id = -1。
     val slotPicks = remember { mutableStateMapOf<String, GlamourPick>() }
-    val maxPics = 9
+    // 弹层的开关状态提到这一层，弹层本体画在 LazyColumn 之外（见 SzjGlamourPickerHost）。
+    val pickerTarget = remember { GlamourPickerTarget() }
+    // 细节图上限。官网是封面 1 + 细节 2。
+    val maxDetails = 2
 
     // 种族/性别字典：站点的 race_ids 是 1..8，gender 1 男 2 女。
     val raceNames = remember {
@@ -5336,7 +5366,8 @@ private fun ShizhijiaPublishGlamourScreen(
                             android.graphics.BitmapFactory.decodeStream(it)
                         }
                     }.getOrNull()
-                    pics.add(thumb to r.value)
+                    if (pickingCover) cover.value = thumb to r.value
+                    else if (details.size < maxDetails) details.add(thumb to r.value)
                 }
                 else -> szjToastWriteFail(context, r, nav)
             }
@@ -5344,6 +5375,20 @@ private fun ShizhijiaPublishGlamourScreen(
         }
     }
 
+    // 两个槽共用一个 picker：记下这次点的是哪个槽再拉起相册。
+    val launchPick: (Boolean) -> Unit = { forCover ->
+        pickingCover = forCover
+        picker.launch(
+            androidx.activity.result.PickVisualMediaRequest(
+                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+            )
+        )
+    }
+
+    // 外面这层 Box 是给选择器弹层用的：弹层必须和 ScreenFrame 平级，
+    // 不能在 LazyColumn 的 item 里（那样 fillMaxSize() 量到的是 item 尺寸，
+    // 弹层就长在滚动内容底部，要往下滑才看得见）。见 GlamourPickerTarget。
+    Box(Modifier.fillMaxSize()) {
     ScreenFrame(background = SzjBg) {
         SzjHeader("发幻化", onBack = pop)
         LazyColumn(
@@ -5353,16 +5398,64 @@ private fun ShizhijiaPublishGlamourScreen(
             item(key = "pics") {
                 Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("外观图", color = SzjText, style = SzjLabelStyle)
+                        Text("封面图", color = SzjText, style = SzjLabelStyle)
                         Text(" *", color = SzjAccent, style = SzjLabelStyle)
                         Spacer(Modifier.width(6.dp))
-                        Text("第一张是封面", color = SzjMuted, style = SzjMetaStyle)
+                        Text("详情页最上面那张", color = SzjMuted, style = SzjMetaStyle)
                     }
                     Spacer(Modifier.height(8.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        items(pics.size, key = { pics[it].second }) { i ->
+                    // 封面单独一个大格子。幻化图是竖的，给 3:4 而不是正方形，
+                    // 缩略图的构图和详情页看到的一致。
+                    SzjPressable(
+                        onClick = { if (!uploading && !sending) launchPick(true) },
+                        shape = SzjInnerShape,
+                        enabled = !uploading && !sending,
+                    ) {
+                        Box(
+                            Modifier.width(126.dp).height(168.dp).clip(SzjInnerShape)
+                                .background(SzjCardRaised)
+                                .border(1.dp, SzjLine, SzjInnerShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val c = cover.value
+                            val thumb = c?.first
+                            if (thumb != null) {
+                                Image(
+                                    thumb.asImageBitmap(), contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().clip(SzjInnerShape),
+                                )
+                            } else if (uploading && pickingCover) {
+                                CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(22.dp))
+                                    Spacer(Modifier.height(5.dp))
+                                    Text("选封面", color = SzjMuted, style = SzjMetaStyle)
+                                }
+                            }
+                            if (c != null) {
+                                Box(
+                                    Modifier.align(Alignment.TopEnd).padding(4.dp)
+                                        .size(20.dp).clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = .55f))
+                                        .clickable { cover.value = null },
+                                    contentAlignment = Alignment.Center,
+                                ) { ImageGlyph(R.drawable.ic_close, Color.White, Modifier.size(11.dp)) }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("细节图", color = SzjText, style = SzjLabelStyle)
+                        Spacer(Modifier.width(6.dp))
+                        Text("最多 $maxDetails 张，可留空", color = SzjMuted, style = SzjMetaStyle)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        details.forEachIndexed { i, p ->
                             Box {
-                                val thumb = pics[i].first
+                                val thumb = p.first
                                 if (thumb != null) {
                                     Image(
                                         thumb.asImageBitmap(), contentDescription = null,
@@ -5372,48 +5465,31 @@ private fun ShizhijiaPublishGlamourScreen(
                                 } else {
                                     Box(Modifier.size(84.dp).clip(SzjInnerShape).background(SzjCardRaised))
                                 }
-                                // 封面角标：第一张就是封面，明说比让人猜好。
-                                if (i == 0) {
-                                    Text(
-                                        "封面", color = SzjOnAccent, fontSize = 9.sp,
-                                        modifier = Modifier.align(Alignment.BottomStart).padding(3.dp)
-                                            .clip(RoundedCornerShape(4.dp)).background(SzjAccentFill)
-                                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                                    )
-                                }
                                 Box(
                                     Modifier.align(Alignment.TopEnd).padding(3.dp)
                                         .size(18.dp).clip(CircleShape)
                                         .background(Color.Black.copy(alpha = .55f))
-                                        .clickable { pics.removeAt(i) },
+                                        .clickable { details.removeAt(i) },
                                     contentAlignment = Alignment.Center,
                                 ) { ImageGlyph(R.drawable.ic_close, Color.White, Modifier.size(10.dp)) }
                             }
                         }
-                        if (pics.size < maxPics) {
-                            item(key = "add") {
-                                SzjPressable(
-                                    onClick = {
-                                        picker.launch(
-                                            androidx.activity.result.PickVisualMediaRequest(
-                                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                            )
-                                        )
-                                    },
-                                    shape = SzjInnerShape,
-                                    enabled = !uploading && !sending,
+                        if (details.size < maxDetails) {
+                            SzjPressable(
+                                onClick = { if (!uploading && !sending) launchPick(false) },
+                                shape = SzjInnerShape,
+                                enabled = !uploading && !sending,
+                            ) {
+                                Box(
+                                    Modifier.size(84.dp).clip(SzjInnerShape)
+                                        .background(SzjCardRaised)
+                                        .border(1.dp, SzjLine, SzjInnerShape),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    Box(
-                                        Modifier.size(84.dp).clip(SzjInnerShape)
-                                            .background(SzjCardRaised)
-                                            .border(1.dp, SzjLine, SzjInnerShape),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        if (uploading) {
-                                            CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                                        } else {
-                                            ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(20.dp))
-                                        }
+                                    if (uploading && !pickingCover) {
+                                        CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                    } else {
+                                        ImageGlyph(R.drawable.ic_add, SzjMuted, Modifier.size(20.dp))
                                     }
                                 }
                             }
@@ -5472,8 +5548,42 @@ private fun ShizhijiaPublishGlamourScreen(
                 }
             }
             item(key = "gear") {
-                SzjGlamourSlotSection(picks = slotPicks) { slot, pick ->
+                SzjGlamourSlotSection(picks = slotPicks, target = pickerTarget) { slot, pick ->
                     if (pick == null) slotPicks.remove(slot) else slotPicks[slot] = pick
+                }
+            }
+            item(key = "share") {
+                // 官网这个表单底部有这个开关（`is_share`），默认关。
+                // **和发帖那个不一样**：幻化本身就是公开的（`scope` 官网写死 "1"），
+                // 所以这里不跟一组可见范围单选 —— 那三档只对动态有意义，
+                // 而幻化的动态可见范围站点没给选。
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    SzjPressable(onClick = { shareToDynamic = !shareToDynamic }, shape = SzjInnerShape) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(SzjInnerShape)
+                                .background(if (shareToDynamic) SzjAccentSoft else SzjCardRaised)
+                                .padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "同时分享到动态",
+                                    color = if (shareToDynamic) SzjOnAccentSoft else SzjText,
+                                    style = SzjLabelStyle,
+                                )
+                                Text(
+                                    "在你的动态里也发一条，指向这套幻化",
+                                    color = if (shareToDynamic) SzjOnAccentSoft.copy(alpha = .75f) else SzjMuted,
+                                    style = SzjMetaStyle,
+                                )
+                            }
+                            ImageGlyph(
+                                if (shareToDynamic) R.drawable.ic_check_small else R.drawable.ic_radio_off,
+                                if (shareToDynamic) SzjOnAccentSoft else SzjMuted,
+                                Modifier.size(17.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -5486,12 +5596,12 @@ private fun ShizhijiaPublishGlamourScreen(
             //
             // `slotPicks.isNotEmpty()` 对应「至少需要上传一件有效装备」，
             // 这条是真机实测出来的，不是推断（原来以为全空槽也能发）。
-            val canSend = title.isNotBlank() && pics.isNotEmpty() &&
+            val canSend = title.isNotBlank() && cover.value != null &&
                 races.isNotEmpty() && genders.isNotEmpty() &&
                 slotPicks.isNotEmpty() && !sending && !uploading
             // 缺什么直接说，别让人自己对照星号找。
             val missing = buildList {
-                if (pics.isEmpty()) add("外观图")
+                if (cover.value == null) add("封面图")
                 if (title.isBlank()) add("标题")
                 if (races.isEmpty()) add("种族")
                 if (genders.isEmpty()) add("性别")
@@ -5512,10 +5622,11 @@ private fun ShizhijiaPublishGlamourScreen(
                             context,
                             title = title.trim(),
                             desc = desc.trim(),
-                            mainImage = pics.first().second,
-                            images = pics.drop(1).joinToString(",") { it.second },
+                            mainImage = cover.value?.second.orEmpty(),
+                            images = details.joinToString(",") { it.second },
                             raceIds = races.toList(),
                             genderIds = genders.toList(),
+                            share = shareToDynamic,
                             // 按 SZJ_GLAMOUR_SLOTS 的顺序拼，没选的槽补 -1。
                             // 顺序由 API 那边负责，这里只给选了的。
                             slots = slotPicks.map { (slot, pick) ->
@@ -5559,6 +5670,11 @@ private fun ShizhijiaPublishGlamourScreen(
                 }
             }
         }
+    }
+    // 屏幕层：从屏幕底部升起，盖住整屏（含头部和发布按钮）。
+    SzjGlamourPickerHost(picks = slotPicks, target = pickerTarget) { slot, pick ->
+        if (pick == null) slotPicks.remove(slot) else slotPicks[slot] = pick
+    }
     }
 }
 
@@ -8999,6 +9115,24 @@ internal val SzjSlotLabels = mapOf(
 internal val SzjLeftSlots = listOf("MAIN_HAND", "HEAD", "BODY", "GLOVES", "LEGS", "FEET", "GLASSES")
 internal val SzjRightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT", "ORNAMENT")
 
+/**
+ * 分享卡的搭配清单**按类别分组**，不用上面那两列。
+ *
+ * 上面 `SzjLeftSlots`/`SzjRightSlots` 是详情页用的左右两列（对应人物立绘两侧
+ * 的装备位），在**并排两列**的清单里逐行配对会配出
+ * `头部 | 耳坠`、`上衣 | 项链`、`腿部 | 戒指` —— 防具和首饰交替出现，
+ * 读的人得在两种类别之间来回跳。
+ *
+ * 分享卡的清单是给人照着抄搭配的，所以按**武器 / 防具 / 首饰**分段，
+ * 和游戏自己的装备栏一致。段内仍是两列（横向空间只够两列）。
+ */
+private val SzjShareGroups: List<Pair<String, List<String>>> = listOf(
+    "武器" to listOf("MAIN_HAND", "OFF_HAND"),
+    "防具" to listOf("HEAD", "BODY", "GLOVES", "LEGS", "FEET"),
+    "首饰" to listOf("EARS", "NECK", "WRISTS", "FINGER_LEFT", "FINGER_RIGHT"),
+    "配饰" to listOf("GLASSES", "ORNAMENT"),
+)
+
 /** 染剂色字符串（"#RRGGBB"）转 Color，解不出来给 null。 */
 private fun szjDyeColor(raw: String): Color? =
     raw.takeIf { it.startsWith("#") }
@@ -9139,8 +9273,15 @@ private fun SzjGlamourShareCard(
                             showPlaceholder = true,
                         )
                     }
+                    // **不写死高度。** 原来是 `height(610.dp)`（照左边那张图的高度），
+                    // 但右边要装标题 + 作者 + 种族条 + 分隔线 + 7 行槽位，
+                    // 任何一个部件名折成两行就超出 610dp —— Column 不滚动，
+                    // **超出的部分直接被裁掉**，最后一行（面部配饰）就没了。
+                    // 改成让内容决定高度：整卡跟着变高。这张图是离屏栅格化的，
+                    // 高一点没有代价，被裁掉信息才有代价。
                     Column(
-                        Modifier.weight(1f).height(610.dp)
+                        Modifier.weight(1f)
+                            .heightIn(min = 610.dp)
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                     ) {
                     Text(
@@ -9176,32 +9317,43 @@ private fun SzjGlamourShareCard(
                     // （那两个不在 equips 里，是 ortInfo 单独给的）。
                     // 现在和详情页共用槽位字典，按左右两列的固定顺序走，
                     // 只画有内容的槽——空槽在分享图里没有意义。
-                    val rows = remember(d.id) {
-                        SzjLeftSlots.zip(SzjRightSlots).map { (l, r) -> l to r }
-                    }
-                    val filled = remember(d.id) {
-                        (SzjLeftSlots + SzjRightSlots).any { slot ->
-                            d.equips.any { it.slot == slot && it.name.isNotBlank() } ||
-                                (slot == "GLASSES" && d.glassesName.isNotBlank()) ||
-                                (slot == "ORNAMENT" && d.ornamentName.isNotBlank())
+                    // **按类别分段**（武器/防具/首饰/配饰），见 SzjShareGroups。
+                    // 原来是拿详情页的左右两列逐行配对，配出来是
+                    // `头部 | 耳坠`、`上衣 | 项链` —— 防具和首饰交替，
+                    // 照着抄搭配的人得在两种类别之间来回跳。
+                    val groups = remember(d.id) {
+                        SzjShareGroups.mapNotNull { (title, slots) ->
+                            val items = slots.mapNotNull { s -> szjShareSlot(d, s)?.let { s to it } }
+                            if (items.isEmpty()) null else title to items
                         }
                     }
-                    if (filled) {
+                    if (groups.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
-                        Spacer(Modifier.height(10.dp))
-                        rows.forEach { (l, r) ->
-                            val le = szjShareSlot(d, l)
-                            val re = szjShareSlot(d, r)
-                            if (le == null && re == null) return@forEach
-                            Row(
-                                Modifier.fillMaxWidth().padding(bottom = 7.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                listOf(l to le, r to re).forEach { (slot, item) ->
-                                    Box(Modifier.weight(1f)) {
-                                        if (item != null) SzjShareSlotCell(slot, item)
+                        groups.forEach { (title, items) ->
+                            Spacer(Modifier.height(9.dp))
+                            Text(
+                                title,
+                                color = SzjMuted,
+                                fontSize = 9.sp,
+                                letterSpacing = 1.2.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Spacer(Modifier.height(5.dp))
+                            // 段内两列。**按有内容的槽两两成行**，不是按固定位置——
+                            // 固定位置在段内会留空洞（比如只有戒指左没有戒指右）。
+                            items.chunked(2).forEach { pair ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    pair.forEach { (slot, item) ->
+                                        Box(Modifier.weight(1f)) {
+                                            SzjShareSlotCell(slot, item)
+                                        }
                                     }
+                                    // 单数时补一个空位，否则那一个会被拉成整行宽
+                                    if (pair.size == 1) Box(Modifier.weight(1f)) {}
                                 }
                             }
                         }
@@ -9420,40 +9572,71 @@ private fun ShizhijiaGlamourTab(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var tab by gs.tab        // 0=全部 1=关注
-    var sort by gs.sort      // 0=推荐 1=最新
+    var sort by gs.sort      // 0=推荐 1=最新 2=热门
     var items by gs.items
     var loading by gs.loading
     var page by gs.page
     var ended by gs.ended
     val gridState = gs.gridState
-    // 筛选: 种族 / 性别 / 发布时间
+    // 筛选: 种族 / 性别 / 发布时间（服务端）
     var raceId by gs.raceId
     var genderId by gs.genderId
     var createTimeIdx by gs.createTimeIdx
     var filterOpen by gs.filterOpen
+    // 职业筛（客户端，见 SzjGlamourState.jobId）
+    var jobId by gs.jobId
+    var jobExclusive by gs.jobExclusive
     // 筛选面板盖在幻化流上面：返回键先收面板，不能一路退出石之家。
     BackHandler(enabled = filterOpen) { filterOpen = false }
     val createTimeValues = listOf("all", "last24H", "lastWeek", "lastMonth")
+    // order 只认这三个，别的静默回退到 latest（详见 ShizhijiaApi.getGlamours）。
+    val orderValues = listOf("", "latest", "hottest")
 
     fun load(reset: Boolean) {
         if (loading) return
-        if (reset) { page = 1; ended = false; items = emptyList() }
+        if (reset) { page = 1; ended = false; items = emptyList(); gs.jobAutoPages.value = 0 }
         loading = true
         scope.launch {
             val next = if (tab == 1) ShizhijiaApi.getFollowGlamours(context, page)
-            else ShizhijiaApi.getGlamours(context, page, order = if (sort == 1) "time" else "", raceId = raceId, genderId = genderId, createTime = createTimeValues[createTimeIdx])
-            items = items + next
+            else ShizhijiaApi.getGlamours(context, page, order = orderValues.getOrElse(sort) { "" }, raceId = raceId, genderId = genderId, createTime = createTimeValues[createTimeIdx])
+            // 翻页可能撞上重复行（推荐流尤其）——按 id 去重，否则 items(key=id) 会崩。
+            val seen = items.mapTo(mutableSetOf()) { it.id }
+            items = items + next.filter { seen.add(it.id) }
             if (next.isEmpty()) ended = true else page += 1
             loading = false
         }
     }
     // Reload only when the channel/filters changed; returning from a detail
     // page keeps the loaded feed, scroll position and active tab.
+    // jobId / jobExclusive 故意不在这里：它们是客户端筛，重拉一遍没有意义。
     LaunchedEffect(tab, sort, raceId, genderId, createTimeIdx) {
         val key = "$tab-$sort-$raceId-$genderId-$createTimeIdx"
         if (gs.loadedKey.value != key || items.isEmpty()) {
             gs.loadedKey.value = key
             load(reset = true)
+        }
+    }
+
+    // 职业筛在本地过一遍。通用款默认留着 —— 最新流里约七成帖没有 job_ids，
+    // 那是"作者没选主手"，不是"数据缺失"，把它们滤掉等于筛完只剩零星几条。
+    val shown = remember(items, jobId, jobExclusive) {
+        if (jobId < 0) items
+        else items.filter { if (it.universalJob) !jobExclusive else jobId in it.jobIds }
+    }
+    val hiddenByJob = items.size - shown.size
+    // 整页被职业筛滤空时主动再拉一页 —— 和推荐流的"这一页都被你屏蔽了"
+    // 走同一个套路（见本文件 2200 行附近）：列表空着就滚不动，
+    // 滚动触发的分页永远不会被叫到。
+    //
+    // 但这里**加了上限**，那边没有：屏蔽版块最多滤掉几个版块，
+    // 而勾上「只看专属」之后实测最新流 22 个职业里有 9 个连一条都凑不出
+    // （绝枪战士、学者、贤者…）。不封顶就会从头翻到尽头。
+    LaunchedEffect(shown.size, items.size, loading, jobId) {
+        if (shown.isNotEmpty() || items.isEmpty()) return@LaunchedEffect
+        if (loading || ended || jobId == -1) return@LaunchedEffect
+        if (gs.jobAutoPages.value < 5) {
+            gs.jobAutoPages.value += 1
+            load(reset = false)
         }
     }
 
@@ -9481,7 +9664,7 @@ private fun ShizhijiaGlamourTab(
                             SzjSubTab("关注", tab == 1) { tab = 1 }
                             Spacer(Modifier.weight(1f))
                             // 有筛选生效时按钮变实心，让"我筛过了"这件事有痕迹。
-                            val filtered = raceId != -1 || genderId != -1 || createTimeIdx != 0
+                            val filtered = raceId != -1 || genderId != -1 || createTimeIdx != 0 || jobId != -1
                             SzjPressable(onClick = { filterOpen = !filterOpen }, shape = SzjChipShape) {
                                 Row(
                                     Modifier.clip(SzjChipShape)
@@ -9515,9 +9698,37 @@ private fun ShizhijiaGlamourTab(
                                 }
                                 Spacer(Modifier.weight(1f))
                                 Row(Modifier.clip(SzjChipShape).background(SzjCardRaised)) {
-                                    listOf("推荐" to 0, "最新" to 1).forEach { (label, id) ->
+                                    // 「热门」是官网有、我们一直没接的第三种序（order=hottest）。
+                                    // 站点只有这三种，没有"按点赞排"——那些参数名全部回退到最新。
+                                    listOf("推荐" to 0, "最新" to 1, "热门" to 2).forEach { (label, id) ->
                                         SzjSmallOption(label, sort == id) { if (sort != id) sort = id }
                                     }
+                                }
+                            }
+                        }
+                        // 职业筛是本地筛，用户看到的条数会比服务端给的少，这里交代一句，
+                        // 否则"我明明滑了很久却只有几张"看起来像 bug。
+                        if (tab == 0 && jobId != -1) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    buildString {
+                                        append(WikiDicts.jobName(jobId))
+                                        if (jobExclusive) append("专属")
+                                        append(" ${shown.size} 条")
+                                        if (hiddenByJob > 0) append("，隐去 $hiddenByJob 条")
+                                    },
+                                    color = SzjMuted, fontSize = 11.sp,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                SzjPressable(onClick = { jobId = -1; gs.jobRole.value = ""; jobExclusive = false }, shape = SzjChipShape) {
+                                    Text(
+                                        "清除", color = SzjMuted, fontSize = 11.sp,
+                                        modifier = Modifier.clip(SzjChipShape).background(SzjCardRaised)
+                                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                                    )
                                 }
                             }
                         }
@@ -9545,18 +9756,76 @@ private fun ShizhijiaGlamourTab(
                         // 不跨列——跨列会把两列的卡片一起压下去。
                         item(key = "glamour-banner") { SzjGlamourBannerCard() }
                     }
-                    items(items.size, key = { items[it].id }) { idx ->
-                        SzjRise(idx) { SzjGlamourCardItem(items[idx], nav) }
+                    items(shown.size, key = { shown[it].id }) { idx ->
+                        SzjRise(idx) { SzjGlamourCardItem(shown[idx], nav) }
+                    }
+                    // 职业筛把这一页全滤掉了，但服务端还有货：给一个手动的出口，
+                    // 不自动无限翻（窄职业可能要翻几十页才凑够一屏）。
+                    if (jobId != -1 && !ended && !loading && gs.jobAutoPages.value >= 5) {
+                        item(key = "glamour-job-more", span = fullLine) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    if (shown.isEmpty()) "翻了 ${items.size} 条都不是这个职业的"
+                                    else "这个职业的不多，继续往后找？",
+                                    color = SzjMuted, fontSize = 12.sp,
+                                )
+                                // 新帖大多没标职业，老帖标得全（最新流里带 job_ids 的约三成，
+                                // 热门流里九成以上）。所以筛不到东西时，指路去热门比干等有用。
+                                if (sort != 2) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "「热门」里标了职业的帖子多得多",
+                                        color = SzjMuted, fontSize = 10.sp,
+                                    )
+                                }
+                                Spacer(Modifier.height(9.dp))
+                                SzjPressable(
+                                    onClick = { gs.jobAutoPages.value = 0; load(reset = false) },
+                                    shape = SzjChipShape,
+                                ) {
+                                    Text(
+                                        "再找 5 页", color = SzjOnAccent, style = SzjLabelStyle,
+                                        modifier = Modifier.clip(SzjChipShape).background(SzjAccentFill)
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    )
+                                }
+                                if (sort != 2) {
+                                    Spacer(Modifier.height(7.dp))
+                                    SzjPressable(onClick = { sort = 2 }, shape = SzjChipShape) {
+                                        Text(
+                                            "换成热门", color = SzjMuted, fontSize = 11.sp,
+                                            modifier = Modifier.clip(SzjChipShape)
+                                                .border(1.dp, SzjHairline, SzjChipShape)
+                                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            // 滚动到底自动加载下一页
+            // 滚动到底自动加载下一页。
+            // 判定用 shown（画出来的），不是 items —— 职业筛开着时 items 有一堆
+            // 但屏幕上没几张，拿 items 判会永远不触发。
+            //
             val nearEnd by remember { derivedStateOf {
                 val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                items.isNotEmpty() && last >= items.size - 3
+                shown.isNotEmpty() && last >= shown.size - 3
             } }
-            LaunchedEffect(nearEnd, loading, ended) {
-                if (nearEnd && !loading && !ended) load(reset = false)
+            LaunchedEffect(nearEnd, loading, ended, jobId) {
+                if (!nearEnd || loading || ended) return@LaunchedEffect
+                // 没开职业筛就照常翻。开着的话记个数：滑到底也算一轮，
+                // 和上面"整页被滤空"共用同一个 5 轮上限，
+                // 否则冷门职业会一路把整个流翻到尽头。
+                if (jobId == -1) { load(reset = false); return@LaunchedEffect }
+                if (gs.jobAutoPages.value < 5) {
+                    gs.jobAutoPages.value += 1
+                    load(reset = false)
+                }
             }
         }
         // 筛选面板: 从顶部滑下, 点击面板外区域自动收起。
@@ -9590,10 +9859,22 @@ private fun ShizhijiaGlamourTab(
                     SzjFilterSection("性别", listOf("全部" to -1, "男性" to 1, "女性" to 2), genderId) { genderId = it }
                     Spacer(Modifier.height(14.dp))
                     SzjFilterSection("发布时间", listOf("全部" to 0, "24小时内" to 1, "最近一周" to 2, "最近一个月" to 3), createTimeIdx) { createTimeIdx = it }
+                    Spacer(Modifier.height(14.dp))
+                    SzjGlamourJobFilter(
+                        jobId = jobId,
+                        role = gs.jobRole.value,
+                        exclusive = jobExclusive,
+                        onRole = { gs.jobRole.value = it },
+                        onJob = { jobId = it },
+                        onExclusive = { jobExclusive = it },
+                    )
                     Spacer(Modifier.height(18.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         SzjPressable(
-                            onClick = { raceId = -1; genderId = -1; createTimeIdx = 0 },
+                            onClick = {
+                                raceId = -1; genderId = -1; createTimeIdx = 0
+                                jobId = -1; gs.jobRole.value = ""; jobExclusive = false
+                            },
                             modifier = Modifier.weight(1f),
                             shape = SzjInnerShape,
                         ) {
@@ -9602,11 +9883,11 @@ private fun ShizhijiaGlamourTab(
                                     .border(1.dp, SzjHairline, SzjInnerShape).padding(vertical = 11.dp))
                         }
                         SzjPressable(
-                            onClick = {
-                                filterOpen = false
-                                gs.loadedKey.value = ""
-                                load(reset = true)
-                            },
+                            // 只收面板，不强制重拉：chip 是即时改状态的，
+                            // 种族/性别/时间一改上面那个 LaunchedEffect 就已经重拉过了。
+                            // 原来这里清 loadedKey 再 load(reset=true)，等于**又拉一遍**；
+                            // 加了客户端职业筛之后更明显 —— 只动职业也会白拉一整趟。
+                            onClick = { filterOpen = false },
                             modifier = Modifier.weight(1f),
                             shape = SzjInnerShape,
                         ) {
@@ -9647,6 +9928,102 @@ private fun SzjFilterSection(label: String, options: List<Pair<String, Int>>, se
         }
     }
 }
+/**
+ * 幻化筛选面板里的职业那一节。**两级**：先点定位，再点定位下的职业。
+ *
+ * 为什么不平铺：可筛职业 33 个，[SzjFilterSection] 一行 4 个要铺 9 行，
+ * 把面板里其余三组条件全挤出屏幕（Wiki 的筛选面板踩过同一个坑，
+ * 结论写在 [WikiDicts.jobRoles] 的注释里，这里照用同一套分组）。
+ *
+ * 「只看专属」那个开关只在选了职业之后出现 —— 没选职业时它没有意义。
+ */
+@Composable
+private fun SzjGlamourJobFilter(
+    jobId: Int,
+    role: String,
+    exclusive: Boolean,
+    onRole: (String) -> Unit,
+    onJob: (Int) -> Unit,
+    onExclusive: (Boolean) -> Unit,
+) {
+    // 从别处（顶栏"清除"）改了 jobId 时，面板要能把定位回填出来。
+    val shownRole = role.ifEmpty { if (jobId >= 0) WikiDicts.roleOfJob(jobId) else "" }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("职业", color = SzjText, style = SzjLabelStyle)
+            Spacer(Modifier.width(7.dp))
+            // 这一条是为了不让人以为"筛出来的就是全站结果"。
+            Text("本地筛", color = SzjMuted, fontSize = 10.sp)
+        }
+        Spacer(Modifier.height(9.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            SzjFilterChip("不限", jobId == -1 && shownRole.isEmpty()) { onRole(""); onJob(-1) }
+            WikiDicts.jobRoles.take(3).forEach { (name, _) ->
+                SzjFilterChip(name, shownRole == name) { onRole(name) }
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            WikiDicts.jobRoles.drop(3).take(4).forEach { (name, _) ->
+                SzjFilterChip(name, shownRole == name) { onRole(name) }
+            }
+        }
+        if (shownRole.isNotEmpty()) {
+            Spacer(Modifier.height(9.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                WikiDicts.jobsOfRole(shownRole).chunked(4).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        row.forEach { (id, name) ->
+                            SzjFilterChip(name, jobId == id) { onJob(if (jobId == id) -1 else id) }
+                        }
+                    }
+                }
+            }
+        }
+        if (jobId >= 0) {
+            Spacer(Modifier.height(9.dp))
+            SzjPressable(onClick = { onExclusive(!exclusive) }, shape = SzjChipShape) {
+                Row(
+                    Modifier.clip(SzjChipShape)
+                        .background(if (exclusive) SzjAccent else SzjCardRaised)
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "只看专属（不含通用款）",
+                        fontSize = 12.sp,
+                        fontWeight = if (exclusive) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (exclusive) SzjOnAccent else SzjMuted,
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            // 这句是实测结论，不是猜的：最新流 72 行里 50 行没有 job_ids，
+            // 抽 5 篇查详情，5 篇的主手都是空的。
+            Text(
+                "没选主手的幻化算通用款，谁都能穿；最新的帖子里大多是这种。",
+                color = SzjMuted, fontSize = 10.sp, lineHeight = 14.sp,
+            )
+        }
+    }
+}
+
+/** 筛选面板里的一颗 chip。抽出来是因为职业那一节要两级复用同一个样子。 */
+@Composable
+private fun SzjFilterChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val bg by animateColorAsState(if (on) SzjAccent else SzjCardRaised, tween(200), label = "szjFilterBg")
+    val fg by animateColorAsState(if (on) SzjOnAccent else SzjMuted, tween(200), label = "szjFilterFg")
+    SzjPressable(onClick = onClick, shape = SzjChipShape) {
+        Text(
+            label, fontSize = 12.sp,
+            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+            color = fg,
+            modifier = Modifier.clip(SzjChipShape).background(bg)
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+        )
+    }
+}
+
 /**
  * 幻化封面：先按（缓存的）真实宽高比占位，图片再慢慢加载填充。
  * 这样瀑布流的高度一开始就是正确的，快速滑动也不会因为图片加载晚而重排跳动。

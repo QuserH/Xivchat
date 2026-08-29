@@ -354,7 +354,35 @@ data class ShizhijiaGlamourCard(
      * 其他列表不带这个字段，默认 true。
      */
     val valid: Boolean = true,
+    /**
+     * 这套幻化适用的职业 id，**空表示作者没限定**。见 [universalJob]。
+     *
+     * 和详情里的 `job_ids` **不是一个形状**：列表给的是纯 int 数组
+     * （`[25,27,35,36,42,7,26]`），详情给的是 `{id,name}` 对象数组 ——
+     * 所以 [ShizhijiaGlamourDetail] 那边不能套用这里的解析，反之亦然。
+     *
+     * id 空间和 [com.quserh.eorzeaphone.data.wiki.WikiDicts.jobName] 完全一致
+     * （拿 8 篇真帖对过主手：不知火→[30] 忍者、改良型圣堂潜行双牙→[41] 蝰蛇剑士、
+     * 剑→[1,19] 剑术师+骑士 —— 注意**含基础职业**，筛的时候别只看进阶职业）。
+     */
+    val jobIds: List<Int> = emptyList(),
 ) {
+    /**
+     * 作者没限定职业 —— 任何职业都能穿。
+     *
+     * 两种都算通用，实测的依据不一样：
+     * - **没有 `job_ids`**：站点现在的发布流程不再算职业，取样 5 篇全部
+     *   「详情里 MAIN_HAND 是空的」。用户说的就是这条：没主手就是通用。
+     *   最新流里约七成是这种，**所以职业筛必须默认带上通用款**，
+     *   否则一筛就把当天的新帖几乎全滤掉。
+     * - **`job_ids` 有 42 项**：2018-19 年的老帖，那时作者能手动勾职业，
+     *   有人把 42 个全勾上（取样 4 篇里 2 篇其实有主手），
+     *   等于自己声明"谁都能穿"。
+     *
+     * 反过来，窄表一定是有主手的（取样 4 篇 4 篇都有）。
+     */
+    val universalJob: Boolean get() = jobIds.isEmpty() || jobIds.size >= 42
+
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaGlamourCard = ShizhijiaGlamourCard(
             id = o.optString("id"),
@@ -366,7 +394,19 @@ data class ShizhijiaGlamourCard(
             characterName = o.optString("character_name"),
             areaName = o.optString("area_name"),
             groupName = o.optString("group_name"),
+            jobIds = intArray(o, "job_ids"),
         )
+
+        /** 纯 int 数组字段。缺字段/null/空数组都回空表。 */
+        private fun intArray(o: JSONObject, key: String): List<Int> {
+            val a = o.optJSONArray(key) ?: return emptyList()
+            return buildList(a.length()) {
+                for (i in 0 until a.length()) {
+                    // 站点偶尔把 id 发成字符串，optInt 两种都吃。
+                    a.optInt(i, -1).takeIf { it >= 0 }?.let { add(it) }
+                }
+            }
+        }
 
         fun fromArray(arr: JSONArray): List<ShizhijiaGlamourCard> =
             buildList(arr.length()) { for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(fromJson(it)) } }

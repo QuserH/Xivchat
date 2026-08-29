@@ -11,6 +11,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -75,7 +80,9 @@ import com.quserh.eorzeaphone.data.wiki.WikiItem
  */
 
 /** 一个幻化槽的静态信息。[categoryId] 为 0 表示这个槽按职业筛（只有主手）。 */
-private data class GlamourSlotMeta(
+// internal 而不是 private：GlamourPickerTarget 的字段类型是它，
+// 而那个类要被发幻化屏 remember 住（弹层提到屏幕层了）。
+internal data class GlamourSlotMeta(
     /** 服务端的槽位标识，必须和 `ShizhijiaApi.SZJ_GLAMOUR_SLOTS` 里的字面量一致。 */
     val slot: String,
     val label: String,
@@ -224,10 +231,25 @@ internal data class GlamourPick(
 }
 
 /**
+ * 哪个槽正在开选择器。**由发幻化屏持有，不在这一节里面。**
+ *
+ * 为什么提上去：弹层原来渲染在 [SzjGlamourSlotSection] 内部，而这一节是
+ * 发幻化屏那个 `LazyColumn` 的一个 item —— **`fillMaxSize()` 在 lazy item 里
+ * 量到的是那个 item 的尺寸，不是屏幕**。结果弹层长在滚动内容的底部，
+ * 要往下滑才看得见，而不是从屏幕底部升起。
+ */
+internal class GlamourPickerTarget {
+    var equip by mutableStateOf<GlamourSlotMeta?>(null)
+    var dye by mutableStateOf<GlamourSlotMeta?>(null)
+}
+
+/**
  * 发幻化屏里的「装备」那一节。12 个槽，点一个开选择器。
  *
  * [picks] 是 slot → 选择，调用方持有（`mutableStateMapOf`），
  * 因为发布时要按 `ShizhijiaApi.SZJ_GLAMOUR_SLOTS` 的顺序拼。
+ *
+ * [target] 也是调用方持有的，配合 [SzjGlamourPickerHost] 在**屏幕层**画弹层。
  *
  * **这里不能用 LazyVerticalGrid** —— 这一节是发幻化屏那个 `LazyColumn`
  * 的一个 item，同方向嵌套会崩。12 个格子是定数，手动分行就够。
@@ -235,11 +257,9 @@ internal data class GlamourPick(
 @Composable
 internal fun SzjGlamourSlotSection(
     picks: Map<String, GlamourPick>,
+    target: GlamourPickerTarget,
     onPick: (String, GlamourPick?) -> Unit,
 ) {
-    var editing by remember { mutableStateOf<GlamourSlotMeta?>(null) }
-    var dyeing by remember { mutableStateOf<GlamourSlotMeta?>(null) }
-
     Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("装备", color = SzjText, style = SzjLabelStyle)
@@ -263,8 +283,8 @@ internal fun SzjGlamourSlotSection(
                         SzjGlamourSlotCell(
                             meta = meta,
                             pick = picks[meta.slot],
-                            onClick = { editing = meta },
-                            onDye = { dyeing = meta },
+                            onClick = { target.equip = meta },
+                            onDye = { target.dye = meta },
                             onClear = { onPick(meta.slot, null) },
                         )
                     }
@@ -274,29 +294,41 @@ internal fun SzjGlamourSlotSection(
             }
         }
     }
+}
 
-    editing?.let { meta ->
+/**
+ * 两个选择器弹层的宿主。**必须放在屏幕层**（发幻化屏的 `Box` 里、
+ * `LazyColumn` 之外），不能放在 [SzjGlamourSlotSection] 内部 ——
+ * 理由见 [GlamourPickerTarget]。
+ */
+@Composable
+internal fun SzjGlamourPickerHost(
+    picks: Map<String, GlamourPick>,
+    target: GlamourPickerTarget,
+    onPick: (String, GlamourPick?) -> Unit,
+) {
+    target.equip?.let { meta ->
         SzjEquipPickerSheet(
             meta = meta,
-            onClose = { editing = null },
+            onClose = { target.equip = null },
             onPicked = { item ->
                 // 换装备就把染色清掉：新装备的孔数可能不一样，
                 // 留着旧染色会出现「2 个染色配 0 孔装备」这种发不出去的组合。
                 onPick(meta.slot, GlamourPick(item))
-                editing = null
+                target.equip = null
             },
         )
     }
-    dyeing?.let { meta ->
+    target.dye?.let { meta ->
         val pick = picks[meta.slot]
         if (pick == null) {
-            dyeing = null
+            target.dye = null
         } else {
             SzjDyePickerSheet(
                 slotLabel = meta.label,
                 holes = pick.item.dye,
                 dyes = pick.dyes,
-                onClose = { dyeing = null },
+                onClose = { target.dye = null },
                 onChange = { onPick(meta.slot, pick.copy(dyes = it)) },
             )
         }
@@ -693,6 +725,10 @@ private fun SzjDyeCell(sw: DyeSwatch, selected: Boolean, onClick: () -> Unit) {
  * [content] 收到的 `Modifier` 已经带了 `weight(1f)` ——
  * 在 `Column` 里必须用 weight 而不是 `fillMaxSize()`，
  * 否则会吃光高度、把上面的搜索框和标题压成 0 高。
+ *
+ * **自己让系统栏和键盘**：它画在 `ScreenFrame` 外面（屏幕层），
+ * 拿不到 `ScreenFrame` 消费掉的那两个 inset。
+ * 键盘那条是必需的 —— 这一层里有搜索框。
  */
 @Composable
 private fun SzjPickerSheet(
@@ -706,6 +742,7 @@ private fun SzjPickerSheet(
     Box(
         // 和 SzjSheet 同一个遮罩值。**不抽成共享 token** ——
         // 那边注释里写清了理由：模态遮罩和地图文字底衬同值不同义。
+        // 遮罩铺满整屏（含状态栏），所以不在这一层让 inset。
         Modifier.fillMaxSize().background(Color(0x8C000000))
             .pointerInput(Unit) { detectTapGestures { onClose() } },
         contentAlignment = Alignment.BottomCenter,
@@ -715,6 +752,9 @@ private fun SzjPickerSheet(
                 .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
                 .background(SzjBg)
                 .clickable(interactionSource = noRipple, indication = null) { }
+                // 导航栏和键盘取每边较大值：键盘起来时让键盘（它更高），
+                // 没键盘时让导航栏。union 而不是各让一次，否则会多让一条。
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {

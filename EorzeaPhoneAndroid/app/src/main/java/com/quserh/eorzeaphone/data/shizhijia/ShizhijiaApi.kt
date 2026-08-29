@@ -1407,10 +1407,31 @@ object ShizhijiaApi {
     }
 
     /**
-     * Glamour feed (glamour/glamoursList). order="" = 推荐 (hot_score),
-     * "time" = 最新. Requires login.
+     * Glamour feed (glamour/glamoursList). Requires login.
+     *
+     * `order` **只认三个值**，别的一律静默回退到 `latest`（比 id 序列实测：
+     * `time` / `new` / `create_time` / `createTime` / `id` / `desc` 六个
+     * 都和 `latest` 返回一模一样的序列）：
+     * - `""` —— 推荐。服务端自己挑，和热门、最新都不同序
+     * - `"latest"` —— 最新。这一路 `hot_score` 全是 `"0.0000"`
+     * - `"hottest"` —— 热门。按 `hot_score` 降序（实测单调不增，11 处真跌），
+     *   捞的是 2018-2023 年的老帖；`hot_score ≈ 1.23~1.29 × likes`，
+     *   不是 likes/favorites 的简单加权（四种组合都试过，都不单调）
+     *
+     * 没有"按点赞排序"这回事 —— `like` / `likes` / `like_count` / `star` /
+     * `favorite` / `comment` / `view` / `hot` / `zuire` 全部回退到 `latest`。
+     *
+     * `limit` **被服务端钉在 12**：5/10/12 都认，20 和 50 都只回 12 行。
+     * 所以"一次多拉几页好在本地排序"这条路走不通。
+     *
      * Filters: raceId (1-8, -1/blank=全部), genderId (-1全部/1男/2女),
-     * createTime (all/last24H/lastWeek/lastMonth).
+     * createTime (all/last24H/lastWeek/lastMonth)。
+     *
+     * **职业筛服务端已经没了**：`class_job_id` / `job_ids` / `job_id` /
+     * `class_job_ids` / `job` / `class_jobs` / `classjob_id` 七个参数名都试过，
+     * 返回和不带参数完全一致（同一趟里 `race_id=4`、`gender_id=2` 都能改变结果，
+     * 证明这个判定方法认得出真的筛选）。要筛职业只能在客户端按
+     * [ShizhijiaGlamourCard.jobIds] 做。
      */
     suspend fun getGlamours(
         context: Context,
