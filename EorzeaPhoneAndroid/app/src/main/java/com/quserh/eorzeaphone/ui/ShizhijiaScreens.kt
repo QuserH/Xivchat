@@ -50,6 +50,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -687,7 +691,37 @@ private sealed interface SzjRoute {
 
 /** App-wide full-screen image viewer state; any thumbnail sets its URL here. */
 object SzjViewer {
+    /**
+     * 当前在看的那一张。设它就等于打开查看器（[urls] 会被当成只有这一张）。
+     * 兼容原来那些只有一张图的调用点。
+     */
     var url by mutableStateOf<String?>(null)
+
+    /**
+     * 这一组图的全部 url。**有多张时查看器可以左右滑动切换**——
+     * 原来只有 [url] 一个字段，查看器压根拿不到列表，所以点开只能看那一张，
+     * 想看下一张得退出去再点，这是做漏了不是设计。
+     */
+    var urls by mutableStateOf<List<String>>(emptyList())
+
+    /** 打开查看器：给整组图 + 从第几张开始。 */
+    fun open(all: List<String>, index: Int) {
+        val clean = all.filter { it.isNotBlank() }
+        if (clean.isEmpty()) return
+        urls = clean
+        url = clean[index.coerceIn(clean.indices)]
+    }
+
+    fun close() {
+        url = null
+        urls = emptyList()
+    }
+
+    /** 当前这张在组里的下标；组里没有它（单图调用）时给 0。 */
+    val startIndex: Int get() = urls.indexOf(url).coerceAtLeast(0)
+
+    /** 查看器实际要翻的那组图。urls 为空时退化成只有 url 这一张。 */
+    val effective: List<String> get() = urls.ifEmpty { listOfNotNull(url) }
 }
 
 /**
@@ -999,9 +1033,14 @@ SzjRoute.Home -> ShizhijiaHomeScreen(state, nav, postsState, strategyState, recr
         // 叠在内容之上（各屏的 ScreenFrame 背景是实色，压在下面看不见），
         // alpha 峰值 6%，不吃触摸，也不影响任何文字的对比度。
         SzjAmbientGlow()
-        SzjViewer.url?.let { url ->
+        if (SzjViewer.url != null) {
             // Full-screen overlay for viewing a tapped image at size.
-            SzjPhotoViewer(url = url, onClose = { SzjViewer.url = null })
+            // 传整组图 + 起始下标，多张时能左右滑。
+            SzjPhotoViewer(
+                all = SzjViewer.effective,
+                startIndex = SzjViewer.startIndex,
+                onClose = { SzjViewer.close() },
+            )
         }
     }
 }
@@ -1047,17 +1086,32 @@ fun openShizhijiaProfile(state: PhoneState, uuid: String) {
  */
 fun clearShizhijiaGuest() = SzjNav.leaveGuest()
 
-/** Full-screen image viewer: dark scrim, fitted image, X (top-left) or back closes. */
+/**
+ * 全屏看图：暗底、整图适配、右下角保存和关闭、返回键退出。
+ *
+ * **一组多张时可以左右滑动切换**（[all]）。原来这个查看器只收一个 url，
+ * 所以点开只能看那一张，想看下一张得退出去再点下一张——那是做漏了。
+ *
+ * 双指缩放和左右翻页会抢手势，处理办法：**放大之后就不翻页**
+ * （`userScrollEnabled = scale <= 1f`）。放大了的时候横向拖动的意图是
+ * 平移看细节，不是翻页；缩回 1 倍才恢复翻页。
+ */
 @Composable
-private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
+private fun SzjPhotoViewer(all: List<String>, startIndex: Int, onClose: () -> Unit) {
     BackHandler { onClose() }
     val context = LocalContext.current
+    val pager = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = startIndex.coerceIn(0, (all.size - 1).coerceAtLeast(0)),
+        pageCount = { all.size },
+    )
+    val url = all.getOrNull(pager.currentPage) ?: all.firstOrNull().orEmpty()
     var bmp by remember(url) { mutableStateOf(if (url.startsWith("data:image")) decodeDataUri(url) else ShizhijiaImageLoader.peek(url)) }
     LaunchedEffect(url) { if (!url.startsWith("data:image")) bmp = ShizhijiaImageLoader.load(context, url) }
     // Pinch-zoom + pan. All gestures are consumed here so the list underneath
     // never scrolls while the viewer is open.
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    // 换页时把缩放和位移复位：带着上一张的放大倍数翻到下一张很怪。
+    var scale by remember(pager.currentPage) { mutableStateOf(1f) }
+    var offset by remember(pager.currentPage) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     // 保存到相册。长按和右下角的按钮走同一个动作——**长按是不可见的入口**，
     // 只做长按的话没人知道能存（用户就是这么报上来的），所以两个都给。
     val saveScope = rememberCoroutineScope()
@@ -1098,13 +1152,55 @@ private fun SzjPhotoViewer(url: String, onClose: () -> Unit) {
             )
         }
     ) {
-        val bmpV = bmp
-        if (bmpV != null) {
-            Image(bmpV.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-                    .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(30.dp)) }
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxSize(),
+            // 放大之后不翻页：那时候横向拖动是"平移看细节"，不是"下一张"。
+            userScrollEnabled = all.size > 1 && scale <= 1f,
+            // 预加载左右各一张，滑过去不用等。
+            beyondViewportPageCount = 1,
+        ) { page ->
+            val pageUrl = all.getOrNull(page).orEmpty()
+            // 每一页各自加载。当前页那张同时也存进 bmp，供保存用。
+            var pageBmp by remember(pageUrl) {
+                mutableStateOf(
+                    if (pageUrl.startsWith("data:image")) decodeDataUri(pageUrl)
+                    else ShizhijiaImageLoader.peek(pageUrl)
+                )
+            }
+            LaunchedEffect(pageUrl) {
+                if (!pageUrl.startsWith("data:image")) pageBmp = ShizhijiaImageLoader.load(context, pageUrl)
+            }
+            val b = pageBmp
+            if (b != null) {
+                Image(
+                    b.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        // 缩放只作用在**当前页**，翻到别页时那页是 1 倍。
+                        val on = page == pager.currentPage
+                        scaleX = if (on) scale else 1f
+                        scaleY = if (on) scale else 1f
+                        translationX = if (on) offset.x else 0f
+                        translationY = if (on) offset.y else 0f
+                    },
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(30.dp))
+                }
+            }
+        }
+        // 页码。多于一张才显示——只有一张时它是废话。
+        if (all.size > 1) {
+            Text(
+                "${pager.currentPage + 1} / ${all.size}",
+                color = Color(0xFFE8EDF2), style = SzjMetaStyle,
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(top = 14.dp)
+                    .clip(SzjChipShape).background(Color(0xB3232932))
+                    .padding(horizontal = 11.dp, vertical = 5.dp),
+            )
         }
         // 右下角：保存 + 关闭。查看器始终是暗底，所以这里固定用亮色，
         // 不跟随浅色主题（和传送横幅同一个理由）。
@@ -2224,8 +2320,10 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val cell = (maxWidth - 12.dp) / 3
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    post.coverPics.distinct().take(3).forEach { url ->
-                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.url = it })
+                    val covers = post.coverPics.distinct().take(3)
+                    covers.forEachIndexed { ci, url ->
+                        // 点开带上这一组，查看器里能左右滑。
+                        ShizhijiaRemoteImage(url = url, modifier = Modifier.width(cell).height(cell).clip(SzjInnerShape), contentScale = ContentScale.Crop, showPlaceholder = false, collapseOnFail = true, onClick = { SzjViewer.open(covers, ci) })
                     }
                 }
             }
@@ -7062,13 +7160,13 @@ private fun ShizhijiaGuildPhotoDetailScreen(photoId: String, pop: () -> Unit, na
                     }
                 }
                 // 大图竖排铺满宽度，点开进全屏查看器。
-                items(p.urls, key = { it }) { url ->
+                itemsIndexed(p.urls, key = { _, u -> u }) { pi, url ->
                     ShizhijiaRemoteImage(
                         url = url,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp).clip(SzjInnerShape),
                         contentScale = ContentScale.FillWidth,
                         collapseOnFail = true,
-                        onClick = { SzjViewer.url = it },
+                        onClick = { SzjViewer.open(p.urls, pi) },
                     )
                 }
                 item(key = "counts") {
@@ -7772,7 +7870,9 @@ private fun ShizhijiaGlamourDetailScreen(state: PhoneState, glamourId: String, p
                             modifier = Modifier.fillMaxWidth(),
                             contentScale = ContentScale.FillWidth,
                             showPlaceholder = true,
-                            onClick = { url -> SzjViewer.url = url },
+                            // 传整组图和当前页：点开之后在查看器里还能左右滑，
+                            // 不用退出去再点下一张。
+                            onClick = { _ -> SzjViewer.open(d.images, page) },
                         )
                     }
                     if (d.images.size > 1) {
@@ -8121,6 +8221,128 @@ private fun SzjShareSlotCell(slot: String, item: SzjShareSlotItem) {
     }
 }
 
+
+/**
+ * 幻化分享卡的**版面本体**。
+ *
+ * 尺寸照移动站：整卡 720dp 宽（站点 750px），左边 340dp 放整张竖图
+ * （ContentScale.Fit —— 对应 object-fit: contain，**不裁**），右边并排放
+ * 标题、作者和搭配清单。所以是**横版**，竖图能完整显示、清单也装得下。
+ *
+ * 调用方负责把它按屏宽缩小显示（见 SzjGlamourShareSheet 里的 layout{}），
+ * 这里只管按固定尺寸排好版。
+ */
+@Composable
+private fun SzjGlamourShareCard(
+    d: ShizhijiaGlamourDetail,
+    layer: androidx.compose.ui.graphics.layer.GraphicsLayer,
+) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .clip(SzjCardShape)
+                    .drawWithContent {
+                        layer.record { this@drawWithContent.drawContent() }
+                        drawLayer(layer)
+                    }
+                    .background(SzjCard),
+            ) {
+                // **横版：左图右清单。** 照移动站的 750×778（图 375×670 contain）。
+                //
+                // 上一版我做成竖版 + 把头图裁到 200dp，两个后果：头图被切掉大半
+                // （幻化图是竖的，裁成 16:9 只剩中间一条），清单也被挤。
+                // 并排之后竖图能整张显示（Fit = contain，不裁），清单在右边有独立
+                // 的一列高度可用。
+                Row(Modifier.fillMaxWidth()) {
+                    if (d.images.isNotEmpty()) {
+                        // 340×610 ≈ 站点的 375×670 同比例。Fit 不裁，
+                        // 图比框窄时两侧留底色，比切掉内容好。
+                        ShizhijiaRemoteImage(
+                            url = d.images.first(),
+                            modifier = Modifier.width(340.dp).height(610.dp),
+                            contentScale = ContentScale.Fit,
+                            showPlaceholder = true,
+                        )
+                    }
+                    Column(
+                        Modifier.weight(1f).height(610.dp)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                    ) {
+                    Text(
+                        d.title,
+                        color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                        lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(9.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SzjAvatar(d.authorName, d.authorAvatar, d.authorUuid, 26)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(d.authorName, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            val where = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
+                            if (where.isNotBlank()) Text(where, color = SzjMuted, style = SzjMetaStyle)
+                        }
+                    }
+                    val genderText = when (d.gender) { 1 -> "男性"; 2 -> "女性"; else -> "" }
+                    val rg = (d.races + listOfNotNull(genderText.takeIf { it.isNotBlank() })).joinToString(" / ")
+                    if (rg.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            rg, color = SzjOnAccentSoft, style = SzjMetaStyle,
+                            modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft)
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                    // 搭配清单：**这是这套幻化真正要传达的东西**，
+                    // 只发一张外观图别人还得追问"用的什么部件、染的什么色"。
+                    //
+                    // 原来这儿是按 equips 原始顺序两列平铺、只有名字：没有槽位名
+                    // （分不清哪件是上衣哪件是腿）、**没有染色**、也漏了面部/时尚配饰
+                    // （那两个不在 equips 里，是 ortInfo 单独给的）。
+                    // 现在和详情页共用槽位字典，按左右两列的固定顺序走，
+                    // 只画有内容的槽——空槽在分享图里没有意义。
+                    val rows = remember(d.id) {
+                        SzjLeftSlots.zip(SzjRightSlots).map { (l, r) -> l to r }
+                    }
+                    val filled = remember(d.id) {
+                        (SzjLeftSlots + SzjRightSlots).any { slot ->
+                            d.equips.any { it.slot == slot && it.name.isNotBlank() } ||
+                                (slot == "GLASSES" && d.glassesName.isNotBlank()) ||
+                                (slot == "ORNAMENT" && d.ornamentName.isNotBlank())
+                        }
+                    }
+                    if (filled) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
+                        Spacer(Modifier.height(10.dp))
+                        rows.forEach { (l, r) ->
+                            val le = szjShareSlot(d, l)
+                            val re = szjShareSlot(d, r)
+                            if (le == null && re == null) return@forEach
+                            Row(
+                                Modifier.fillMaxWidth().padding(bottom = 7.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                listOf(l to le, r to re).forEach { (slot, item) ->
+                                    Box(Modifier.weight(1f)) {
+                                        if (item != null) SzjShareSlotCell(slot, item)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    }
+                }
+                // 出处放在整卡最底：图会脱离 App 传播，没有这行不知道哪来的。
+                Text(
+                    "石之家 · 艾欧泽亚终端",
+                    color = SzjMuted, style = SzjMetaStyle,
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+}
+
 /**
  * 幻化分享卡的预览 + 生成。
  *
@@ -8154,98 +8376,44 @@ private fun SzjGlamourShareSheet(
                 Modifier.fillMaxWidth().padding(horizontal = 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // 这一块就是会被渲成图片的东西。drawWithContent 把它录进图层，
-                // 同时照常画到屏幕上，所以预览和出图必然一致。
-                Column(
-                    Modifier.fillMaxWidth()
-                        .clip(SzjCardShape)
-                        .drawWithContent {
-                            layer.record { this@drawWithContent.drawContent() }
-                            drawLayer(layer)
-                        }
-                        .background(SzjCard),
-                ) {
-                    if (d.images.isNotEmpty()) {
-                        // **必须限高。** 原来是 fillMaxWidth + FillWidth，而幻化图
-                        // 基本都是竖图（1080×1920 那种），在 360dp 宽的屏上会撑到
-                        // 600dp+ 高——整张卡被顶出屏幕，下面的搭配清单既看不见、
-                        // 也录不进图层（drawWithContent 只录布局范围内画出来的东西）。
-                        // 这就是"搭配没显示出来"的真正原因，不是数据没解析到。
-                        //
-                        // 限到 200dp 并裁切：外观图是引子，真正要传达的是下面的清单。
-                        ShizhijiaRemoteImage(
-                            url = d.images.first(),
-                            modifier = Modifier.fillMaxWidth().height(200.dp),
-                            contentScale = ContentScale.Crop,
-                            showPlaceholder = true,
-                        )
-                    }
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                        Text(
-                            d.title,
-                            color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                            lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.height(9.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SzjAvatar(d.authorName, d.authorAvatar, d.authorUuid, 26)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(d.authorName, color = SzjText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                val where = listOf(d.areaName, d.groupName).filter { it.isNotBlank() }.joinToString(" ")
-                                if (where.isNotBlank()) Text(where, color = SzjMuted, style = SzjMetaStyle)
-                            }
-                            // 出处写在图里：图会脱离 App 传播，没有这行就不知道是哪来的。
-                            Text("石之家 · 艾欧泽亚终端", color = SzjMuted, style = SzjMetaStyle)
-                        }
-                        val genderText = when (d.gender) { 1 -> "男性"; 2 -> "女性"; else -> "" }
-                        val rg = (d.races + listOfNotNull(genderText.takeIf { it.isNotBlank() })).joinToString(" / ")
-                        if (rg.isNotBlank()) {
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                rg, color = SzjOnAccentSoft, style = SzjMetaStyle,
-                                modifier = Modifier.clip(SzjChipShape).background(SzjAccentSoft)
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                // **卡片按固定尺寸排版，再缩小显示。**
+                //
+                // 移动站的分享卡是 750×778 —— **横的**：左边 375×670 放整张竖图
+                // （object-fit: contain，不裁），右边并排放清单。所以竖图能完整
+                // 显示，清单也装得下。我原来是竖版卡 + 裁到 200dp 的头图，
+                // 于是头图被切、清单也挤。
+                //
+                // 手机屏只有 360dp 宽，直接按 720dp 排会超出屏幕。做法是：
+                // 用 layout{} 按固定宽度**量**，对外**汇报缩放后的尺寸**，
+                // 放置时套一个缩放图层。这样：
+                //   · 屏幕上看到的是缩小版（放得下）
+                //   · layer.record 录的是**全尺寸**那一份（出图清晰）
+                // 站点也是这个路子：html2canvas 对一个 750px 的离屏节点渲染。
+                val cardW = 720.dp
+                val density = LocalDensity.current
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val avail = maxWidth
+                    val k = (avail / cardW).coerceAtMost(1f)
+                    Box(
+                        Modifier.layout { measurable, _ ->
+                            val wPx = with(density) { cardW.roundToPx() }
+                            val placeable = measurable.measure(
+                                androidx.compose.ui.unit.Constraints(minWidth = wPx, maxWidth = wPx),
                             )
-                        }
-                        // 搭配清单：**这是这套幻化真正要传达的东西**，
-                        // 只发一张外观图别人还得追问"用的什么部件、染的什么色"。
-                        //
-                        // 原来这儿是按 equips 原始顺序两列平铺、只有名字：没有槽位名
-                        // （分不清哪件是上衣哪件是腿）、**没有染色**、也漏了面部/时尚配饰
-                        // （那两个不在 equips 里，是 ortInfo 单独给的）。
-                        // 现在和详情页共用槽位字典，按左右两列的固定顺序走，
-                        // 只画有内容的槽——空槽在分享图里没有意义。
-                        val rows = remember(d.id) {
-                            SzjLeftSlots.zip(SzjRightSlots).map { (l, r) -> l to r }
-                        }
-                        val filled = remember(d.id) {
-                            (SzjLeftSlots + SzjRightSlots).any { slot ->
-                                d.equips.any { it.slot == slot && it.name.isNotBlank() } ||
-                                    (slot == "GLASSES" && d.glassesName.isNotBlank()) ||
-                                    (slot == "ORNAMENT" && d.ornamentName.isNotBlank())
-                            }
-                        }
-                        if (filled) {
-                            Spacer(Modifier.height(12.dp))
-                            Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
-                            Spacer(Modifier.height(10.dp))
-                            rows.forEach { (l, r) ->
-                                val le = szjShareSlot(d, l)
-                                val re = szjShareSlot(d, r)
-                                if (le == null && re == null) return@forEach
-                                Row(
-                                    Modifier.fillMaxWidth().padding(bottom = 7.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    listOf(l to le, r to re).forEach { (slot, item) ->
-                                        Box(Modifier.weight(1f)) {
-                                            if (item != null) SzjShareSlotCell(slot, item)
-                                        }
-                                    }
+                            // 对外只占缩放后的大小，否则父布局会按 720dp 算宽度、被屏幕裁掉。
+                            layout(
+                                (placeable.width * k).toInt(),
+                                (placeable.height * k).toInt(),
+                            ) {
+                                placeable.placeWithLayer(0, 0) {
+                                    scaleX = k
+                                    scaleY = k
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                                 }
                             }
-                        }
+                        },
+                    ) {
+                        SzjGlamourShareCard(d, layer)
                     }
                 }
                 Spacer(Modifier.height(18.dp))
