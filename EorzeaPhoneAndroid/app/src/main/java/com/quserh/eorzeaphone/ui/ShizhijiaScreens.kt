@@ -3802,6 +3802,9 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
     var starNum by remember(postId) { mutableStateOf(0L) }
     var busy by remember(postId) { mutableStateOf(false) }
     var composerOpen by remember(postId) { mutableStateOf(false) }
+    // 非 null 表示这次打开输入框是**回复某条评论**，而不是给帖子发新评论。
+    // 发送时据此决定 parent_id / root_parent。
+    var replyTo by remember(postId) { mutableStateOf<ShizhijiaComment?>(null) }
     val actionScope = rememberCoroutineScope()
 
     LaunchedEffect(postId) {
@@ -3975,6 +3978,10 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
                 commentOrder = commentOrder,
                 onOrder = { commentOrder = it },
                 nav = nav,
+                onReply = { target ->
+                    replyTo = target
+                    composerOpen = true
+                },
             )
         }
         // 底部动作条：赞 / 收藏 / 评论。三个都是真请求。
@@ -4021,16 +4028,31 @@ private fun ShizhijiaPostDetailScreen(state: PhoneState, postId: String, pop: ()
         )
     }
     if (composerOpen) {
+        val target = replyTo
         SzjCommentComposer(
-            hint = "说点什么…",
-            onDismiss = { composerOpen = false },
+            // 回复谁要写在提示里：输入框弹起来之后原来那条评论被盖住了，
+            // 不写的话不知道自己在回谁。
+            hint = if (target != null) "回复 ${target.characterName.ifBlank { "这条评论" }}…" else "说点什么…",
+            onDismiss = { composerOpen = false; replyTo = null },
             onSend = { text, pics, done ->
                 actionScope.launch {
-                    when (val r = ShizhijiaApi.commentPost(context, postId, text, pics = pics)) {
+                    // 回复：parent_id 是被回复的那一条，root_parent 是它所在那一楼。
+                    // 给帖子发新评论时两个都是 "0"。
+                    when (
+                        val r = ShizhijiaApi.commentPost(
+                            context, postId, text,
+                            parentId = target?.id ?: "0",
+                            rootParent = target?.rootParent ?: "0",
+                            pics = pics,
+                        )
+                    ) {
                         is ShizhijiaApi.Res.Ok -> {
                             android.widget.Toast.makeText(context, r.value, android.widget.Toast.LENGTH_SHORT).show()
                             composerOpen = false
+                            replyTo = null
                             // 重新拉第一页评论，让自己那条出现。
+                            // 回复也要重拉：那一楼的 children_count 变了，
+                            // 不重拉的话"N 条回复"还是旧数字。
                             commentLoading = true
                             val result = ShizhijiaApi.getPostComments(context, postId, commentOrder, onlyLandlord = onlyAuthor)
                             comments = result.rows
@@ -4484,6 +4506,8 @@ private fun LazyListScope.szjCommentSection(
     commentOrder: String,
     onOrder: (String) -> Unit,
     nav: (SzjRoute) -> Unit,
+    /** 点某条评论的"回复"时调，参数是被回复的那一条。 */
+    onReply: (ShizhijiaComment) -> Unit,
 ) {
     run {
         item(key = "comments-head") {
@@ -4548,7 +4572,7 @@ private fun LazyListScope.szjCommentSection(
             }
         } else {
             itemsIndexed(comments, key = { _, it -> it.id }) { index, c ->
-                SzjRise(index) { SzjCommentRow(c, nav) }
+                SzjRise(index) { SzjCommentRow(c, nav, onReply) }
             }
             item(key = "comments-footer") {
                 if (commentLoading) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -4574,7 +4598,15 @@ private fun SzjSmallOption(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
+private fun SzjCommentRow(
+    c: ShizhijiaComment,
+    nav: (SzjRoute) -> Unit,
+    /**
+     * 点"回复"时调。**为 null 表示这一处没有输入框**（比如幻化详情下面的评论列表），
+     * 那就不显示回复按钮——显示一个点了没反应的按钮比没有按钮更糟。
+     */
+    onReply: ((ShizhijiaComment) -> Unit)? = null,
+) {
     // 平铺，不是卡片：评论区去掉灰底之后，一条条白卡落在 SzjBg 上还是两层容器。
     // 现在评论之间用 1dp 发丝线分隔，和正文一样直接落在底色上。
     Column(Modifier.fillMaxWidth()) {
@@ -4660,9 +4692,198 @@ private fun SzjCommentRow(c: ShizhijiaComment, nav: (SzjRoute) -> Unit) {
                 onClick = { SzjViewer.url = it },
             )
         }
+        // 回复 + 楼中楼。放在内容下面、分隔线上面：这两个动作都是"针对这条评论"的。
+        SzjCommentReplies(c, nav, onReply)
       }
       // 评论之间的分隔线。左侧留出 16dp，和内容对齐而不是顶到屏幕边。
       Box(Modifier.fillMaxWidth().padding(start = 16.dp).height(1.dp).background(SzjLine))
+    }
+}
+
+/**
+ * 一条评论下面的"回复"入口和楼中楼。
+ *
+ * 官网的做法是点开一个对话框显示整楼；这里改成**就地展开**——
+ * 手机上再叠一层对话框，看完还得关掉才能回到评论列表，
+ * 而楼中楼通常只有几条，就地展开更顺。
+ *
+ * 只有 `childrenCount > 0` 才发请求（官网也是这么判的），而且**展开时才拉**，
+ * 不是进页面就把每一楼的子评论都拉一遍。
+ */
+@Composable
+private fun SzjCommentReplies(
+    c: ShizhijiaComment,
+    nav: (SzjRoute) -> Unit,
+    onReply: ((ShizhijiaComment) -> Unit)?,
+) {
+    // 既不能回复、也没有子评论，这一行就整个不画。
+    if (onReply == null && c.childrenCount <= 0) return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var expanded by remember(c.id) { mutableStateOf(false) }
+    var subs by remember(c.id) { mutableStateOf<List<ShizhijiaComment>?>(null) }
+    var loading by remember(c.id) { mutableStateOf(false) }
+    var status by remember(c.id) { mutableStateOf<ShizhijiaApi.Res<List<ShizhijiaComment>>?>(null) }
+
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // 回复这一条。传的是这一楼的 rootParent 和被回复评论的 id。
+        if (onReply != null) {
+            SzjPressable(onClick = { onReply(c) }, shape = SzjChipShape) {
+                Row(
+                    Modifier.clip(SzjChipShape).padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ImageGlyph(R.drawable.ic_comment, SzjMuted, Modifier.size(13.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("回复", color = SzjMuted, style = SzjMetaStyle)
+                }
+            }
+        }
+        if (c.childrenCount > 0) {
+            Spacer(Modifier.width(4.dp))
+            SzjPressable(
+                onClick = {
+                    expanded = !expanded
+                    if (expanded && subs == null && !loading) {
+                        loading = true
+                        scope.launch {
+                            val r = ShizhijiaApi.getSubComments(context, c.rootParent)
+                            status = r
+                            subs = (r as? ShizhijiaApi.Res.Ok)?.value.orEmpty()
+                            loading = false
+                        }
+                    }
+                },
+                shape = SzjChipShape,
+            ) {
+                Row(
+                    Modifier.clip(SzjChipShape).padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (expanded) "收起回复" else "${c.childrenCount} 条回复",
+                        color = SzjAccent, style = SzjMetaStyle,
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    ImageGlyph(
+                        if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+                        SzjAccent, Modifier.size(12.dp),
+                    )
+                }
+            }
+        }
+    }
+    if (!expanded) return
+    // 楼中楼整块左缩进 + 一道竖线：靠缩进表达层级，不再给每条子评论套卡片
+    // （评论本身已经是平铺的，再套一层就是三层容器）。
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Box(Modifier.padding(start = 4.dp).width(2.dp).fillMaxHeight().background(SzjLine))
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            val list = subs
+            when {
+                loading && list == null -> Row(
+                    Modifier.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(color = SzjAccent, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("正在读取回复", color = SzjMuted, style = SzjMetaStyle)
+                }
+                list.isNullOrEmpty() -> Text(
+                    // 计数说有回复但拉不到，多半是被删了或者要登录。
+                    when (status) {
+                        is ShizhijiaApi.Res.NeedLogin -> "登录后能看这些回复"
+                        is ShizhijiaApi.Res.Failed -> (status as ShizhijiaApi.Res.Failed).msg.ifBlank { "没读取到回复" }
+                        else -> "这些回复已经不在了"
+                    },
+                    color = SzjMuted, style = SzjMetaStyle,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+                else -> list.forEachIndexed { i, s ->
+                    if (i > 0) Spacer(Modifier.height(10.dp))
+                    SzjSubCommentRow(s, nav, onReply)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 楼中楼里的一条。比顶层评论轻：头像 22dp、没有点赞按钮、没有分隔线。
+ *
+ * "回复 @某人"只在 `parentId != rootParent` 时显示（[ShizhijiaComment.showReplyTo]），
+ * 判据和官网一致——直接回复楼主那条不显示，因为紧挨着上面就是被回复的内容。
+ */
+@Composable
+private fun SzjSubCommentRow(
+    c: ShizhijiaComment,
+    nav: (SzjRoute) -> Unit,
+    onReply: ((ShizhijiaComment) -> Unit)?,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SzjAvatar(c.characterName, c.avatar, c.uuid, 22)
+            Spacer(Modifier.width(7.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        c.characterName.ifBlank { "匿名玩家" }, color = SzjText, fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                            .clip(SzjChipShape).clickable { nav(SzjRoute.UserProfile(c.uuid)) },
+                    )
+                    if (c.isPostsAuthor) {
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "作者", color = SzjOnAccentSoft, fontSize = 9.sp, fontWeight = FontWeight.Medium,
+                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(SzjAccentSoft)
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                        )
+                    }
+                    SzjIpTail(c.ipLocation)
+                }
+                if (c.showReplyTo) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("回复 ", color = SzjMuted, style = SzjMetaStyle)
+                        Text(
+                            "@${c.toCname}", color = SzjAccent, style = SzjMetaStyle,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clip(SzjChipShape)
+                                .clickable(enabled = c.toUuid.isNotBlank()) { nav(SzjRoute.UserProfile(c.toUuid)) },
+                        )
+                    }
+                }
+            }
+            if (onReply != null) {
+                SzjPressable(onClick = { onReply(c) }, shape = SzjChipShape) {
+                    Text(
+                        "回复", color = SzjMuted, style = SzjMetaStyle,
+                        modifier = Modifier.clip(SzjChipShape).padding(horizontal = 7.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
+        if (c.contentHtml.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            ShizhijiaRichContent(c.contentHtml, modifier = Modifier.padding(start = 29.dp))
+        }
+        if (c.commentPic.isNotBlank()) {
+            Spacer(Modifier.height(5.dp))
+            ShizhijiaRemoteImage(
+                url = c.commentPic,
+                modifier = Modifier.padding(start = 29.dp)
+                    .widthIn(max = 160.dp).heightIn(max = 160.dp).clip(SzjInnerShape),
+                contentScale = ContentScale.Fit,
+                fitByAspect = true,
+                collapseOnFail = true,
+                onClick = { SzjViewer.url = it },
+            )
+        }
+        Row(Modifier.padding(start = 29.dp, top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            SzjMetaLine(c.areaName, c.groupName, c.createdAt)
+        }
     }
 }
 

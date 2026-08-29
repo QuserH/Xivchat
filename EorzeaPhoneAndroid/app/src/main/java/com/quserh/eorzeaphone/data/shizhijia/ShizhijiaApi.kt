@@ -700,6 +700,34 @@ object ShizhijiaApi {
         return json.toRes { it.optString("msg").ifBlank { "已发布" } }
     }
 
+    /**
+     * 楼中楼：一条顶层评论下面的子评论。
+     *
+     * 参数取自官网 `Comment.CMSwEVrf.js`：`{root_parent, order, page, limit}`，
+     * limit 官网用 10。**只有 `children_count > 0` 时才该调**——
+     * 官网也是这么判的，没有子评论的楼不发这个请求。
+     *
+     * [rootParent] 是那一楼的 id（顶层评论自己的 id）。
+     */
+    suspend fun getSubComments(
+        context: Context,
+        rootParent: String,
+        order: String = "earliest",
+        page: Int = 1,
+        limit: Int = 10,
+    ): Res<List<ShizhijiaComment>> {
+        if (rootParent.isBlank() || rootParent == "0") return Res.Failed(null, "没有楼层 id")
+        return rowsRes(
+            context, HOME_BASE, "posts/postsSubCommentDetail",
+            mapOf(
+                "root_parent" to rootParent,
+                "order" to order,
+                "page" to page.toString(),
+                "limit" to limit.toString(),
+            ),
+        ) { ShizhijiaComment.fromArray(it) }
+    }
+
     /** 幻化点赞（切换）。 */
     suspend fun likeGlamour(context: Context, id: String): Res<Toggle> {
         if (id.isBlank()) return Res.Failed(null, "没有幻化 id")

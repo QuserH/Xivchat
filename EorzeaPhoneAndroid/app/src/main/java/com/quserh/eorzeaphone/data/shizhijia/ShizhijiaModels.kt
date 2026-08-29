@@ -174,7 +174,26 @@ data class ShizhijiaComment(
     val isPostsAuthor: Boolean,
     /** 我给这条点过赞没有。评论点赞走 posts/like 的 type=2。 */
     val isLike: Boolean,
+    /**
+     * 楼层根评论 id。顶层评论的这个值等于自己的 [id]；
+     * 子评论的是它所属那一楼的 id。发回复时要原样带回去。
+     */
+    val rootParent: String = "0",
+    /** 直接回复的那一条评论的 id。回复顶层评论时等于 [rootParent]。 */
+    val parentId: String = "0",
+    /**
+     * 被回复者的名字 / uuid（只有子评论有）。
+     *
+     * 官网只在 `parentId != rootParent` 时才显示"回复 @某人"——
+     * 直接回复楼主那条不显示，因为紧挨着上面就是被回复的内容，写了是废话。
+     */
+    val toCname: String = "",
+    val toUuid: String = "",
 ) {
+    /** 楼中楼里"回复 @某人"该不该显示。判据和官网一致。 */
+    val showReplyTo: Boolean
+        get() = toCname.isNotBlank() && parentId != rootParent
+
     companion object {
         fun fromJson(o: JSONObject): ShizhijiaComment = ShizhijiaComment(
             id = o.optString("id"),
@@ -191,6 +210,13 @@ data class ShizhijiaComment(
             avatar = cleanAvatar(o.optString("avatar")),
             isPostsAuthor = o.optInt("is_posts_author") == 1,
             isLike = o.optInt("is_like") == 1,
+            // 顶层评论的接口不返回 root_parent，缺省就用自己的 id——
+            // 回复它的时候 root_parent 要传这一楼的 id，正好是它自己。
+            rootParent = o.opt("root_parent")?.toString()?.takeUnless { it.isBlank() || it == "null" || it == "0" }
+                ?: o.optString("id"),
+            parentId = o.opt("parent_id")?.toString()?.takeUnless { it.isBlank() || it == "null" }.orEmpty().ifBlank { "0" },
+            toCname = cleanField(o.optString("to_cname")),
+            toUuid = cleanField(o.optString("to_uuid")),
         )
 
         fun fromArray(arr: JSONArray): List<ShizhijiaComment> =

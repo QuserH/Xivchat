@@ -84,7 +84,12 @@ Vite 分包，共 155 个 chunk，公开静态资源，不带 cookie 即可读�
   `followList` 对称猜的，标着"未验证"——现在从 JS 里读到了，是真的。
   同组还有 `userRelation/follow` / `cancelFollow` / `blockUser` /
   `cancelBlock` / `blockList` / `bulkFollow` / `getUnFollowFriend`。
-- `posts/postsSubCommentDetail`：楼中楼（子评论）分页，现在没用上。
+- `posts/postsSubCommentDetail`：楼中楼（子评论）分页。**已接上**（0.7.244）。
+  参数 `{root_parent, order, page, limit}`，limit 官网用 10；
+  **只有 `children_count > 0` 时才该调**，官网也是这么判的。
+  子评论行多两个字段：`to_cname` / `to_uuid`（被回复者），
+  官网只在 `parent_id != root_parent` 时才显示"回复 @某人"——
+  直接回复楼主那条不显示，因为紧挨着上面就是被回复的内容。
 - `posts/vote` `{posts_id, options}`：帖子投票。
 - `sysMsg/*`：站内消息（`commentMsg` / `likeMyMsg` / `atMyMsg` /
   `myRecruitResponse` …），整块都没做。
