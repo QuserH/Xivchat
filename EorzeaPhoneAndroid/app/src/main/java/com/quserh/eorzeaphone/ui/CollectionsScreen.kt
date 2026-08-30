@@ -100,7 +100,7 @@ private fun CollectionsRoot(state: PhoneState, categories: List<GameCollectionCa
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ImageGlyph(R.drawable.ic_info, PhoneAccent, Modifier.size(18.dp))
+                        ImageGlyph(R.drawable.ic2_info, PhoneAccent, Modifier.size(18.dp))
                         Text("绑定角色后可查看各类收藏与具体获取方式。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 10.dp))
                     }
                 }

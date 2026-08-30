@@ -57,7 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.ItemIconLoader
+import com.quserh.eorzeaphone.data.wiki.DutyDb
 import com.quserh.eorzeaphone.data.wiki.WikiDb
+import com.quserh.eorzeaphone.data.wiki.WikiDuty
 import com.quserh.eorzeaphone.data.wiki.WikiHit
 import com.quserh.eorzeaphone.data.wiki.WikiSearch
 import com.quserh.eorzeaphone.data.wiki.WikiSearchResult
@@ -114,6 +116,9 @@ internal sealed interface WikiDest {
 
     /** 任务检索（按任务链浏览）。 */
     data object QuestBrowse : WikiDest
+
+    /** 副本检索（按类型浏览：讨伐歼灭战 / 迷宫挑战 / 大型任务 …）。 */
+    data object DutyBrowse : WikiDest
 }
 
 /**
@@ -179,7 +184,9 @@ fun WikiScreen(state: PhoneState) {
             onOpen = { stack.add(it) },
         )
         is WikiDest.Instance -> WikiInstanceScreen(
-            state, top.id, onBack = { stack.removeLastOrNull() },
+            state, top.id,
+            onBack = { stack.removeLastOrNull() },
+            onOpen = { stack.add(it) },
         )
         is WikiDest.Shop -> WikiShopScreen(
             state, top.id,
@@ -211,6 +218,11 @@ fun WikiScreen(state: PhoneState) {
             state = state,
             onBack = { stack.removeLastOrNull() },
             onOpenTree = { cid, hit -> stack.add(WikiDest.QuestTree(cid, hit)) },
+        )
+        WikiDest.DutyBrowse -> WikiDutyBrowseScreen(
+            state = state,
+            onBack = { stack.removeLastOrNull() },
+            onOpen = { stack.add(it) },
         )
     }
 }
@@ -270,7 +282,7 @@ private fun WikiSearchScreen(
             input,
             onChange = { input = it },
             onSubmit = { keyboard?.hide() },
-            hint = "搜物品、任务、或任何 wiki 条目",
+            hint = "搜物品、任务、副本、或任何 wiki 条目",
         )
         if (query.isBlank()) {
             WikiHome(onOpen = onOpen)
@@ -292,14 +304,26 @@ private fun WikiSearchScreen(
  */
 @Composable
 private fun WikiHome(onOpen: (WikiDest) -> Unit) {
+    val context = LocalContext.current.applicationContext
     val margin = LocalContentMargin.current
+
+    // 副本数从 meta 表读，不写死。物品/任务那两个数字是稳定的，副本这张表是
+    // 新加的，发版时抓到多少条要如实显示 —— 写死一个数就等于给自己埋个
+    // 「界面说 427、库里其实 327」的坑。
+    var dutyCount by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        dutyCount = runCatching {
+            WikiDb.meta(context)["duty_count"]?.takeIf { it.isNotBlank() } ?: ""
+        }.getOrDefault("")
+    }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(start = margin.dp, end = margin.dp, top = 12.dp, bottom = 20.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             WikiEntryTile(
-                icon = R.drawable.ic_search,
+                icon = R.drawable.ic2_search,
                 count = "51,120",
                 title = "物品检索",
                 hint = "九项筛选",
@@ -308,13 +332,31 @@ private fun WikiHome(onOpen: (WikiDest) -> Unit) {
             )
             WikiEntryTile(
                 // 没有 ic_list；ic_swords 在这个项目里表示战斗/任务，和站点的任务图标语义一致
-                icon = R.drawable.ic_swords,
+                icon = R.drawable.ic2_swords,
                 count = "5,360",
                 title = "任务检索",
                 hint = "468 条任务链",
                 modifier = Modifier.weight(1f),
                 onClick = { onOpen(WikiDest.QuestBrowse) },
             )
+        }
+        // 副本单独一行、占满宽度：它和上面两个是并列关系，但只有一格，
+        // 硬塞进上面那行会把三格挤到装不下 22sp 的数字。
+        if (dutyCount.isNotBlank()) {
+            Row(
+                Modifier.padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                WikiEntryTile(
+                    // 盾 = 小队构成，和 swords（任务）区分开
+                    icon = R.drawable.ic2_shield,
+                    count = dutyCount,
+                    title = "副本检索",
+                    hint = "讨伐歼灭战、迷宫挑战、含掉落",
+                    modifier = Modifier.weight(1f),
+                    onClick = { onOpen(WikiDest.DutyBrowse) },
+                )
+            }
         }
         // 原来这儿是一段两行的说明，读起来像文档不像界面。
         // 搜索框就在上面、点了就能用，不需要一段话解释它存在。
@@ -349,7 +391,7 @@ private fun WikiEntryTile(
                     ImageGlyph(icon, PhoneAccent, Modifier.size(16.dp))
                 }
                 Spacer(Modifier.weight(1f))
-                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(14.dp))
+                ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(14.dp))
             }
             Text(
                 count,
@@ -379,10 +421,13 @@ private fun WikiEntryTile(
 }
 
 /**
- * 统一检索结果：物品 + 任务 + 站点条目，合并成一个列表，每条标类型。
+ * 统一检索结果：物品 + 任务 + 副本 + 站点条目，合并成一个列表，每条标类型。
  *
- * 顺序是物品 → 任务 → 站点条目。前两类是本地库（快、结构化、能继续点），
- * 站点条目是线上兜底（覆盖黑话、怪物、地名、副本、攻略页那些我没有表的）。
+ * 顺序是副本 → 物品 → 任务 → 站点条目。前三类是本地库（快、结构化、能继续点），
+ * 站点条目是线上兜底（覆盖黑话、怪物、地名、攻略页那些我没有表的）。
+ *
+ * 副本排在最前是故意的：用户搜「歼灭战」「零式」这种词时要的就是副本，
+ * 而这些词也会命中一堆同名装备（「伊弗利特之角」之类），物品数量压过副本。
  */
 @Composable
 private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
@@ -411,7 +456,7 @@ private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ImageGlyph(
-                R.drawable.ic_empty_box, PhoneMuted.copy(alpha = 0.5f), Modifier.size(34.dp),
+                R.drawable.ic2_empty_box, PhoneMuted.copy(alpha = 0.5f), Modifier.size(34.dp),
             )
             Text(
                 "没有找到「$query」", color = PhoneMuted, fontSize = 12.sp,
@@ -438,6 +483,7 @@ private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
                     Text(
                         "共 ${r.total} 条" +
                             listOfNotNull(
+                                r.duties.size.takeIf { it > 0 }?.let { "副本 $it" },
                                 r.items.size.takeIf { it > 0 }?.let { "物品 $it" },
                                 r.quests.size.takeIf { it > 0 }?.let { "任务 $it" },
                                 r.pages.size.takeIf { it > 0 }?.let { "条目 $it" },
@@ -450,6 +496,24 @@ private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
                 }
             }
 
+            lazyItems(r.duties, key = { "d${it.duty.id}" }) { h ->
+                WikiHitRow(
+                    // 类型标签直接用副本自己的类型（讨伐歼灭战/迷宫挑战/…），
+                    // 比统一写「副本」信息量大，用户找的就是这个词
+                    kind = h.duty.type.ifBlank { "副本" }, kindTint = PhoneWarn,
+                    iconId = h.duty.imageId, iconHash = "",
+                    title = h.duty.name,
+                    sub = buildList {
+                        h.duty.levelText.takeIf { it.isNotBlank() }?.let(::add)
+                        h.duty.sizeText.takeIf { it.isNotBlank() }?.let(::add)
+                        (h.duty.place.takeIf { it.isNotBlank() } ?: h.duty.mapPlace)
+                            .takeIf { it.isNotBlank() }?.let(::add)
+                        // 经 BOSS 名命中时说明理由，否则用户不知道这条为什么出现
+                        h.viaBoss?.let { add("BOSS: $it") }
+                    }.joinToString(" · "),
+                    onClick = { onOpen(WikiDest.Instance(h.duty.id)) },
+                )
+            }
             lazyItems(r.items, key = { "i${it.item.id}" }) { h ->
                 WikiHitRow(
                     kind = "物品", kindTint = PhoneAccent,
@@ -626,6 +690,170 @@ private fun WikiQuestBrowseScreen(
     }
 }
 
+/**
+ * 副本检索。搜索框 + 类型分组。
+ *
+ * 空词时列类型（讨伐歼灭战 118、迷宫挑战 104、…），点类型进该类型的全部副本；
+ * 有词时直接出命中的副本。427 个副本全在本地库，离线可用。
+ */
+@OptIn(FlowPreview::class)
+@Composable
+private fun WikiDutyBrowseScreen(
+    state: PhoneState,
+    onBack: () -> Unit,
+    onOpen: (WikiDest) -> Unit,
+) {
+    val context = LocalContext.current.applicationContext
+    val keyboard = LocalSoftwareKeyboardController.current
+    val margin = LocalContentMargin.current
+
+    var input by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    var types by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    var picked by remember { mutableStateOf("") }
+    var list by remember { mutableStateOf<List<WikiDuty>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { input }
+            .debounce(260)
+            .distinctUntilChanged()
+            .collect { query = it }
+    }
+
+    LaunchedEffect(Unit) {
+        types = runCatching { DutyDb.types(context) }.getOrDefault(emptyList())
+        loading = false
+    }
+
+    // 搜索词优先；没词时看选中的类型
+    LaunchedEffect(query, picked) {
+        loading = true
+        list = runCatching {
+            when {
+                query.isNotBlank() -> DutyDb.search(context, query)
+                picked.isNotBlank() -> DutyDb.byType(context, picked)
+                else -> emptyList()
+            }
+        }.getOrDefault(emptyList())
+        loading = false
+    }
+
+    ScreenFrame {
+        ScreenHeader(
+            if (picked.isNotBlank() && query.isBlank()) picked else "副本检索",
+            state,
+            onBack = {
+                // 在某个类型里时，返回先退回类型列表，再退出这一页
+                if (picked.isNotBlank() && query.isBlank()) picked = "" else onBack()
+            },
+        )
+        WikiSearchField(
+            input,
+            onChange = { input = it },
+            onSubmit = { keyboard?.hide() },
+            hint = "副本名、类型、或 BOSS 名",
+        )
+        when {
+            loading && list.isEmpty() && types.isEmpty() -> Box(
+                Modifier.fillMaxSize(), contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = PhoneAccent, strokeWidth = 2.dp, modifier = Modifier.size(26.dp),
+                )
+            }
+            // 类型列表
+            query.isBlank() && picked.isBlank() -> {
+                if (types.isEmpty()) {
+                    Column(
+                        Modifier.fillMaxSize().padding(top = 60.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        ImageGlyph(
+                            R.drawable.ic_empty_box, PhoneMuted.copy(alpha = 0.5f),
+                            Modifier.size(34.dp),
+                        )
+                        Text(
+                            "本地库里还没有副本数据",
+                            color = PhoneMuted, fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 11.dp),
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(top = 6.dp, bottom = 20.dp),
+                    ) {
+                        lazyItems(types, key = { it.first }) { (t, n) ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { picked = t }
+                                    .padding(horizontal = margin.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    t, color = PhoneText, fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text("$n", color = PhoneMuted, fontSize = 12.sp)
+                                ImageGlyph(
+                                    R.drawable.ic_chevron_right, PhoneMuted,
+                                    Modifier.size(15.dp),
+                                )
+                            }
+                            PhoneHairlineRow(margin.dp)
+                        }
+                    }
+                }
+            }
+            list.isEmpty() -> Column(
+                Modifier.fillMaxSize().padding(top = 60.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                ImageGlyph(
+                    R.drawable.ic_empty_box, PhoneMuted.copy(alpha = 0.5f), Modifier.size(34.dp),
+                )
+                Text(
+                    if (query.isBlank()) "这个类型下没有副本" else "没有找到「$query」",
+                    color = PhoneMuted, fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 11.dp),
+                )
+            }
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 20.dp),
+            ) {
+                item {
+                    Text(
+                        "共 ${list.size} 个副本",
+                        color = PhoneMuted, fontSize = 11.sp,
+                        modifier = Modifier.padding(
+                            start = margin.dp, end = margin.dp, top = 8.dp, bottom = 2.dp,
+                        ),
+                    )
+                }
+                lazyItems(list, key = { it.id }) { d ->
+                    WikiHitRow(
+                        kind = d.levelText.ifBlank { "副本" }, kindTint = PhoneWarn,
+                        iconId = d.imageId, iconHash = "",
+                        title = d.name,
+                        sub = buildList {
+                            // 在某个类型里时不必每行重复类型名
+                            if (query.isNotBlank()) {
+                                d.type.takeIf { it.isNotBlank() }?.let(::add)
+                            }
+                            d.sizeText.takeIf { it.isNotBlank() }?.let(::add)
+                            (d.place.takeIf { it.isNotBlank() } ?: d.mapPlace)
+                                .takeIf { it.isNotBlank() }?.let(::add)
+                            d.bosses.firstOrNull()?.let { add("BOSS: $it") }
+                        }.joinToString(" · "),
+                        onClick = { onOpen(WikiDest.Instance(d.id)) },
+                    )
+                }
+            }
+        }
+    }
+}
+
 @OptIn(FlowPreview::class)
 @Composable
 private fun WikiItemSearchScreen(
@@ -722,7 +950,7 @@ private fun WikiItemSearchScreen(
                 PhoneEmpty(
                     "本地物品库读不出来",
                     failure.orEmpty().ifBlank { "数据文件可能没解压完，重进一次这个应用" },
-                    iconRes = R.drawable.ic_warning,
+                    iconRes = R.drawable.ic2_warning,
                     iconTint = PhoneWarn,
                 )
             }
@@ -784,7 +1012,7 @@ private fun WikiSearchField(
             .height(46.dp).clip(RoundedCornerShape(12.dp))
             .background(PhoneSurfaceRaised).padding(horizontal = 13.dp),
     ) {
-        ImageGlyph(R.drawable.ic_search, PhoneAccent, Modifier.size(18.dp))
+        ImageGlyph(R.drawable.ic2_search, PhoneAccent, Modifier.size(18.dp))
         BasicTextField(
             value,
             onChange,
@@ -807,7 +1035,7 @@ private fun WikiSearchField(
                 Modifier.size(24.dp).clip(CircleShape).clickable { onChange("") },
                 contentAlignment = Alignment.Center,
             ) {
-                ImageGlyph(R.drawable.ic_close_circle, PhoneMuted, Modifier.size(16.dp))
+                ImageGlyph(R.drawable.ic2_close_circle, PhoneMuted, Modifier.size(16.dp))
             }
         }
     }
@@ -1153,7 +1381,7 @@ private fun WikiToggleRow(on: Boolean, title: String, hint: String, onToggle: ()
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ImageGlyph(
-            if (on) R.drawable.ic_radio_on else R.drawable.ic_radio_off,
+            if (on) R.drawable.ic2_radio_on else R.drawable.ic2_radio_off,
             if (on) PhoneAccent else PhoneMuted,
             Modifier.size(17.dp),
         )
@@ -1352,7 +1580,7 @@ private fun WikiDetailScreen(
                             .background(PhoneSurface).clickable { retry++ }.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ImageGlyph(R.drawable.ic_refresh_cycle, PhoneAccent, Modifier.size(15.dp))
+                        ImageGlyph(R.drawable.ic2_refresh_cycle, PhoneAccent, Modifier.size(15.dp))
                         Column(Modifier.padding(start = 9.dp)) {
                             Text("获取失败，点击重试", color = PhoneText, fontSize = 12.sp)
                             Text("离线或站点限流时会这样", color = PhoneMuted, fontSize = 10.sp)

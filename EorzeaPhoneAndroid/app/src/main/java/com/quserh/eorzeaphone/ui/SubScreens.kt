@@ -1228,15 +1228,27 @@ fun SkywatcherScreen(state: PhoneState) {
 }
 @Composable
 fun CalendarScreen(state: PhoneState) {
-    val context = LocalContext.current
     var month by remember { mutableStateOf(java.time.YearMonth.now()) }
     var selectedDay by remember { mutableStateOf(java.time.LocalDate.now()) }
     var events by remember { mutableStateOf<List<com.quserh.eorzeaphone.data.shizhijia.ShizhijiaEvent>?>(null) }
+    val context = LocalContext.current
     LaunchedEffect(month) {
         events = null
         events = runCatching {
             com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi.getActiveCalendar(context, month.toString())
         }.getOrDefault(emptyList())
+    }
+    // Reminder toggle is persisted; whenever the month data lands, re-arm alarms.
+    LaunchedEffect(events, state.calendarEventNotify) {
+        val loaded = events ?: return@LaunchedEffect
+        if (state.calendarEventNotify) {
+            com.quserh.eorzeaphone.data.CalendarNotifications.schedule(
+                context,
+                loaded.map { com.quserh.eorzeaphone.data.EventNotice(it.id, it.name, it.color, it.beginTime, it.endTime) },
+            )
+        } else {
+            com.quserh.eorzeaphone.data.CalendarNotifications.cancelAll(context)
+        }
     }
     val zone = remember { java.time.ZoneId.systemDefault() }
     val list = events
@@ -1261,6 +1273,11 @@ fun CalendarScreen(state: PhoneState) {
                 }
             }
             PhoneCard(Modifier.fillMaxWidth(), flat = true) {
+                Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ImageGlyph(R.drawable.ic2_bell, PhoneAccent, Modifier.size(16.dp))
+                    Text("活动开始与结束前提醒", color = PhoneText, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Switch(checked = state.calendarEventNotify, onCheckedChange = { state.calendarEventNotify = it }, modifier = Modifier.scale(0.8f))
+                }
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 12.dp)) {
                     val weekdays = listOf("一", "二", "三", "四", "五", "六", "日")
                     Row(Modifier.fillMaxWidth()) {
@@ -1275,7 +1292,12 @@ fun CalendarScreen(state: PhoneState) {
                     val lead = (firstDay.dayOfWeek.value + 6) % 7
                     val daysInMonth = month.lengthOfMonth()
                     val today = java.time.LocalDate.now()
-                    val cells = List(lead) { null as java.time.LocalDate? } + (1..daysInMonth).map { month.atDay(it) }
+                    // Pad trailing nulls so every week row has exactly 7 cells,
+                    // otherwise a short last row centers its dates off-column.
+                    val trail = (7 - (lead + daysInMonth) % 7) % 7
+                    val cells = List(lead) { null as java.time.LocalDate? } +
+                        (1..daysInMonth).map { month.atDay(it) } +
+                        List(trail) { null as java.time.LocalDate? }
                     cells.chunked(7).forEach { week ->
                         Row(Modifier.fillMaxWidth()) {
                             week.forEach { day ->

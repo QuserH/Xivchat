@@ -304,11 +304,11 @@ fun FishingScreen(state: PhoneState) {
                                 Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                                     when {
                                         filter.available && !availabilityReady ->
-                                            PhoneEmpty("正在计算可捕获时间", "窗口要按艾欧泽亚时和天气逐条推算，稍等一下", R.drawable.ic_timer)
+                                            PhoneEmpty("正在计算可捕获时间", "窗口要按艾欧泽亚时和天气逐条推算，稍等一下", R.drawable.ic2_clock)
                                         alarmsOnly ->
-                                            PhoneEmpty("还没有设置捕鱼闹钟", "在鱼的详情页点闹钟，窗口开始前会提醒你", R.drawable.ic_alarm_bell)
+                                            PhoneEmpty("还没有设置捕鱼闹钟", "在鱼的详情页点闹钟，窗口开始前会提醒你", R.drawable.ic2_bell)
                                         else ->
-                                            PhoneEmpty("没有符合条件的鱼", "放宽筛选或清掉搜索词再看看", R.drawable.ic_search)
+                                            PhoneEmpty("没有符合条件的鱼", "放宽筛选或清掉搜索词再看看", R.drawable.ic2_search)
                                     }
                                 }
                             }
@@ -399,11 +399,11 @@ private fun FishingListHeader(
     // 横向边距由外层列表统一给（LazyColumn / 悬浮头各自 padding），这里不再自己加。
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(10.dp)).background(PhoneSurfaceRaised).padding(horizontal = 12.dp)) {
-            ImageGlyph(R.drawable.ic_search, PhoneMuted, Modifier.size(17.dp))
+            ImageGlyph(R.drawable.ic2_search, PhoneMuted, Modifier.size(17.dp))
             BasicTextField(query, onQuery, singleLine = true, textStyle = TextStyle(color = PhoneText, fontSize = 14.sp), modifier = Modifier.weight(1f).padding(horizontal = 9.dp), decorationBox = { field -> Box(contentAlignment = Alignment.CenterStart) { if (query.isBlank()) Text("搜索鱼类、钓场或地区", color = PhoneMuted, fontSize = 13.sp); field() } })
             if (query.isNotEmpty()) {
                 Box(Modifier.size(24.dp).clip(CircleShape).clickable { onQuery("") }, contentAlignment = Alignment.Center) {
-                    ImageGlyph(R.drawable.ic_close_circle, PhoneMuted, Modifier.size(16.dp))
+                    ImageGlyph(R.drawable.ic2_close_circle, PhoneMuted, Modifier.size(16.dp))
                 }
             }
         }
@@ -490,7 +490,7 @@ private fun FishingRow(
                     Box(
                         Modifier.align(Alignment.BottomEnd).size(17.dp).clip(CircleShape).background(PhoneGreen),
                         contentAlignment = Alignment.Center,
-                    ) { ImageGlyph(R.drawable.ic_check_small, Color.White, Modifier.size(11.dp)) }
+                    ) { ImageGlyph(R.drawable.ic2_check, Color.White, Modifier.size(11.dp)) }
                 }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -506,7 +506,7 @@ private fun FishingRow(
                     )
                     if (alarm) {
                         Spacer(Modifier.width(5.dp))
-                        ImageGlyph(R.drawable.ic_alarm_bell, PhoneAccent, Modifier.size(12.dp))
+                        ImageGlyph(R.drawable.ic2_bell, PhoneAccent, Modifier.size(12.dp))
                     }
                 }
                 val place = fish.spots.firstOrNull()?.let { listOf(it.region, it.name).filter(String::isNotBlank).distinct().joinToString(" · ") }.orEmpty()
@@ -570,7 +570,7 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                     }
                     if (caught) {
                         Box(Modifier.size(26.dp).clip(CircleShape).background(PhoneGreen), contentAlignment = Alignment.Center) {
-                            ImageGlyph(R.drawable.ic_check_small, Color.White, Modifier.size(16.dp))
+                            ImageGlyph(R.drawable.ic2_check, Color.White, Modifier.size(16.dp))
                         }
                     } else {
                         Box(
@@ -651,7 +651,7 @@ private fun FishingDetail(state: PhoneState, fish: FishingFish, catalog: Fishing
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     ) {
                         ImageGlyph(
-                            R.drawable.ic_alarm_bell,
+                            R.drawable.ic2_bell,
                             if (alarm) PhoneText else Color.White,
                             Modifier.size(15.dp),
                         )
@@ -953,7 +953,7 @@ private fun TooltipBubble(text: String) {
 @Composable
 private fun TechniqueArrow(label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 1.dp)) {
-        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(18.dp))
+        ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(18.dp))
         Text(label, color = PhoneMuted, fontSize = 8.sp, maxLines = 1)
     }
 }
@@ -966,7 +966,7 @@ private fun ItemPath(label: String, items: List<FishingItemRef>) {
             TooltipIcon(item.icon, item.name, 32.dp, item.name.take(1))
             Text(item.name, color = PhoneText, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
             if (index < items.lastIndex) {
-                ImageGlyph(R.drawable.ic_chevron_right, PhoneAccent, Modifier.size(18.dp))
+                ImageGlyph(R.drawable.ic2_chevron_right, PhoneAccent, Modifier.size(18.dp))
                 Spacer(Modifier.width(2.dp))
             }
         }

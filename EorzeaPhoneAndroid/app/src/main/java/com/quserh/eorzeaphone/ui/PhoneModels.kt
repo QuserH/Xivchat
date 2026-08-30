@@ -1107,6 +1107,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    private val calendarNotifyPref = boolPref("calendarEventNotify", true)
+    /** Push a system notification when a Shizhijia event starts / is about to end. */
+    var calendarEventNotify: Boolean
+        get() = calendarNotifyPref.value
+        set(v) { calendarNotifyPref.value = v }
+
     private val dockIdsPref = stringPref("dockApps", "gamechat|contacts|settings")
     /** Editable dock contents (app ids, '|'-joined in prefs). */
     var dockAppIds: List<String>

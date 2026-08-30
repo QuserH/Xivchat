@@ -387,7 +387,7 @@ private fun WorldClockRow(name: String, subtitle: String, time: String, remove: 
     Row(Modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(name, color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold); Text(subtitle, color = PhoneMuted, fontSize = 11.sp) }
         Text(time, color = PhoneText, fontSize = 25.sp, fontWeight = FontWeight.Light)
-        if (remove != null) TextButton(onClick = remove, modifier = Modifier.width(36.dp)) { ImageGlyph(R.drawable.ic_close, PhoneDanger, Modifier.size(18.dp)) }
+        if (remove != null) TextButton(onClick = remove, modifier = Modifier.width(36.dp)) { ImageGlyph(R.drawable.ic2_close, PhoneDanger, Modifier.size(18.dp)) }
     }
 }
 
@@ -473,16 +473,16 @@ private fun AlarmEditorScreen(store: ClockStore, alarm: LocalAlarm?, close: () -
 @Composable
 private fun TimeStepper(value: Int, down: () -> Unit, up: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        TextButton(onClick = up, modifier = Modifier.size(42.dp)) { ImageGlyph(R.drawable.ic_chevron_up, PhoneAccent, Modifier.size(22.dp)) }
+        TextButton(onClick = up, modifier = Modifier.size(42.dp)) { ImageGlyph(R.drawable.ic2_chevron_up, PhoneAccent, Modifier.size(22.dp)) }
         Box(Modifier.size(88.dp, 68.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurface), contentAlignment = Alignment.Center) { Text("%02d".format(value), color = PhoneText, fontSize = 38.sp, fontWeight = FontWeight.Light) }
-        TextButton(onClick = down, modifier = Modifier.size(42.dp)) { ImageGlyph(R.drawable.ic_chevron_down, PhoneAccent, Modifier.size(22.dp)) }
+        TextButton(onClick = down, modifier = Modifier.size(42.dp)) { ImageGlyph(R.drawable.ic2_chevron_down, PhoneAccent, Modifier.size(22.dp)) }
     }
 }
 
 @Composable
 private fun SimpleLocalHeader(title: String, close: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = close, modifier = Modifier.size(50.dp)) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(24.dp)) }
+        TextButton(onClick = close, modifier = Modifier.size(50.dp)) { ImageGlyph(R.drawable.ic2_back, PhoneAccent, Modifier.size(24.dp)) }
         Text(title, color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
     }
 }

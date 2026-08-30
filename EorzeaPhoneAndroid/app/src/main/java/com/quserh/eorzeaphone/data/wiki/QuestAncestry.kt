@@ -156,6 +156,49 @@ object QuestAncestry {
         return cells to litEdges
     }
 
+    /**
+     * 规则 B：从 [questId] 沿「谁需要它」向下走，找到**最早解锁的主线任务**
+     * （第一个 category 含「主线」的后继）。返回路径（含起点与主线）。
+     * 找不到（下游全是非主线到头）返回 null。
+     */
+    suspend fun firstMsqDown(context: Context, questId: Int): Pair<List<QuestNode>, QuestNode>? =
+        withContext(Dispatchers.IO) {
+            val db = WikiDb.open(context)
+            val nextOf = HashMap<Int, MutableList<Int>>(6000)
+            db.rawQuery("SELECT quest_id, pre_id FROM quest_prereq", null).use { c ->
+                while (c.moveToNext()) nextOf.getOrPut(c.getInt(1)) { mutableListOf() }.add(c.getInt(0))
+            }
+            val msq = HashSet<Int>(1200)
+            db.rawQuery("SELECT id FROM quests WHERE category LIKE '%主线%'", null).use { c ->
+                while (c.moveToNext()) msq.add(c.getInt(0))
+            }
+            // BFS 向下，记录每个节点第一次被谁到达，回溯出路径。
+            val parent = HashMap<Int, Pair<Int, Int>>() // node -> (prev, slot)
+            val seen = HashSet<Int>(listOf(questId))
+            val dq = ArrayDeque<Int>()
+            dq.add(questId)
+            var found = -1
+            while (dq.isNotEmpty() && found < 0) {
+                val u = dq.removeFirst()
+                for (v in nextOf[u].orEmpty()) {
+                    if (v in seen) continue
+                    seen.add(v)
+                    parent[v] = u to 0
+                    if (v in msq) { found = v; break }
+                    dq.add(v)
+                }
+            }
+            if (found < 0) return@withContext null
+            val pathIds = ArrayList<Int>()
+            var cur: Int? = found
+            while (cur != null) { pathIds.add(cur); cur = parent[cur]?.first }
+            pathIds.reverse()
+            val sub = pathIds.toHashSet()
+            val nodes = loadNodes(db, sub)
+            val path = pathIds.mapNotNull { nodes[it] }
+            path.lastOrNull()?.let { path to it }
+        }
+
     /** 安全上限。实测最大 1090，留一倍余量防脏数据成环。 */
     private const val MAX_ANCESTORS = 2500
 
@@ -337,6 +380,33 @@ object QuestAncestry {
                 if (a == b) continue          // 段内部的边，吃掉
                 cPre.getOrPut(b) { mutableSetOf() }.add(a)
                 cNext.getOrPut(a) { mutableSetOf() }.add(b)
+            }
+        }
+
+        // --- 3.5 一源一边剪枝（用户规则）：一个前置 gated 一条线上的多个任务时，
+        // 只连「最早的那一个」—— 比如残酷的真相同时前置龙诗之始和好想回家，
+        // 只画 残酷的真相→龙诗之始（最早），它经由虎口拔牙照样包含好想回家，
+        // 直连好想回家的重复边不再出现。
+        val preDepth = HashMap<Key, Int>()
+        val preIndeg = keys.associateWithTo(HashMap()) { cPre[it]?.size ?: 0 }
+        val pdq = ArrayDeque(keys.filter { preIndeg[it] == 0 })
+        keys.forEach { preDepth[it] = 0 }
+        while (pdq.isNotEmpty()) {
+            val u = pdq.removeFirst()
+            for (v in cNext[u].orEmpty()) {
+                preDepth[v] = maxOf(preDepth[v] ?: 0, (preDepth[u] ?: 0) + 1)
+                preIndeg[v] = (preIndeg[v] ?: 1) - 1
+                if ((preIndeg[v] ?: 0) == 0) pdq.add(v)
+            }
+        }
+        for (a in cNext.keys.toList()) {
+            val bs = cNext[a].orEmpty().toList()
+            if (bs.size <= 1) continue
+            val keep = bs.minWith(compareBy({ preDepth[it] ?: 0 }, { it.id }))
+            for (b in bs) if (b != keep) {
+                cNext[a]?.remove(b)
+                cPre[b]?.remove(a)
+                if (cPre[b]?.isEmpty() == true) cPre.remove(b)
             }
         }
 

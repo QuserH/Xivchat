@@ -44,10 +44,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.FishingMapImageLoader
+import com.quserh.eorzeaphone.data.wiki.DutyDb
+import com.quserh.eorzeaphone.data.wiki.DutyDrop
 import com.quserh.eorzeaphone.data.wiki.QuestDb
 import com.quserh.eorzeaphone.data.wiki.QuestMap
 import com.quserh.eorzeaphone.data.wiki.QuestNode
 import com.quserh.eorzeaphone.data.wiki.WikiDb
+import com.quserh.eorzeaphone.data.wiki.WikiDuty
 import com.quserh.eorzeaphone.data.wiki.WikiInstance
 import com.quserh.eorzeaphone.data.wiki.WikiItem
 import com.quserh.eorzeaphone.data.wiki.WikiNode
@@ -97,7 +100,7 @@ internal fun WikiMissingScreen(
                 "读不到这一页",
                 if (onRetry != null) "离线或站点限流时会这样，点下面重试"
                 else "站点可能没有这一页的资料",
-                R.drawable.ic_warning,
+                R.drawable.ic2_warning,
                 action = onRetry?.let {
                     {
                         Text(
@@ -443,28 +446,52 @@ private fun QuestPinCard(node: QuestNode) {
 
 // ---- 副本 ----
 
+/**
+ * 副本详情。**本地库优先**，本地没有才联网。
+ *
+ * 原来只走 [WikiRemote.instance]，于是没网时这一页是「副本 xxx 找不到」，
+ * 而且搜索结果根本到不了这里 —— 副本命中的是 [WikiHit.Page]，直接跳浏览器了。
+ * 现在 427 个副本在本地库里（[DutyDb]），离线也能看，还能列掉落并跳到物品详情。
+ *
+ * 联网那一路留着当兜底：本地库是发版时构建的，新补丁加的副本本地还没有。
+ */
 @Composable
 internal fun WikiInstanceScreen(
     state: PhoneState,
     id: Int,
     onBack: () -> Unit,
+    onOpen: (WikiDest) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
-    var inst by remember(id) { mutableStateOf<WikiInstance?>(null) }
+    var duty by remember(id) { mutableStateOf<WikiDuty?>(null) }
+    var drops by remember(id) { mutableStateOf<List<Pair<DutyDrop, WikiItem?>>>(emptyList()) }
+    var remote by remember(id) { mutableStateOf<WikiInstance?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
     var retry by remember(id) { mutableStateOf(0) }
+
     LaunchedEffect(id, retry) {
         loading = true
-        inst = runCatching { WikiRemote.instance(context, id) }.getOrNull()
+        val local = runCatching { DutyDb.byId(context, id) }.getOrNull()
+        duty = local
+        if (local != null) {
+            // 掉落物品名从本地 items 表补，拿不到的（库里裁掉的）只显示 ID
+            drops = runCatching {
+                DutyDb.drops(context, id).map { d ->
+                    d to WikiDb.byId(context, d.itemId)
+                }
+            }.getOrDefault(emptyList())
+        } else {
+            remote = runCatching { WikiRemote.instance(context, id) }.getOrNull()
+        }
         loading = false
     }
-    val i = inst
+
+    val d = duty
     val margin = LocalContentMargin.current
     when {
         loading -> WikiLoadingScreen("副本", state, onBack)
-        i == null -> WikiMissingScreen("副本 $id", state, onBack) { retry++ }
-        else -> ScreenFrame {
-            ScreenHeader(i.name.ifBlank { "副本 ${i.id}" }, state, onBack = onBack)
+        d != null -> ScreenFrame {
+            ScreenHeader(d.name.ifBlank { "副本 ${d.id}" }, state, onBack = onBack)
             LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -476,38 +503,95 @@ internal fun WikiInstanceScreen(
                         Modifier.fillMaxWidth().padding(top = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
-                        i.type.takeIf { it.isNotBlank() }
+                        d.type.takeIf { it.isNotBlank() }
                             ?.let { WikiChipBadge(it, PhoneAccent) }
-                        if (i.levelMin > 0) {
-                            val lv = if (i.levelMax > i.levelMin)
-                                "Lv${i.levelMin}-${i.levelMax}" else "Lv${i.levelMin}"
-                            WikiChipBadge(lv, PhoneInfo)
-                        }
-                        if (i.timeLimit > 0) WikiChipBadge("${i.timeLimit} 分钟", PhoneWarn)
+                        d.levelText.takeIf { it.isNotBlank() }
+                            ?.let { WikiChipBadge(it, PhoneInfo) }
+                        d.timeText.takeIf { it.isNotBlank() }
+                            ?.let { WikiChipBadge(it, PhoneWarn) }
                     }
                 }
                 item { WikiLinkSection("副本信息") }
                 item {
                     WikiLinkFacts(
                         buildList {
-                            i.place.takeIf { it.isNotBlank() }?.let { add("地点" to it) }
-                            if (i.ilvlMin > 0) add("最低品级" to i.ilvlMin.toString())
-                            val party = buildList {
-                                if (i.partyTank > 0) add("坦 ${i.partyTank}")
-                                if (i.partyHealer > 0) add("治 ${i.partyHealer}")
-                                if (i.partyMelee > 0) add("近 ${i.partyMelee}")
-                                if (i.partyRanged > 0) add("远 ${i.partyRanged}")
+                            (d.place.takeIf { it.isNotBlank() } ?: d.mapPlace)
+                                .takeIf { it.isNotBlank() }?.let { add("地点" to it) }
+                            if (d.ilvlMin > 0) add("最低品级" to d.ilvlMin.toString())
+                            if (d.ilvlMax > 0) add("品级上限" to d.ilvlMax.toString())
+                            d.sizeText.takeIf { it.isNotBlank() }?.let { add("人数" to it) }
+                            d.partyText.takeIf { it.isNotBlank() }
+                                ?.let { add("小队构成" to it) }
+                            if (d.echoStack > 0) {
+                                add("超越之力" to "每次失败叠加 ${d.echoStack}%")
                             }
-                            if (party.isNotEmpty()) add("小队构成" to party.joinToString(" / "))
-                            add("副本 ID" to i.id.toString())
+                            add("中途加入" to if (d.joinMidway) "可以" else "不可")
+                            if (d.unrestricted) add("人数限制解除" to "支持")
+                            if (d.nameEn.isNotBlank()) add("英文名" to d.nameEn)
+                            add("副本 ID" to d.id.toString())
                         },
                     )
                 }
-                if (i.description.isNotBlank()) {
+                if (d.bosses.isNotEmpty()) {
+                    item { WikiLinkSection("BOSS") }
+                    item {
+                        Text(
+                            d.bosses.joinToString("、"),
+                            color = PhoneText, fontSize = 12.sp, lineHeight = 19.sp,
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(PhoneSurface).padding(12.dp),
+                        )
+                    }
+                }
+                if (drops.isNotEmpty()) {
+                    item { WikiLinkSection("掉落 ${drops.size} 件") }
+                    lazyItems(drops, key = { "${it.first.kind}-${it.first.itemId}" }) { (drop, it2) ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onOpen(WikiDest.Item(drop.itemId)) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier.size(34.dp).clip(RoundedCornerShape(6.dp))
+                                    .background(PhoneSurface),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ItemIcon(
+                                    it2?.iconId ?: 0, Modifier.fillMaxSize(),
+                                    (it2?.nameCn ?: "?").take(2),
+                                )
+                            }
+                            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                Text(
+                                    it2?.nameCn ?: "物品 ${drop.itemId}",
+                                    color = PhoneAccent, fontSize = 13.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                val tags = buildList {
+                                    if (drop.kind == 1) add("宝箱") else add("直接奖励")
+                                    if (drop.chance) add("几率")
+                                    if (drop.weekly) add("每周限定")
+                                    if (drop.qty > 1) add("×${drop.qty}")
+                                }
+                                Text(
+                                    tags.joinToString(" · "),
+                                    color = PhoneMuted, fontSize = 10.sp,
+                                )
+                            }
+                            ImageGlyph(
+                                R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+                if (d.description.isNotBlank()) {
                     item { WikiLinkSection("简介") }
                     item {
                         Text(
-                            i.description.replace("<br>", "\n").replace("<br/>", "\n"),
+                            d.description,
                             color = PhoneText, fontSize = 12.sp, lineHeight = 19.sp,
                             modifier = Modifier.fillMaxWidth()
                                 .clip(RoundedCornerShape(9.dp))
@@ -517,6 +601,79 @@ internal fun WikiInstanceScreen(
                 }
             }
         }
+        // 本地没有（新补丁的副本），退回联网那一份
+        remote != null -> {
+            val i = remote!!
+            ScreenFrame {
+                ScreenHeader(i.name.ifBlank { "副本 ${i.id}" }, state, onBack = onBack)
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = margin.dp, end = margin.dp, bottom = 20.dp,
+                    ),
+                ) {
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            i.type.takeIf { it.isNotBlank() }
+                                ?.let { WikiChipBadge(it, PhoneAccent) }
+                            if (i.levelMin > 0) {
+                                val lv = if (i.levelMax > i.levelMin)
+                                    "Lv${i.levelMin}-${i.levelMax}" else "Lv${i.levelMin}"
+                                WikiChipBadge(lv, PhoneInfo)
+                            }
+                            if (i.timeLimit > 0) WikiChipBadge("${i.timeLimit} 分钟", PhoneWarn)
+                        }
+                    }
+                    item { WikiLinkSection("副本信息") }
+                    item {
+                        WikiLinkFacts(
+                            buildList {
+                                i.place.takeIf { it.isNotBlank() }?.let { add("地点" to it) }
+                                if (i.ilvlMin > 0) add("最低品级" to i.ilvlMin.toString())
+                                val party = buildList {
+                                    if (i.partyTank > 0) add("坦 ${i.partyTank}")
+                                    if (i.partyHealer > 0) add("治 ${i.partyHealer}")
+                                    if (i.partyMelee > 0) add("近 ${i.partyMelee}")
+                                    if (i.partyRanged > 0) add("远 ${i.partyRanged}")
+                                }
+                                if (party.isNotEmpty()) {
+                                    add("小队构成" to party.joinToString(" / "))
+                                }
+                                add("副本 ID" to i.id.toString())
+                            },
+                        )
+                    }
+                    if (i.bosses.isNotEmpty()) {
+                        item { WikiLinkSection("BOSS") }
+                        item {
+                            Text(
+                                i.bosses.joinToString("、"),
+                                color = PhoneText, fontSize = 12.sp, lineHeight = 19.sp,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(PhoneSurface).padding(12.dp),
+                            )
+                        }
+                    }
+                    if (i.description.isNotBlank()) {
+                        item { WikiLinkSection("简介") }
+                        item {
+                            Text(
+                                i.description.replace("<br>", "\n").replace("<br/>", "\n"),
+                                color = PhoneText, fontSize = 12.sp, lineHeight = 19.sp,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(PhoneSurface).padding(12.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        else -> WikiMissingScreen("副本 $id", state, onBack) { retry++ }
     }
 }
 
@@ -576,7 +733,7 @@ internal fun WikiShopScreen(
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f).padding(start = 10.dp),
                         )
-                        ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted,
+                        ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted,
                             Modifier.size(14.dp))
                     }
                 }
@@ -647,7 +804,7 @@ internal fun WikiNodeScreen(state: PhoneState, id: Int, onBack: () -> Unit) {
                                 .background(PhoneSurface).padding(11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ImageGlyph(R.drawable.ic_timer, PhoneMuted, Modifier.size(15.dp))
+                            ImageGlyph(R.drawable.ic2_clock, PhoneMuted, Modifier.size(15.dp))
                             Text(
                                 "这是限时采集点，倒计时和地图在「采集时钟」里。",
                                 color = PhoneMuted, fontSize = 10.sp,
@@ -732,7 +889,7 @@ private fun WikiLinkList(rows: List<Pair<String, Int>>, onClick: (Int) -> Unit) 
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(14.dp))
+                ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(14.dp))
             }
             if (i < rows.lastIndex) PhoneHairlineRow(12.dp)
         }
@@ -770,7 +927,7 @@ private fun WikiItemLinkList(
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(start = 10.dp),
                 )
-                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(14.dp))
+                ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(14.dp))
             }
             if (i < pairs.lastIndex) PhoneHairlineRow(12.dp)
         }

@@ -175,7 +175,7 @@ fun GatherClockScreen(state: PhoneState) {
                         .padding(horizontal = 11.dp, vertical = 7.dp),
                 ) {
                     ImageGlyph(
-                        R.drawable.ic_filter,
+                        R.drawable.ic2_filter,
                         if (onlyActive) BrandOnFill else PhoneMuted,
                         Modifier.size(13.dp),
                     )
@@ -205,7 +205,7 @@ fun GatherClockScreen(state: PhoneState) {
                 Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                PhoneEmpty("读取采集点失败", failure, R.drawable.ic_warning)
+                PhoneEmpty("读取采集点失败", failure, R.drawable.ic2_warning)
             }
             shown.isEmpty() -> Box(
                 Modifier.fillMaxWidth().weight(1f),
@@ -215,7 +215,7 @@ fun GatherClockScreen(state: PhoneState) {
                     if (onlyActive) "现在没有开放的采集点" else "没有符合条件的采集点",
                     if (onlyActive) "关掉「仅看开放中」看全部 226 处"
                     else "换个物品名或地区试试",
-                    R.drawable.ic_timer,
+                    R.drawable.ic2_clock,
                 )
             }
             else -> LazyColumn(
@@ -242,7 +242,7 @@ private fun GatherSearchField(value: String, onChange: (String) -> Unit) {
             .height(42.dp).clip(RoundedCornerShape(10.dp))
             .background(PhoneSurfaceRaised).padding(horizontal = 12.dp),
     ) {
-        ImageGlyph(R.drawable.ic_search, PhoneMuted, Modifier.size(17.dp))
+        ImageGlyph(R.drawable.ic2_search, PhoneMuted, Modifier.size(17.dp))
         BasicTextField(
             value, onChange, singleLine = true,
             textStyle = TextStyle(color = PhoneText, fontSize = 14.sp),
@@ -261,7 +261,7 @@ private fun GatherSearchField(value: String, onChange: (String) -> Unit) {
                 Modifier.size(24.dp).clip(CircleShape).clickable { onChange("") },
                 contentAlignment = Alignment.Center,
             ) {
-                ImageGlyph(R.drawable.ic_close_circle, PhoneMuted, Modifier.size(16.dp))
+                ImageGlyph(R.drawable.ic2_close_circle, PhoneMuted, Modifier.size(16.dp))
             }
         }
     }
