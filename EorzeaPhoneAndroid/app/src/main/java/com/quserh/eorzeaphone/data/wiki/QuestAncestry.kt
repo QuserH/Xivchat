@@ -322,11 +322,14 @@ object QuestAncestry {
             }
         }
 
-        // --- 4. 分层：最长路径，从入口往下 ---
+        // --- 4. 流程图布局：根（顶部主线/入口）在最上一行，链垂直下落 ---
+        // 深度 = 从根往下的最长路径。目标任务自然落在它所在的层，
+        // 其他更长的分支可以垂得更深 —— 流程图本来就是这样的。
         val depth = HashMap<Key, Int>()
+        val roots = keys.filter { (cPre[it]?.size ?: 0) == 0 }
         val indeg = keys.associateWithTo(HashMap()) { cPre[it]?.size ?: 0 }
-        val dq = ArrayDeque(keys.filter { indeg[it] == 0 })
-        keys.forEach { depth[it] = 0 }
+        val dq = ArrayDeque(roots)
+        roots.forEach { depth[it] = 0 }
         var processed = 0
         while (dq.isNotEmpty()) {
             val u = dq.removeFirst()
@@ -334,26 +337,22 @@ object QuestAncestry {
             for (v in cNext[u].orEmpty()) {
                 depth[v] = maxOf(depth[v] ?: 0, (depth[u] ?: 0) + 1)
                 indeg[v] = (indeg[v] ?: 1) - 1
-                if (indeg[v] == 0) dq.add(v)
+                if ((indeg[v] ?: 0) == 0) dq.add(v)
             }
         }
-        // 有环兜底：没处理到的挂到最底下
+        // 有环兜底：没处理到的挂到最底
         if (processed < keys.size) {
             val maxD = depth.values.maxOrNull() ?: 0
-            keys.filter { (indeg[it] ?: 0) > 0 }.forEach { depth[it] = maxD + 1 }
+            keys.filter { depth[it] == null }.forEach { depth[it] = maxD + 1 }
         }
-        // target 强制放最后一层，它是「终点」
-        val targetKey = keyOf(target.id)
-        val bottom = (depth.values.maxOrNull() ?: 0)
-        depth[targetKey] = bottom
 
         // --- 5. 选中任务的直接上溯路径（UI 加粗这条） ---
+        val targetKey = keyOf(target.id)
         val onPath = HashSet<Key>()
         run {
             val stack = ArrayDeque<Key>()
             stack.add(targetKey)
             onPath.add(targetKey)
-            // 只沿「最长路径的前驱」上溯一条主线，避免整张图都被标成主线
             while (stack.isNotEmpty()) {
                 val u = stack.removeFirst()
                 val best = cPre[u].orEmpty().maxByOrNull { depth[it] ?: 0 }
@@ -361,30 +360,36 @@ object QuestAncestry {
             }
         }
 
-        // --- 6. 摆位：按层排，层内宽了折行 ---
-        val byDepth = keys.groupBy { depth[it] ?: 0 }.toSortedMap()
-        val pos = HashMap<Key, Pair<Int, Int>>()
-        var row = 0
-        var maxCol = 0
-        for ((_, group) in byDepth) {
-            // 主线优先放最左，其余按名字稳定排序，保证同一次打开顺序一致
-            val ordered = group.sortedWith(
-                compareByDescending<Key> { it in onPath }
-                    .thenBy { labelOf(it, nodes, runs) },
-            )
-            ordered.forEachIndexed { i, k ->
-                val c = i % WRAP
-                pos[k] = c to (row + i / WRAP)
-                if (c > maxCol) maxCol = c
+        // --- 6. 列：树形布局（叶从左往右领列，父取孩子列的中位） ---
+        // 线性链（每个节点单前驱单后继）会自动排成一条竖列 ——
+        // 这就是用户要的流程图：包含关系一眼可见，肘线只在相邻卡片之间。
+        // 多前驱的节点挂在第一个到达它的父下面，另一个父的边照画（可交叉，
+        // 但高亮路线是蓝的，一眼能认出来）。
+        val colOf = HashMap<Key, Int>()
+        var nextCol = 0
+        val visiting = HashSet<Key>()
+        fun placeCol(k: Key): Int {
+            colOf[k]?.let { return it }
+            if (!visiting.add(k)) return nextCol++
+            val kids = cNext[k].orEmpty().filter { it !in visiting }
+            val c = if (kids.isEmpty()) {
+                nextCol++
+            } else {
+                val cs = kids.map { placeCol(it) }.filter { it in 0 until nextCol }
+                if (cs.isEmpty()) nextCol++ else (cs.min() + cs.max()) / 2
             }
-            row += ((ordered.size + WRAP - 1) / WRAP).coerceAtLeast(1)
+            colOf[k] = c
+            visiting.remove(k)
+            return c
         }
-
+        roots.sortedBy { labelOf(it, nodes, runs) }.forEach { placeCol(it) }
+        keys.filter { it !in colOf }.forEach { colOf[it] = nextCol++ }
         // --- 7. 出 cells / edges ---
         val order = keys.toList()
         val idx = order.withIndex().associate { (i, k) -> k to i }
         val cells = order.map { k ->
-            val (c, r) = pos[k] ?: (0 to 0)
+            val c = colOf[k] ?: 0
+            val r = depth[k] ?: 0
             if (k.isRun) {
                 val seg = runs[k.id]
                 AncestorCell.Run(
@@ -416,8 +421,8 @@ object QuestAncestry {
             target = target,
             cells = cells,
             edges = edges,
-            cols = maxCol + 1,
-            rows = row,
+            cols = nextCol,
+            rows = (depth.values.maxOrNull() ?: 0) + 1,
             totalAncestors = totalAncestors,
             collapsedCount = runs.sumOf { it.size },
             msqTops = msqTops,

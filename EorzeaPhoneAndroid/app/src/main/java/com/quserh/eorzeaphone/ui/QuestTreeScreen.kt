@@ -550,7 +550,10 @@ private fun DrawScope.drawElbow(
             strokeWidth = width.dp.toPx(), pathEffect = effect)
         return
     }
-    val midY = (y1 + y2) / 2f
+    // 横线贴着子节点上方走，不走父/子正中：祖先图里顶层和子层之间
+    // 隔着大片空白，正中横线会从空白区穿过（用户截图里的乱线）。
+    // 长的竖线垂直穿过空白（平行可读），横线只在子卡片上方一小段。
+    val midY = y2 - 12.dp.toPx()
     path.reset()
     path.moveTo(x1, y1)
     path.lineTo(x1, midY)
