@@ -117,6 +117,27 @@ data class AncestorTree(
 private data class Key(val isRun: Boolean, val id: Int)
 
 object QuestAncestry {
+
+    /**
+     * 交互高亮：从画布上选中的格子出发，沿**所有**前置分支上溯，
+     * 直到顶部主线（主线自身的前置没在图里，到顶自然停）。
+     * 两个前置就亮两条分支 —— 用户要的「多条高亮线」。
+     */
+    fun pathFrom(tree: AncestorTree, fromCell: Int): Set<Int> {
+        if (fromCell !in tree.cells.indices) return emptySet()
+        val pre = HashMap<Int, MutableList<Int>>()
+        tree.edges.forEach { pre.getOrPut(it.toCell) { mutableListOf() }.add(it.fromCell) }
+        val out = HashSet<Int>()
+        out.add(fromCell)
+        val dq = ArrayDeque<Int>()
+        dq.add(fromCell)
+        while (dq.isNotEmpty()) {
+            val u = dq.removeFirst()
+            for (a in pre[u].orEmpty()) if (out.add(a)) dq.add(a)
+        }
+        return out
+    }
+
     /** 安全上限。实测最大 1090，留一倍余量防脏数据成环。 */
     private const val MAX_ANCESTORS = 2500
 
@@ -286,10 +307,12 @@ object QuestAncestry {
         // 会漏出来是因为某个非主线祖先恰好也是这条主线的前置（实测有 2 例，
         // 「深宇宙探查学的实地研习」那两个），那条边画出来就像主线被部分展开了。
         // 节点本身留着是对的 —— 它经非主线路径确实在这棵树里。
+        // 边全部保留，包括指进顶部主线的：用户要的是「点任意任务，
+        // 高亮线直接连到顶部主线」——掐掉进主线的边，那条线就画不出来。
+        // 主线自己的前置不在 sub 里（BFS 碰到主线就停了），不会被展开。
         val cPre = HashMap<Key, MutableSet<Key>>()
         val cNext = HashMap<Key, MutableSet<Key>>()
         for (q in sub) {
-            if (q in topSet) continue
             for (p in preIn(q)) {
                 val a = keyOf(p)
                 val b = keyOf(q)

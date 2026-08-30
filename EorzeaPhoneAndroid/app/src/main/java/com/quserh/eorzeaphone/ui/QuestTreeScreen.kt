@@ -775,6 +775,8 @@ internal fun QuestAncestryScreen(
     var pickedCell by remember(questId) { mutableStateOf(-1) }
 
     LaunchedEffect(questId) {
+        if (pickedCell != -1) pickedCell = -1
+
         loading = true
         tree = runCatching { QuestAncestry.of(context, questId) }.getOrNull()
         loading = false
@@ -814,9 +816,14 @@ internal fun QuestAncestryScreen(
                         modifier = Modifier.padding(top = 4.dp, bottom = 7.dp),
                     )
 
+                    // 点任意任务：从它出发到顶部主线的全部前置分支高亮。
+                    val highlightCells = remember(t, pickedCell) {
+                        if (pickedCell < 0) emptySet() else QuestAncestry.pathFrom(t, pickedCell)
+                    }
                     AncestorCanvas(
                         tree = t,
                         selectedCell = pickedCell,
+                        highlightCells = highlightCells,
                         heightDp = 360,
                         view = view,
                         onPick = { pickedCell = it },
@@ -896,6 +903,7 @@ internal fun QuestAncestryScreen(
 private fun AncestorCanvas(
     tree: AncestorTree,
     selectedCell: Int,
+    highlightCells: Set<Int>,
     heightDp: Int,
     view: QuestTreeView,
     onPick: (Int) -> Unit,
@@ -1021,10 +1029,13 @@ private fun AncestorCanvas(
                 tree.edges.forEach { e ->
                     val a = rects.getOrNull(e.fromCell) ?: return@forEach
                     val b = rects.getOrNull(e.toCell) ?: return@forEach
+                    // 用户点了任务 → 只亮「它到顶部主线」的那几条线。
+                    val lit = if (highlightCells.isEmpty()) e.onPath
+                              else e.fromCell in highlightCells && e.toCell in highlightCells
                     drawElbow(
                         from = a, to = b,
-                        color = if (e.onPath) cPath else cEdge.copy(alpha = 0.85f),
-                        width = if (e.onPath) 3.2f else 1.8f,
+                        color = if (lit) cPath else cEdge.copy(alpha = 0.55f),
+                        width = if (lit) 3.2f else 1.6f,
                         effect = null,
                         path = elbow,
                     )
@@ -1041,6 +1052,7 @@ private fun AncestorCanvas(
                     val isTarget = c is AncestorCell.Quest && c.isTarget
                     val isRun = c is AncestorCell.Run
                     val sel = i == selectedCell && !isTarget
+                    val litCell = i in highlightCells
 
                     val isMsqTop = c is AncestorCell.Quest && c.isMsqTop
                     val fill = when {
@@ -1048,7 +1060,7 @@ private fun AncestorCanvas(
                         // 顶部前置主线：单独一种底，让人一眼看出「链从这里开始」
                         isMsqTop -> cMsq.copy(alpha = 0.20f)
                         isRun -> cRun.copy(alpha = 0.16f)
-                        c.onPath -> cPath.copy(alpha = 0.13f)
+                        litCell -> cPath.copy(alpha = 0.13f)
                         else -> cSurface
                     }
                     drawRoundRect(fill, r.topLeft, r.size, radius)
@@ -1056,11 +1068,11 @@ private fun AncestorCanvas(
                         when {
                             isTarget || sel -> cPath
                             isMsqTop -> cMsq
-                            c.onPath -> cPath.copy(alpha = 0.55f)
+                            litCell -> cPath.copy(alpha = 0.55f)
                             else -> cBorder
                         },
                         r.topLeft, r.size, radius,
-                        style = Stroke((if (isTarget || sel) 2.4f else 1f).dp.toPx()),
+                        style = Stroke((if (isTarget || sel) 2.4f else if (litCell) 1.6f else 1f).dp.toPx()),
                     )
 
                     if (!showText) return@forEachIndexed
@@ -1168,7 +1180,7 @@ private fun AncestorRunCard(run: AncestorCell.Run, onOpen: (WikiDest) -> Unit) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(14.dp))
+                    ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(14.dp))
                 }
                 PhoneHairlineRow()
             }
@@ -1216,7 +1228,7 @@ internal fun QuestSearchResults(
     }
     when {
         query.isBlank() -> WikiEmptyHint(
-            R.drawable.ic_search, "输入任务名或任务链名，按块整体显示",
+            R.drawable.ic2_search, "输入任务名或任务链名，按块整体显示",
         )
         loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(
@@ -1224,7 +1236,7 @@ internal fun QuestSearchResults(
             )
         }
         hits.isEmpty() && chainOnly.isEmpty() && done -> WikiEmptyHint(
-            R.drawable.ic_empty_box, "没有找到这个任务",
+            R.drawable.ic2_empty_box, "没有找到这个任务",
         )
         else -> {
             // 同一个块里的多个命中合并成一组，别让一次搜索出现十行同名块。
