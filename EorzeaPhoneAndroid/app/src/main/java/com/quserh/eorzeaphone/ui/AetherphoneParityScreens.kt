@@ -781,10 +781,9 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             compareByDescending<ChatConversation> { state.isConversationPinned(it) }
                 .thenByDescending { it.lastTimestamp ?: 0L },
         )
-        val messagesFirst = state.defaultChatListTab == "messages"
+        // v2: 消息永远排在筛选器前面（用户拍板），默认选中项仍跟设置走。
         LightSegmented(
-            options = if (messagesFirst) listOf("messages" to "消息", "tabs" to "筛选器")
-            else listOf("tabs" to "筛选器", "messages" to "消息"),
+            options = listOf("messages" to "消息", "tabs" to "筛选器"),
             selected = if (messagesExpanded) "messages" else "tabs",
             counts = mapOf("messages" to state.badgeUnread()),
             onSelect = { state.chatListTab = it },
@@ -1597,21 +1596,52 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
     }.replace('\n', ' ')
     // 私聊是"人"用圆头像，群聊/线路是"会话"用圆角方形——形状有语义，尺寸没有。
     val isPerson = conversation.category == ChatCategory.Tell || conversation.key.startsWith("tell:")
+    // v2 candy avatar: channel-tinted pastel disc, per approved chat-list mockup.
+    val channelId = when (conversation.category) {
+        ChatCategory.Tell -> 12
+        ChatCategory.Party -> 14
+        ChatCategory.Team -> 15
+        ChatCategory.FreeCompany -> 24
+        ChatCategory.Linkshell -> 16
+        ChatCategory.Emote -> 29
+        else -> 10
+    }
+    val channelTint = themeAdjustedChannelColor(channelDefaultColor(channelId))
+    val channelLabel = when (conversation.category) {
+        ChatCategory.Tell -> "密语"
+        ChatCategory.Party -> "小队"
+        ChatCategory.Team -> "联盟"
+        ChatCategory.FreeCompany -> "部队"
+        ChatCategory.Linkshell -> "通讯贝"
+        ChatCategory.Emote -> "情感"
+        else -> null
+    }
+    val hasCustomIcon = state.conversationIcon(conversation.key, conversation.category).isNotBlank()
     Box {
         LightListRow(
             onClick = { state.openConversation(conversation) },
             onLongPress = { offset -> pressOffset = offset; menuOpen = true },
             icon = {
-                LightRowIcon(circle = isPerson) {
-                    ConversationRowIcon(conversation, state, rowTitle)
+                if (hasCustomIcon) {
+                    LightRowIcon(circle = isPerson) {
+                        ConversationRowIcon(conversation, state, rowTitle)
+                    }
+                } else {
+                    SoftAvatar(rowTitle.take(1), channelTint, size = LightRowIconSize)
                 }
             },
             title = rowTitle,
             // 有未读时标题加粗——不用再靠颜色区分，红角标已经在右列了。
             titleWeight = if (conversation.unread > 0) FontWeight.Bold else FontWeight.SemiBold,
-            titleLeading = if (isPerson) {
-                { FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp)) }
-            } else null,
+            titleLeading = when {
+                isPerson -> {
+                    { FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp)) }
+                }
+                channelLabel != null -> {
+                    { ChannelPill(channelLabel, channelTint, Modifier.padding(end = 6.dp)) }
+                }
+                else -> null
+            },
             subtitle = {
                 LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 12.sp, Modifier.weight(1f))
                 if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))

@@ -116,6 +116,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
+import com.quserh.eorzeaphone.ui.theme.PhoneWarn
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
@@ -1164,9 +1165,9 @@ private fun InventorySearchRow(item: GameInventoryItem) {
         InventorySlotCell(item, Modifier.size(49.dp))
         Text(item.name, color = PhoneText, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 16.dp))
         if (item.hq) Text("HQ", color = Color(0xFFFFC071), fontSize = 9.sp, modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(Color(0xFF9A4D13)).padding(horizontal = 5.dp, vertical = 3.dp))
-        Text("×${"%,d".format(item.quantity)}", color = Color(0xFFC7681C), fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
+        Text("×${"%,d".format(item.quantity)}", color = PhoneWarn, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
     }
-    Divider(Modifier.padding(horizontal = 20.dp), color = Color(0x1AFFFFFF))
+    Divider(Modifier.padding(horizontal = 20.dp), color = PhoneLine)
 }
 @Composable
 fun SkywatcherScreen(state: PhoneState) {
@@ -1237,9 +1238,9 @@ fun WalletScreen(state: PhoneState) {
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF5B4826)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Gil", color = Color(0xFFFFD36A), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text(formatCount(wallet.gil), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Gil", color = PhoneWarn, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text(formatCount(wallet.gil), color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 wallet.entries.groupBy { it.section }.forEach { (section, entries) ->

@@ -59,6 +59,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -332,6 +333,12 @@ private fun HomeTile(
             .padding(vertical = 3.dp),
     ) {
             Box {
+            // v2 tinted-porcelain tile: white mixed with the app color, hairline border,
+            // glyph tinted with the deep variant — replaces solid color + white glyph.
+            val dark = MaterialTheme.colorScheme.background.luminance() < .5f
+            val tileBase = if (dark) lerp(Color(0xFF18211B), app.color, 0.16f) else lerp(Color.White, app.color, 0.13f)
+            val tileBorder = lerp(Color.White, app.color, 0.30f)
+            val glyphTint = if (dark) lerp(app.color, Color.White, 0.45f) else lerp(app.color, Color.Black, 0.35f)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -342,13 +349,14 @@ private fun HomeTile(
                         rotationZ = if (editDrag && !dragging) rotation else 0f
                     }
                     .clip(MaterialTheme.shapes.large)
-                    .background(app.color),
+                    .background(tileBase)
+                    .border(1.dp, tileBorder, MaterialTheme.shapes.large),
             ) {
                 Image(
                     painter = painterResource(app.icon),
                     contentDescription = app.label,
-                    colorFilter = ColorFilter.tint(Color.White),
-                    modifier = Modifier.size(34.dp),
+                    colorFilter = ColorFilter.tint(glyphTint),
+                    modifier = Modifier.size(30.dp),
                 )
             }
             if (editing && removable) {
@@ -476,14 +484,17 @@ private fun HomeDockBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DockTab(R.drawable.ic_timer, "甲板", deckMode, onDeck)
-        DockTab(R.drawable.ic_grid, "应用", !deckMode, onApps)
+        DockTab(R.drawable.ic2_home, "甲板", deckMode, onDeck)
+        DockTab(R.drawable.ic2_grid, "应用", !deckMode, onApps)
         AppCatalog.dock.forEach { app ->
             var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
             val interaction = remember(app.id, state) { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(if (pressed) 0.86f else 1f, spring(dampingRatio = .62f, stiffness = 520f), label = "dock-press")
             Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                val tileBase = if (darkTheme) lerp(Color(0xFF18211B), app.color, 0.16f) else lerp(Color.White, app.color, 0.13f)
+                val tileBorder = lerp(Color.White, app.color, 0.30f)
+                val glyphTint = if (darkTheme) lerp(app.color, Color.White, 0.45f) else lerp(app.color, Color.Black, 0.35f)
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -491,7 +502,8 @@ private fun HomeDockBar(
                         .graphicsLayer { scaleX = scale; scaleY = scale }
                         .onGloballyPositioned { bounds = it.boundsInRoot() }
                         .clip(RoundedCornerShape(14.dp))
-                        .background(app.color)
+                        .background(tileBase)
+                        .border(1.dp, tileBorder, RoundedCornerShape(14.dp))
                         .clickable(interactionSource = interaction, indication = null) {
                             if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             state.open(app, bounds)
@@ -500,7 +512,7 @@ private fun HomeDockBar(
                     Image(
                         painterResource(app.icon),
                         contentDescription = app.label,
-                        colorFilter = ColorFilter.tint(Color.White),
+                        colorFilter = ColorFilter.tint(glyphTint),
                         modifier = Modifier.size(24.dp),
                     )
                 }
