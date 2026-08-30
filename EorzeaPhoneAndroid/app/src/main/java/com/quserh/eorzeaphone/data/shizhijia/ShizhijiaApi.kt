@@ -1427,11 +1427,26 @@ object ShizhijiaApi {
      * Filters: raceId (1-8, -1/blank=全部), genderId (-1全部/1男/2女),
      * createTime (all/last24H/lastWeek/lastMonth)。
      *
-     * **职业筛服务端已经没了**：`class_job_id` / `job_ids` / `job_id` /
+     * **没有职业筛，也别再试着做**。
+     *
+     * 服务端的职业筛已经拆掉了：`class_job_id` / `job_ids` / `job_id` /
      * `class_job_ids` / `job` / `class_jobs` / `classjob_id` 七个参数名都试过，
      * 返回和不带参数完全一致（同一趟里 `race_id=4`、`gender_id=2` 都能改变结果，
-     * 证明这个判定方法认得出真的筛选）。要筛职业只能在客户端按
-     * [ShizhijiaGlamourCard.jobIds] 做。
+     * 证明这个判定方法认得出真的筛选）。
+     *
+     * 列表响应里确实还留着 `job_ids`（纯 int 数组，id 空间同 `WikiDicts.jobName`），
+     * 空值等于"作者没选主手"，也就是通用款 —— 拿它在客户端筛是**做得出来的，
+     * 我做过并上机验过，然后按用户的决定删了**。删的理由是体验，不是不能跑：
+     *
+     * - 通用款占比：最新 71% / 推荐 60% / 热门 23%。在最新流里筛「骑士」，
+     *   60 条留 44 条 —— 语义上没错（那些骑士确实能穿），但根本不算筛
+     * - 反过来勾"只看专属"，最新流 22 个职业里有 9 个一条都凑不出
+     * - 没有服务端支持，只能对"已经拉下来的"生效，而 `limit` 被钉在 12，
+     *   于是要么筛出来的少得可怜，要么替用户偷偷翻十几页
+     *
+     * 结论：**这个功能只有在站点恢复职业参数之后才值得做。**
+     * 想复原当时那版（两级 chip 面板 + 只看专属 + 封顶自动翻页 + 空态指路热门），
+     * 见 0.7.257 的 `SzjGlamourJobFilter`。
      */
     suspend fun getGlamours(
         context: Context,
@@ -1531,6 +1546,32 @@ object ShizhijiaApi {
         return try {
             getSignLog(context, month)?.days?.any { it.contains(today) } == true
         } catch (e: Exception) { false }
+    }
+
+    /** Official activity calendar for `month` ("YYYY-MM"). Public, no login. */
+    suspend fun getActiveCalendar(context: Context, month: String): List<ShizhijiaEvent> {
+        val payload = dataAny(context, HOME_BASE, "active/calendar/getActiveCalendarMonth", mapOf("month" to month))
+        val arr = when (payload) {
+            is org.json.JSONArray -> payload
+            is JSONObject -> payload.optJSONArray("data")
+            else -> null
+        } ?: return emptyList()
+        return buildList(arr.length()) {
+            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { jo ->
+                add(
+                    ShizhijiaEvent(
+                        id = jo.optLong("id"),
+                        name = jo.optString("name"),
+                        url = jo.optString("url"),
+                        beginTime = jo.optLong("begin_time") * 1000L,
+                        endTime = jo.optLong("end_time") * 1000L,
+                        color = runCatching {
+                            android.graphics.Color.parseColor(jo.optString("color", "#EDCA7F"))
+                        }.getOrDefault(0xFFEDCA7F.toInt()),
+                    )
+                )
+            }
+        }
     }
 
     /** Cumulative reward table for `month` ("YYYY-MM"): rule / claim state. */

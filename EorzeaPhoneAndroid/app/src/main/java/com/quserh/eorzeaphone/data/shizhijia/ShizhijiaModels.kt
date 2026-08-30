@@ -1604,3 +1604,13 @@ internal fun stripHtml(raw: String): String {
         .replace(Regex("\\s+"), " ")
         .trim()
 }
+
+/** Official activity calendar entry (active/calendar/getActiveCalendarMonth). */
+data class ShizhijiaEvent(
+    val id: Long,
+    val name: String,
+    val url: String,
+    val beginTime: Long,
+    val endTime: Long,
+    val color: Int,
+)

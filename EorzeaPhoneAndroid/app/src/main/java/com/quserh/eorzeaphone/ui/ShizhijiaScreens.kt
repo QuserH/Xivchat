@@ -2100,8 +2100,6 @@ private fun SzjBottomBar(
         // 胶囊组：社区 / 幻化 / 设置。
         Box(
             Modifier
-                .weight(1f)
-                .fillMaxHeight()
                 .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                 .clip(RoundedCornerShape(20.dp))
                 .background(if (szjLight) Color(0xFFEDF1F6) else Color(0xFF1A222B))
@@ -2111,11 +2109,12 @@ private fun SzjBottomBar(
                 Brush.horizontalGradient(listOf(Color.Transparent, SzjEdge, SzjEdge, Color.Transparent))
             ))
             Row(Modifier.fillMaxSize().padding(horizontal = 5.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                SzjBottomTab("社区", selected == MAIN_COMMUNITY, Modifier.weight(1f)) { onSelect(MAIN_COMMUNITY) }
-                SzjBottomTab("幻化", selected == MAIN_GLAMOUR, Modifier.weight(1f)) { onSelect(MAIN_GLAMOUR) }
-                SzjBottomTab("设置", selected == MAIN_ME, Modifier.weight(1f)) { onSelect(MAIN_ME) }
+                SzjBottomTab("社区", R.drawable.ic2_people, selected == MAIN_COMMUNITY, Modifier.weight(1f)) { onSelect(MAIN_COMMUNITY) }
+                SzjBottomTab("幻化", R.drawable.ic2_gem, selected == MAIN_GLAMOUR, Modifier.weight(1f)) { onSelect(MAIN_GLAMOUR) }
+                SzjBottomTab("设置", R.drawable.ic2_settings, selected == MAIN_ME, Modifier.weight(1f)) { onSelect(MAIN_ME) }
             }
         }
+        Spacer(Modifier.weight(1f))
         // 独立圆形搜索，iPadOS 式。
         SzjPressable(onClick = onSearch, shape = CircleShape) {
             Box(
@@ -2135,27 +2134,31 @@ private fun SzjBottomBar(
 }
 
 @Composable
-private fun SzjBottomTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun SzjBottomTab(label: String, icon: Int, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val color by animateColorAsState(if (selected) SzjAccent else SzjMuted, tween(200), label = "szjBottomTabColor")
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val motion = szjMotionEnabled()
     val scale by animateFloatAsState(if (pressed && motion) 0.9f else 1f, SzjPressSpring, label = "szjBottomTabPress")
     Box(
-        modifier.fillMaxHeight()
+        modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(SzjInnerShape)
             .background(if (selected) (if (szjLight) Color.White else Color(0xFF2A3542)) else Color.Transparent)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            color = color,
-            fontSize = 14.sp,
-            letterSpacing = 0.5.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            ImageGlyph(icon, color, Modifier.size(20.dp))
+            Text(
+                label,
+                color = color,
+                fontSize = 10.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
     }
 }
 

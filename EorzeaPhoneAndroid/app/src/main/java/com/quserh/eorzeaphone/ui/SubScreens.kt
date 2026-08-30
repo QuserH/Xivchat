@@ -1228,17 +1228,66 @@ fun SkywatcherScreen(state: PhoneState) {
 }
 @Composable
 fun CalendarScreen(state: PhoneState) {
-    val date = remember { LocalDate.now() }
+    val context = LocalContext.current
+    var month by remember { mutableStateOf(java.time.YearMonth.now()) }
+    var events by remember { mutableStateOf<List<com.quserh.eorzeaphone.data.shizhijia.ShizhijiaEvent>?>(null) }
+    LaunchedEffect(month) {
+        events = null
+        events = runCatching {
+            com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi.getActiveCalendar(context, month.toString())
+        }.getOrDefault(emptyList())
+    }
     ScreenFrame {
         ScreenHeader("日历", state)
-        Column(Modifier.fillMaxSize().padding(20.dp)) {
-            Text(date.format(DateTimeFormatter.ofPattern("yyyy 年 MM 月")), color = PhoneText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text(date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d")), color = PhoneAccent, modifier = Modifier.padding(top = 5.dp))
-            Text("游戏日历", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 28.dp))
-            Text(if (state.connected) "可继续接收游戏活动与重置时间。" else "连接游戏后显示活动和日常重置。", color = PhoneMuted, modifier = Modifier.padding(top = 8.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("${month.year} 年 ${month.monthValue} 月", color = PhoneText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { month = month.minusMonths(1) }, contentAlignment = Alignment.Center) {
+                ImageGlyph(R.drawable.ic_chevron_left, PhoneText, Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { month = month.plusMonths(1) }, contentAlignment = Alignment.Center) {
+                ImageGlyph(R.drawable.ic_chevron_right, PhoneText, Modifier.size(18.dp))
+            }
+        }
+        val list = events
+        when {
+            list == null -> PhoneListSkeleton(5)
+            list.isEmpty() -> Column(Modifier.fillMaxSize().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                PhoneEmpty("本月没有官方活动", "左右切换月份看看", R.drawable.app_calendar)
+            }
+            else -> {
+                val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("MM.dd HH:mm") }
+                val zone = remember { java.time.ZoneId.systemDefault() }
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(list.size, key = { list[it].id }) { idx ->
+                        val ev = list.sortedBy { it.beginTime }[idx]
+                        PhoneCard(Modifier.fillMaxWidth(), flat = true, onClick = {
+                            if (ev.url.isNotBlank()) runCatching {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ev.url)))
+                            }
+                        }) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(Color(ev.color)))
+                                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                                    Text(ev.name, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    val begin = java.time.Instant.ofEpochMilli(ev.beginTime).atZone(zone).format(fmt)
+                                    val end = java.time.Instant.ofEpochMilli(ev.endTime).atZone(zone).format(fmt)
+                                    Text("$begin - $end", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                                }
+                                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(15.dp))
+                            }
+                        }
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
+                }
+            }
         }
     }
 }
+
 @Composable
 fun WalletScreen(state: PhoneState) {
     val wallet = state.wallet
