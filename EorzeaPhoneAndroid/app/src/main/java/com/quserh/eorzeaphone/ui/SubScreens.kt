@@ -312,65 +312,62 @@ fun SettingsScreen(state: PhoneState) {
                 }
             }
             item {
-                // 连接钮原来写死 #AE62DA——M3 模板紫的余党，全局品牌色换过一轮它漏了。
-                // 断开是破坏性操作，改成描边 + PhoneDanger；连接才是实心主色。
+                // v2 phone-style: connection is a settings row with live status,
+                // like Wi-Fi — icon + label + value + chevron; server address row
+                // expands inline for editing instead of floating bare fields.
+                var showServerEdit by remember { mutableStateOf(false) }
                 val connected = state.connected
-                // 改用 PhoneButton：原来是 M3 的 Button/OutlinedButton，带 ripple，
-                // 和这个 App 里其他所有可按的东西（PhonePressable 的按压回弹）手感不同。
-                // 这是整个壳层最重要的一个按钮，不该是唯一手感不一样的那个。
-                if (connected) {
-                    PhoneButton(
-                        "断开游戏连接",
-                        onClick = { state.disconnect() },
-                        kind = PhoneButtonKind.Secondary,
-                        size = PhoneButtonSize.Wide,
-                        danger = true,
-                    )
-                } else {
-                    PhoneButton(
-                        "连接游戏",
-                        onClick = { state.connect() },
-                        size = PhoneButtonSize.Wide,
-                    )
-                }
                 val connHint = buildString {
                     val online = state.onlineCharacterName
-                    if (online.isNotBlank()) append("已连接 · ").append(online).append(" 在线")
+                    if (connected && online.isNotBlank()) append("已连接 · ").append(online).append(" 在线")
                     else if (state.statusMessage.isNotBlank()) append(state.statusMessage)
+                    else append("未连接")
                 }
-                if (connHint.isNotBlank()) {
-                    Text(
-                        connHint,
-                        color = if (connected) PhoneGreen else PhoneMuted, fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-                    )
-                }
-            }
-            item {
-                // IP / 端口原来是两个裸 OutlinedTextField 浮在列表里，
-                // 和下面那些卡片组不是一个东西。收进卡片，标题也说清楚这是干什么的。
                 SettingsGroup {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = SettingsRowPad, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    SettingsRow(
+                        "游戏连接",
+                        R.drawable.ic2_bolt,
+                        hint = connHint,
+                        onClick = { if (connected) state.disconnect() else state.connect() },
                     ) {
-                        ImageGlyph(R.drawable.ic2_link, PhoneMuted, Modifier.size(SettingsIconSize))
-                        Text("游戏电脑地址", color = PhoneText, fontSize = 15.sp, modifier = Modifier.padding(start = 14.dp))
+                        Text(
+                            if (connected) "已连接" else "未连接",
+                            color = if (connected) PhoneGreen else PhoneMuted,
+                            fontSize = 13.sp,
+                        )
+                        ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.padding(start = 6.dp).size(15.dp))
                     }
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = SettingsRowPad, end = SettingsRowPad, bottom = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    SettingsDivider()
+                    SettingsRow(
+                        "游戏电脑地址",
+                        R.drawable.ic2_home,
+                        hint = "与游戏同一内网的 IP 和端口",
+                        onClick = { showServerEdit = !showServerEdit },
                     ) {
-                        OutlinedTextField(
-                            value = state.host, onValueChange = { state.host = it },
-                            label = { Text("IP") }, singleLine = true,
-                            modifier = Modifier.weight(1f),
+                        Text("\${state.host}:\${state.port}", color = PhoneMuted, fontSize = 13.sp)
+                        ImageGlyph(
+                            if (showServerEdit) R.drawable.ic2_chevron_down else R.drawable.ic2_chevron_right,
+                            PhoneMuted,
+                            Modifier.padding(start = 6.dp).size(15.dp),
                         )
-                        OutlinedTextField(
-                            value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) },
-                            label = { Text("端口") }, singleLine = true,
-                            modifier = Modifier.width(104.dp),
-                        )
+                    }
+                    androidx.compose.animation.AnimatedVisibility(visible = showServerEdit) {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .padding(start = SettingsRowPad, end = SettingsRowPad, bottom = 14.dp, top = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = state.host, onValueChange = { state.host = it },
+                                label = { Text("IP") }, singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = state.port, onValueChange = { state.port = it.filter(Char::isDigit).take(5) },
+                                label = { Text("端口") }, singleLine = true,
+                                modifier = Modifier.width(104.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -473,7 +470,15 @@ private fun SettingsRow(
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = SettingsRowPad, vertical = 8.dp),
     ) {
-        ImageGlyph(icon, PhoneMuted, Modifier.size(SettingsIconSize))
+        // iOS-style colored icon chip; tint is stable per label.
+        val chipTints = listOf(Color(0xFF3D8FD1), Color(0xFF3F8150), Color(0xFFC08A3E), Color(0xFF8E7AD4), Color(0xFFD0685C), Color(0xFF3FA8A0))
+        val chipTint = chipTints[kotlin.math.abs(label.hashCode()) % chipTints.size]
+        Box(
+            Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(chipTint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            ImageGlyph(icon, chipTint, Modifier.size(18.dp))
+        }
         Column(Modifier.weight(1f).padding(start = 14.dp, end = 10.dp)) {
             Text(label, color = PhoneText, fontSize = 15.sp)
             if (hint != null) {

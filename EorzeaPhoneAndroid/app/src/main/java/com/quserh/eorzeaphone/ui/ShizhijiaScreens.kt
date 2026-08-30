@@ -1284,6 +1284,7 @@ private const val MAIN_ME = 3
 private const val SUB_POSTS = 0
 private const val SUB_DYNAMICS = 1
 private const val SUB_GUIDE = 2
+private const val SUB_RECRUIT = 3
 
 @Composable
 private fun ShizhijiaHomeScreen(
@@ -1392,6 +1393,7 @@ private fun ShizhijiaHomeScreen(
                                 when (sub) {
                                     SUB_POSTS -> ShizhijiaPostsTab(state, nav, postsState, communityHeader, subTabs)
                                     SUB_DYNAMICS -> ShizhijiaDynamicsTab(nav, loggedIn, communityHeader, subTabs)
+                                    SUB_RECRUIT -> ShizhijiaRecruitTab(nav, loggedIn, recruitState, communityHeader, bar)
                                     else -> ShizhijiaStrategyTab(state, nav, strategyState, communityHeader, subTabs)
                                 }
                             }
@@ -1459,6 +1461,7 @@ private fun ShizhijiaHomeScreen(
                 barBottomDp = barBottomDp,
                 hidden = bar.hidden,
                 modifier = Modifier.align(Alignment.BottomCenter),
+                onSearch = { nav(SzjRoute.Search) },
             )
             // **必须排在底栏之后。** 它以前是 `Dialog`（独立窗口），天然盖住一切；
             // 改成窗口内浮层之后层级只由**组合顺序**决定 —— 排在底栏前面时，
@@ -1538,16 +1541,6 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
                         .padding(horizontal = 14.dp, vertical = 7.dp),
                 )
             }
-            Spacer(Modifier.width(6.dp))
-            // 搜索原来是一个 22sp 的"⌕"字符：签到是实心软青块，搜索却是个虚字符，
-            // 一眼过去两个按钮轻重完全不对等。换成 40dp 圆形图标钮，
-            // 底色用 SzjCardRaised，视觉重量和签到那一块配平。
-            SzjPressable(onClick = { nav(SzjRoute.Search) }, shape = CircleShape) {
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(SzjCardRaised),
-                    contentAlignment = Alignment.Center,
-                ) { ImageGlyph(R.drawable.ic_search, SzjAccent, Modifier.size(19.dp)) }
-            }
         }
     }
 }
@@ -1580,6 +1573,7 @@ private fun SzjSubTabRow(selected: Int, onSelect: (Int) -> Unit) {
         SzjSubTab("帖子", selected == SUB_POSTS) { onSelect(SUB_POSTS) }
         SzjSubTab("动态", selected == SUB_DYNAMICS) { onSelect(SUB_DYNAMICS) }
         SzjSubTab("攻略", selected == SUB_GUIDE) { onSelect(SUB_GUIDE) }
+        SzjSubTab("招募", selected == SUB_RECRUIT) { onSelect(SUB_RECRUIT) }
     }
 }
 
@@ -2073,17 +2067,14 @@ private fun SzjBottomBar(
     barBottomDp: Float,
     hidden: Boolean,
     modifier: Modifier = Modifier,
+    onSearch: () -> Unit = {},
 ) {
     val motion = szjMotionEnabled()
-    // 指示块位置按格数插值：0..3 → 0f..1f，用弹簧跟过去。
     val pos by animateFloatAsState(
-        selected.toFloat(),
+        selected.coerceIn(0, 2).toFloat(),
         if (motion) spring(dampingRatio = 0.7f, stiffness = 300f) else spring(stiffness = 100000f),
         label = "szjBarPos",
     )
-    // 收起：往下沉出屏幕 + 略微缩小 + 淡出。三者一起做才像"缩回去"，
-    // 只做位移会显得是被裁掉。收起比放出慢一点（280 vs 200），
-    // 因为放出来时用户通常已经想点它了。
     val collapse by animateFloatAsState(
         if (hidden && motion) 1f else 0f,
         tween(if (hidden) 280 else 200, easing = FastOutSlowInEasing),
@@ -2091,44 +2082,63 @@ private fun SzjBottomBar(
     )
     val density = androidx.compose.ui.platform.LocalDensity.current
     val slidePx = with(density) { (barHeightDp + barBottomDp + 24f).dp.toPx() }
-    Box(
+    Row(
         modifier
             .padding(start = 18.dp, end = 18.dp, bottom = 10.dp + barBottomDp.dp)
             .fillMaxWidth().height(barHeightDp.dp)
             .graphicsLayer {
                 translationY = collapse * slidePx
-                val s = 1f - collapse * 0.12f
-                scaleX = s
-                scaleY = s
+                val sc = 1f - collapse * 0.12f
+                scaleX = sc
+                scaleY = sc
                 alpha = 1f - collapse * 0.55f
-                // 缩放锚点放在底边中央，视觉上是"往下缩回去"而不是整体缩小。
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
-            }
-            .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
-            .clip(RoundedCornerShape(20.dp))
-            .background(SzjCard)
-            .then(if (szjLight) Modifier.border(1.dp, SzjLine, RoundedCornerShape(20.dp)) else Modifier),
+            },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 顶边高光，和石板卡片同一处理。
-        Box(Modifier.fillMaxWidth().height(1.dp).background(
-            Brush.horizontalGradient(listOf(Color.Transparent, SzjEdge, SzjEdge, Color.Transparent))
-        ))
-        // 滑动的选中底块，垫在文字下面。
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 7.dp)) {
-            val cell = maxWidth / 4
+        // 胶囊组：社区 / 幻化 / 设置。
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
+                .clip(RoundedCornerShape(20.dp))
+                .background(SzjCard)
+                .then(if (szjLight) Modifier.border(1.dp, SzjLine, RoundedCornerShape(20.dp)) else Modifier),
+        ) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(
+                Brush.horizontalGradient(listOf(Color.Transparent, SzjEdge, SzjEdge, Color.Transparent))
+            ))
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 7.dp)) {
+                val cell = maxWidth / 3
+                Box(
+                    Modifier
+                        .offset(x = cell * pos)
+                        .width(cell).fillMaxHeight()
+                        .clip(SzjInnerShape)
+                        .background(SzjAccentSoft)
+                )
+                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    SzjBottomTab("社区", selected == MAIN_COMMUNITY, Modifier.weight(1f)) { onSelect(MAIN_COMMUNITY) }
+                    SzjBottomTab("幻化", selected == MAIN_GLAMOUR, Modifier.weight(1f)) { onSelect(MAIN_GLAMOUR) }
+                    SzjBottomTab("设置", selected == MAIN_ME, Modifier.weight(1f)) { onSelect(MAIN_ME) }
+                }
+            }
+        }
+        // 独立圆形搜索，iPadOS 式。
+        SzjPressable(onClick = onSearch, shape = CircleShape) {
             Box(
                 Modifier
-                    .offset(x = cell * pos)
-                    .width(cell).fillMaxHeight()
-                    .padding(horizontal = 4.dp)
-                    .clip(SzjInnerShape)
-                    .background(SzjAccentSoft)
-            )
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                SzjBottomTab("社区", selected == MAIN_COMMUNITY, Modifier.width(cell)) { onSelect(MAIN_COMMUNITY) }
-                SzjBottomTab("招募", selected == MAIN_RECRUIT, Modifier.width(cell)) { onSelect(MAIN_RECRUIT) }
-                SzjBottomTab("幻化", selected == MAIN_GLAMOUR, Modifier.width(cell)) { onSelect(MAIN_GLAMOUR) }
-                SzjBottomTab("我", selected == MAIN_ME, Modifier.width(cell)) { onSelect(MAIN_ME) }
+                    .fillMaxHeight()
+                    .aspectRatio(1f)
+                    .shadow(10.dp, CircleShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
+                    .clip(CircleShape)
+                    .background(SzjCard)
+                    .then(if (szjLight) Modifier.border(1.dp, SzjLine, CircleShape) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) {
+                ImageGlyph(R.drawable.ic2_search, SzjAccent, Modifier.size(21.dp))
             }
         }
     }
@@ -7270,7 +7280,7 @@ private fun ShizhijiaFavoritesScreen(pop: () -> Unit, nav: (SzjRoute) -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SzjFavTab.entries.forEach { t -> SzjSubTab(t.label, tab == t) { tab = t } }
+            SzjFavTab.values().forEach { t -> SzjSubTab(t.label, tab == t) { tab = t } }
         }
         Spacer(Modifier.height(4.dp))
         // 幻化有多个收藏夹时给一条切换；只有一个夹子不占这一行。
