@@ -122,6 +122,13 @@ data class AccentPalette(
         // 除了以太紫（3.53:1，那是原样保留的历史值），其余都在 8:1 以上。
         val presets: List<AccentPalette> = listOf(
             AccentPalette(
+                id = "dew_green", label = "晨露绿",
+                fill = Color(0xFF4E8D5B),
+                inkLight = Color(0xFF2F6B40),
+                inkDark = Color(0xFF7FC49A),
+                bubble = Color(0xFF1E4A2A),
+            ),
+            AccentPalette(
                 id = "stone_gold", label = "石之家金",
                 fill = Color(0xFFC4A86A),
                 inkLight = Color(0xFF7D6229),
@@ -203,7 +210,9 @@ data class AccentPalette(
          *
          * 0.7.236 我把默认写成了 presets.first()（金），是个错。
          */
-        val default: AccentPalette = byIdOrFirst("crystal_teal")
+        // v2 default: the locked "Morning Dew" green. Existing users keep whatever
+        // accent they picked (accentId is persisted); this only decides first-run.
+        val default: AccentPalette = byIdOrFirst("dew_green")
 
         private fun byIdOrFirst(id: String): AccentPalette =
             presets.firstOrNull { it.id == id } ?: presets.first()

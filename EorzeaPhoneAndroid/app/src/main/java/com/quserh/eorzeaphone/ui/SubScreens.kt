@@ -93,6 +93,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Brush
@@ -191,14 +192,15 @@ fun ScreenHeader(
             if (showBack) ImageGlyph(
                 R.drawable.ic_back,
                 PhoneAccent,
-                Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 2.dp, vertical = 6.dp),
+                // 40dp touch target with the 30dp glyph centered.
+                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 5.dp, vertical = 5.dp),
             )
         }
         Text(
             title,
             color = titleColor.takeOrElse { PhoneText },
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 19.sp,
+            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1360,6 +1362,53 @@ fun ImageGlyph(icon: Int, tint: Color, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Candy avatar: round disc, pastel-to-channel vertical gradient, initial or glyph.
+ */
+@Composable
+fun SoftAvatar(
+    initial: String,
+    channelColor: Color,
+    modifier: Modifier = Modifier,
+    iconRes: Int? = null,
+    size: androidx.compose.ui.unit.Dp = 48.dp,
+) {
+    val top = if (phoneLight) lerp(Color.White, channelColor, 0.38f) else lerp(channelColor, Color.White, 0.22f)
+    val bottom = if (phoneLight) channelColor else lerp(channelColor, Color.Black, 0.15f)
+    Box(
+        modifier.size(size).clip(CircleShape).background(Brush.linearGradient(listOf(top, bottom))),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (iconRes != null) {
+            ImageGlyph(iconRes, Color.White, Modifier.size(size * 0.42f))
+        } else {
+            Text(
+                initial,
+                color = Color.White,
+                fontSize = (size.value * 0.34f).sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** Channel tag pill shown after a conversation name. */
+@Composable
+fun ChannelPill(label: String, color: Color, modifier: Modifier = Modifier) {
+    Text(
+        label,
+        color = Color.White,
+        fontSize = 8.5.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(color)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    )
+}
+
+/**
  * 骨架微光。首屏加载用它替代转圈——先把即将出现的内容形状占住，
  * 比一行"正在载入…"更少的跳变。实现和石之家的 SzjShimmerBox 同源。
  */
@@ -1481,8 +1530,9 @@ fun PhoneChipGroup(
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     row.forEach { (id, name) ->
                         val on = id in selected
-                        val bg by animateColorAsState(if (on) PhoneAccent else PhoneSurfaceRaised, tween(180), label = "chipBg")
-                        val fg by animateColorAsState(if (on) Color.White else PhoneMuted, tween(180), label = "chipFg")
+                        // v2: soft selected state (accent container + accent ink) instead of solid fill.
+                        val bg by animateColorAsState(if (on) PhoneAccentContainer else PhoneSurfaceRaised, tween(180), label = "chipBg")
+                        val fg by animateColorAsState(if (on) PhoneAccent else PhoneMuted, tween(180), label = "chipFg")
                         PhonePressable(onClick = { onPick(id) }, shape = PhoneChipShape) {
                             Text(
                                 name,
@@ -1636,14 +1686,12 @@ fun PhoneFilterBar(
 /** 按压弹簧。阻尼 0.62 / 刚度 420——按下去有回弹但不晃。 */
 val PhonePressSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
 
-// 形状阶梯。chip 的那一档（PhoneChipShape）早就在下面筛选面板那节定义了，
-// 这里只补卡片和卡内元素两档，不重复定义——值也不去改它，
-// 那个 10dp 已经被 PhoneChipGroup 用着，改了会动到现有界面。
-/** 卡片圆角。和石之家的 SzjCardShape 同值（14dp）。 */
-val PhoneCardShape = RoundedCornerShape(14.dp)
+// v2 shape ladder: rounder cards, softer inner controls.
+/** 卡片圆角。 */
+val PhoneCardShape = RoundedCornerShape(18.dp)
 
 /** 卡内元素圆角（按钮、输入框、内嵌块）。 */
-val PhoneInnerShape = RoundedCornerShape(10.dp)
+val PhoneInnerShape = RoundedCornerShape(12.dp)
 
 /**
  * 一道发丝线。列表项之间、卡内分组之间用这个。
@@ -1697,28 +1745,19 @@ fun PhoneCard(
         tween(140),
         label = "phoneCardElev",
     )
-    val light = phoneLight
     Column(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .shadow(elevation, shape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+            .shadow(elevation, shape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
             .clip(shape)
             .background(if (raised) PhoneSurfaceRaised else PhoneSurface)
-            .then(if (light) Modifier.border(1.dp, PhoneLine, shape) else Modifier)
+            .border(1.dp, PhoneLine, shape)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 } else Modifier
             ),
     ) {
-        // 顶边高光：打磨过的石面反的那一线，1dp，深色模式下最明显。
-        Box(
-            Modifier.fillMaxWidth().height(1.dp).background(
-                Brush.horizontalGradient(
-                    listOf(Color.Transparent, PhoneEdge, PhoneEdge, Color.Transparent)
-                )
-            )
-        )
         content()
     }
 }

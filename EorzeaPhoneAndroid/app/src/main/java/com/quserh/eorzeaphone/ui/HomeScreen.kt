@@ -2,6 +2,7 @@ package com.quserh.eorzeaphone.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -40,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
@@ -52,6 +54,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -75,12 +78,13 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
+import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
-private fun eorzeaNow(): String {
+internal fun eorzeaNow(): String {
     val seconds = System.currentTimeMillis() / 1_000.0 * 144.0 / 7.0
     val day = ((seconds.toLong() % 86_400L) + 86_400L) % 86_400L
     return String.format("%02d:%02d", day / 3_600L, day % 3_600L / 60L)
@@ -108,6 +112,8 @@ fun HomeScreen(state: PhoneState) {
         )
         Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .82f)))
 
+        // v2 home: deck page first, app-grid pages second; the pill dock switches modes.
+        var deckMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -115,17 +121,20 @@ fun HomeScreen(state: PhoneState) {
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = LocalContentMargin.current.dp),
         ) {
-            HomeEditBar(state, homeText)
-            HorizontalPager(
-                state = pager,
-                userScrollEnabled = !state.homeEditMode,
-                modifier = Modifier.weight(1f),
-            ) { page ->
-                SocialPage(state, page)
+            if (deckMode) {
+                HomeDeck(state, Modifier.weight(1f))
+            } else {
+                HomeEditBar(state, homeText)
+                HorizontalPager(
+                    state = pager,
+                    userScrollEnabled = !state.homeEditMode,
+                    modifier = Modifier.weight(1f),
+                ) { page ->
+                    SocialPage(state, page)
+                }
+                PageIndicator(pager.currentPage, totalPages, homeText)
             }
-
-            PageIndicator(pager.currentPage, totalPages, homeText)
-            Dock(state, darkTheme)
+            HomeDockBar(state, darkTheme, deckMode, onDeck = { deckMode = true }, onApps = { deckMode = false })
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -445,31 +454,43 @@ internal fun weatherIcon(name: String): Int = when {
 }
 
 @Composable
-private fun Dock(state: PhoneState, darkTheme: Boolean) {
+private fun HomeDockBar(
+    state: PhoneState,
+    @Suppress("UNUSED_PARAMETER") darkTheme: Boolean,
+    deckMode: Boolean,
+    onDeck: () -> Unit,
+    onApps: () -> Unit,
+) {
     val hapticView = LocalView.current
+    val pillShape = RoundedCornerShape(31.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(92.dp)
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .96f))
-            .padding(horizontal = 22.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
+            .padding(horizontal = 18.dp)
+            .shadow(10.dp, pillShape, ambientColor = Color(0x123C5A46), spotColor = Color(0x123C5A46))
+            .clip(pillShape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, pillShape)
+            .height(62.dp)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        DockTab(R.drawable.ic_timer, "甲板", deckMode, onDeck)
+        DockTab(R.drawable.ic_grid, "应用", !deckMode, onApps)
         AppCatalog.dock.forEach { app ->
             var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
             val interaction = remember(app.id, state) { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(if (pressed) 0.86f else 1f, spring(dampingRatio = .62f, stiffness = 520f), label = "dock-press")
-            Box(Modifier.size(60.dp)) {
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(58.dp)
-                        .onGloballyPositioned { bounds = it.boundsInRoot() }
+                        .size(42.dp)
                         .graphicsLayer { scaleX = scale; scaleY = scale }
-                        .clip(MaterialTheme.shapes.large)
+                        .onGloballyPositioned { bounds = it.boundsInRoot() }
+                        .clip(RoundedCornerShape(14.dp))
                         .background(app.color)
                         .clickable(interactionSource = interaction, indication = null) {
                             if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -477,26 +498,53 @@ private fun Dock(state: PhoneState, darkTheme: Boolean) {
                         },
                 ) {
                     Image(
-                        painter = painterResource(app.icon),
+                        painterResource(app.icon),
                         contentDescription = app.label,
                         colorFilter = ColorFilter.tint(Color.White),
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
                 if (app.destination == PhoneScreen.Chat) {
                     val unread = state.badgeUnread()
                     if (unread > 0) {
                         Box(
-                            // 未读角标：红色走 PhoneDanger（原来 #E5485D 是这一处
-                            // 独有的第三个红，同一语义不许有第二个色值）。
-                            Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).height(18.dp).widthIn(min = 18.dp).clip(CircleShape).background(PhoneDanger),
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 2.dp, y = (-2).dp)
+                                .height(16.dp)
+                                .widthIn(min = 16.dp)
+                                .clip(CircleShape)
+                                .background(PhoneDanger),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(if (unread > 99) "99+" else unread.toString(), color = Color.White, fontSize = 10.sp, lineHeight = 18.sp, textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.align(Alignment.Center).padding(horizontal = 2.dp))
+                            Text(
+                                if (unread > 99) "99+" else unread.toString(),
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                lineHeight = 16.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                modifier = Modifier.align(Alignment.Center).padding(horizontal = 2.dp),
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DockTab(icon: Int, label: String, selected: Boolean, onClick: () -> Unit) {
+    val color by animateColorAsState(if (selected) PhoneAccent else PhoneMuted, label = "dock-tab")
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        ImageGlyph(icon, color, Modifier.size(20.dp))
+        Text(label, color = color, fontSize = 9.sp, modifier = Modifier.padding(top = 2.dp))
     }
 }

@@ -61,11 +61,18 @@ val BrandOnBubble: Color @Composable get() = CurrentAccent.onBubble
 
 // M3 colorScheme 需要的静态默认值（Provider 之外的兜底）。
 private val BrandOnLight = Color.White
-private val BrandContainerLight = Color(0xFFFBF9F4)
-private val BrandOnContainerLight = Color(0xFF4A3A15)
 private val BrandOnDark = Color(0xFF2A2110)
-private val BrandContainerDark = Color(0xFF2E2921)
-private val BrandOnContainerDark = Color(0xFFE8D5A8)
+
+/**
+ * 把 [fg] 以 [alpha] 叠在 [bg] 上，返回不透明结果。
+ * primaryContainer 这类 M3 槽位不接受透明色，但语义上要的是"强调色的浅底"，
+ * 所以按"fill 半透明叠在当前底色上"现场算，而不是再养一套写死的色值。
+ */
+private fun blendOver(fg: Color, alpha: Float, bg: Color): Color = Color(
+    fg.red * alpha + bg.red * (1f - alpha),
+    fg.green * alpha + bg.green * (1f - alpha),
+    fg.blue * alpha + bg.blue * (1f - alpha),
+)
 
 /**
  * **文字/图标**用的强调色（在当前背景上够对比度）。
@@ -120,13 +127,11 @@ val PhoneOutline = Color(0xFF79747E)
 val phoneLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
 // ---- 线与边 ----
-// 壳层以前**没有**这三个 token，所有分割线和描边都是就地写一个灰或者
-// PhoneMuted.copy(alpha=…)，同一条线在不同界面粗细深浅都不一样。
-// 取值和石之家同源（它是从官网 app.css 读的），这样两边的线看着是一套。
-private val PhoneLineLight = Color(0xFFE5E5E5)
-private val PhoneLineDark = Color(0xFF322D24)
-private val PhoneHairlineLight = Color(0xFFC2C2C2)
-private val PhoneHairlineDark = Color(0xFF443D31)
+// v2 design system: cool sage ramp. Light is the master palette; dark swaps values only.
+private val PhoneLineLight = Color(0xFFE3EAE0)
+private val PhoneLineDark = Color(0xFF26312A)
+private val PhoneHairlineLight = Color(0xFFC6CFC5)
+private val PhoneHairlineDark = Color(0xFF37453C)
 private val PhoneEdgeLight = Color(0x0A000000)
 private val PhoneEdgeDark = Color(0x24FFFFFF)
 
@@ -165,61 +170,62 @@ val CanvasControlScrim = Color(0x99000000)
 /** 浮层底衬上的字。纯白偏刺眼，压到 80%。 */
 val OnCanvasScrim = Color(0xCCFFFFFF)
 
-// 中性色跟着石之家走：#f2f2f2 页底、#fff 卡片、#f5f5f5 抬升层、
-// #1f1f1f 正文、#e5e5e5 分割线、#c2c2c2 描边——都是从它的 app.css 里读的。
-// 原来是蓝灰一套（配水晶青），底色偏冷，配金会显脏。现在中性色也退到中性偏暖。
+// ---- v2 palette: "晨露 Morning Dew" (locked with user) ----
+// Light scheme is the single design source; dark derives by value swap on the same
+// ramp (cooler sage blacks instead of the old warm browns).
+// primaryContainer is derived from the live accent (see blendOver) so switching
+// accent presets re-tints chips instead of leaving stale gold containers.
 private fun lightPhoneColors(accent: AccentPalette) = lightColorScheme(
     primary = accent.inkLight,
     onPrimary = BrandOnLight,
-    primaryContainer = BrandContainerLight,
-    onPrimaryContainer = BrandOnContainerLight,
-    secondary = Color(0xFF6B6252),
+    primaryContainer = blendOver(accent.fill, 0.14f, Color.White),
+    onPrimaryContainer = accent.inkLight,
+    secondary = Color(0xFF55616C),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF0E9DA),   // 官网 #f0e9da
-    onSecondaryContainer = Color(0xFF252014),
-    tertiary = Color(0xFF5C5B57),
+    secondaryContainer = Color(0xFFE8EEF2),
+    onSecondaryContainer = Color(0xFF253038),
+    tertiary = Color(0xFF5C6B60),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE8E6E1),
-    onTertiaryContainer = Color(0xFF1F1E1B),
-    error = Color(0xFFB54545),                 // 官网 #b54545
+    tertiaryContainer = Color(0xFFE2EAE3),
+    onTertiaryContainer = Color(0xFF1F2B24),
+    error = Color(0xFFC2323D),
     errorContainer = Color(0xFFFBE4E4),
     onErrorContainer = Color(0xFF4A1212),
-    background = Color(0xFFF2F2F2),            // 官网页底
-    onBackground = Color(0xFF1F1F1F),          // 官网正文
+    background = Color(0xFFF2F5EF),
+    onBackground = Color(0xFF24312A),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1F1F1F),
-    surfaceVariant = Color(0xFFF5F5F5),        // 官网 #f5f5f5
-    onSurfaceVariant = Color(0xFF4B4B4B),      // 官网次要文字
-    outline = Color(0xFF9C9C9C),               // 官网 #9c9c9c
-    outlineVariant = Color(0xFFE5E5E5),        // 官网 #e5e5e5
+    onSurface = Color(0xFF24312A),
+    surfaceVariant = Color(0xFFEDF2EA),
+    onSurfaceVariant = Color(0xFF5F6E64),
+    outline = Color(0xFF8A988E),
+    outlineVariant = Color(0xFFE3EAE0),
     scrim = Color(0xFF000000),
 )
 
-// 官网只有浅色一套，深色这边按同一个金推暖灰（冷灰配金显脏）。
 private fun darkPhoneColors(accent: AccentPalette) = darkColorScheme(
     primary = accent.inkDark,
     onPrimary = BrandOnDark,
-    primaryContainer = BrandContainerDark,
-    onPrimaryContainer = BrandOnContainerDark,
-    secondary = Color(0xFFD3C9B4),
-    onSecondary = Color(0xFF352F22),
-    secondaryContainer = Color(0xFF4A4132),
-    onSecondaryContainer = Color(0xFFF0E9DA),
-    tertiary = Color(0xFFCAC7BF),
-    onTertiary = Color(0xFF32302B),
-    tertiaryContainer = Color(0xFF494740),
-    onTertiaryContainer = Color(0xFFE8E6E1),
-    error = Color(0xFFFF9C9C),
-    errorContainer = Color(0xFF7A2626),
+    primaryContainer = blendOver(accent.fill, 0.22f, Color(0xFF181F1A)),
+    onPrimaryContainer = accent.inkDark,
+    secondary = Color(0xFFB9C6BD),
+    onSecondary = Color(0xFF1F2B24),
+    secondaryContainer = Color(0xFF2A3830),
+    onSecondaryContainer = Color(0xFFD7E4DA),
+    tertiary = Color(0xFFA9B8AC),
+    onTertiary = Color(0xFF1F2B24),
+    tertiaryContainer = Color(0xFF2E3A32),
+    onTertiaryContainer = Color(0xFFD7E4DA),
+    error = Color(0xFFFF8A93),
+    errorContainer = Color(0xFF6E2429),
     onErrorContainer = Color(0xFFFBE4E4),
-    background = Color(0xFF14120D),
-    onBackground = Color(0xFFECE7DD),
-    surface = Color(0xFF201D16),
-    onSurface = Color(0xFFECE7DD),
-    surfaceVariant = Color(0xFF453F33),
-    onSurfaceVariant = Color(0xFFC9C2B4),
-    outline = Color(0xFF938C7E),
-    outlineVariant = Color(0xFF3A352B),
+    background = Color(0xFF101613),
+    onBackground = Color(0xFFE2EAE2),
+    surface = Color(0xFF181F1A),
+    onSurface = Color(0xFFE2EAE2),
+    surfaceVariant = Color(0xFF232D26),
+    onSurfaceVariant = Color(0xFF93A39A),
+    outline = Color(0xFF6E7C72),
+    outlineVariant = Color(0xFF26312A),
     scrim = Color(0xFF000000),
 )
 

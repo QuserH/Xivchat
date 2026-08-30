@@ -25,6 +25,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -307,8 +308,8 @@ private fun LightRowIcon(
     ) { content() }
 }
 
-/** 卡片圆角。 */
-private val LightCardShape = RoundedCornerShape(14.dp)
+/** 卡片圆角。v2: rounder cards. */
+private val LightCardShape = RoundedCornerShape(20.dp)
 /** 卡片之间的间距。 */
 private val LightCardGap = 8.dp
 /** 频道色标宽度。只有筛选器行还在用，见 [LightListRow]。 */
@@ -361,6 +362,8 @@ private fun LightListRow(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(LightCardShape)
             .background(AetherLightSurface)
+            // v2: hairline stroke so white cards read on the tinted background.
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, LightCardShape)
             .pointerInput(onLongPress == null) {
                 detectTapGestures(
                     onPress = {
@@ -3243,9 +3246,11 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
             }
             val bubbleShape = if (showTail) remember(self) { BubbleTailShape(self) } else if (self) RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp, topEnd = 8.dp, bottomEnd = 8.dp) else RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 14.dp, bottomEnd = 14.dp)
             val horizPad = if (self) Modifier.padding(end = 10.dp) else Modifier.padding(start = 10.dp)
+            // v2: incoming white bubbles get a hairline stroke; self bubble keeps solid accent.
+            val bubbleBorder = if (!self) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, bubbleShape) else Modifier
             BoxWithConstraints(
                 // 有尾巴：背景覆盖尾巴+本体，padding 缩内容；无尾巴：padding 在外层，本体从第 10dp 处开始，与带尾巴的首条主体对齐
-                Modifier.then(if (showTail) Modifier.clip(bubbleShape).then(Modifier.background(bubbleBg)).then(horizPad) else horizPad.then(Modifier.clip(bubbleShape)).then(Modifier.background(bubbleBg))),
+                Modifier.then(if (showTail) Modifier.clip(bubbleShape).then(Modifier.background(bubbleBg)).then(bubbleBorder).then(horizPad) else horizPad.then(Modifier.clip(bubbleShape)).then(Modifier.background(bubbleBg)).then(bubbleBorder)),
             ) {
                 val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
                 val contentPx = with(dens) { bubbleContent.toPx() }
