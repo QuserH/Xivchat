@@ -64,9 +64,9 @@ private val BrandOnLight = Color.White
 private val BrandOnDark = Color(0xFF2A2110)
 
 /**
- * 把 [fg] 以 [alpha] 叠在 [bg] 上，返回不透明结果。
- * primaryContainer 这类 M3 槽位不接受透明色，但语义上要的是"强调色的浅底"，
- * 所以按"fill 半透明叠在当前底色上"现场算，而不是再养一套写死的色值。
+ * Composite [fg] over [bg] at [alpha], returning an opaque color.
+ * M3 container slots reject transparency but semantically want a "tinted soft base",
+ * so they are computed as fill-over-surface instead of storing another hex set.
  */
 private fun blendOver(fg: Color, alpha: Float, bg: Color): Color = Color(
     fg.red * alpha + bg.red * (1f - alpha),

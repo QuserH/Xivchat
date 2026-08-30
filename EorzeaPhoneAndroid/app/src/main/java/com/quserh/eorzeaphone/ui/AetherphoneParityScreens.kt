@@ -40,6 +40,8 @@ import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaAvatarStore
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaFriendRoster
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import androidx.compose.foundation.verticalScroll
@@ -781,7 +783,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
             compareByDescending<ChatConversation> { state.isConversationPinned(it) }
                 .thenByDescending { it.lastTimestamp ?: 0L },
         )
-        // v2: 消息永远排在筛选器前面（用户拍板），默认选中项仍跟设置走。
+        // v2: messages always precede the filter tabs; the default selection still follows settings.
         LightSegmented(
             options = listOf("messages" to "消息", "tabs" to "筛选器"),
             selected = if (messagesExpanded) "messages" else "tabs",
@@ -3344,10 +3346,31 @@ private fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
     alpha = c.alpha,
 )
 
+/** WCAG 2.x contrast ratio; [luminance] is already the relative luminance WCAG asks for. */
+private fun contrastRatio(a: Color, b: Color): Float {
+    val la = a.luminance()
+    val lb = b.luminance()
+    return (max(la, lb) + 0.05f) / (min(la, lb) + 0.05f)
+}
+
 @Composable
 private fun themeAdjustedChannelColor(color: Color): Color {
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    return if (light) blendColor(color, Color.Black, 0.30f) else blendColor(color, Color.White, 0.28f)
+    if (!light) return blendColor(color, Color.White, 0.28f)
+    // These are the game's own channel colors, which run far brighter than the
+    // spec's pastel swatches, and ChannelPill puts white 8.5sp text on them. A
+    // fixed blend cannot hit a contrast target - the needed amount depends on how
+    // bright the source is (say/yell need ~52%, alliance already passes at 30%) -
+    // so step down until white body text clears WCAG. Aim at 4.6 rather than 4.5:
+    // the 0.02 step overshoots unevenly and Float rounding would otherwise leave
+    // some channels (tell, say) passing by less than 0.01.
+    var blended = blendColor(color, Color.Black, 0.30f)
+    var fraction = 0.30f
+    while (fraction < 0.94f && contrastRatio(Color.White, blended) < 4.6f) {
+        fraction += 0.02f
+        blended = blendColor(color, Color.Black, fraction)
+    }
+    return blended
 }
 
 private fun AnnotatedString.Builder.appendHighlighted(text: String, query: String, style: SpanStyle, highlight: Color) {

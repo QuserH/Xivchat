@@ -54,7 +54,10 @@ private val DeckHeroBorderDark = Color(0xFF2A3C2E)
 private val DeckDot = Color(0xFF9DC4A0)
 
 private val DeckAccentInk: Color @Composable get() = if (phoneLight) Color(0xFF2F6B40) else Color(0xFF7FC49A)
-private val DeckSubInk: Color @Composable get() = if (phoneLight) Color(0xFF4E6858) else Color(0xFF9FC0A8)
+// Light value is 0x4A6353, not the spec's 0x4E6858: the hero gradient's darkest
+// stop (0xC2E1BA) leaves that only 4.29:1, under the 4.5 body threshold, and the
+// zone label lands on that end of the ramp at every screen width.
+private val DeckSubInk: Color @Composable get() = if (phoneLight) Color(0xFF4A6353) else Color(0xFF9FC0A8)
 private val DeckChipBg: Color @Composable get() = if (phoneLight) Color(0xCCFFFFFF) else Color(0xB31E3326)
 
 /** Next UTC 15:00 daily reset and next Tuesday 15:00 UTC weekly reset, from [now]. */
@@ -195,7 +198,7 @@ private fun DeckSectionLabel(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(DeckDot))
         Spacer(Modifier.width(7.dp))
-        Text(text, color = if (phoneLight) Color(0xFF4E5D52) else DeckSubInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = DeckSubInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -209,7 +212,9 @@ private fun DeckUpcoming(state: PhoneState, now: Long) {
     val items = listOf(
         DeckRailItem("天气", Color(0xFF7C8A94), nextWeather?.name ?: "等待数据", weather?.zone ?: "连接游戏后显示", if (nextWeather == null) "--" else formatCountdown(nextWeather.minutesFromNow * 60_000L), null),
         DeckRailItem("日常", Color(0xFF4E8D5B), "日常重置", "探险札记 · 蛮神", formatCountdown(dailyMs), null),
-        DeckRailItem("周常", Color(0xFF5B9BD3), "周常重置", "周常清单", formatCountdown(weeklyMs), null),
+        // 0x5793CE, not spec info 0x5B9BD3: the 3dp bar encodes category, so it
+        // carries meaning and owes 3:1 non-text contrast; the spec value is 2.97.
+        DeckRailItem("周常", Color(0xFF5793CE), "周常重置", "周常清单", formatCountdown(weeklyMs), null),
         DeckRailItem("采集", Color(0xFFC08A3E), "采集时钟", "节点窗口与鱼汛", "打开", "gatherclock"),
     )
     Column {
@@ -252,7 +257,7 @@ private fun DeckRailCard(item: DeckRailItem, onClick: (() -> Unit)?) {
 private fun DeckResets(state: PhoneState, now: Long) {
     val (dailyMs, weeklyMs) = resetDelaysMillis(now)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        PhoneCard(Modifier.weight(1.25f).height(92.dp), onClick = { state.openApp("gatherclock") }) {
+        PhoneCard(Modifier.weight(1.25f).height(92.dp), flat = true, onClick = { state.openApp("gatherclock") }) {
             Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("下一档采集", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -270,7 +275,7 @@ private fun DeckResets(state: PhoneState, now: Long) {
 
 @Composable
 private fun DeckResetCard(label: String, value: String) {
-    PhoneCard(Modifier.fillMaxWidth().height(41.dp)) {
+    PhoneCard(Modifier.fillMaxWidth().height(41.dp), flat = true) {
         Row(Modifier.fillMaxSize().padding(horizontal = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = PhoneMuted, fontSize = 10.sp, modifier = Modifier.weight(1f))
             Text(value, color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -286,7 +291,7 @@ private fun DeckFeed(state: PhoneState) {
         DeckSectionLabel("动态")
         Spacer(Modifier.height(8.dp))
         if (feed.isEmpty()) {
-            PhoneCard(Modifier.fillMaxWidth(), onClick = { chatApp?.let { state.open(it) } }) {
+            PhoneCard(Modifier.fillMaxWidth(), flat = true, onClick = { chatApp?.let { state.open(it) } }) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("打开 Linkpearl 查看最新消息", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
                     ImageGlyph(R.drawable.ic_chevron_right, PhoneAccent, Modifier.size(16.dp))
@@ -295,7 +300,7 @@ private fun DeckFeed(state: PhoneState) {
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 feed.forEach { conv ->
-                    PhoneCard(Modifier.fillMaxWidth(), onClick = { chatApp?.let { state.open(it) } }) {
+                    PhoneCard(Modifier.fillMaxWidth(), flat = true, onClick = { chatApp?.let { state.open(it) } }) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             SoftAvatar(conv.title.take(1), PhoneAccent, size = 38.dp)
                             Column(Modifier.weight(1f).padding(start = 10.dp)) {

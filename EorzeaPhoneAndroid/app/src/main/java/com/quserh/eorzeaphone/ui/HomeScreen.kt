@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloat
@@ -114,6 +115,7 @@ fun HomeScreen(state: PhoneState) {
         Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .82f)))
 
         // v2 home: deck page first, app-grid pages second; the pill dock switches modes.
+        // Crossfade so mode switches feel like one surface, not two apps.
         var deckMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
         Column(
             modifier = Modifier
@@ -122,18 +124,22 @@ fun HomeScreen(state: PhoneState) {
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = LocalContentMargin.current.dp),
         ) {
-            if (deckMode) {
-                HomeDeck(state, Modifier.weight(1f))
-            } else {
-                HomeEditBar(state, homeText)
-                HorizontalPager(
-                    state = pager,
-                    userScrollEnabled = !state.homeEditMode,
-                    modifier = Modifier.weight(1f),
-                ) { page ->
-                    SocialPage(state, page)
+            Crossfade(targetState = deckMode, animationSpec = tween(220), modifier = Modifier.weight(1f), label = "home-mode") { mode ->
+                if (mode) {
+                    HomeDeck(state, Modifier.fillMaxSize())
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        HomeEditBar(state, homeText)
+                        HorizontalPager(
+                            state = pager,
+                            userScrollEnabled = !state.homeEditMode,
+                            modifier = Modifier.weight(1f),
+                        ) { page ->
+                            SocialPage(state, page)
+                        }
+                        PageIndicator(pager.currentPage, totalPages, homeText)
+                    }
                 }
-                PageIndicator(pager.currentPage, totalPages, homeText)
             }
             HomeDockBar(state, darkTheme, deckMode, onDeck = { deckMode = true }, onApps = { deckMode = false })
             Spacer(Modifier.height(8.dp))
@@ -464,28 +470,29 @@ internal fun weatherIcon(name: String): Int = when {
 @Composable
 private fun HomeDockBar(
     state: PhoneState,
-    @Suppress("UNUSED_PARAMETER") darkTheme: Boolean,
+    darkTheme: Boolean,
     deckMode: Boolean,
     onDeck: () -> Unit,
     onApps: () -> Unit,
 ) {
     val hapticView = LocalView.current
-    val pillShape = RoundedCornerShape(31.dp)
+    val pillShape = RoundedCornerShape(29.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 24.dp)
             .shadow(10.dp, pillShape, ambientColor = Color(0x123C5A46), spotColor = Color(0x123C5A46))
             .clip(pillShape)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, pillShape)
-            .height(62.dp)
-            .padding(horizontal = 12.dp),
+            .height(56.dp)
+            .padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DockTab(R.drawable.ic2_home, "甲板", deckMode, onDeck)
-        DockTab(R.drawable.ic2_grid, "应用", !deckMode, onApps)
+        DockTab(R.drawable.ic2_home, deckMode, onDeck)
+        DockTab(R.drawable.ic2_grid, !deckMode, onApps)
+        Box(Modifier.width(1.dp).height(22.dp).background(MaterialTheme.colorScheme.outlineVariant))
         AppCatalog.dock.forEach { app ->
             var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
             val interaction = remember(app.id, state) { MutableInteractionSource() }
@@ -498,12 +505,12 @@ private fun HomeDockBar(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(40.dp)
                         .graphicsLayer { scaleX = scale; scaleY = scale }
                         .onGloballyPositioned { bounds = it.boundsInRoot() }
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(13.dp))
                         .background(tileBase)
-                        .border(1.dp, tileBorder, RoundedCornerShape(14.dp))
+                        .border(1.dp, tileBorder, RoundedCornerShape(13.dp))
                         .clickable(interactionSource = interaction, indication = null) {
                             if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             state.open(app, bounds)
@@ -513,7 +520,7 @@ private fun HomeDockBar(
                         painterResource(app.icon),
                         contentDescription = app.label,
                         colorFilter = ColorFilter.tint(glyphTint),
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(22.dp),
                     )
                 }
                 if (app.destination == PhoneScreen.Chat) {
@@ -523,8 +530,8 @@ private fun HomeDockBar(
                             Modifier
                                 .align(Alignment.TopEnd)
                                 .offset(x = 2.dp, y = (-2).dp)
-                                .height(16.dp)
-                                .widthIn(min = 16.dp)
+                                .height(15.dp)
+                                .widthIn(min = 15.dp)
                                 .clip(CircleShape)
                                 .background(PhoneDanger),
                             contentAlignment = Alignment.Center,
@@ -533,7 +540,7 @@ private fun HomeDockBar(
                                 if (unread > 99) "99+" else unread.toString(),
                                 color = Color.White,
                                 fontSize = 9.sp,
-                                lineHeight = 16.sp,
+                                lineHeight = 15.sp,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 2.dp),
@@ -546,17 +553,24 @@ private fun HomeDockBar(
     }
 }
 
+/** Icon-only mode tab: 44dp hit area, selected = accent glyph + dot underneath. */
 @Composable
-private fun DockTab(icon: Int, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun DockTab(icon: Int, selected: Boolean, onClick: () -> Unit) {
     val color by animateColorAsState(if (selected) PhoneAccent else PhoneMuted, label = "dock-tab")
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        ImageGlyph(icon, color, Modifier.size(20.dp))
-        Text(label, color = color, fontSize = 9.sp, modifier = Modifier.padding(top = 2.dp))
+        ImageGlyph(icon, color, Modifier.size(22.dp))
+        Box(
+            Modifier
+                .padding(top = 3.dp)
+                .size(4.dp)
+                .clip(CircleShape)
+                .background(if (selected) color else Color.Transparent),
+        )
     }
 }

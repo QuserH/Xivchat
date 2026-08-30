@@ -522,7 +522,7 @@ private fun SettingsStepper(
 ) {
     SettingsRow(label, icon, hint) {
         Box(
-            Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurfaceRaised).clickable(onClick = onMinus),
+            Modifier.size(32.dp).clip(RoundedCornerShape(12.dp)).background(PhoneSurfaceRaised).clickable(onClick = onMinus),
             contentAlignment = Alignment.Center,
         ) { ImageGlyph(R.drawable.ic_remove, PhoneAccent, Modifier.size(16.dp)) }
         Text(
@@ -532,7 +532,7 @@ private fun SettingsStepper(
             modifier = Modifier.widthIn(min = 54.dp).padding(horizontal = 4.dp),
         )
         Box(
-            Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(PhoneSurfaceRaised).clickable(onClick = onPlus),
+            Modifier.size(32.dp).clip(RoundedCornerShape(12.dp)).background(PhoneSurfaceRaised).clickable(onClick = onPlus),
             contentAlignment = Alignment.Center,
         ) { ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.size(16.dp)) }
     }
@@ -652,7 +652,7 @@ private fun AccentPicker(state: PhoneState) {
                 Text(
                     "按钮",
                     color = current.onFill, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(current.fill)
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(current.fill)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 Spacer(Modifier.width(10.dp))
@@ -809,10 +809,10 @@ private fun AccentCustomDialog(
             Column(Modifier.fillMaxWidth()) {
                 // 预览：填充 + 气泡（带情感动作色），和上一屏同一套标尺。
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(9.dp)).background(derived.fill))
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(12.dp)).background(derived.fill))
                     Spacer(Modifier.width(8.dp))
                     Column(
-                        Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(derived.bubble)
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(derived.bubble)
                             .padding(horizontal = 10.dp, vertical = 7.dp),
                     ) {
                         Text("我发的消息", color = derived.onBubble, fontSize = 12.sp)
@@ -852,7 +852,7 @@ private fun AccentCustomDialog(
             Text(
                 "用这个颜色",
                 color = PhoneAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(9.dp)).clickable { onPick(picked) }
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onPick(picked) }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
         },
@@ -860,7 +860,7 @@ private fun AccentCustomDialog(
             Text(
                 "取消",
                 color = PhoneMuted, fontSize = 14.sp,
-                modifier = Modifier.clip(RoundedCornerShape(9.dp)).clickable(onClick = onDismiss)
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onDismiss)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
         },
@@ -883,7 +883,7 @@ private fun ColorSlider(
             val w = maxWidth
             Box(
                 Modifier.fillMaxWidth().height(18.dp).align(Alignment.CenterStart)
-                    .clip(RoundedCornerShape(9.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(Brush.horizontalGradient(colors))
                     // 按下就跟手、拖着继续跟。
                     // 不用 detectTapGestures + detectHorizontalDragGestures 两个
@@ -1036,7 +1036,7 @@ private fun CompactInventorySearch(value: String, change: (String) -> Unit, modi
         singleLine = true,
         textStyle = androidx.compose.ui.text.TextStyle(color = PhoneText, fontSize = 14.sp),
         modifier = modifier.fillMaxWidth().height(44.dp).focusRequester(focusRequester)
-            .clip(RoundedCornerShape(11.dp)).background(PhoneSurfaceRaised),
+            .clip(RoundedCornerShape(12.dp)).background(PhoneSurfaceRaised),
         decorationBox = { field ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
                 ImageGlyph(R.drawable.ic_search, PhoneMuted, Modifier.padding(end = 10.dp).size(19.dp))
@@ -1072,7 +1072,9 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                     val (id, label, icon) = row
                     val count = state.inventory.count { it.container in inventoryTypesForGroup(id) }
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { open(id) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)).background(color), contentAlignment = Alignment.Center) { ImageGlyph(icon, Color.White, Modifier.size(26.dp)) }
+                        val tileBase = if (phoneLight) androidx.compose.ui.graphics.lerp(Color.White, color, 0.13f) else androidx.compose.ui.graphics.lerp(Color(0xFF18211B), color, 0.16f)
+                        val glyphTint = if (phoneLight) androidx.compose.ui.graphics.lerp(color, Color.Black, 0.35f) else androidx.compose.ui.graphics.lerp(color, Color.White, 0.45f)
+                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(tileBase).border(1.dp, androidx.compose.ui.graphics.lerp(Color.White, color, 0.30f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { ImageGlyph(icon, glyphTint, Modifier.size(24.dp)) }
                         Text(label, color = PhoneText, fontSize = 15.sp, modifier = Modifier.weight(1f).padding(start = 14.dp))
                         Text(formatCount(count), color = color, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 5.dp))
                         ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.padding(start = 9.dp).size(17.dp))
@@ -1094,7 +1096,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
                     state.retainers.forEach { retainer ->
                         val cachedCount = state.inventory.count { it.retainerId == retainer.id }
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(enabled = cachedCount > 0) { openRetainer(retainer.id) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF8D6AC8)), contentAlignment = Alignment.Center) { Text(retainer.name.take(1), color = Color.White, fontWeight = FontWeight.Bold) }
+                            SoftAvatar(retainer.name.take(1).ifBlank { "雇" }, Color(0xFF8D6AC8), size = 44.dp)
                             Column(Modifier.weight(1f).padding(start = 13.dp)) {
                                 Text(retainer.name.ifBlank { "未命名雇员" }, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                                 if (retainer.ventureId > 0) {
@@ -1134,7 +1136,13 @@ private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
 }
 @Composable
 private fun InventorySlotCell(item: GameInventoryItem?, modifier: Modifier = Modifier) {
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(5.dp)).background(if (item?.hq == true) Color(0xFF67522B) else PhoneSurface), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (item?.hq == true) androidx.compose.ui.graphics.lerp(PhoneSurface, Color(0xFFC08A3E), 0.20f) else PhoneSurface)
+            .border(1.dp, PhoneLine, RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
         if (item != null) {
             ItemIcon(item.iconId, Modifier.fillMaxSize(), fallback = item.name.take(3))
         }
@@ -1452,7 +1460,7 @@ fun PhoneListSkeleton(rows: Int = 6, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         repeat(rows) {
             Row(Modifier.fillMaxWidth().padding(vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                PhoneShimmerBox(Modifier.size(34.dp), RoundedCornerShape(9.dp))
+                PhoneShimmerBox(Modifier.size(34.dp), RoundedCornerShape(12.dp))
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
                     PhoneShimmerBox(Modifier.fillMaxWidth(0.42f).height(12.dp), RoundedCornerShape(4.dp))
@@ -1731,6 +1739,7 @@ fun PhoneCard(
     shape: RoundedCornerShape = PhoneCardShape,
     onClick: (() -> Unit)? = null,
     raised: Boolean = false,
+    flat: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -1749,7 +1758,8 @@ fun PhoneCard(
     Column(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .shadow(elevation, shape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
+            // flat: hairline border only, no shadow — dense lists sitting on wallpaper.
+            .then(if (flat) Modifier else Modifier.shadow(elevation, shape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46)))
             .clip(shape)
             .background(if (raised) PhoneSurfaceRaised else PhoneSurface)
             .border(1.dp, PhoneLine, shape)
