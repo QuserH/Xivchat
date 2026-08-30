@@ -101,9 +101,10 @@ fun HomeDeck(state: PhoneState, modifier: Modifier = Modifier) {
     }
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = 10.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         DeckHero(state)

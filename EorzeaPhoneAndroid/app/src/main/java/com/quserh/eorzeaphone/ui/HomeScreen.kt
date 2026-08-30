@@ -1,5 +1,9 @@
 package com.quserh.eorzeaphone.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -7,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,8 +48,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
@@ -109,34 +118,103 @@ fun HomeScreen(state: PhoneState) {
         )
         Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .82f)))
 
-        // v2 home: ONE desktop. Page 0 = intel deck, pages 1..N = app grids —
-        // swipe horizontally between them like pages of the same home.
-        // state.homePage keeps the GRID page index (persisted), so pager = grid + 1.
-        val deckFirst = 1
+        // v2 home: the desktop is always the desktop (wallpaper + grid + dock).
+        // The intel deck is a pull-down sheet, notification-shade style:
+        // drag down anywhere to reveal, swipe up / tap scrim / back to dismiss.
         val pager = rememberPagerState(
-            initialPage = state.homePage.coerceIn(0, (totalPages - 1).coerceAtLeast(0)) + deckFirst,
-            pageCount = { totalPages + deckFirst },
+            initialPage = state.homePage.coerceIn(0, (totalPages - 1).coerceAtLeast(0)),
+            pageCount = { totalPages },
         )
-        LaunchedEffect(pager.currentPage) {
-            if (pager.currentPage >= deckFirst) state.homePage = pager.currentPage - deckFirst
-        }
+        LaunchedEffect(pager.currentPage) { state.homePage = pager.currentPage }
+        var deckOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+        BackHandler(enabled = deckOpen) { deckOpen = false }
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = LocalContentMargin.current.dp),
+                .padding(horizontal = LocalContentMargin.current.dp)
+                .pointerInput(Unit) {
+                    // Grid has no vertical scroll, so a downward drag is unambiguous.
+                    var pull = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { pull = 0f },
+                        onVerticalDrag = { change, amount ->
+                            pull += amount
+                            if (pull > 140f && !deckOpen) {
+                                deckOpen = true
+                                pull = 0f
+                            }
+                        },
+                    )
+                },
         ) {
+            HomeEditBar(state, homeText)
             HorizontalPager(
                 state = pager,
                 userScrollEnabled = !state.homeEditMode,
                 modifier = Modifier.weight(1f),
             ) { page ->
-                if (page == 0) HomeDeck(state, Modifier.fillMaxSize()) else SocialPage(state, page - deckFirst)
+                SocialPage(state, page)
             }
-            PageIndicator(pager.currentPage, totalPages + deckFirst, homeText)
+            PageIndicator(pager.currentPage, totalPages, homeText)
             HomeDockBar(state, darkTheme)
             Spacer(Modifier.height(8.dp))
+        }
+        AnimatedVisibility(
+            visible = deckOpen,
+            enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(180)),
+            exit = slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(140)),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(Color(0x59000000))
+                        .pointerInput(Unit) { detectTapGestures { deckOpen = false } },
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.94f)
+                        .clip(RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))
+                        .background(MaterialTheme.colorScheme.background)
+                        .pointerInput(Unit) {
+                            var pull = 0f
+                            detectVerticalDragGestures(
+                                onDragStart = { pull = 0f },
+                                onVerticalDrag = { change, amount ->
+                                    if (amount < 0) pull += -amount
+                                    if (pull > 120f) {
+                                        deckOpen = false
+                                        pull = 0f
+                                    }
+                                },
+                            )
+                        },
+                ) {
+                    Column(Modifier.fillMaxSize()) {
+                        // Notification-shade style header: title left, settings gear top-right.
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("艾欧泽亚终端", color = PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            val settingsApp = remember { AppCatalog.dock.firstOrNull { it.id == "settings" } }
+                            Box(
+                                Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .clickable { settingsApp?.let { state.open(it) } },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ImageGlyph(R.drawable.ic2_settings, PhoneMuted, Modifier.size(20.dp))
+                            }
+                        }
+                        HomeDeck(state, Modifier.fillMaxSize())
+                    }
+                }
+            }
         }
     }
 }
