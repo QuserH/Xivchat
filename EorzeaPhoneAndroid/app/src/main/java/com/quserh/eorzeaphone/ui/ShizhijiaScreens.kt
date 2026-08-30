@@ -207,20 +207,20 @@ private val SzjDarkEdge = Color(0x24FFFFFF)        // 石板顶边高光
 
 // 浅色：直接照官网的中性色。#f2f2f2 页底、#fff 卡片、#1f1f1f/#4b4b4b 文字、
 // #9c9c9c 次要、#fbf9f4 金的浅底——全部取自 mob 的 app.css。
-private val SzjLightBg = Color(0xFFF2F5EF)         // 官网页底
+private val SzjLightBg = Color(0xFFF0F3F7)         // 官网页底
 private val SzjLightCard = Color(0xFFFFFFFF)       // 白卡
-private val SzjLightCardRaised = Color(0xFFEDF2EA) // 抬升层（官网 #f5f5f5）
+private val SzjLightCardRaised = Color(0xFFECF0F5) // 抬升层（官网 #f5f5f5）
 // 官网把 #c4a86a 也拿来写小字（白底 2.17:1），那是它的无障碍问题，不照抄。
 // 文字用的金压深到 5.2:1；实心填充仍用官网原值 SzjAccentFill。
 private val SzjLightAccent = Color(0xFF2F6B40)     // 金字（白底 5.2:1）
 private val SzjLightAccentSoft = Color(0xFFEDF4EA) // 官网 .is-selected 的底
 private val SzjLightOnAccentSoft = Color(0xFF27553A)
-private val SzjLightText = Color(0xFF24312A)       // 官网正文
+private val SzjLightText = Color(0xFF1F2730)       // 官网正文
 // 官网次要色 #9c9c9c 在 #f2f2f2 上只有 2.6:1，元信息是 11sp 小字，
 // 用官网的另一档 #4b4b4b 系推到 5.0 以上。
-private val SzjLightMuted = Color(0xFF5F6E64)
-private val SzjLightLine = Color(0xFFE3EAE0)       // 官网 #e5e5e5
-private val SzjLightHairline = Color(0xFFC6CFC5)   // 官网 #c2c2c2
+private val SzjLightMuted = Color(0xFF5D6874)
+private val SzjLightLine = Color(0xFFE2E7ED)       // 官网 #e5e5e5
+private val SzjLightHairline = Color(0xFFC4CDD6)   // 官网 #c2c2c2
 private val SzjLightEdge = Color(0x0A000000)
 
 internal val szjLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -2104,26 +2104,16 @@ private fun SzjBottomBar(
                 .fillMaxHeight()
                 .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                 .clip(RoundedCornerShape(20.dp))
-                .background(SzjCard)
+                .background(if (szjLight) Color(0xFFEDF1F6) else Color(0xFF1A222B))
                 .then(if (szjLight) Modifier.border(1.dp, SzjLine, RoundedCornerShape(20.dp)) else Modifier),
         ) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(
                 Brush.horizontalGradient(listOf(Color.Transparent, SzjEdge, SzjEdge, Color.Transparent))
             ))
-            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 7.dp)) {
-                val cell = maxWidth / 3
-                Box(
-                    Modifier
-                        .offset(x = cell * pos)
-                        .width(cell).fillMaxHeight()
-                        .clip(SzjInnerShape)
-                        .background(SzjAccentSoft)
-                )
-                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    SzjBottomTab("社区", selected == MAIN_COMMUNITY, Modifier.weight(1f)) { onSelect(MAIN_COMMUNITY) }
-                    SzjBottomTab("幻化", selected == MAIN_GLAMOUR, Modifier.weight(1f)) { onSelect(MAIN_GLAMOUR) }
-                    SzjBottomTab("设置", selected == MAIN_ME, Modifier.weight(1f)) { onSelect(MAIN_ME) }
-                }
+            Row(Modifier.fillMaxSize().padding(horizontal = 5.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                SzjBottomTab("社区", selected == MAIN_COMMUNITY, Modifier.weight(1f)) { onSelect(MAIN_COMMUNITY) }
+                SzjBottomTab("幻化", selected == MAIN_GLAMOUR, Modifier.weight(1f)) { onSelect(MAIN_GLAMOUR) }
+                SzjBottomTab("设置", selected == MAIN_ME, Modifier.weight(1f)) { onSelect(MAIN_ME) }
             }
         }
         // 独立圆形搜索，iPadOS 式。
@@ -2134,7 +2124,7 @@ private fun SzjBottomBar(
                     .aspectRatio(1f)
                     .shadow(10.dp, CircleShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                     .clip(CircleShape)
-                    .background(SzjCard)
+                    .background(if (szjLight) Color.White else Color(0xFF1A222B))
                     .then(if (szjLight) Modifier.border(1.dp, SzjLine, CircleShape) else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
@@ -2146,7 +2136,7 @@ private fun SzjBottomBar(
 
 @Composable
 private fun SzjBottomTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val color by animateColorAsState(if (selected) SzjOnAccentSoft else SzjMuted, tween(200), label = "szjBottomTabColor")
+    val color by animateColorAsState(if (selected) SzjAccent else SzjMuted, tween(200), label = "szjBottomTabColor")
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val motion = szjMotionEnabled()
@@ -2155,6 +2145,7 @@ private fun SzjBottomTab(label: String, selected: Boolean, modifier: Modifier = 
         modifier.fillMaxHeight()
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(SzjInnerShape)
+            .background(if (selected) (if (szjLight) Color.White else Color(0xFF2A3542)) else Color.Transparent)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

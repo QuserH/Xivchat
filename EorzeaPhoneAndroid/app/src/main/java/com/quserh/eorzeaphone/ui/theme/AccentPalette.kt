@@ -122,6 +122,13 @@ data class AccentPalette(
         // 除了以太紫（3.53:1，那是原样保留的历史值），其余都在 8:1 以上。
         val presets: List<AccentPalette> = listOf(
             AccentPalette(
+                id = "ios_blue", label = "艾欧泽亚蓝",
+                fill = Color(0xFF2F6FE4),
+                inkLight = Color(0xFF1E56C8),
+                inkDark = Color(0xFF9DBBF5),
+                bubble = Color(0xFF16305F),
+            ),
+            AccentPalette(
                 id = "dew_green", label = "晨露绿",
                 // 0x3F8150 (not 0x4E8D5B): white-on-fill passes WCAG at button sizes.
                 fill = Color(0xFF3F8150),
@@ -213,7 +220,7 @@ data class AccentPalette(
          */
         // v2 default: the locked "Morning Dew" green. Existing users keep whatever
         // accent they picked (accentId is persisted); this only decides first-run.
-        val default: AccentPalette = byIdOrFirst("dew_green")
+        val default: AccentPalette = byIdOrFirst("ios_blue")
 
         private fun byIdOrFirst(id: String): AccentPalette =
             presets.firstOrNull { it.id == id } ?: presets.first()
