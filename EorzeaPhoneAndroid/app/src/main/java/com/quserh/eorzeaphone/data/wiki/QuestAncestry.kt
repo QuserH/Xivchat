@@ -119,20 +119,29 @@ private data class Key(val isRun: Boolean, val id: Int)
 object QuestAncestry {
 
     /**
-     * 交互高亮：从画布上选中的格子出发，沿**所有**前置分支上溯，
-     * 直到顶部主线（主线自身的前置没在图里，到顶自然停）。
-     * 两个前置就亮两条分支 —— 用户要的「多条高亮线」。
+     * 交互高亮：从选中的格子出发，每个前置依赖只亮**最短的一条**到达主线的路线。
+     *
+     * 规则（用户拍板）：碰到顶部主线就停、不再上溯它的前置；同一主线如果还有
+     * 更长的绕行路线（比如残酷的真相既直接前置勇敢的心，又隔着龙诗之始
+     * 喂给虎口拔牙），短的那条已经把它接进来了，长的那条不再重复点亮。
+     * 两个真正不同的前置（比如目标入团和龙诗之始都喂虎口拔牙）依然两条都亮。
      */
     fun pathFrom(tree: AncestorTree, fromCell: Int): Set<Int> {
         if (fromCell !in tree.cells.indices) return emptySet()
+        val isTop = HashSet<Int>()
         val pre = HashMap<Int, MutableList<Int>>()
+        tree.cells.forEachIndexed { i, c ->
+            if (c is AncestorCell.Quest && c.isMsqTop) isTop[i] = true
+        }
         tree.edges.forEach { pre.getOrPut(it.toCell) { mutableListOf() }.add(it.fromCell) }
         val out = HashSet<Int>()
-        out.add(fromCell)
         val dq = ArrayDeque<Int>()
+        out.add(fromCell)
         dq.add(fromCell)
         while (dq.isNotEmpty()) {
             val u = dq.removeFirst()
+            // 顶部主线只作为终点亮出来，不再继续展开它的前置。
+            if (isTop[u] && u != fromCell) continue
             for (a in pre[u].orEmpty()) if (out.add(a)) dq.add(a)
         }
         return out
