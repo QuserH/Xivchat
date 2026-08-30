@@ -258,12 +258,12 @@ object QuestAncestry {
             while (queue.isNotEmpty() && anc.size < MAX_ANCESTORS) {
                 val u = queue.removeFirst()
                 for (p in preOf[u].orEmpty()) {
-                    if (p in msq) {
-                        // 顶部主线：收进来当树顶，但不展开它的前置
-                        tops.add(p)
-                    } else if (anc.add(p)) {
-                        queue.add(p)
-                    }
+                    if (p in msq) tops.add(p)
+                    // v0.7.284：非主线目标任务 → 一路溯源到最根源（穿过主线继续往上），
+                    // 深层选中时最上面的线段才不会断。主线目标任务保持只显示直接前置。
+                    // 主线链很长由折叠机制压成「⋯ N 个 ⋯」，MAX_ANCESTORS 仍是安全上限。
+                    if (targetIsMsq && p in msq) continue
+                    if (anc.add(p)) queue.add(p)
                 }
             }
 
