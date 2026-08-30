@@ -119,32 +119,41 @@ private data class Key(val isRun: Boolean, val id: Int)
 object QuestAncestry {
 
     /**
-     * 交互高亮：从选中的格子出发，每个前置依赖只亮**最短的一条**到达主线的路线。
+     * 交互高亮：从选中的格子出发的**最短依赖树**。
      *
-     * 规则（用户拍板）：碰到顶部主线就停、不再上溯它的前置；同一主线如果还有
-     * 更长的绕行路线（比如残酷的真相既直接前置勇敢的心，又隔着龙诗之始
-     * 喂给虎口拔牙），短的那条已经把它接进来了，长的那条不再重复点亮。
-     * 两个真正不同的前置（比如目标入团和龙诗之始都喂虎口拔牙）依然两条都亮。
+     * BFS 向上走，每个节点只保留第一次到达它的那条边 —— 每个前置依赖
+     * 恰好一条亮线；重复的前置（残酷的真相既直接前置勇敢的心、又隔着
+     * 龙诗之始喂虎口拔牙）只走直连那条，绕行的重复边不亮。
+     * 碰到顶部主线就停（它自己的前置不在图里，到顶自然停）。
+     *
+     * 返回：亮起来的格子集合 + 亮起来的边集合（与 [AncestorEdge] 同向）。
      */
-    fun pathFrom(tree: AncestorTree, fromCell: Int): Set<Int> {
-        if (fromCell !in tree.cells.indices) return emptySet()
+    fun pathFrom(tree: AncestorTree, fromCell: Int): Pair<Set<Int>, Set<Pair<Int, Int>>> {
+        if (fromCell !in tree.cells.indices) return emptySet<Int>() to emptySet()
         val isTop = HashSet<Int>()
-        val pre = HashMap<Int, MutableList<Int>>()
+        val pre = HashMap<Int, MutableList<Pair<Int, Int>>>()
         tree.cells.forEachIndexed { i, c ->
             if (c is AncestorCell.Quest && c.isMsqTop) isTop.add(i)
         }
-        tree.edges.forEach { pre.getOrPut(it.toCell) { mutableListOf() }.add(it.fromCell) }
-        val out = HashSet<Int>()
+        tree.edges.forEachIndexed { ei, e ->
+            pre.getOrPut(e.toCell) { mutableListOf() }.add(e.fromCell to ei)
+        }
+        val cells = HashSet<Int>()
+        val litEdges = HashSet<Pair<Int, Int>>()
         val dq = ArrayDeque<Int>()
-        out.add(fromCell)
+        cells.add(fromCell)
         dq.add(fromCell)
         while (dq.isNotEmpty()) {
             val u = dq.removeFirst()
-            // 顶部主线只作为终点亮出来，不再继续展开它的前置。
             if (u in isTop && u != fromCell) continue
-            for (a in pre[u].orEmpty()) if (out.add(a)) dq.add(a)
+            for ((a, ei) in pre[u].orEmpty()) {
+                if (cells.add(a)) {
+                    litEdges.add(a to u)
+                    dq.add(a)
+                }
+            }
         }
-        return out
+        return cells to litEdges
     }
 
     /** 安全上限。实测最大 1090，留一倍余量防脏数据成环。 */

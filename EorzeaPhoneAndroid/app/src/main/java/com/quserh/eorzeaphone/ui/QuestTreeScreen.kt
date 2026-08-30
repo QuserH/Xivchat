@@ -819,14 +819,16 @@ internal fun QuestAncestryScreen(
                         modifier = Modifier.padding(top = 4.dp, bottom = 7.dp),
                     )
 
-                    // 点任意任务：从它出发到顶部主线的全部前置分支高亮。
-                    val highlightCells = remember(t, pickedCell) {
-                        if (pickedCell < 0) emptySet() else QuestAncestry.pathFrom(t, pickedCell)
+                    // 点任意任务：亮「最短依赖树」——每条前置依赖一条线到顶部主线。
+                    val (highlightCells, highlightEdges) = remember(t, pickedCell) {
+                        if (pickedCell < 0) emptySet<Int>() to emptySet<Pair<Int, Int>>()
+                        else QuestAncestry.pathFrom(t, pickedCell)
                     }
                     AncestorCanvas(
                         tree = t,
                         selectedCell = pickedCell,
                         highlightCells = highlightCells,
+                        highlightEdges = highlightEdges,
                         heightDp = 360,
                         view = view,
                         onPick = { pickedCell = it },
@@ -907,6 +909,7 @@ private fun AncestorCanvas(
     tree: AncestorTree,
     selectedCell: Int,
     highlightCells: Set<Int>,
+    highlightEdges: Set<Pair<Int, Int>>,
     heightDp: Int,
     view: QuestTreeView,
     onPick: (Int) -> Unit,
@@ -1034,8 +1037,8 @@ private fun AncestorCanvas(
                     val b = rects.getOrNull(e.toCell) ?: return@forEach
                     // 用户点了任务 → 只亮「它到顶部主线」的那几条线，
                     // 其余的线压到几乎看不见（Emil: strongest move is delete）。
-                    val lit = if (highlightCells.isEmpty()) e.onPath
-                              else e.fromCell in highlightCells && e.toCell in highlightCells
+                    val lit = if (highlightEdges.isEmpty()) e.onPath
+                              else (e.fromCell to e.toCell) in highlightEdges
                     drawElbow(
                         from = a, to = b,
                         color = if (lit) cPath else cEdge.copy(alpha = if (highlightCells.isEmpty()) 0.55f else 0.16f),
