@@ -192,35 +192,35 @@ import kotlinx.coroutines.launch
 // 现在拉到 ~9%，靠明度本身分层，不指望阴影。
 // 深色偏暖：官网只有浅色，深色这套是按同一个金推的暖灰，
 // 不再是冷调板岩——冷灰配金会显脏。
-private val SzjDarkBg = Color(0xFF17150F)          // 暖墨底
-private val SzjDarkCard = Color(0xFF232019)        // 石板
-private val SzjDarkCardRaised = Color(0xFF2E2A21)  // 抬升层
-private val SzjDarkAccent = Color(0xFFD8BE85)      // 金（深底上的字色，8.6:1）
-private val SzjDarkAccentSoft = Color(0xFF332C1E)  // 金光残留
-private val SzjDarkOnAccentSoft = Color(0xFFE8D5A8)
-private val SzjDarkText = Color(0xFFF0EBE1)
-private val SzjDarkMuted = Color(0xFF9C9486)
-private val SzjDarkLine = Color(0xFF322D24)
-private val SzjDarkHairline = Color(0xFF443D31)
+private val SzjDarkBg = Color(0xFF101613)          // 暖墨底
+private val SzjDarkCard = Color(0xFF181F1A)        // 石板
+private val SzjDarkCardRaised = Color(0xFF232D26)  // 抬升层
+private val SzjDarkAccent = Color(0xFF7FC49A)      // 金（深底上的字色，8.6:1）
+private val SzjDarkAccentSoft = Color(0xFF1E2E24)  // 金光残留
+private val SzjDarkOnAccentSoft = Color(0xFFA8D8B4)
+private val SzjDarkText = Color(0xFFE2EAE2)
+private val SzjDarkMuted = Color(0xFF93A39A)
+private val SzjDarkLine = Color(0xFF26312A)
+private val SzjDarkHairline = Color(0xFF37453C)
 // 顶边高光原来 0x14（8%），在提亮后的卡片上等于没有。石面受光要看得见才算受光。
 private val SzjDarkEdge = Color(0x24FFFFFF)        // 石板顶边高光
 
 // 浅色：直接照官网的中性色。#f2f2f2 页底、#fff 卡片、#1f1f1f/#4b4b4b 文字、
 // #9c9c9c 次要、#fbf9f4 金的浅底——全部取自 mob 的 app.css。
-private val SzjLightBg = Color(0xFFF2F2F2)         // 官网页底
+private val SzjLightBg = Color(0xFFF2F5EF)         // 官网页底
 private val SzjLightCard = Color(0xFFFFFFFF)       // 白卡
-private val SzjLightCardRaised = Color(0xFFF5F5F5) // 抬升层（官网 #f5f5f5）
+private val SzjLightCardRaised = Color(0xFFEDF2EA) // 抬升层（官网 #f5f5f5）
 // 官网把 #c4a86a 也拿来写小字（白底 2.17:1），那是它的无障碍问题，不照抄。
 // 文字用的金压深到 5.2:1；实心填充仍用官网原值 SzjAccentFill。
-private val SzjLightAccent = Color(0xFF7D6229)     // 金字（白底 5.2:1）
-private val SzjLightAccentSoft = Color(0xFFFBF9F4) // 官网 .is-selected 的底
-private val SzjLightOnAccentSoft = Color(0xFF5C4718)
-private val SzjLightText = Color(0xFF1F1F1F)       // 官网正文
+private val SzjLightAccent = Color(0xFF2F6B40)     // 金字（白底 5.2:1）
+private val SzjLightAccentSoft = Color(0xFFEDF4EA) // 官网 .is-selected 的底
+private val SzjLightOnAccentSoft = Color(0xFF27553A)
+private val SzjLightText = Color(0xFF24312A)       // 官网正文
 // 官网次要色 #9c9c9c 在 #f2f2f2 上只有 2.6:1，元信息是 11sp 小字，
 // 用官网的另一档 #4b4b4b 系推到 5.0 以上。
-private val SzjLightMuted = Color(0xFF6B6B6B)
-private val SzjLightLine = Color(0xFFE5E5E5)       // 官网 #e5e5e5
-private val SzjLightHairline = Color(0xFFC2C2C2)   // 官网 #c2c2c2
+private val SzjLightMuted = Color(0xFF5F6E64)
+private val SzjLightLine = Color(0xFFE3EAE0)       // 官网 #e5e5e5
+private val SzjLightHairline = Color(0xFFC6CFC5)   // 官网 #c2c2c2
 private val SzjLightEdge = Color(0x0A000000)
 
 internal val szjLight: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -252,9 +252,9 @@ internal val SzjAccentFill: Color @Composable get() = com.quserh.eorzeaphone.ui.
 internal val SzjOnAccent: Color @Composable get() = com.quserh.eorzeaphone.ui.theme.BrandOnFill
 
 // ---- 形状：卡片舒展，控件收紧。三档而不是一档，层级靠圆角区分。 ----
-internal val SzjCardShape = RoundedCornerShape(14.dp)
-internal val SzjInnerShape = RoundedCornerShape(10.dp)
-internal val SzjChipShape = RoundedCornerShape(9.dp)
+internal val SzjCardShape = RoundedCornerShape(18.dp)
+internal val SzjInnerShape = RoundedCornerShape(12.dp)
+internal val SzjChipShape = RoundedCornerShape(12.dp)
 
 // ---- 排版：没有可用的中文显示字体（项目内 AXIS 只有图标字形），
 // 所以人格靠字号跨度、字重和字距，而不是字体家族。
@@ -341,7 +341,7 @@ internal fun SzjCardSurface(
     Column(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .shadow(elevation, shape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+            .shadow(elevation, shape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
             .clip(shape)
             .background(if (raised) SzjCardRaised else SzjCard)
             // 浅色模式白卡在薄雾底上需要一道极淡收边；深色靠阴影就够。
@@ -859,7 +859,7 @@ private fun SzjAvatar(name: String, avatar: String, uuid: String, sizeDp: Int) {
     }
     // 头像用阴影托起来而不是描边圈住，和石板卡片同一套物理。
     Box(Modifier.size(sizeDp.dp)
-        .shadow(2.dp, CircleShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+        .shadow(2.dp, CircleShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
         .clip(CircleShape).background(SzjCardRaised), contentAlignment = Alignment.Center) {
         if (url.isNotBlank()) {
             ShizhijiaRemoteImage(
@@ -1438,7 +1438,7 @@ private fun ShizhijiaHomeScreen(
                     shape = CircleShape,
                 ) {
                     Row(
-                        Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                        Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                             .clip(SzjChipShape).background(SzjAccentFill)
                             .padding(horizontal = 15.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1495,7 +1495,7 @@ private fun ShizhijiaTopBar(state: PhoneState, nav: (SzjRoute) -> Unit, loggedIn
             Box(Modifier.size(44.dp)
                 .clip(CircleShape)
                 .clickable(enabled = !loggedIn || myUuid.isNotBlank(), onClick = openMe)
-                .shadow(2.dp, CircleShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                .shadow(2.dp, CircleShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                 .clip(CircleShape).background(SzjCardRaised), contentAlignment = Alignment.Center) {
             val ava = loginUser?.avatar
             // Default portraits arrive as inline data:image URIs; decode them
@@ -2104,7 +2104,7 @@ private fun SzjBottomBar(
                 // 缩放锚点放在底边中央，视觉上是"往下缩回去"而不是整体缩小。
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
             }
-            .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+            .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
             .clip(RoundedCornerShape(20.dp))
             .background(SzjCard)
             .then(if (szjLight) Modifier.border(1.dp, SzjLine, RoundedCornerShape(20.dp)) else Modifier),
@@ -2767,7 +2767,7 @@ private fun ShizhijiaRecruitTab(
                 shape = CircleShape,
             ) {
                 Row(
-                    Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                    Modifier.shadow(8.dp, SzjChipShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                         .clip(SzjChipShape).background(SzjAccentFill)
                         .padding(horizontal = 15.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2859,7 +2859,7 @@ private fun SzjRecruitFilterPanel(
             // 现在选项区自己滚，两个按钮钉在面板底部。
             Column(
                 Modifier.fillMaxWidth().fillMaxHeight(0.72f)
-                    .shadow(12.dp, RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp), ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                    .shadow(12.dp, RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                     .clip(RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp))
                     .background(SzjBg)
                     .clickable(interactionSource = noRipple, indication = null) { }
@@ -6444,7 +6444,7 @@ private fun ShizhijiaSearchScreen(state: PhoneState, pop: () -> Unit, nav: (SzjR
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             // 搜索栏是一块抬起的石板，聚焦感来自阴影而不是描边。
             Row(Modifier.fillMaxWidth()
-                .shadow(3.dp, SzjCardShape, ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                .shadow(3.dp, SzjCardShape, ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                 .clip(SzjCardShape).background(SzjCard)
                 .then(if (szjLight) Modifier.border(1.dp, SzjLine, SzjCardShape) else Modifier)
                 .padding(horizontal = 7.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -9915,7 +9915,7 @@ private fun ShizhijiaGlamourTab(
                 ) {
                 Column(
                     Modifier.fillMaxWidth()
-                        .shadow(12.dp, RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp), ambientColor = Color(0xFF0A1016), spotColor = Color(0xFF0A1016))
+                        .shadow(12.dp, RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                         .clip(RoundedCornerShape(bottomEnd = 18.dp, bottomStart = 18.dp))
                         .background(SzjBg)
                         .clickable(interactionSource = noRipple, indication = null) { }
