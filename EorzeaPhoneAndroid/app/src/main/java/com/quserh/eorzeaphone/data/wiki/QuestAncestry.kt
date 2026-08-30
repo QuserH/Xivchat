@@ -360,30 +360,21 @@ object QuestAncestry {
             }
         }
 
-        // --- 6. 列：树形布局（叶从左往右领列，父取孩子列的中位） ---
-        // 线性链（每个节点单前驱单后继）会自动排成一条竖列 ——
-        // 这就是用户要的流程图：包含关系一眼可见，肘线只在相邻卡片之间。
-        // 多前驱的节点挂在第一个到达它的父下面，另一个父的边照画（可交叉，
-        // 但高亮路线是蓝的，一眼能认出来）。
+        // --- 6. 列：按深度从深到浅领列（叶先领、父取孩子中位；同格被占就右移） ---
+        // 两个顶部主线同时只喂一个节点时，按中位会算出同一列、同一层 ——
+        // 直接重叠。领列后查占位，被占就整体右移一格。
         val colOf = HashMap<Key, Int>()
         var nextCol = 0
-        val visiting = HashSet<Key>()
-        fun placeCol(k: Key): Int {
-            colOf[k]?.let { return it }
-            if (!visiting.add(k)) return nextCol++
-            val kids = cNext[k].orEmpty().filter { it !in visiting }
-            val c = if (kids.isEmpty()) {
-                nextCol++
-            } else {
-                val cs = kids.map { placeCol(it) }.filter { it in 0 until nextCol }
-                if (cs.isEmpty()) nextCol++ else (cs.min() + cs.max()) / 2
-            }
+        val occupied = HashSet<Long>()
+        val ordered = keys.sortedByDescending { depth[it] ?: 0 }
+        for (k in ordered) {
+            val r = depth[k] ?: 0
+            val kids = cNext[k].orEmpty().mapNotNull { colOf[it] }
+            var c = if (kids.isEmpty()) nextCol++ else (kids.min() + kids.max()) / 2
+            while ((r.toLong() * 100000L + c) in occupied) c++
+            occupied.add(r.toLong() * 100000L + c)
             colOf[k] = c
-            visiting.remove(k)
-            return c
         }
-        roots.sortedBy { labelOf(it, nodes, runs) }.forEach { placeCol(it) }
-        keys.filter { it !in colOf }.forEach { colOf[it] = nextCol++ }
         // --- 7. 出 cells / edges ---
         val order = keys.toList()
         val idx = order.withIndex().associate { (i, k) -> k to i }
