@@ -138,13 +138,13 @@ fun HomeScreen(state: PhoneState) {
         val motionAllowed = phoneMotionEnabled()
         fun openSheet(velocity: Float = 0f) {
             scope.launch {
-                if (motionAllowed) sheetY.animateTo(0f, spring(dampingRatio = 1f, stiffness = 380f), initialVelocity = velocity)
+                if (motionAllowed) sheetY.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = 320f), initialVelocity = velocity)
                 else sheetY.snapTo(0f)
             }
         }
         fun closeSheet(velocity: Float = 0f) {
             scope.launch {
-                if (motionAllowed) sheetY.animateTo(-sheetHeightPx, spring(dampingRatio = 1f, stiffness = 380f), initialVelocity = velocity)
+                if (motionAllowed) sheetY.animateTo(-sheetHeightPx, spring(dampingRatio = 0.78f, stiffness = 320f), initialVelocity = velocity)
                 else sheetY.snapTo(-sheetHeightPx)
             }
         }
@@ -182,7 +182,7 @@ fun HomeScreen(state: PhoneState) {
                         },
                         onDragEnd = {
                             if (sheetHeightPx > 0f) {
-                                if (pull > sheetHeightPx * 0.24f || vel > 2500f) openSheet(vel) else closeSheet(vel)
+                                if (pull > sheetHeightPx * 0.22f || vel > 1800f) openSheet(vel) else closeSheet(vel)
                                 pull = 0f
                             }
                         },
@@ -242,7 +242,7 @@ fun HomeScreen(state: PhoneState) {
                                 }
                             },
                             onDragEnd = {
-                                if (sheetY.value < -sheetHeightPx * 0.72f || vel < -2200f) closeSheet(vel) else openSheet(vel)
+                                if (sheetY.value < -sheetHeightPx * 0.74f || vel < -1600f) closeSheet(vel) else openSheet(vel)
                             },
                             onDragCancel = { openSheet(vel) },
                         )
