@@ -139,10 +139,15 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
         val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
         CompositionLocalProvider(LocalContentMargin provides state.contentMargin) {
         Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
+            // Reduced motion: gentle crossfade only, no slide/scale travel.
+            val motionAllowed = phoneMotionEnabled()
             AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
+                if (!motionAllowed) {
+                    (fadeIn(tween(90)) togetherWith fadeOut(tween(60)))
+                } else {
                 val forward = targetState.level() >= initialState.level()
                 if (forward) {
                     // zoom-in from where the tile was tapped, plus a slide
@@ -159,6 +164,7 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
                 } else {
                     (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(170, 40)))
                         .togetherWith(slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(210, easing = FastOutSlowInEasing)) + fadeOut(tween(140)))
+                }
                 }
             },
             label = "phone-navigation",
