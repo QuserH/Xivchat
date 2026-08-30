@@ -132,6 +132,7 @@ private fun DeckHero(state: PhoneState) {
             .clip(RoundedCornerShape(24.dp))
             .background(Brush.linearGradient(if (phoneLight) DeckHeroLight else DeckHeroDark))
             .border(1.dp, heroBorder, RoundedCornerShape(24.dp))
+            .clickable { state.openApp("skywatcher") }
             .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -194,11 +195,13 @@ private fun DeckChip(label: String, name: String, value: String, modifier: Modif
 }
 
 @Composable
-private fun DeckSectionLabel(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+private fun DeckSectionLabel(text: String, modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier.padding(top = 2.dp)) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(DeckDot))
         Spacer(Modifier.width(7.dp))
-        Text(text, color = DeckSubInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = if (phoneLight) Color(0xFF4E5D52) else DeckSubInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f).height(1.dp).background(PhoneLine))
     }
 }
 

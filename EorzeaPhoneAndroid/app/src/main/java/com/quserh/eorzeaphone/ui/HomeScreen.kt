@@ -97,11 +97,6 @@ fun HomeScreen(state: PhoneState) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < .5f
     val homeText = if (darkTheme) Color.White else MaterialTheme.colorScheme.onBackground
     val totalPages = state.homePageCount
-    val pager = rememberPagerState(
-        initialPage = state.homePage.coerceIn(0, (totalPages - 1).coerceAtLeast(0)),
-        pageCount = { totalPages },
-    )
-    LaunchedEffect(pager.currentPage) { state.homePage = pager.currentPage }
     Box(Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(R.drawable.wallpaper_dusk_dark),
@@ -114,9 +109,17 @@ fun HomeScreen(state: PhoneState) {
         )
         Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .82f)))
 
-        // v2 home: deck page first, app-grid pages second; the pill dock switches modes.
-        // Crossfade so mode switches feel like one surface, not two apps.
-        var deckMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+        // v2 home: ONE desktop. Page 0 = intel deck, pages 1..N = app grids —
+        // swipe horizontally between them like pages of the same home.
+        // state.homePage keeps the GRID page index (persisted), so pager = grid + 1.
+        val deckFirst = 1
+        val pager = rememberPagerState(
+            initialPage = state.homePage.coerceIn(0, (totalPages - 1).coerceAtLeast(0)) + deckFirst,
+            pageCount = { totalPages + deckFirst },
+        )
+        LaunchedEffect(pager.currentPage) {
+            if (pager.currentPage >= deckFirst) state.homePage = pager.currentPage - deckFirst
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -124,24 +127,15 @@ fun HomeScreen(state: PhoneState) {
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = LocalContentMargin.current.dp),
         ) {
-            Crossfade(targetState = deckMode, animationSpec = tween(220), modifier = Modifier.weight(1f), label = "home-mode") { mode ->
-                if (mode) {
-                    HomeDeck(state, Modifier.fillMaxSize())
-                } else {
-                    Column(Modifier.fillMaxSize()) {
-                        HomeEditBar(state, homeText)
-                        HorizontalPager(
-                            state = pager,
-                            userScrollEnabled = !state.homeEditMode,
-                            modifier = Modifier.weight(1f),
-                        ) { page ->
-                            SocialPage(state, page)
-                        }
-                        PageIndicator(pager.currentPage, totalPages, homeText)
-                    }
-                }
+            HorizontalPager(
+                state = pager,
+                userScrollEnabled = !state.homeEditMode,
+                modifier = Modifier.weight(1f),
+            ) { page ->
+                if (page == 0) HomeDeck(state, Modifier.fillMaxSize()) else SocialPage(state, page - deckFirst)
             }
-            HomeDockBar(state, darkTheme, deckMode, onDeck = { deckMode = true }, onApps = { deckMode = false })
+            PageIndicator(pager.currentPage, totalPages + deckFirst, homeText)
+            HomeDockBar(state, darkTheme)
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -468,13 +462,7 @@ internal fun weatherIcon(name: String): Int = when {
 }
 
 @Composable
-private fun HomeDockBar(
-    state: PhoneState,
-    darkTheme: Boolean,
-    deckMode: Boolean,
-    onDeck: () -> Unit,
-    onApps: () -> Unit,
-) {
+private fun HomeDockBar(state: PhoneState, darkTheme: Boolean) {
     val hapticView = LocalView.current
     val pillShape = RoundedCornerShape(29.dp)
     Row(
@@ -490,9 +478,6 @@ private fun HomeDockBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DockTab(R.drawable.ic2_home, deckMode, onDeck)
-        DockTab(R.drawable.ic2_grid, !deckMode, onApps)
-        Box(Modifier.width(1.dp).height(22.dp).background(MaterialTheme.colorScheme.outlineVariant))
         AppCatalog.dock.forEach { app ->
             var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
             val interaction = remember(app.id, state) { MutableInteractionSource() }
@@ -550,27 +535,5 @@ private fun HomeDockBar(
                 }
             }
         }
-    }
-}
-
-/** Icon-only mode tab: 44dp hit area, selected = accent glyph + dot underneath. */
-@Composable
-private fun DockTab(icon: Int, selected: Boolean, onClick: () -> Unit) {
-    val color by animateColorAsState(if (selected) PhoneAccent else PhoneMuted, label = "dock-tab")
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        ImageGlyph(icon, color, Modifier.size(22.dp))
-        Box(
-            Modifier
-                .padding(top = 3.dp)
-                .size(4.dp)
-                .clip(CircleShape)
-                .background(if (selected) color else Color.Transparent),
-        )
     }
 }
