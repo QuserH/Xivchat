@@ -2082,6 +2082,7 @@ private fun SzjBottomBar(
     )
     val density = androidx.compose.ui.platform.LocalDensity.current
     val slidePx = with(density) { (barHeightDp + barBottomDp + 24f).dp.toPx() }
+    val barEdge = SzjEdge
     Row(
         modifier
             .padding(start = 18.dp, end = 18.dp, bottom = 10.dp + barBottomDp.dp)
@@ -2103,15 +2104,23 @@ private fun SzjBottomBar(
                 .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x0D3C5A46), spotColor = Color(0x0D3C5A46))
                 .clip(RoundedCornerShape(20.dp))
                 .background(if (szjLight) Color(0xFFEDF1F6) else Color(0xFF1A222B))
+                .drawBehind {
+                    drawLine(
+                        color = barEdge,
+                        start = Offset(0f, 0.5f),
+                        end = Offset(size.width, 0.5f),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
                 .then(if (szjLight) Modifier.border(1.dp, SzjLine, RoundedCornerShape(20.dp)) else Modifier),
         ) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(
-                Brush.horizontalGradient(listOf(Color.Transparent, SzjEdge, SzjEdge, Color.Transparent))
-            ))
-            Row(Modifier.fillMaxSize().padding(horizontal = 5.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                SzjBottomTab("社区", R.drawable.ic2_people, selected == MAIN_COMMUNITY, Modifier.weight(1f)) { onSelect(MAIN_COMMUNITY) }
-                SzjBottomTab("幻化", R.drawable.ic2_gem, selected == MAIN_GLAMOUR, Modifier.weight(1f)) { onSelect(MAIN_GLAMOUR) }
-                SzjBottomTab("设置", R.drawable.ic2_settings, selected == MAIN_ME, Modifier.weight(1f)) { onSelect(MAIN_ME) }
+            // Highlight drawn on the pill itself: fillMaxWidth here would force
+            // the wrap-content pill to stretch to full row width.
+            Spacer(Modifier.matchParentSize())
+            Row(Modifier.fillMaxHeight().padding(horizontal = 5.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                SzjBottomTab("社区", R.drawable.ic2_people, selected == MAIN_COMMUNITY) { onSelect(MAIN_COMMUNITY) }
+                SzjBottomTab("幻化", R.drawable.ic2_gem, selected == MAIN_GLAMOUR) { onSelect(MAIN_GLAMOUR) }
+                SzjBottomTab("设置", R.drawable.ic2_settings, selected == MAIN_ME) { onSelect(MAIN_ME) }
             }
         }
         Spacer(Modifier.weight(1f))
