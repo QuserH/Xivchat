@@ -1304,6 +1304,10 @@ private fun ShizhijiaHomeScreen(
     val context = LocalContext.current
     var mainTab by mainTabState
     var subTab by subTabState
+    // 招募：叠加在社区上的推入页，不占用二级 Tab，社区状态原地保留。
+    var recruitOverlay by remember { mutableStateOf(false) }
+    BackHandler(enabled = recruitOverlay) { recruitOverlay = false }
+    LaunchedEffect(mainTab) { recruitOverlay = false }
     // Login state drives the top bar and the dynamics tab.
     var loggedIn by remember { mutableStateOf(ShizhijiaSession.hasSession(context)) }
     // Hydrate from the persisted profile first so the top bar shows the real
@@ -1380,22 +1384,45 @@ private fun ShizhijiaHomeScreen(
                 Column(Modifier.fillMaxSize()) {
                     when (tab) {
                         MAIN_COMMUNITY -> {
+                            Box(Modifier.weight(1f)) {
                             AnimatedContent(
                                 targetState = subTab,
                                 transitionSpec = { szjTabTransition(targetState > initialState) },
                                 label = "szjSubTab",
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxSize(),
                             ) { sub ->
                                 // 头部和二级 Tab 都交给各 tab 自己放进滚动容器：
                                 // 头部随内容滑走，Tab 行用 stickyHeader 钉在顶部，
                                 // 这样滑下去之后还能直接切帖子/动态/攻略。
-                                val subTabs: @Composable () -> Unit = { SzjSubTabRow(subTab) { subTab = it } }
+                                val subTabs: @Composable () -> Unit = {
+                                    SzjSubTabRow(if (recruitOverlay) SUB_RECRUIT else subTab) { picked ->
+                                        if (picked == SUB_RECRUIT) recruitOverlay = true
+                                        else {
+                                            recruitOverlay = false
+                                            subTab = picked
+                                        }
+                                    }
+                                }
                                 when (sub) {
                                     SUB_POSTS -> ShizhijiaPostsTab(state, nav, postsState, communityHeader, subTabs)
                                     SUB_DYNAMICS -> ShizhijiaDynamicsTab(nav, loggedIn, communityHeader, subTabs)
-                                    SUB_RECRUIT -> ShizhijiaRecruitTab(nav, loggedIn, recruitState, communityHeader, bar)
                                     else -> ShizhijiaStrategyTab(state, nav, strategyState, communityHeader, subTabs)
                                 }
+                            }
+                            // 招募叠加层：从右侧推入，社区信息流原地保留。
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = recruitOverlay,
+                                enter = slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(180)),
+                                exit = slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150)),
+                            ) {
+                                Box(Modifier.fillMaxSize().background(SzjBg)) {
+                                    ShizhijiaRecruitTab(
+                                        nav, loggedIn, recruitState,
+                                        header = { SzjHeader("招募", onBack = { recruitOverlay = false }) },
+                                        bar = bar,
+                                    )
+                                }
+                            }
                             }
                         }
                         // bar 传下去：发布按钮跟底栏一起收起/放出。
