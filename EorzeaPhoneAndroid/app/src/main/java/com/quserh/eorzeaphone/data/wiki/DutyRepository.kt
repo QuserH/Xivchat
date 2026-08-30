@@ -68,14 +68,22 @@ data class WikiDuty(
         }
 
     /**
-     * 人数构成。"防护2 治疗2 近战2 远程2" / "8人" / "不限职业"。
+     * 人数构成。"防护2 治疗2 近战2 远程2" / "不限职业" / 空。
      *
-     * 行会令那种 `任意职业` 的没有角色分配，只能报总人数。
+     * 三种情况分清楚，别互相冒充（实测 427 条里的分布）：
+     * - 有角色分配（406 条）→ 报构成
+     * - `任意职业` 为真（11 条：节日副本、多变迷宫、卓异的悲寂那两个）
+     *   → "不限职业"，这是数据明确说的
+     * - 既没角色也没那个标记（10 条宝物库）→ **返回空**
+     *
+     * 最后那一类以前会被说成"不限职业"。宝物库大概确实不限，但数据里
+     * 没这么写，我不能替它下结论 —— 详情页少一行事实，比多一行猜测好。
      */
     val partyText: String
         get() {
             val roles = tank + healer + melee + ranged
-            if (anyJob || roles == 0) {
+            if (roles == 0) return if (anyJob) "不限职业" else ""
+            if (anyJob) {
                 val n = totalPlayers
                 return if (n > 0) "${n}人 不限职业" else "不限职业"
             }
@@ -193,27 +201,43 @@ object DutyDb {
         }.getOrNull()
     }
 
+    /**
+     * 源数据里有 16 条副本没有 `类型` 字段（10 个宝物库、4 个节日副本、
+     * 2 个 tyid=39 的，其中一个是「卓异的悲寂歼灭战」）。它们是真副本，
+     * 不能因为缺一个字段就在浏览页里消失 —— 归到这一组。
+     *
+     * 没有替它们硬编类型名：站点的 tyid→名 映射本地拿不到
+     * （39/22 在有类型的记录里一次都没出现过），编一个名字就是造数据。
+     */
+    const val TYPE_OTHER = "其他"
+
     /** 按类型列副本，"讨伐歼灭战" 118 个那种浏览列表。 */
     suspend fun byType(context: Context, type: String): List<WikiDuty> =
         withContext(Dispatchers.IO) {
             if (!hasTable(context)) return@withContext emptyList()
             runCatching {
-                WikiDb.open(context).rawQuery(
+                val sql = if (type == TYPE_OTHER) {
+                    "SELECT $COLS FROM duties WHERE type IS NULL OR type = '' " +
+                        "ORDER BY level_min DESC, sort"
+                } else {
                     "SELECT $COLS FROM duties WHERE type = ? " +
-                        "ORDER BY level_min DESC, sort",
-                    arrayOf(type),
-                ).use { c -> buildList(c.count) { while (c.moveToNext()) add(readRow(c)) } }
+                        "ORDER BY level_min DESC, sort"
+                }
+                val args = if (type == TYPE_OTHER) null else arrayOf(type)
+                WikiDb.open(context).rawQuery(sql, args)
+                    .use { c -> buildList(c.count) { while (c.moveToNext()) add(readRow(c)) } }
             }.getOrDefault(emptyList())
         }
 
-    /** 有哪些副本类型（带计数），用来填浏览页的分组。 */
+    /** 有哪些副本类型（带计数），用来填浏览页的分组。缺类型的归 [TYPE_OTHER]。 */
     suspend fun types(context: Context): List<Pair<String, Int>> =
         withContext(Dispatchers.IO) {
             if (!hasTable(context)) return@withContext emptyList()
             runCatching {
                 WikiDb.open(context).rawQuery(
-                    "SELECT type, COUNT(*) FROM duties WHERE type <> '' " +
-                        "GROUP BY type ORDER BY COUNT(*) DESC", null,
+                    "SELECT CASE WHEN type IS NULL OR type = '' THEN '$TYPE_OTHER' " +
+                        "ELSE type END AS t, COUNT(*) FROM duties " +
+                        "GROUP BY t ORDER BY COUNT(*) DESC", null,
                 ).use { c ->
                     buildList { while (c.moveToNext()) add(c.getString(0) to c.getInt(1)) }
                 }
