@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -61,8 +63,11 @@ import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameRetainer
 import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
+import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneGreen
+import com.quserh.eorzeaphone.ui.theme.PhoneLine
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
@@ -73,6 +78,15 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+
+// DESIGN-SPEC v2 §2: cards 18dp, nested controls 12dp.
+private val FeatureCardShape = RoundedCornerShape(18.dp)
+private val FeatureInnerShape = RoundedCornerShape(12.dp)
+
+/** Surface card with the v2 hairline outline; replaces bare clip+background. */
+@Composable
+private fun Modifier.featureCard(shape: Shape = FeatureCardShape, fill: Color = PhoneSurface): Modifier =
+    clip(shape).background(fill).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,7 +126,7 @@ fun JobsScreen(state: PhoneState) {
                     if (jobs.isNotEmpty()) {
                         item { Text(category, color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, start = 4.dp)) }
                         item {
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).animateContentSize()) {
+                            Column(Modifier.fillMaxWidth().featureCard().animateContentSize()) {
                                 jobs.forEachIndexed { index, job -> JobRow(job, index != jobs.lastIndex) }
                             }
                         }
@@ -126,14 +140,14 @@ fun JobsScreen(state: PhoneState) {
 
 @Composable
 private fun ActiveJobCard(job: GameJob) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF263D57)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(FeatureCardShape).background(Color(0xFF263D57)).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(54.dp).clip(CircleShape).background(BrandFill), contentAlignment = Alignment.Center) {
             Text(job.abbreviation.take(3), color = Color.White, fontWeight = FontWeight.Bold)
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Text("当前职业", color = Color(0xFFBFD4EA), fontSize = 11.sp)
+            Text("当前职业", color = Color.White.copy(alpha = .78f), fontSize = 11.sp)
             Text(job.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            if (job.itemLevel > 0) Text("装等 ${job.itemLevel}", color = Color(0xFFBFD4EA), fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+            if (job.itemLevel > 0) Text("装等 ${job.itemLevel}", color = Color.White.copy(alpha = .78f), fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
         }
         Text("Lv.${job.level}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
@@ -143,7 +157,7 @@ private fun ActiveJobCard(job: GameJob) {
 private fun JobRow(job: GameJob, divider: Boolean) {
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).background(if (job.active) BrandFill else PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(38.dp).clip(FeatureInnerShape).background(if (job.active) BrandFill else PhoneSurfaceRaised), contentAlignment = Alignment.Center) {
                 Text(job.abbreviation.take(3), color = if (job.active) Color.White else PhoneText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -152,7 +166,7 @@ private fun JobRow(job: GameJob, divider: Boolean) {
             }
             Text("Lv.${job.level}", color = if (job.level >= 100) PhoneAccent else PhoneText, fontWeight = FontWeight.Bold)
         }
-        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).padding(start = 64.dp).background(Color(0x22333333)))
+        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).padding(start = 64.dp).background(PhoneLine))
     }
 }
 
@@ -166,7 +180,7 @@ fun ActivityScreen(state: PhoneState) {
         }
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(18.dp)) {
+                Column(Modifier.fillMaxWidth().featureCard().padding(18.dp)) {
                     Text(state.profile?.name ?: "未连接角色", color = PhoneText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Text(state.profile?.let { "${it.jobName} · Lv.${it.level} · ${it.location}" } ?: "连接后开始本次会话统计", color = PhoneMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
                 }
@@ -176,7 +190,7 @@ fun ActivityScreen(state: PhoneState) {
             item { MetricGrid(listOf("游戏时间" to formatDuration(Duration.ofSeconds(activity.todayPlaySeconds)), "获得 Gil" to activity.todayGilEarned.toString(), "获得经验" to activity.todayExpGained.toString(), "提升等级" to activity.todayLevelsGained.toString())) }
             item { Text("收藏与雇员", color = PhoneMuted, fontSize = 12.sp) }
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.fillMaxWidth().featureCard().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatusLine("坐骑", "${activity.mountsOwned} / ${activity.mountsTotal}")
                     StatusLine("宠物", "${activity.minionsOwned} / ${activity.minionsTotal}")
                     StatusLine("雇员", "${formatCount(activity.retainerCount)} 人")
@@ -193,7 +207,7 @@ private fun MetricGrid(values: List<Pair<String, String>>) {
         values.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { (label, value) ->
-                    Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(14.dp)) {
+                    Column(Modifier.weight(1f).featureCard().padding(14.dp)) {
                         Text(label, color = PhoneMuted, fontSize = 11.sp)
                         Text(value, color = PhoneText, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
                     }
@@ -234,12 +248,12 @@ fun DailiesScreen(state: PhoneState) {
 private fun VentureRow(retainer: GameRetainer, now: Long) {
     val remaining = ((retainer.ventureCompleteUnix - now)).coerceAtLeast(0L)
     val done = remaining == 0L
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (done) Color(0xFF1F3A2C) else PhoneSurface).padding(14.dp)) {
+    Column(Modifier.fillMaxWidth().featureCard(fill = if (done) PhoneAccentContainer else PhoneSurface).padding(14.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(retainer.name, color = PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(if (done) "已完成" else "探险中", color = if (done) Color(0xFF4CD487) else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(retainer.name, color = if (done) PhoneOnAccentContainer else PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(if (done) "已完成" else "探险中", color = if (done) PhoneOnAccentContainer else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        Text(if (done) "可以前往侍从铃收取派遣成果" else "返回剩余 ${countdownLabel(remaining)}", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+        Text(if (done) "可以前往侍从铃收取派遣成果" else "返回剩余 ${countdownLabel(remaining)}", color = if (done) PhoneOnAccentContainer.copy(alpha = .78f) else PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
     }
 }
 
@@ -251,7 +265,7 @@ fun SubmarineScreen(state: PhoneState) {
     FeatureFrame("潜水艇", state) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFF205B6E)).padding(20.dp)) {
+                Column(Modifier.fillMaxWidth().clip(FeatureCardShape).background(Color(0xFF205B6E)).padding(20.dp)) {
                     Text("潜水艇远征", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
                     Text("${vessels.count { (it.returnUnix - now) > 0 }} 艘航行中", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
                     Text("数据在插件进入房屋工房后自动读取同步", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
@@ -259,7 +273,7 @@ fun SubmarineScreen(state: PhoneState) {
             }
             if (vessels.isEmpty()) {
                 item {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp)) {
+                    Column(Modifier.fillMaxWidth().featureCard().padding(16.dp)) {
                         Text("暂无潜水艇数据", color = PhoneText, fontWeight = FontWeight.SemiBold)
                         Text(if (state.connected) "进入一次房屋工房后即可同步。" else "连接游戏插件后读取潜水艇状态", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
@@ -269,14 +283,14 @@ fun SubmarineScreen(state: PhoneState) {
                     Box(Modifier.animateItem()) {
                     val remaining = (v.returnUnix - now).coerceAtLeast(0L)
                     val done = remaining == 0L
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (done) Color(0xFF1F3A2C) else PhoneSurface).padding(14.dp)) {
+                    Column(Modifier.fillMaxWidth().featureCard(fill = if (done) PhoneAccentContainer else PhoneSurface).padding(14.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(v.name, color = PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(if (done) "已回港" else "航行中", color = if (done) Color(0xFF4CD487) else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(v.name, color = if (done) PhoneOnAccentContainer else PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(if (done) "已回港" else "航行中", color = if (done) PhoneOnAccentContainer else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                         Text(
                             if (done) "可以收取探险成果" else "返航剩余 ${countdownLabel(remaining)}",
-                            color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp),
+                            color = if (done) PhoneOnAccentContainer.copy(alpha = .78f) else PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp),
                         )
                     }
                     }
@@ -288,7 +302,7 @@ fun SubmarineScreen(state: PhoneState) {
 
 @Composable
 private fun ResetHero(title: String, duration: Duration, color: Color) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(color).padding(18.dp)) {
+    Column(Modifier.fillMaxWidth().clip(FeatureCardShape).background(color).padding(18.dp)) {
         Text(title, color = Color.White.copy(alpha = .78f), fontSize = 12.sp)
         AnimatedContent(formatDuration(duration), label = "reset") { value -> Text(value, color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold) }
     }
@@ -299,7 +313,7 @@ private fun DailyDataRow(state: PhoneState, item: GameDailyEntry) {
     val manualChecked = !item.automatic && state.isDailyChecked(item.id, item.weekly)
     val complete = if (item.automatic) item.complete else manualChecked
     val done = if (item.automatic && item.available) (item.goal - item.remaining).coerceIn(0, item.goal.coerceAtLeast(0)) else if (complete) item.goal else 0
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = !item.automatic) { state.toggleDaily(item.id, item.weekly) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().featureCard().clickable(enabled = !item.automatic) { state.toggleDaily(item.id, item.weekly) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(28.dp).clip(CircleShape).background(if (complete) PhoneGreen else PhoneSurfaceRaised), contentAlignment = Alignment.Center) { if (complete) ImageGlyph(R.drawable.ic_check_small, Color.White, Modifier.size(17.dp)) }
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(item.label, color = PhoneText, fontWeight = FontWeight.SemiBold)
@@ -326,13 +340,13 @@ fun HousingScreen(state: PhoneState) {
             EmptyFeature(if (state.connected) "进入住宅区或房屋后会显示当前位置" else "连接游戏后读取住宅位置")
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF315D4D)).padding(22.dp)) {
+                Column(Modifier.fillMaxWidth().clip(FeatureCardShape).background(Color(0xFF315D4D)).padding(22.dp)) {
                     Text(state.profile?.location ?: "住宅区", color = Color.White.copy(alpha = .75f), fontSize = 12.sp)
                     Text("第 ${housing.ward} 区 · ${housing.plot} 号", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
                     Text(if (housing.exterior) "庭院 / 室外" else housing.apartmentWing?.let { "公寓 · 第 $it 栋" } ?: "室内", color = Color.White.copy(alpha = .82f), modifier = Modifier.padding(top = 8.dp))
                 }
                 Text("位置详情", color = PhoneMuted, fontSize = 12.sp)
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth().featureCard().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatusLine("区域", state.profile?.location ?: "未知")
                     StatusLine("分区", "第 ${housing.ward} 区")
                     StatusLine("地块", "${housing.plot} 号")
@@ -358,7 +372,7 @@ fun NotificationsScreen(state: PhoneState) {
 
 @Composable
 private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().featureCard().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(title, color = PhoneText); Text(subtitle, color = PhoneMuted, fontSize = 11.sp) }
         Switch(checked, onChange)
     }

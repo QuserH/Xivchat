@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -47,12 +50,26 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 import com.quserh.eorzeaphone.ui.theme.PhoneDanger
+import com.quserh.eorzeaphone.ui.theme.PhoneGreen
+import com.quserh.eorzeaphone.ui.theme.PhoneInfo
+import com.quserh.eorzeaphone.ui.theme.PhoneLine
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
+import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.io.File
 import java.io.FileOutputStream
+
+// DESIGN-SPEC v2 §2: cards 18dp, nested controls 12dp.
+private val UtilityCardShape = RoundedCornerShape(18.dp)
+private val UtilityInnerShape = RoundedCornerShape(12.dp)
+
+/** Surface card with the v2 hairline outline. */
+@Composable
+private fun Modifier.utilityCard(shape: Shape = UtilityCardShape, fill: Color = PhoneSurface): Modifier =
+    clip(shape).background(fill).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 
 @Composable
 fun CameraScreen(state: PhoneState) {
@@ -65,7 +82,7 @@ fun CameraScreen(state: PhoneState) {
     }
     FeatureFrame("相机", state) {
         Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().weight(1f).clip(UtilityCardShape).background(Color.Black), contentAlignment = Alignment.Center) {
                 preview?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
                     ?: Text("取景器", color = Color.White.copy(alpha = .55f), fontSize = 18.sp)
             }
@@ -97,7 +114,7 @@ fun PhotosScreen(state: PhoneState) {
     FeatureFrame(if (selected == null) "照片" else "照片详情", state) {
         if (selected != null) {
             Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Image(selected!!.bitmap.asImageBitmap(), null, Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Fit)
+                Image(selected!!.bitmap.asImageBitmap(), null, Modifier.fillMaxWidth().weight(1f).clip(UtilityCardShape), contentScale = ContentScale.Fit)
                 TextButtonAction("返回相册") { selected = null }
             }
         } else if (photos.isEmpty()) {
@@ -105,7 +122,7 @@ fun PhotosScreen(state: PhoneState) {
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(photos, key = { it.file.name }) { photo ->
-                    Row(Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable { selected = photo }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().height(92.dp).utilityCard().clickable { selected = photo }, verticalAlignment = Alignment.CenterVertically) {
                         Image(photo.bitmap.asImageBitmap(), null, Modifier.size(92.dp), contentScale = ContentScale.Crop)
                         Column(Modifier.weight(1f).padding(14.dp)) {
                             Text("艾欧泽亚照片", color = PhoneText, fontWeight = FontWeight.SemiBold)
@@ -124,14 +141,15 @@ fun ShortcutsScreen(state: PhoneState) {
     var adding by remember { mutableStateOf(false) }
     var nameInput by remember { mutableStateOf("") }
     var commandInput by remember { mutableStateOf("") }
-    FeatureFrame("快捷指令", state, trailing = { ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.clickable { nameInput = ""; commandInput = ""; adding = true }.padding(horizontal = 8.dp).size(21.dp)) }) {
+    // 48dp hit area (pro-rules Android minimum); glyph stays 21dp.
+    FeatureFrame("快捷指令", state, trailing = { ImageGlyph(R.drawable.ic_add, PhoneAccent, Modifier.clickable { nameInput = ""; commandInput = ""; adding = true }.padding(13.5.dp).size(21.dp)) }) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(state.customShortcuts, key = { it.command }) { shortcut ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).clickable(enabled = state.connected) { state.sendChat(shortcut.command); state.statusMessage = "已发送：${shortcut.name}" }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).background(BrandFill), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic_bolt, Color.White, Modifier.size(20.dp)) }
+                Row(Modifier.fillMaxWidth().utilityCard().clickable(enabled = state.connected) { state.sendChat(shortcut.command); state.statusMessage = "已发送：${shortcut.name}" }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(40.dp).clip(UtilityInnerShape).background(BrandFill), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic_bolt, Color.White, Modifier.size(20.dp)) }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(shortcut.name, color = PhoneText); Text(shortcut.command, color = PhoneMuted, fontSize = 11.sp) }
                     if (state.customShortcuts.count { it.command == shortcut.command } > 1 || defaultShortcuts.none { it.command == shortcut.command }) {
-                        ImageGlyph(R.drawable.ic_close, PhoneDanger, Modifier.clickable { state.removeShortcut(shortcut.command) }.padding(6.dp).size(15.dp))
+                        ImageGlyph(R.drawable.ic_close, PhoneDanger, Modifier.clickable { state.removeShortcut(shortcut.command) }.padding(16.5.dp).size(15.dp))
                     } else {
                         ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(16.dp))
                     }
@@ -139,7 +157,7 @@ fun ShortcutsScreen(state: PhoneState) {
             }
             if (!state.connected) item { Text("连接游戏后可执行快捷指令", color = PhoneMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(14.dp)) }
             if (state.customShortcuts.size > defaultShortcuts.size) {
-                item { Text("重置为默认", color = PhoneAccent, modifier = Modifier.clip(RoundedCornerShape(7.dp)).clickable { state.resetShortcuts() }.padding(horizontal = 10.dp, vertical = 8.dp)) }
+                item { Text("重置为默认", color = PhoneAccent, modifier = Modifier.clip(UtilityInnerShape).clickable { state.resetShortcuts() }.padding(horizontal = 14.dp, vertical = 14.dp)) }
             }
         }
     }
@@ -168,9 +186,11 @@ fun MapsScreen(state: PhoneState) {
     var query by remember { mutableStateOf("") }
     var expandedExpansion by remember { mutableStateOf<String?>(null) }
     var expandedRegion by remember { mutableStateOf<String?>(null) }
-    val purple = Color(0xFF6651BE)
-    val ink = Color(0xFF25252B)
-    val muted = Color(0xFF6E6E77)
+    // Was a hardcoded iOS-Settings palette that ignored the theme entirely.
+    // These three feed every child here, so tokens make the screen react to dark mode.
+    val accent = PhoneAccent
+    val ink = PhoneText
+    val muted = PhoneMuted
     val normalizedQuery = query.trim()
     val expansions = maps?.expansions.orEmpty().mapNotNull { expansion ->
         if (normalizedQuery.isBlank()) expansion else {
@@ -186,18 +206,19 @@ fun MapsScreen(state: PhoneState) {
         }
     }
     val favorites = maps?.expansions.orEmpty().flatMap { it.regions }.flatMap { it.destinations }.filter { state.isMapFavorite(it.rowId) }
-    ScreenFrame(background = Color(0xFFF5F5FA)) {
+    ScreenFrame(background = PhoneBackground) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(66.dp).padding(start = LocalContentMargin.current.dp, end = 21.dp)) {
-            ImageGlyph(R.drawable.ic_back, purple, Modifier.clickable { state.back() }.padding(end = 4.dp).size(24.dp))
+            ImageGlyph(R.drawable.ic_back, accent, Modifier.clickable { state.back() }.padding(12.dp).size(24.dp))
             Text("地图", color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-            Box(Modifier.size(40.dp))
+            // Counterweight matches the back button's 48dp hit area so the title stays centred.
+            Box(Modifier.size(48.dp))
         }
         BasicTextField(
             value = query,
             onValueChange = { query = it },
             singleLine = true,
             textStyle = androidx.compose.ui.text.TextStyle(color = ink, fontSize = 14.sp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 43.dp).height(44.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFFE7E7EC)),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 43.dp).height(44.dp).clip(UtilityInnerShape).background(PhoneSurfaceRaised),
             decorationBox = { field ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp)) {
                     ImageGlyph(R.drawable.ic_search, muted, Modifier.padding(end = 10.dp).size(19.dp))
@@ -211,8 +232,8 @@ fun MapsScreen(state: PhoneState) {
         LazyColumn(Modifier.fillMaxSize().padding(top = 22.dp)) {
             item("current-label") { Text("当前位置", color = muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 42.dp, vertical = 8.dp)) }
             item("current") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).clip(RoundedCornerShape(10.dp)).background(Color.White).padding(horizontal = 24.dp, vertical = 17.dp)) {
-                    ImageGlyph(R.drawable.ic_dot, purple, Modifier.size(15.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).utilityCard().padding(horizontal = 24.dp, vertical = 17.dp)) {
+                    ImageGlyph(R.drawable.ic_dot, accent, Modifier.size(15.dp))
                     Column(Modifier.padding(start = 16.dp)) {
                         Text(maps?.currentZone?.ifBlank { profile?.location.orEmpty() }?.ifBlank { "尚未取得位置" } ?: "尚未连接游戏", color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Text(maps?.currentRegion?.ifBlank { profile?.currentWorld.orEmpty() }.orEmpty(), color = muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
@@ -222,7 +243,7 @@ fun MapsScreen(state: PhoneState) {
             if (normalizedQuery.isBlank() && favorites.isNotEmpty()) {
                 item("favorites-label") { Text("收藏", color = muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 42.dp, vertical = 12.dp)) }
                 items(favorites, key = { "favorite-${it.rowId}" }) { destination ->
-                    MapDestinationRow(destination.name, true, purple, ink, muted) { state.toggleMapFavorite(destination.rowId) }
+                    MapDestinationRow(destination.name, true, accent, ink, muted) { state.toggleMapFavorite(destination.rowId) }
                 }
             }
             if (maps == null) {
@@ -258,7 +279,7 @@ fun MapsScreen(state: PhoneState) {
                     }
                     if (normalizedQuery.isNotBlank() || expandedRegion == regionKey) {
                         items(region.destinations, key = { "destination-${it.rowId}" }) { destination ->
-                            MapDestinationRow(destination.name, state.isMapFavorite(destination.rowId), purple, ink, muted) { state.toggleMapFavorite(destination.rowId) }
+                            MapDestinationRow(destination.name, state.isMapFavorite(destination.rowId), accent, ink, muted) { state.toggleMapFavorite(destination.rowId) }
                         }
                     }
                 }
@@ -269,7 +290,7 @@ fun MapsScreen(state: PhoneState) {
 
 @Composable
 private fun MapDestinationRow(name: String, favorite: Boolean, accent: Color, ink: Color, muted: Color, onFavorite: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 42.dp, vertical = 2.dp).clip(RoundedCornerShape(8.dp)).background(Color.White).padding(start = 48.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 42.dp, vertical = 2.dp).utilityCard().padding(start = 48.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         ImageGlyph(R.drawable.ic_dot, accent, Modifier.padding(end = 12.dp).size(8.dp))
         Text(name, color = ink, fontSize = 13.sp, modifier = Modifier.weight(1f))
         ImageGlyph(
@@ -286,7 +307,7 @@ fun HealthScreen(state: PhoneState) {
     val p = state.profile
     FeatureFrame("健康", state) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF47732E)).padding(20.dp)) {
+            Column(Modifier.fillMaxWidth().clip(UtilityCardShape).background(Color(0xFF47732E)).padding(20.dp)) {
                 Text("游戏会话", color = Color.White.copy(alpha = .75f))
                 Text(if (state.connected) "状态良好" else "当前未连接", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 if (p != null) {
@@ -295,8 +316,8 @@ fun HealthScreen(state: PhoneState) {
                 }
             }
             if (p != null && p.maxHp > 0) {
-                HealthBar("HP", p.currentHp, p.maxHp, Color(0xFF3CB371))
-                if (p.maxMp > 0) HealthBar("MP", p.currentMp, p.maxMp, Color(0xFF4F8DE8))
+                HealthBar("HP", p.currentHp, p.maxHp, PhoneGreen)
+                if (p.maxMp > 0) HealthBar("MP", p.currentMp, p.maxMp, PhoneInfo)
                 if (p.maxCp > 0) HealthRow("制作力", "${p.currentCp} / ${p.maxCp}")
                 if (p.maxGp > 0) HealthRow("采集力", "${p.currentGp} / ${p.maxGp}")
             } else {
@@ -312,9 +333,10 @@ fun HealthScreen(state: PhoneState) {
 @Composable
 private fun HealthBar(label: String, current: Int, max: Int, color: Color) {
     val frac = if (max > 0) (current.toFloat() / max.toFloat()).coerceIn(0f, 1f) else 0f
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().utilityCard().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth()) { Text(label, color = PhoneMuted, modifier = Modifier.weight(1f)); Text("$current / $max", color = PhoneText, fontWeight = FontWeight.SemiBold) }
-        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color.White.copy(alpha = .1f))) {
+        // Track was white@10%, invisible once the card became white in light mode.
+        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(PhoneLine)) {
             Box(Modifier.fillMaxWidth(frac).height(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
         }
     }
@@ -322,10 +344,10 @@ private fun HealthBar(label: String, current: Int, max: Int, color: Color) {
 
 @Composable
 private fun HealthRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(PhoneSurface).padding(16.dp)) { Text(label, color = PhoneMuted, modifier = Modifier.weight(1f)); Text(value, color = PhoneText, fontWeight = FontWeight.SemiBold) }
+    Row(Modifier.fillMaxWidth().utilityCard().padding(16.dp)) { Text(label, color = PhoneMuted, modifier = Modifier.weight(1f)); Text(value, color = PhoneText, fontWeight = FontWeight.SemiBold) }
 }
 
 @Composable
 private fun TextButtonAction(label: String, action: () -> Unit) {
-    Text(label, color = PhoneAccent, modifier = Modifier.clip(RoundedCornerShape(7.dp)).clickable(onClick = action).padding(horizontal = 18.dp, vertical = 10.dp))
+    Text(label, color = PhoneAccent, modifier = Modifier.clip(UtilityInnerShape).clickable(onClick = action).padding(horizontal = 18.dp, vertical = 14.dp))
 }

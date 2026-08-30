@@ -38,7 +38,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
+import com.quserh.eorzeaphone.ui.theme.PhoneAccentContainer
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
+import com.quserh.eorzeaphone.ui.theme.PhoneOnAccentContainer
+import com.quserh.eorzeaphone.ui.theme.PhoneSurface
+import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -227,7 +231,7 @@ fun CalculatorScreen(state: PhoneState) {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Bottom) {
                     items(engine.history.take(8).reversed()) { entry ->
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { engine.recall(entry.result) }.padding(horizontal = 8.dp, vertical = 5.dp),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { engine.recall(entry.result) }.padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(entry.expression, color = PhoneMuted, fontSize = 12.sp, maxLines = 1, modifier = Modifier.weight(1f))
@@ -273,8 +277,20 @@ private fun CalcKey(label: String, modifier: Modifier = Modifier, operator: Bool
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.92f else 1f, spring(dampingRatio = 0.66f, stiffness = 600f), label = "calculator-key")
     val function = label in setOf("AC", "C", "±", "%")
-    val background = when { active -> Color.White; operator -> PhoneAccent; function -> Color(0xFFA4A4AA); else -> Color(0xFF38383D) }
-    val ink = when { active -> PhoneAccent; function -> Color(0xFF101014); else -> Color.White }
+    // Keeps the four keypad tiers (active / operator / function / digit) but on
+    // tokens, so the pad no longer stays iOS-grey when the theme flips.
+    val background = when {
+        active -> PhoneSurface
+        operator -> PhoneAccent
+        function -> PhoneAccentContainer
+        else -> PhoneSurfaceRaised
+    }
+    val ink = when {
+        active -> PhoneAccent
+        operator -> Color.White
+        function -> PhoneOnAccentContainer
+        else -> PhoneText
+    }
     Box(
         modifier.graphicsLayer { scaleX = scale; scaleY = scale }.aspectRatio(if (pill) 2.08f else 1f).clip(if (pill) RoundedCornerShape(100) else CircleShape).background(background).clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = if (pill) Alignment.CenterStart else Alignment.Center,

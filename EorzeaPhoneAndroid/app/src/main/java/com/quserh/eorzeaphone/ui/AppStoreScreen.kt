@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -227,7 +228,7 @@ private fun StoreAppRow(
                             "占位",
                             color = PhoneMuted,
                             fontSize = StoreMetaSp.sp,
-                            modifier = Modifier.clip(RoundedCornerShape(5.dp))
+                            modifier = Modifier.clip(PhoneChipShape)
                                 .background(PhoneSurfaceRaised)
                                 .padding(horizontal = 5.dp, vertical = 1.dp),
                         )
@@ -279,7 +280,7 @@ private fun StoreActionButton(installed: Boolean, isSystem: Boolean, onClick: ()
                 fontSize = StoreMetaSp.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.clip(PhoneChipShape)
-                    .border(1.dp, PhoneMuted.copy(alpha = 0.35f), PhoneChipShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, PhoneChipShape)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         } else {
