@@ -189,12 +189,12 @@ fun ScreenHeader(
         Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(42.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.width(48.dp), contentAlignment = Alignment.CenterStart) {
             if (showBack) ImageGlyph(
                 R.drawable.ic_back,
                 PhoneAccent,
-                // 40dp touch target with the 30dp glyph centered.
-                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 5.dp, vertical = 5.dp),
+                // 48dp hit target (visual glyph stays 30dp).
+                Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = (onBack ?: state::back)).padding(horizontal = 9.dp, vertical = 9.dp),
             )
         }
         Text(

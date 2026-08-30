@@ -123,7 +123,8 @@ data class AccentPalette(
         val presets: List<AccentPalette> = listOf(
             AccentPalette(
                 id = "dew_green", label = "晨露绿",
-                fill = Color(0xFF4E8D5B),
+                // 0x3F8150 (not 0x4E8D5B): white-on-fill passes WCAG at button sizes.
+                fill = Color(0xFF3F8150),
                 inkLight = Color(0xFF2F6B40),
                 inkDark = Color(0xFF7FC49A),
                 bubble = Color(0xFF1E4A2A),
