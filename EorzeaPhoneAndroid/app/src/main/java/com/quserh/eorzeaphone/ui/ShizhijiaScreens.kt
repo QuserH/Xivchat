@@ -2135,7 +2135,7 @@ private fun SzjBottomBar(
 
 @Composable
 private fun SzjBottomTab(label: String, icon: Int, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val color by animateColorAsState(if (selected) SzjAccent else SzjMuted, tween(200), label = "szjBottomTabColor")
+    val color by animateColorAsState(if (selected) SzjAccent else SzjText, tween(200), label = "szjBottomTabColor")
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val motion = szjMotionEnabled()
@@ -2143,6 +2143,7 @@ private fun SzjBottomTab(label: String, icon: Int, selected: Boolean, modifier: 
     Box(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
+            .shadow(if (selected) 2.dp else 0.dp, SzjInnerShape, ambientColor = Color(0x143C5A46), spotColor = Color(0x143C5A46))
             .clip(SzjInnerShape)
             .background(if (selected) (if (szjLight) Color.White else Color(0xFF2A3542)) else Color.Transparent)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)

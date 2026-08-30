@@ -694,7 +694,7 @@ private fun HomeDockBar(
             .padding(horizontal = 24.dp)
             .shadow(10.dp, pillShape, ambientColor = Color(0x123C5A46), spotColor = Color(0x123C5A46))
             .clip(pillShape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
+            .background(if (darkTheme) Color(0xFF1A222B) else Color(0xFFEDF1F6))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, pillShape)
             .height(56.dp)
             .padding(horizontal = 10.dp),

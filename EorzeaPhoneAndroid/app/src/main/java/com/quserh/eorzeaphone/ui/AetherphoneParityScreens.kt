@@ -111,6 +111,7 @@ import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -687,11 +688,20 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
                     // 底栏原来是 64dp 裸行，背景直接用 background（和列表同色），
                     // 无分割线也无层次，看起来像列表末尾多出来的一行。
                     // 顶部一条发丝线 + 底栏自己用 surface，把它和列表分开。
-                    Column(Modifier.fillMaxWidth()) {
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                        Row(modifier = Modifier.fillMaxWidth().height(64.dp).background(AetherLightSurface), verticalAlignment = Alignment.CenterVertically) {
-                            LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(0) } }
-                            LightNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1, Modifier.weight(1f)) { scope.launch { pager.animateScrollToPage(1) } }
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Row(
+                            Modifier
+                                .shadow(8.dp, RoundedCornerShape(26.dp), ambientColor = Color(0x143C5A46), spotColor = Color(0x143C5A46))
+                                .clip(RoundedCornerShape(26.dp))
+                                .background(if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFFEDF1F6) else Color(0xFF1A222B))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(26.dp))
+                                .height(54.dp)
+                                .padding(horizontal = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            LightNavItem("聊天", R.drawable.app_messages, pager.currentPage == 0) { scope.launch { pager.animateScrollToPage(0) } }
+                            LightNavItem("联系人", R.drawable.app_contacts, pager.currentPage == 1) { scope.launch { pager.animateScrollToPage(1) } }
                         }
                     }
                 }
@@ -701,15 +711,19 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
 }
 
 @Composable
-private fun LightNavItem(label: String, icon: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val color by animateColorAsState(if (selected) AetherPurple else AetherLightMuted, label = "nav-color")
+private fun LightNavItem(label: String, icon: Int, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val color by animateColorAsState(if (selected) AetherPurple else AetherLightText, label = "nav-color")
     Column(
-        modifier = modifier.fillMaxHeight().clickable(onClick = onClick),
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) (if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color.White else Color(0xFF2A3542)) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        ImageGlyph(icon, color, Modifier.size(24.dp))
-        Text(label, color = color, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        ImageGlyph(icon, color, Modifier.size(21.dp))
+        Text(label, color = color, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
