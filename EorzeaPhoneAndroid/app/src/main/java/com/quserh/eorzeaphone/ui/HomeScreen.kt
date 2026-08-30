@@ -1,6 +1,7 @@
 package com.quserh.eorzeaphone.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -45,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
@@ -75,6 +77,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.zIndex
@@ -126,8 +129,26 @@ fun HomeScreen(state: PhoneState) {
             pageCount = { totalPages },
         )
         LaunchedEffect(pager.currentPage) { state.homePage = pager.currentPage }
-        var deckOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-        BackHandler(enabled = deckOpen) { deckOpen = false }
+        val scope = rememberCoroutineScope()
+        var sheetHeightPx by remember { mutableStateOf(0f) }
+        val sheetY = remember { Animatable(-100000f) }
+        val sheetVisible = sheetY.value > -sheetHeightPx + 1f
+        // Emil-style: gesture-driven sheet = spring that carries the drag velocity,
+        // critically damped (no bounce, iOS drawer feel). Reduced motion snaps.
+        val motionAllowed = phoneMotionEnabled()
+        fun openSheet(velocity: Float = 0f) {
+            scope.launch {
+                if (motionAllowed) sheetY.animateTo(0f, spring(dampingRatio = 1f, stiffness = 380f), initialVelocity = velocity)
+                else sheetY.snapTo(0f)
+            }
+        }
+        fun closeSheet(velocity: Float = 0f) {
+            scope.launch {
+                if (motionAllowed) sheetY.animateTo(-sheetHeightPx, spring(dampingRatio = 1f, stiffness = 380f), initialVelocity = velocity)
+                else sheetY.snapTo(-sheetHeightPx)
+            }
+        }
+        BackHandler(enabled = sheetVisible) { closeSheet() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -137,14 +158,36 @@ fun HomeScreen(state: PhoneState) {
                 .pointerInput(Unit) {
                     // Grid has no vertical scroll, so a downward drag is unambiguous.
                     var pull = 0f
+                    var lastY = 0f
+                    var lastT = 0L
+                    var vel = 0f
                     detectVerticalDragGestures(
-                        onDragStart = { pull = 0f },
+                        onDragStart = { pull = 0f; lastT = 0L; vel = 0f },
                         onVerticalDrag = { change, amount ->
-                            pull += amount
-                            if (pull > 140f && !deckOpen) {
-                                deckOpen = true
+                            if (sheetHeightPx > 0f) {
+                                val t = change.uptimeMillis
+                                if (lastT != 0L) {
+                                    val dt = (t - lastT) / 1000f
+                                    if (dt > 0f) vel = (change.position.y - lastY) / dt
+                                }
+                                lastY = change.position.y
+                                lastT = t
+                                pull = (pull + amount).coerceIn(0f, sheetHeightPx * 1.4f)
+                                val target = (-sheetHeightPx + pull).coerceIn(-sheetHeightPx, 0f)
+                                // Rubber-band once fully open: further pull resists.
+                                val overshoot = (-sheetHeightPx + pull) - 0f
+                                val settled = if (overshoot > 0f) 0f + overshoot * 0.22f else target
+                                scope.launch { sheetY.snapTo(settled) }
+                            }
+                        },
+                        onDragEnd = {
+                            if (sheetHeightPx > 0f) {
+                                if (pull > sheetHeightPx * 0.24f || vel > 2500f) openSheet(vel) else closeSheet(vel)
                                 pull = 0f
                             }
+                        },
+                        onDragCancel = {
+                            if (sheetHeightPx > 0f) closeSheet(vel)
                         },
                     )
                 },
@@ -161,58 +204,70 @@ fun HomeScreen(state: PhoneState) {
             HomeDockBar(state, darkTheme)
             Spacer(Modifier.height(8.dp))
         }
-        AnimatedVisibility(
-            visible = deckOpen,
-            enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(180)),
-            exit = slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(140)),
-        ) {
-            Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
+            if (sheetVisible) {
                 Box(
                     Modifier
                         .matchParentSize()
-                        .background(Color(0x59000000))
-                        .pointerInput(Unit) { detectTapGestures { deckOpen = false } },
+                        .background(Color.Black.copy(alpha = 0.35f * (1f + sheetY.value / sheetHeightPx)))
+                        .pointerInput(Unit) { detectTapGestures { closeSheet() } },
                 )
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.94f)
-                        .clip(RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))
-                        .background(MaterialTheme.colorScheme.background)
-                        .pointerInput(Unit) {
-                            var pull = 0f
-                            detectVerticalDragGestures(
-                                onDragStart = { pull = 0f },
-                                onVerticalDrag = { change, amount ->
-                                    if (amount < 0) pull += -amount
-                                    if (pull > 120f) {
-                                        deckOpen = false
-                                        pull = 0f
+            }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.94f)
+                    .graphicsLayer { translationY = sheetY.value }
+                    .clip(RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                    .pointerInput(sheetHeightPx) {
+                        var lastY = 0f
+                        var lastT = 0L
+                        var vel = 0f
+                        detectVerticalDragGestures(
+                            onDragStart = { lastT = 0L; vel = 0f },
+                            onVerticalDrag = { change, amount ->
+                                if (amount < 0 && sheetHeightPx > 0f) {
+                                    val t = change.uptimeMillis
+                                    if (lastT != 0L) {
+                                        val dt = (t - lastT) / 1000f
+                                        if (dt > 0f) vel = (change.position.y - lastY) / dt
                                     }
-                                },
-                            )
-                        },
-                ) {
-                    Column(Modifier.fillMaxSize()) {
-                        // Notification-shade style header: title left, settings gear top-right.
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("艾欧泽亚终端", color = PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            val settingsApp = remember { AppCatalog.dock.firstOrNull { it.id == "settings" } }
-                            Box(
-                                Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(13.dp))
-                                    .clickable { settingsApp?.let { state.open(it) } },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                ImageGlyph(R.drawable.ic2_settings, PhoneMuted, Modifier.size(20.dp))
-                            }
-                        }
-                        HomeDeck(state, Modifier.fillMaxSize())
+                                    lastY = change.position.y
+                                    lastT = t
+                                    val raw = sheetY.value + amount
+                                    // Rubber-band past the closed bound.
+                                    val target = if (raw < -sheetHeightPx) -sheetHeightPx + (raw + sheetHeightPx) * 0.22f else raw
+                                    scope.launch { sheetY.snapTo(target) }
+                                }
+                            },
+                            onDragEnd = {
+                                if (sheetY.value < -sheetHeightPx * 0.72f || vel < -2200f) closeSheet(vel) else openSheet(vel)
+                            },
+                            onDragCancel = { openSheet(vel) },
+                        )
                     }
+                    .onSizeChanged { sheetHeightPx = it.height.toFloat() },
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    // Notification-shade style header: title left, settings gear top-right.
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("艾欧泽亚终端", color = PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        val settingsApp = remember { AppCatalog.dock.firstOrNull { it.id == "settings" } }
+                        Box(
+                            Modifier
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(13.dp))
+                                .clickable { settingsApp?.let { state.open(it) } },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ImageGlyph(R.drawable.ic2_settings, PhoneMuted, Modifier.size(20.dp))
+                        }
+                    }
+                    HomeDeck(state, Modifier.fillMaxSize())
                 }
             }
         }
