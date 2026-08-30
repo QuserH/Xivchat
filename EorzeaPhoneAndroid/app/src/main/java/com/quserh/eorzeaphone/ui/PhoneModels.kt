@@ -1095,6 +1095,24 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         if (changed) saveFriends()
     }
 
+    private fun stringPref(key: String, default: String): MutableState<String> {
+        val backing = mutableStateOf(prefs.getString(key, default) ?: default)
+        return object : MutableState<String> by backing {
+            override var value: String
+                get() = backing.value
+                set(v) {
+                    backing.value = v
+                    prefs.edit().putString(key, v).apply()
+                }
+        }
+    }
+
+    private val dockIdsPref = stringPref("dockApps", "gamechat|contacts|settings")
+    /** Editable dock contents (app ids, '|'-joined in prefs). */
+    var dockAppIds: List<String>
+        get() = dockIdsPref.value.split('|').filter { it.isNotBlank() }
+        set(v) { dockIdsPref.value = v.filter { it.isNotBlank() }.joinToString("|") }
+
     private fun boolPref(key: String, default: Boolean): MutableState<Boolean> {
         val backing = mutableStateOf(prefs.getBoolean(key, default))
         return object : MutableState<Boolean> by backing {

@@ -756,7 +756,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                     Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { overflowOpen = true },
                     contentAlignment = Alignment.Center,
                 ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
-                DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                PhoneMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
                     DropdownMenuItem(text = { Text("新建筛选器") }, onClick = { overflowOpen = false; editTab() })
                     DropdownMenuItem(text = { Text("默认打开的标签") }, onClick = { overflowOpen = false; showDefaultTabDialog = true })
                 }
@@ -905,7 +905,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                 },
                             )
                             Box(Modifier.offset { IntOffset(tabPress.x.roundToInt(), tabPress.y.roundToInt()) }) {
-                            DropdownMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
+                            PhoneMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
                                 DropdownMenuItem(text = { Text("更换图标") }, onClick = { iconKeyTarget = filter.id; longPressedTabId = null })
                                 DropdownMenuItem(text = { Text("置顶") }, onClick = { state.pinChatFilter(filter); longPressedTabId = null })
                                 DropdownMenuItem(text = { Text(if (filter.alertPolicy == ChatAlertPolicy.Off) "取消消息免打扰" else "消息免打扰") }, onClick = { state.toggleChatFilterNotifications(filter); longPressedTabId = null })
@@ -1211,7 +1211,7 @@ private fun SzjLikeSettingRow(
             Text(value, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1)
             ImageGlyph(R.drawable.ic2_chevron_down, AetherLightMuted, Modifier.padding(start = 4.dp).size(16.dp))
         }
-        DropdownMenu(expanded = open, onDismissRequest = onPicked) {
+        PhoneMenu(expanded = open, onDismissRequest = onPicked) {
             options.forEach { (optLabel, apply) ->
                 DropdownMenuItem(
                     text = {
@@ -1662,7 +1662,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             },
         )
         Box(Modifier.offset { IntOffset(pressOffset.x.roundToInt(), pressOffset.y.roundToInt()) }) {
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            PhoneMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(text = { Text(if (state.isConversationPinned(conversation)) "取消置顶" else "置顶") }, onClick = {
                 state.toggleConversationPin(conversation)
                 menuOpen = false
@@ -2062,7 +2062,7 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
                             Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menuOpen = true },
                             contentAlignment = Alignment.Center,
                         ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        PhoneMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             if (friend != null) {
                                 DropdownMenuItem(
                                     text = { Text("发送私聊") },
@@ -2945,7 +2945,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                                 .background(PhoneAccent.copy(alpha = if (lightTheme) 0.16f else 0.24f))
                                 .clickable { channelMenu = true }, contentAlignment = Alignment.Center,
                         ) { Text(state.currentChannelName, color = PhoneAccent, fontSize = 11.sp, maxLines = 1) }
-                        DropdownMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
+                        PhoneMenu(expanded = channelMenu, onDismissRequest = { channelMenu = false }) {
                             outputChannels.forEach { channel ->
                                 DropdownMenuItem(text = { Text(channel.label) }, onClick = { state.changeChannel(channel); channelMenu = false })
                             }
@@ -3771,7 +3771,7 @@ private fun AetherphoneJobRow(job: GameJob, state: PhoneState) {
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menu = true },
                 contentAlignment = Alignment.Center,
             ) { ImageGlyph(R.drawable.ic2_more_horiz, PhoneMuted, Modifier.size(18.dp)) }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            PhoneMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (job.active) "当前已装备" else if (job.gearsetId >= 0) "装备套装" else "没有装备套装") },
                     enabled = job.gearsetId >= 0 && !job.active,

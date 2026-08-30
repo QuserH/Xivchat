@@ -12,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -74,6 +76,9 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -121,6 +126,27 @@ fun HomeScreen(state: PhoneState) {
         )
         Box(Modifier.fillMaxSize().background(if (darkTheme) Color(0x35000020) else MaterialTheme.colorScheme.background.copy(alpha = .82f)))
 
+        // Edit-mode drag targets shared between the grid, trash bar and dock.
+        var trashActive by remember { mutableStateOf(false) }
+        var trashBounds by remember { mutableStateOf<Rect?>(null) }
+        var dragPoint by remember { mutableStateOf<Offset?>(null) }
+        var dockSlotBounds by remember { mutableStateOf(listOf<Rect>()) }
+        fun handleDrop(page: Int, target: String, appId: String) {
+            when (target) {
+                "trash" -> state.removeFromHome(page, appId)
+                "dock" -> {
+                    val slot = dockSlotBounds.indexOfFirst { it.contains(dragPoint ?: return) }
+                    if (slot >= 0 && appId !in state.dockAppIds) {
+                        val ids = state.dockAppIds.toMutableList()
+                        if (slot < ids.size) {
+                            ids[slot] = appId
+                            state.dockAppIds = ids
+                            state.removeFromHome(page, appId)
+                        }
+                    }
+                }
+            }
+        }
         // v2 home: the desktop is always the desktop (wallpaper + grid + dock).
         // The intel deck is a pull-down sheet, notification-shade style:
         // drag down anywhere to reveal, swipe up / tap scrim / back to dismiss.
@@ -164,6 +190,7 @@ fun HomeScreen(state: PhoneState) {
                     detectVerticalDragGestures(
                         onDragStart = { pull = 0f; lastT = 0L; vel = 0f },
                         onVerticalDrag = { change, amount ->
+                            if (state.homeEditMode) return@detectVerticalDragGestures
                             if (sheetHeightPx > 0f) {
                                 val t = change.uptimeMillis
                                 if (lastT != 0L) {
@@ -192,16 +219,33 @@ fun HomeScreen(state: PhoneState) {
                     )
                 },
         ) {
-            HomeEditBar(state, homeText)
+            HomeEditBar(state, homeText, trashActive, onTrashBounds = { trashBounds = it })
             HorizontalPager(
                 state = pager,
                 userScrollEnabled = !state.homeEditMode,
                 modifier = Modifier.weight(1f),
             ) { page ->
-                SocialPage(state, page)
+                SocialPage(
+                    state, page,
+                    trashBounds = trashBounds,
+                    dockBounds = dockSlotBounds,
+                    onTrashActive = { trashActive = it },
+                    onDragUpdate = { dragPoint = it },
+                    onDrop = { target, appId -> handleDrop(page, target, appId) },
+                )
             }
             PageIndicator(pager.currentPage, totalPages, homeText)
-            HomeDockBar(state, darkTheme)
+            HomeDockBar(
+                state, darkTheme,
+                editMode = state.homeEditMode,
+                hoverSlot = if (dragPoint == null) -1 else dockSlotBounds.indexOfFirst { it.contains(dragPoint ?: Offset.Zero) },
+                onSlotBounds = { index, rect ->
+                    dockSlotBounds = dockSlotBounds.toMutableList().also {
+                        while (it.size <= index) it.add(Rect.Zero)
+                        it[index] = rect
+                    }
+                },
+            )
             Spacer(Modifier.height(8.dp))
         }
         Box(Modifier.fillMaxSize()) {
@@ -221,31 +265,22 @@ fun HomeScreen(state: PhoneState) {
                     .clip(RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))
                     .background(MaterialTheme.colorScheme.background)
                     .pointerInput(sheetHeightPx) {
-                        var lastY = 0f
-                        var lastT = 0L
-                        var vel = 0f
-                        detectVerticalDragGestures(
-                            onDragStart = { lastT = 0L; vel = 0f },
-                            onVerticalDrag = { change, amount ->
-                                if (amount < 0 && sheetHeightPx > 0f) {
-                                    val t = change.uptimeMillis
-                                    if (lastT != 0L) {
-                                        val dt = (t - lastT) / 1000f
-                                        if (dt > 0f) vel = (change.position.y - lastY) / dt
-                                    }
-                                    lastY = change.position.y
-                                    lastT = t
-                                    val raw = sheetY.value + amount
-                                    // Rubber-band past the closed bound.
-                                    val target = if (raw < -sheetHeightPx) -sheetHeightPx + (raw + sheetHeightPx) * 0.22f else raw
-                                    scope.launch { sheetY.snapTo(target) }
-                                }
-                            },
-                            onDragEnd = {
-                                if (sheetY.value < -sheetHeightPx * 0.74f || vel < -1600f) closeSheet(vel) else openSheet(vel)
-                            },
-                            onDragCancel = { openSheet(vel) },
-                        )
+                        // Flick up anywhere on the sheet closes it (Initial pass, so the
+                        // inner scroll can't swallow the gesture); slow drags scroll content.
+                        val tracker = VelocityTracker()
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            tracker.resetTracking()
+                            tracker.addPosition(down.uptimeMillis, down.position)
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull() ?: continue
+                                tracker.addPosition(change.uptimeMillis, change.position)
+                                if (event.changes.all { it.changedToUp() }) break
+                            }
+                            val vel = tracker.calculateVelocity().y
+                            if (vel < -1500f) closeSheet(vel)
+                        }
                     }
                     .onSizeChanged { sheetHeightPx = it.height.toFloat() },
             ) {
@@ -275,43 +310,88 @@ fun HomeScreen(state: PhoneState) {
 }
 
 @Composable
-private fun HomeEditBar(state: PhoneState, homeText: Color) {
+private fun HomeEditBar(
+    state: PhoneState,
+    homeText: Color,
+    trashActive: Boolean,
+    onTrashBounds: (Rect) -> Unit,
+) {
     if (state.homeEditMode) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("编辑主屏幕", color = homeText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text("长按拖拽排序 · 点 − 移除", color = homeText.copy(alpha = .8f), fontSize = 11.sp)
-            // "完成"原来写死成浅蓝 #5BC0EB，和品牌色无关。走 accent。
-            Text(
-                "完成",
-                color = PhoneAccent,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(PhoneAccent.copy(alpha = .18f))
-                    .clickable { state.exitEditMode() }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-            )
+            Column {
+                Text("编辑主屏幕", color = homeText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("长按拖拽排序 · 拖到回收站删除", color = homeText.copy(alpha = .8f), fontSize = 11.sp)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "完成",
+                    color = PhoneAccent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(PhoneAccent.copy(alpha = .18f))
+                        .clickable { state.exitEditMode() }
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .onGloballyPositioned { onTrashBounds(it.boundsInRoot()) }
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (trashActive) PhoneDanger.copy(alpha = .28f) else homeText.copy(alpha = .08f))
+                        .border(1.dp, if (trashActive) PhoneDanger else homeText.copy(alpha = .25f), RoundedCornerShape(18.dp)),
+                ) {
+                    ImageGlyph(R.drawable.ic_trash, if (trashActive) PhoneDanger else homeText.copy(alpha = .75f), Modifier.size(24.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SocialPage(state: PhoneState, page: Int) {
+private fun SocialPage(
+    state: PhoneState,
+    page: Int,
+    trashBounds: Rect?,
+    dockBounds: List<Rect>,
+    onTrashActive: (Boolean) -> Unit,
+    onDragUpdate: (Offset?) -> Unit,
+    onDrop: (String, String) -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
         if (page == 0) {
             WeatherWidget(state, Modifier.padding(vertical = 8.dp))
         }
-        AppsGrid(state.appsForPage(page), page, state)
+        AppsGrid(
+            state.appsForPage(page), page, state,
+            trashBounds = trashBounds,
+            dockBounds = dockBounds,
+            onTrashActive = onTrashActive,
+            onDragUpdate = onDragUpdate,
+            onTrashDrop = { onDrop("trash", "") },
+            onDockDrop = { onDrop("dock", it) },
+        )
     }
 }
 
 @Composable
-private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
+private fun AppsGrid(
+    apps: List<PhoneAppItem>,
+    page: Int,
+    state: PhoneState,
+    trashBounds: Rect?,
+    dockBounds: List<Rect>,
+    onTrashActive: (Boolean) -> Unit,
+    onDragUpdate: (Offset?) -> Unit,
+    onTrashDrop: () -> Unit,
+    onDockDrop: (String) -> Unit,
+) {
     val hapticView = LocalView.current
     val bounds = remember { mutableStateMapOf<String, Rect>() }
     var dragId by remember(page) { mutableStateOf<String?>(null) }
@@ -329,6 +409,8 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
         val index = (row * cols + col).roundToInt().coerceIn(0, apps.lastIndex)
         state.reorderHomeToIndex(page, fromApp.id, index)
     }
+    var inTrash by remember(page) { mutableStateOf(false) }
+    fun pointerPos(origin: Rect, dx: Float, dy: Float) = Offset(origin.center.x + dx, origin.center.y + dy)
 
     Column(
         Modifier.fillMaxSize().padding(top = 4.dp),
@@ -344,7 +426,6 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
                         HomeTile(
                             app = app,
                             editing = state.homeEditMode,
-                            removable = app.id != "appstore",
                             dragging = dragId == app.id,
                             dragOffset = if (dragId == app.id) dragOffset else Offset.Zero,
                             dimmed = false,
@@ -369,7 +450,16 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
                                 }
                             },
                             onDrag = { delta ->
-                                if (dragId == app.id) dragOffset += delta
+                                if (dragId == app.id) {
+                                    dragOffset += delta
+                                    val origin = originRect ?: bounds[app.id]
+                                    if (origin != null) {
+                                        val pos = pointerPos(origin, dragOffset.x, dragOffset.y)
+                                        onDragUpdate(pos)
+                                        inTrash = trashBounds?.contains(pos) == true
+                                        onTrashActive(inTrash)
+                                    }
+                                }
                             },
                             onDragEnd = {
                                 val fromApp = app
@@ -377,10 +467,18 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
                                 val fromIdx = originIndex
                                 val dx = dragOffset.x
                                 val dy = dragOffset.y
+                                val pos = fromOrigin?.let { pointerPos(it, dx, dy) }
                                 dragId = null
                                 originRect = null
                                 dragOffset = Offset.Zero
-                                if (fromOrigin != null) applyDrop(fromApp, fromIdx, fromOrigin, dx, dy)
+                                onDragUpdate(null)
+                                onTrashActive(false)
+                                val dockSlot = pos?.let { pt -> dockBounds.indexOfFirst { it.contains(pt) } } ?: -1
+                                when {
+                                    pos != null && trashBounds?.contains(pos) == true -> onTrashDrop()
+                                    dockSlot >= 0 -> onDockDrop(dockSlot.toString())
+                                    fromOrigin != null -> applyDrop(fromApp, fromIdx, fromOrigin, dx, dy)
+                                }
                             },
                         )
                     }
@@ -396,7 +494,6 @@ private fun AppsGrid(apps: List<PhoneAppItem>, page: Int, state: PhoneState) {
 private fun HomeTile(
     app: PhoneAppItem,
     editing: Boolean,
-    removable: Boolean,
     dragging: Boolean,
     dragOffset: Offset,
     dimmed: Boolean,
@@ -492,19 +589,6 @@ private fun HomeTile(
                     modifier = Modifier.size(30.dp),
                 )
             }
-            if (editing && removable) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(18.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(PhoneDanger)
-                        .clickable { onTap() },
-                ) {
-                    ImageGlyph(R.drawable.ic_remove, Color.White, Modifier.size(13.dp))
-                }
-            }
         }
         Text(
             text = app.label,
@@ -595,7 +679,13 @@ internal fun weatherIcon(name: String): Int = when {
 }
 
 @Composable
-private fun HomeDockBar(state: PhoneState, darkTheme: Boolean) {
+private fun HomeDockBar(
+    state: PhoneState,
+    darkTheme: Boolean,
+    editMode: Boolean,
+    hoverSlot: Int,
+    onSlotBounds: (Int, Rect) -> Unit,
+) {
     val hapticView = LocalView.current
     val pillShape = RoundedCornerShape(29.dp)
     Row(
@@ -611,8 +701,12 @@ private fun HomeDockBar(state: PhoneState, darkTheme: Boolean) {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AppCatalog.dock.forEach { app ->
+        val dockApps = state.dockAppIds.mapNotNull { AppCatalog.byId(it) }
+        dockApps.forEachIndexed { appIndex, app ->
             var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
+            androidx.compose.runtime.SideEffect {
+                if (bounds != Rect.Zero) onSlotBounds(appIndex, bounds)
+            }
             val interaction = remember(app.id, state) { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(if (pressed) 0.86f else 1f, spring(dampingRatio = .62f, stiffness = 520f), label = "dock-press")
@@ -628,7 +722,11 @@ private fun HomeDockBar(state: PhoneState, darkTheme: Boolean) {
                         .onGloballyPositioned { bounds = it.boundsInRoot() }
                         .clip(RoundedCornerShape(13.dp))
                         .background(tileBase)
-                        .border(1.dp, tileBorder, RoundedCornerShape(13.dp))
+                        .border(
+                            1.dp,
+                            if (state.homeEditMode && hoverSlot == appIndex) PhoneAccent else tileBorder,
+                            RoundedCornerShape(13.dp),
+                        )
                         .clickable(interactionSource = interaction, indication = null) {
                             if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             state.open(app, bounds)

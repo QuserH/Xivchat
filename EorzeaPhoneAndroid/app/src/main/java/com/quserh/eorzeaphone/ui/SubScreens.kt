@@ -294,7 +294,7 @@ fun SettingsScreen(state: PhoneState) {
                                 Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { characterMenu = true },
                                 contentAlignment = Alignment.Center,
                             ) { ImageGlyph(R.drawable.ic2_person, PhoneAccent, Modifier.size(19.dp)) }
-                            DropdownMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
+                            PhoneMenu(expanded = characterMenu, onDismissRequest = { characterMenu = false }) {
                                 state.knownCharacters.forEach { character ->
                                     DropdownMenuItem(
                                         text = {
@@ -1519,6 +1519,29 @@ fun PhoneEmpty(
 
 /** chip 圆角。 */
 val PhoneChipShape = RoundedCornerShape(12.dp)
+
+/**
+ * v2 popover shell: white card, 16dp shape, soft shadow. M3 keeps its own
+ * scale+fade enter; every menu in the app goes through this so they match.
+ */
+@Composable
+fun PhoneMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    androidx.compose.material3.DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 0.dp,
+        shadowElevation = 8.dp,
+        content = content,
+    )
+}
 
 /**
  * 一组筛选 chip。[options] 是 (id, 显示名)，[multi] = true 时多选。

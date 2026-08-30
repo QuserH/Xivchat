@@ -16,6 +16,10 @@ private val purple = Color(0xFF8365E9)
 private val grey = Color(0xFF8A8C95)
 
 object AppCatalog {
+    /** Find any catalog app by id across first/second page and dock. */
+    fun byId(id: String): PhoneAppItem? =
+        (firstPage + secondPage + dock).firstOrNull { it.id == id }
+
     val firstPage = listOf(
         PhoneAppItem("chirper", "叽叽", R.drawable.app_chirper, cyan),
         PhoneAppItem("aethergram", "以太图集", R.drawable.app_aethergram, coral),
