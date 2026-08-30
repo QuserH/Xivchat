@@ -119,14 +119,13 @@ private data class Key(val isRun: Boolean, val id: Int)
 object QuestAncestry {
 
     /**
-     * 交互高亮：从选中的格子出发的**最短依赖树**。
+     * 交互高亮：从选中的格子向上的**最短路径树**（Dijkstra，边权 1）。
      *
-     * BFS 向上走，每个节点只保留第一次到达它的那条边 —— 每个前置依赖
-     * 恰好一条亮线；重复的前置（残酷的真相既直接前置勇敢的心、又隔着
-     * 龙诗之始喂虎口拔牙）只走直连那条，绕行的重复边不亮。
-     * 碰到顶部主线就停（它自己的前置不在图里，到顶自然停）。
-     *
-     * 返回：亮起来的格子集合 + 亮起来的边集合（与 [AncestorEdge] 同向）。
+     * 之前 BFS 的「首达边」在深层选中时会选错：某些节点经绕路先被发现，
+     * 保留的那条边不在最短路上，高亮树就缺枝 —— 表现就是「从第一层点下去
+     * 全亮、直接点深层缺一块」。改成按距离逐层松弛，每个节点保留的边
+     * 一定在最短路径上；距离相同时取边序号小的（稳定）。
+     * 碰到顶部主线就停（它自己的前置不在图里）。
      */
     fun pathFrom(tree: AncestorTree, fromCell: Int): Pair<Set<Int>, Set<Pair<Int, Int>>> {
         if (fromCell !in tree.cells.indices) return emptySet<Int>() to emptySet()
@@ -138,66 +137,41 @@ object QuestAncestry {
         tree.edges.forEachIndexed { ei, e ->
             pre.getOrPut(e.toCell) { mutableListOf() }.add(e.fromCell to ei)
         }
-        val cells = HashSet<Int>()
-        val litEdges = HashSet<Pair<Int, Int>>()
-        val dq = ArrayDeque<Int>()
-        cells.add(fromCell)
-        dq.add(fromCell)
-        while (dq.isNotEmpty()) {
-            val u = dq.removeFirst()
-            if (u in isTop && u != fromCell) continue
-            for ((a, ei) in pre[u].orEmpty()) {
-                if (cells.add(a)) {
-                    litEdges.add(a to u)
-                    dq.add(a)
+        val dist = HashMap<Int, Int>()
+        val bestEdge = HashMap<Int, Pair<Int, Int>>()   // node -> (fromCell, toCell)
+        dist[fromCell] = 0
+        // 简易 Dijkstra：层数最多 = cells.size，每轮处理一整层。
+        val frontier = ArrayDeque<Int>()
+        frontier.add(fromCell)
+        while (frontier.isNotEmpty()) {
+            val next = ArrayDeque<Int>()
+            while (frontier.isNotEmpty()) {
+                val u = frontier.removeFirst()
+                val du = dist[u] ?: 0
+                if (u in isTop && u != fromCell) continue   // 主线：终点，不再上溯
+                for ((a, ei) in pre[u].orEmpty()) {
+                    val nd = du + 1
+                    val known = dist[a]
+                    if (known == null || nd < known) {
+                        dist[a] = nd
+                        bestEdge[a] = a to u
+                        next.add(a)
+                    }
                 }
             }
+            frontier.clear()
+            // 下一层（去重后继续）
+            val seen = HashSet<Int>()
+            while (next.isNotEmpty()) {
+                val v = next.removeFirst()
+                if (seen.add(v)) frontier.add(v)
+            }
         }
+        val cells = dist.keys.toHashSet()
+        val litEdges = bestEdge.values.toHashSet()
+        cells.add(fromCell)
         return cells to litEdges
     }
-
-    /**
-     * 规则 B：从 [questId] 沿「谁需要它」向下走，找到**最早解锁的主线任务**
-     * （第一个 category 含「主线」的后继）。返回路径（含起点与主线）。
-     * 找不到（下游全是非主线到头）返回 null。
-     */
-    suspend fun firstMsqDown(context: Context, questId: Int): Pair<List<QuestNode>, QuestNode>? =
-        withContext(Dispatchers.IO) {
-            val db = WikiDb.open(context)
-            val nextOf = HashMap<Int, MutableList<Int>>(6000)
-            db.rawQuery("SELECT quest_id, pre_id FROM quest_prereq", null).use { c ->
-                while (c.moveToNext()) nextOf.getOrPut(c.getInt(1)) { mutableListOf() }.add(c.getInt(0))
-            }
-            val msq = HashSet<Int>(1200)
-            db.rawQuery("SELECT id FROM quests WHERE category LIKE '%主线%'", null).use { c ->
-                while (c.moveToNext()) msq.add(c.getInt(0))
-            }
-            // BFS 向下，记录每个节点第一次被谁到达，回溯出路径。
-            val parent = HashMap<Int, Pair<Int, Int>>() // node -> (prev, slot)
-            val seen = HashSet<Int>(listOf(questId))
-            val dq = ArrayDeque<Int>()
-            dq.add(questId)
-            var found = -1
-            while (dq.isNotEmpty() && found < 0) {
-                val u = dq.removeFirst()
-                for (v in nextOf[u].orEmpty()) {
-                    if (v in seen) continue
-                    seen.add(v)
-                    parent[v] = u to 0
-                    if (v in msq) { found = v; break }
-                    dq.add(v)
-                }
-            }
-            if (found < 0) return@withContext null
-            val pathIds = ArrayList<Int>()
-            var cur: Int? = found
-            while (cur != null) { pathIds.add(cur); cur = parent[cur]?.first }
-            pathIds.reverse()
-            val sub = pathIds.toHashSet()
-            val nodes = loadNodes(db, sub)
-            val path = pathIds.mapNotNull { nodes[it] }
-            path.lastOrNull()?.let { path to it }
-        }
 
     /** 安全上限。实测最大 1090，留一倍余量防脏数据成环。 */
     private const val MAX_ANCESTORS = 2500
