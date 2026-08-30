@@ -1230,6 +1230,7 @@ fun SkywatcherScreen(state: PhoneState) {
 fun CalendarScreen(state: PhoneState) {
     val context = LocalContext.current
     var month by remember { mutableStateOf(java.time.YearMonth.now()) }
+    var selectedDay by remember { mutableStateOf(java.time.LocalDate.now()) }
     var events by remember { mutableStateOf<List<com.quserh.eorzeaphone.data.shizhijia.ShizhijiaEvent>?>(null) }
     LaunchedEffect(month) {
         events = null
@@ -1237,53 +1238,143 @@ fun CalendarScreen(state: PhoneState) {
             com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi.getActiveCalendar(context, month.toString())
         }.getOrDefault(emptyList())
     }
+    val zone = remember { java.time.ZoneId.systemDefault() }
+    val list = events
+    fun activeOn(day: java.time.LocalDate, evs: List<com.quserh.eorzeaphone.data.shizhijia.ShizhijiaEvent>) =
+        evs.filter { ev ->
+            val b = java.time.Instant.ofEpochMilli(ev.beginTime).atZone(zone).toLocalDate()
+            val e = java.time.Instant.ofEpochMilli(ev.endTime).atZone(zone).toLocalDate()
+            !day.isBefore(b) && !day.isAfter(e)
+        }
+    val fmtFull = remember { java.time.format.DateTimeFormatter.ofPattern("MM.dd HH:mm") }
     ScreenFrame {
         ScreenHeader("日历", state)
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("${month.year} 年 ${month.monthValue} 月", color = PhoneText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { month = month.minusMonths(1) }, contentAlignment = Alignment.Center) {
-                ImageGlyph(R.drawable.ic_chevron_left, PhoneText, Modifier.size(18.dp))
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${month.year} 年 ${month.monthValue} 月", color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { month = month.minusMonths(1); selectedDay = month.atDay(1) }, contentAlignment = Alignment.Center) {
+                    ImageGlyph(R.drawable.ic_chevron_left, PhoneText, Modifier.size(17.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { month = month.plusMonths(1); selectedDay = month.atDay(1) }, contentAlignment = Alignment.Center) {
+                    ImageGlyph(R.drawable.ic_chevron_right, PhoneText, Modifier.size(17.dp))
+                }
             }
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { month = month.plusMonths(1) }, contentAlignment = Alignment.Center) {
-                ImageGlyph(R.drawable.ic_chevron_right, PhoneText, Modifier.size(18.dp))
+            PhoneCard(Modifier.fillMaxWidth(), flat = true) {
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 12.dp)) {
+                    val weekdays = listOf("一", "二", "三", "四", "五", "六", "日")
+                    Row(Modifier.fillMaxWidth()) {
+                        weekdays.forEach { wd ->
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                Text(wd, color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val firstDay = month.atDay(1)
+                    val lead = (firstDay.dayOfWeek.value + 6) % 7
+                    val daysInMonth = month.lengthOfMonth()
+                    val today = java.time.LocalDate.now()
+                    val cells = List(lead) { null as java.time.LocalDate? } + (1..daysInMonth).map { month.atDay(it) }
+                    cells.chunked(7).forEach { week ->
+                        Row(Modifier.fillMaxWidth()) {
+                            week.forEach { day ->
+                                Box(Modifier.weight(1f).height(44.dp), contentAlignment = Alignment.Center) {
+                                    if (day != null) {
+                                        val isToday = day == today
+                                        val isSelected = day == selectedDay
+                                        val dayEvents = list?.let { activeOn(day, it) } ?: emptyList()
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable { selectedDay = day }
+                                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                                        ) {
+                                            Box(
+                                                Modifier.size(26.dp).clip(CircleShape)
+                                                    .background(
+                                                        when {
+                                                            isSelected -> PhoneAccent
+                                                            isToday -> PhoneAccent.copy(alpha = 0.16f)
+                                                            else -> Color.Transparent
+                                                        }
+                                                    ),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    "${day.dayOfMonth}",
+                                                    color = when {
+                                                        isSelected -> Color.White
+                                                        isToday -> PhoneAccent
+                                                        else -> PhoneText
+                                                    },
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                )
+                                            }
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                modifier = Modifier.padding(top = 2.dp).height(4.dp),
+                                            ) {
+                                                dayEvents.take(3).forEach { ev ->
+                                                    Box(Modifier.size(4.dp).clip(CircleShape).background(Color(ev.color)))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        }
-        val list = events
-        when {
-            list == null -> PhoneListSkeleton(5)
-            list.isEmpty() -> Column(Modifier.fillMaxSize().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                PhoneEmpty("本月没有官方活动", "左右切换月份看看", R.drawable.app_calendar)
+            Spacer(Modifier.height(14.dp))
+            val selEvents = list?.let { activeOn(selectedDay, it).sortedBy { ev -> ev.beginTime } } ?: emptyList()
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(PhoneAccent))
+                Spacer(Modifier.width(7.dp))
+                Text("${selectedDay.monthValue}月${selectedDay.dayOfMonth}日 · ${selEvents.size} 个活动", color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
-            else -> {
-                val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("MM.dd HH:mm") }
-                val zone = remember { java.time.ZoneId.systemDefault() }
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(list.size, key = { list[it].id }) { idx ->
-                        val ev = list.sortedBy { it.beginTime }[idx]
+            Spacer(Modifier.height(9.dp))
+            if (selEvents.isEmpty()) {
+                PhoneCard(Modifier.fillMaxWidth(), flat = true) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                        Text("这一天没有活动", color = PhoneMuted, fontSize = 12.sp)
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    selEvents.forEach { ev ->
+                        val begin = java.time.Instant.ofEpochMilli(ev.beginTime).atZone(zone)
+                        val end = java.time.Instant.ofEpochMilli(ev.endTime).atZone(zone)
                         PhoneCard(Modifier.fillMaxWidth(), flat = true, onClick = {
                             if (ev.url.isNotBlank()) runCatching {
                                 context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ev.url)))
                             }
                         }) {
                             Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(10.dp).clip(CircleShape).background(Color(ev.color)))
-                                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                                    Text(ev.name, color = PhoneText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    val begin = java.time.Instant.ofEpochMilli(ev.beginTime).atZone(zone).format(fmt)
-                                    val end = java.time.Instant.ofEpochMilli(ev.endTime).atZone(zone).format(fmt)
-                                    Text("$begin - $end", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(52.dp)) {
+                                    Text(begin.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")), color = PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    val where = when {
+                                        selectedDay.isBefore(begin.toLocalDate()) -> "未开始"
+                                        !selectedDay.isBefore(end.toLocalDate().plusDays(1)) -> "已结束"
+                                        else -> "进行中"
+                                    }
+                                    Text(where, color = if (where == "进行中") PhoneGreen else PhoneMuted, fontSize = 9.5.sp, modifier = Modifier.padding(top = 2.dp))
                                 }
-                                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(15.dp))
+                                Box(Modifier.width(1.dp).height(30.dp).background(PhoneLine))
+                                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                                    Text(ev.name, color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${begin.format(fmtFull)} - ${end.format(fmtFull)}", color = PhoneMuted, fontSize = 10.5.sp, modifier = Modifier.padding(top = 3.dp))
+                                }
+                                ImageGlyph(R.drawable.ic_chevron_right, PhoneMuted, Modifier.size(14.dp))
                             }
                         }
                     }
-                    item { Spacer(Modifier.height(16.dp)) }
                 }
             }
+            Spacer(Modifier.height(20.dp))
         }
     }
 }
