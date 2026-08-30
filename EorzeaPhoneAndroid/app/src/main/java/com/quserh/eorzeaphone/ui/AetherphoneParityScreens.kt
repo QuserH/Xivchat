@@ -255,7 +255,7 @@ private fun LightSearchField(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxSize().padding(horizontal = 13.dp),
             ) {
-                ImageGlyph(R.drawable.ic_search, AetherLightMuted, Modifier.size(19.dp))
+                ImageGlyph(R.drawable.ic2_search, AetherLightMuted, Modifier.size(19.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     if (value.isEmpty()) Text(placeholder, color = AetherLightMuted, fontSize = 14.sp)
                     field()
@@ -609,7 +609,7 @@ private fun LightHeader(
         // 左栏固定 46dp，和右栏的下限对称——标题才真的在屏幕正中。
         Box(Modifier.width(46.dp), contentAlignment = Alignment.CenterStart) {
             ImageGlyph(
-                R.drawable.ic_back,
+                R.drawable.ic2_back,
                 AetherPurple,
                 Modifier
                     .graphicsLayer { scaleX = backScale; scaleY = backScale }
@@ -746,7 +746,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 contentAlignment = Alignment.Center,
             ) {
                 ImageGlyph(
-                    R.drawable.ic_search,
+                    R.drawable.ic2_search,
                     if (searching) AetherPurple else AetherLightMuted,
                     Modifier.size(19.dp),
                 )
@@ -755,7 +755,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 Box(
                     Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { overflowOpen = true },
                     contentAlignment = Alignment.Center,
-                ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
                     DropdownMenuItem(text = { Text("新建筛选器") }, onClick = { overflowOpen = false; editTab() })
                     DropdownMenuItem(text = { Text("默认打开的标签") }, onClick = { overflowOpen = false; showDefaultTabDialog = true })
@@ -822,7 +822,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                             )
                         },
                         meta = if (state.localPinned()) {
-                            { ImageGlyph(R.drawable.ic_pin, AetherPurple, Modifier.size(13.dp)) }
+                            { ImageGlyph(R.drawable.ic2_pin, AetherPurple, Modifier.size(13.dp)) }
                         } else null,
                     )
                 }
@@ -847,7 +847,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                 if (state.chatFilters.isEmpty()) {
                     item("empty-tabs") {
                         Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
-                            PhoneEmpty("还没有筛选器", "筛选器可以把指定频道的消息单独收成一条会话", R.drawable.ic_add)
+                            PhoneEmpty("还没有筛选器", "筛选器可以把指定频道的消息单独收成一条会话", R.drawable.ic2_plus)
                         }
                     }
                 } else {
@@ -895,7 +895,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                                 Modifier.size(22.dp).clickable { state.toggleChatFilterNotifications(filter) },
                                                 contentAlignment = Alignment.Center,
                                             ) {
-                                                ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp))
+                                                ImageGlyph(R.drawable.ic2_bell_off, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp))
                                             }
                                         }
                                     }
@@ -965,7 +965,7 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                         val selected = state.defaultChatListTab == key
                         Row(Modifier.fillMaxWidth().clickable { state.defaultChatListTab = key; state.chatListTab = key; showDefaultTabDialog = false }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(label, color = AetherLightText, modifier = Modifier.weight(1f))
-                            ImageGlyph(if (selected) R.drawable.ic_radio_on else R.drawable.ic_radio_off, if (selected) AetherPurple else AetherLightMuted, Modifier.size(22.dp))
+                            ImageGlyph(if (selected) R.drawable.ic2_radio_on else R.drawable.ic2_radio_off, if (selected) AetherPurple else AetherLightMuted, Modifier.size(22.dp))
                         }
                     }
                 }
@@ -1108,7 +1108,7 @@ private fun AetherphoneTabEditor(state: PhoneState, close: () -> Unit) {
                             }) {
                             Box(Modifier.size(9.dp).clip(CircleShape).background(colors[(groupIndex + index + 1) % colors.size]))
                             Text(row.label, color = AetherLightText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(start = 12.dp))
-                            if (chosen) ImageGlyph(R.drawable.ic_check_small, AetherPurple, Modifier.size(20.dp))
+                            if (chosen) ImageGlyph(R.drawable.ic2_check, AetherPurple, Modifier.size(20.dp))
                         }
                     }
                 }
@@ -1209,7 +1209,7 @@ private fun SzjLikeSettingRow(
         ) {
             Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.weight(1f))
             Text(value, color = AetherLightMuted, fontSize = 13.sp, maxLines = 1)
-            ImageGlyph(R.drawable.ic_chevron_down, AetherLightMuted, Modifier.padding(start = 4.dp).size(16.dp))
+            ImageGlyph(R.drawable.ic2_chevron_down, AetherLightMuted, Modifier.padding(start = 4.dp).size(16.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = onPicked) {
             options.forEach { (optLabel, apply) ->
@@ -1446,7 +1446,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 Box(
                     Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { pushChatSub(ChatSub.LocalSettings) },
                     contentAlignment = Alignment.Center,
-                ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
             }
             // chips 和会话列表的"消息/筛选器"共用 LightChip：
             // 原来这里是圆角 14 / 12sp / 6dp padding，那边是圆角 16 / 13sp / 6dp，
@@ -1545,7 +1545,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     // 发送键用矢量箭头："↑" 字符的字重跟着系统字体走，在圆里压不准中线。
                     val canSend = state.activeCharacterOnline && state.chatDraft.isNotBlank()
                     ImageGlyph(
-                        R.drawable.ic_send_arrow,
+                        R.drawable.ic2_send,
                         if (canSend) AetherOnFill else AetherLightMuted,
                         Modifier.size(19.dp),
                     )
@@ -1646,13 +1646,13 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             },
             subtitle = {
                 LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 12.sp, Modifier.weight(1f))
-                if (!conversation.notify) ImageGlyph(R.drawable.ic_muted, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
+                if (!conversation.notify) ImageGlyph(R.drawable.ic2_bell_off, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
             },
             meta = {
                 // 时间在上、角标在下，都贴右边。10sp 是字号下限（9sp 在高密度屏上开始糊）。
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (state.isConversationPinned(conversation)) {
-                        ImageGlyph(R.drawable.ic_pin, AetherLightMuted, Modifier.padding(end = 4.dp).size(11.dp))
+                        ImageGlyph(R.drawable.ic2_pin, AetherLightMuted, Modifier.padding(end = 4.dp).size(11.dp))
                     }
                     conversation.lastTimestamp?.let {
                         Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
@@ -1697,7 +1697,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
 @Composable
 private fun LightRefreshIcon(color: Color, modifier: Modifier = Modifier) {
     Image(
-        painter = painterResource(R.drawable.ic_refresh_cycle),
+        painter = painterResource(R.drawable.ic2_refresh_cycle),
         contentDescription = null,
         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(color),
         modifier = modifier,
@@ -1790,7 +1790,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
                             .clickable { searching = true },
                         contentAlignment = Alignment.Center,
                     ) {
-                        ImageGlyph(R.drawable.ic_search, AetherLightMuted, Modifier.size(19.dp))
+                        ImageGlyph(R.drawable.ic2_search, AetherLightMuted, Modifier.size(19.dp))
                     }
                     Box(
                         Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable {
@@ -1867,7 +1867,7 @@ private fun AetherphoneContactsList(state: PhoneState) {
                     Box(Modifier.fillMaxWidth().padding(top = 50.dp), contentAlignment = Alignment.Center) {
                         when {
                             !state.connected -> PhoneEmpty("还没读到列表", "连接游戏后，好友和小队成员会出现在这里", R.drawable.app_contacts)
-                            query.isNotBlank() -> PhoneEmpty("没有匹配「$query」的人", "换个名字或服务器再试", R.drawable.ic_search)
+                            query.isNotBlank() -> PhoneEmpty("没有匹配「$query」的人", "换个名字或服务器再试", R.drawable.ic2_search)
                             friendsOnly -> PhoneEmpty("好友列表是空的", "在游戏里加好友后点右上角刷新", R.drawable.app_contacts)
                             else -> PhoneEmpty("现在没有小队", "组队之后成员会出现在这里", R.drawable.app_contacts)
                         }
@@ -2061,7 +2061,7 @@ fun AetherphoneContactDetailScreen(state: PhoneState) {
                         Box(
                             Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menuOpen = true },
                             contentAlignment = Alignment.Center,
-                        ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                        ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             if (friend != null) {
                                 DropdownMenuItem(
@@ -2252,7 +2252,7 @@ private fun ShizhijiaLinkCard(
                 }
                 Text(sub, color = AetherLightMuted, fontSize = 11.sp, maxLines = 2)
             }
-            if (clickable) ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp))
+            if (clickable) ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp))
         }
     }
 }
@@ -2377,9 +2377,9 @@ private fun ChatSettingsScreen(state: PhoneState, conversation: ChatConversation
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            ChatSettingRow("查找聊天记录", onClick = onSearchHistory, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("查找聊天记录", onClick = onSearchHistory, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("设为置顶", trailing = { Switch(checked = state.isConversationPinned(conversation), onCheckedChange = { state.toggleConversationPin(conversation) }) })
             ChatSettingDivider()
@@ -2410,9 +2410,9 @@ private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("删除聊天记录", color = PhoneDanger, onClick = { confirmClear = true })
         }
@@ -2436,11 +2436,11 @@ private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversat
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("编辑筛选器", onClick = onEditFilter, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("编辑筛选器", onClick = onEditFilter, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
-            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("设为置顶", trailing = { Switch(checked = state.isConversationPinned(conversation), onCheckedChange = { state.toggleConversationPin(conversation) }) })
             ChatSettingDivider()
@@ -2468,11 +2468,11 @@ private fun ChatAdjustRow(label: String, value: Int, onMinus: () -> Unit, onPlus
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.weight(1f))
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onMinus), contentAlignment = Alignment.Center) {
-                ImageGlyph(R.drawable.ic_remove, AetherPurple, Modifier.size(22.dp))
+                ImageGlyph(R.drawable.ic2_remove, AetherPurple, Modifier.size(22.dp))
             }
             Text("  $value  ", color = AetherLightText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onPlus), contentAlignment = Alignment.Center) {
-                ImageGlyph(R.drawable.ic_add, AetherPurple, Modifier.size(22.dp))
+                ImageGlyph(R.drawable.ic2_plus, AetherPurple, Modifier.size(22.dp))
             }
         }
         if (hint != null) {
@@ -2516,7 +2516,7 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
             PhoneThemeMode.entries.forEachIndexed { index, mode ->
                 Row(Modifier.fillMaxWidth().clickable { state.themeMode = mode }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(mode.label, color = AetherLightText, modifier = Modifier.weight(1f))
-                    ImageGlyph(if (state.themeMode == mode) R.drawable.ic_radio_on else R.drawable.ic_radio_off, if (state.themeMode == mode) AetherPurple else AetherLightMuted, Modifier.size(22.dp))
+                    ImageGlyph(if (state.themeMode == mode) R.drawable.ic2_radio_on else R.drawable.ic2_radio_off, if (state.themeMode == mode) AetherPurple else AetherLightMuted, Modifier.size(22.dp))
                 }
                 if (index < PhoneThemeMode.entries.lastIndex) ChatSettingDivider()
             }
@@ -2535,7 +2535,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
                     modifier = Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp)).background(AetherLightControl)
                         .clickable(onClick = onOpenInput).padding(horizontal = 13.dp),
                 ) {
-                    ImageGlyph(R.drawable.ic_search, AetherLightMuted, Modifier.size(19.dp))
+                    ImageGlyph(R.drawable.ic2_search, AetherLightMuted, Modifier.size(19.dp))
                     Text("搜索聊天记录", color = AetherLightMuted, fontSize = 14.sp)
                 }
             }
@@ -2545,7 +2545,7 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
                 .background(AetherFill).clickable(onClick = onOpenCalendar),
             contentAlignment = Alignment.Center,
         ) {
-            ImageGlyph(R.drawable.ic_calendar, AetherOnFill, Modifier.size(23.dp))
+            ImageGlyph(R.drawable.ic2_calendar, AetherOnFill, Modifier.size(23.dp))
         }
     }
 }
@@ -2575,7 +2575,7 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
             }
             if (query.isNotBlank() && results.isEmpty()) item {
                 Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
-                    PhoneEmpty("没找到「$query」", "换个词，或者少打几个字", R.drawable.ic_search)
+                    PhoneEmpty("没找到「$query」", "换个词，或者少打几个字", R.drawable.ic2_search)
                 }
             }
         }
@@ -2700,7 +2700,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ImageGlyph(R.drawable.ic_warning, PhoneDanger, Modifier.size(13.dp))
+                        ImageGlyph(R.drawable.ic2_warning, PhoneDanger, Modifier.size(13.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(
                             "向${conversation.title.ifBlank { "对方" }}发送悄悄话失败",
@@ -2765,7 +2765,7 @@ private fun ChatCalendarScreen(conversation: ChatConversation, onBack: () -> Uni
     Column(Modifier.fillMaxSize()) {
         LightHeader("聊天记录日历", onBack) {}
         Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            ImageGlyph(R.drawable.ic_chevron_left, AetherPurple, Modifier.clickable {
+            ImageGlyph(R.drawable.ic2_chevron_left, AetherPurple, Modifier.clickable {
                 month -= 1
                 if (month < 0) { month = 11; year -= 1 }
             }.padding(8.dp).size(30.dp))
@@ -2773,7 +2773,7 @@ private fun ChatCalendarScreen(conversation: ChatConversation, onBack: () -> Uni
                 Text("${year}年${month + 1}月", color = AetherLightText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text(if (monthHasMessages) "本月有聊天记录" else "本月无聊天记录", color = if (monthHasMessages) AetherPurple else AetherLightMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
             }
-            ImageGlyph(R.drawable.ic_chevron_right, AetherPurple, Modifier.clickable {
+            ImageGlyph(R.drawable.ic2_chevron_right, AetherPurple, Modifier.clickable {
                 month += 1
                 if (month > 11) { month = 0; year += 1 }
             }.padding(8.dp).size(30.dp))
@@ -2858,7 +2858,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                             contentAlignment = Alignment.Center,
                         ) {
                             ImageGlyph(
-                                R.drawable.ic_search,
+                                R.drawable.ic2_search,
                                 if (searching) AetherPurple else AetherLightMuted,
                                 Modifier.size(19.dp),
                             )
@@ -2868,7 +2868,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                                 if (conversation.key.startsWith("tab:")) pushChatSub(ChatSub.TabSettings) else pushChatSub(ChatSub.Settings)
                             },
                             contentAlignment = Alignment.Center,
-                        ) { ImageGlyph(R.drawable.ic_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
+                        ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
                     }
                 },
             )
@@ -2922,11 +2922,11 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                         LightSearchField(search, { search = it }, "搜索聊天内容", Modifier.weight(1f))
                         Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { jumpToMatch(-1) }, contentAlignment = Alignment.Center) {
-                            ImageGlyph(R.drawable.ic_chevron_up, AetherLightMuted, Modifier.size(20.dp))
+                            ImageGlyph(R.drawable.ic2_chevron_up, AetherLightMuted, Modifier.size(20.dp))
                         }
                         Spacer(Modifier.width(6.dp))
                         Box(Modifier.size(40.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable { jumpToMatch(1) }, contentAlignment = Alignment.Center) {
-                            ImageGlyph(R.drawable.ic_chevron_down, AetherLightMuted, Modifier.size(20.dp))
+                            ImageGlyph(R.drawable.ic2_chevron_down, AetherLightMuted, Modifier.size(20.dp))
                         }
                     }
                 }
@@ -2981,7 +2981,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                     // 发送键用矢量箭头："↑" 字符的字重跟着系统字体走，在圆里压不准中线。
                     val canSend = state.activeCharacterOnline && state.chatDraft.isNotBlank()
                     ImageGlyph(
-                        R.drawable.ic_send_arrow,
+                        R.drawable.ic2_send,
                         if (canSend) AetherOnFill else AetherLightMuted,
                         Modifier.size(19.dp),
                     )
@@ -3533,7 +3533,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                         Modifier.size(40.dp).clip(CircleShape).background(AetherLightControl)
                             .clickable { if (tab == 0) creatingNote = true else creatingReminder = true },
                         contentAlignment = Alignment.Center,
-                    ) { ImageGlyph(R.drawable.ic_add, AetherPurple, Modifier.size(20.dp)) }
+                    ) { ImageGlyph(R.drawable.ic2_plus, AetherPurple, Modifier.size(20.dp)) }
                 }
                 // 边距原来写死 42dp，比下面的列表缩进一大截；改成跟列表同一栏。
                 LightSegmented(
@@ -3549,7 +3549,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                     // 13dp/12dp padding），现在和会话/联系人同一套骨架。
                     if (state.notes.isEmpty()) {
                         Box(Modifier.fillMaxWidth().padding(top = 80.dp), contentAlignment = Alignment.Center) {
-                            PhoneEmpty("还没有备忘录", "点右上角的 + 写第一条", R.drawable.ic_add)
+                            PhoneEmpty("还没有备忘录", "点右上角的 + 写第一条", R.drawable.ic2_plus)
                         }
                     } else {
                         LazyColumn(
@@ -3576,7 +3576,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                 } else {
                     if (state.reminders.isEmpty()) {
                         Box(Modifier.fillMaxWidth().padding(top = 80.dp), contentAlignment = Alignment.Center) {
-                            PhoneEmpty("还没有提醒事项", "点右上角的 + 添加一条", R.drawable.ic_alarm_bell)
+                            PhoneEmpty("还没有提醒事项", "点右上角的 + 添加一条", R.drawable.ic2_bell)
                         }
                     } else {
                         val sorted = state.reminders.sortedBy { it.done }
@@ -3600,7 +3600,7 @@ fun AetherphoneNotesScreen(state: PhoneState) {
                                                 contentAlignment = Alignment.Center,
                                             ) {
                                                 ImageGlyph(
-                                                    if (reminder.done) R.drawable.ic_check_small else R.drawable.ic_radio_off,
+                                                    if (reminder.done) R.drawable.ic2_check else R.drawable.ic2_radio_off,
                                                     if (reminder.done) AetherOnFill else AetherLightMuted,
                                                     Modifier.size(21.dp),
                                                 )
@@ -3709,7 +3709,7 @@ fun AetherphoneJobsScreen(state: PhoneState) {
     ThemedDataFrame {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(28.dp)) }
+                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic2_back, PhoneAccent, Modifier.size(28.dp)) }
                 Text("职业", color = PhoneText, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
                 Box(Modifier.size(38.dp).clip(CircleShape).background(PhoneSurfaceRaised), contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.app_character, PhoneMuted, Modifier.size(19.dp)) }
                 Spacer(Modifier.width(9.dp))
@@ -3770,7 +3770,7 @@ private fun AetherphoneJobRow(job: GameJob, state: PhoneState) {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { menu = true },
                 contentAlignment = Alignment.Center,
-            ) { ImageGlyph(R.drawable.ic_more_horiz, PhoneMuted, Modifier.size(18.dp)) }
+            ) { ImageGlyph(R.drawable.ic2_more_horiz, PhoneMuted, Modifier.size(18.dp)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (job.active) "当前已装备" else if (job.gearsetId >= 0) "装备套装" else "没有装备套装") },
@@ -3802,12 +3802,12 @@ fun AetherphoneActivityScreen(state: PhoneState) {
     ThemedDataFrame {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic_back, PhoneAccent, Modifier.size(28.dp)) }
+                TextButton(onClick = state::back) { ImageGlyph(R.drawable.ic2_back, PhoneAccent, Modifier.size(28.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("活跃度", color = PhoneText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text(listOf(state.profile?.jobName, state.profile?.level?.let { "Lv$it" }, state.profile?.currentWorld).filterNotNull().filter { it.isNotBlank() }.joinToString(" · "), color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                 }
-                ImageGlyph(R.drawable.ic_timer, PhoneMuted, Modifier.size(22.dp))
+                ImageGlyph(R.drawable.ic2_clock, PhoneMuted, Modifier.size(22.dp))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(42.dp).clip(CircleShape).background(PhoneSurfaceRaised)) {
                 listOf("今天" to false, "历史" to true).forEach { (label, value) ->
@@ -3842,10 +3842,10 @@ private fun ActivityToday(activity: GameActivity) {
         }
         item("card") {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(vertical = 6.dp)) {
-                ActivityMetric(R.drawable.ic_bolt, "经验值", "+${compactNumber(activity.todayExpGained)}", progress, ActivityRed, "目前的 ${(progress * 100).toInt()}%")
-                ActivityMetric(R.drawable.ic_swords, "副本", "${activity.todayDutiesCompleted} / 3", adventure, ActivityGreen)
-                ActivityMetric(R.drawable.ic_coin, "获得金币", "+${compactNumber(activity.todayGilEarned)}", fortune, ActivityCyan)
-                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.todayPlaySeconds), null, PhoneInfo)
+                ActivityMetric(R.drawable.ic2_bolt, "经验值", "+${compactNumber(activity.todayExpGained)}", progress, ActivityRed, "目前的 ${(progress * 100).toInt()}%")
+                ActivityMetric(R.drawable.ic2_swords, "副本", "${activity.todayDutiesCompleted} / 3", adventure, ActivityGreen)
+                ActivityMetric(R.drawable.ic2_coin, "获得金币", "+${compactNumber(activity.todayGilEarned)}", fortune, ActivityCyan)
+                ActivityMetric(R.drawable.ic2_clock, "游戏时长", activityDuration(activity.todayPlaySeconds), null, PhoneInfo)
             }
         }
         item("bottom") { Spacer(Modifier.height(22.dp)) }
@@ -3858,10 +3858,10 @@ private fun ActivityHistory(activity: GameActivity) {
         item {
             Text("本次登录", color = PhoneMuted, fontSize = 12.sp)
             Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(PhoneSurface).padding(vertical = 6.dp)) {
-                ActivityMetric(R.drawable.ic_bolt, "经验值", "+${compactNumber(activity.sessionExpGained)}", null, ActivityRed)
-                ActivityMetric(R.drawable.ic_swords, "副本", activity.sessionDutiesCompleted.toString(), null, ActivityGreen)
-                ActivityMetric(R.drawable.ic_coin, "获得金币", "+${compactNumber(activity.sessionGilEarned)}", null, ActivityCyan)
-                ActivityMetric(R.drawable.ic_timer, "游戏时长", activityDuration(activity.sessionPlaySeconds), null, PhoneInfo)
+                ActivityMetric(R.drawable.ic2_bolt, "经验值", "+${compactNumber(activity.sessionExpGained)}", null, ActivityRed)
+                ActivityMetric(R.drawable.ic2_swords, "副本", activity.sessionDutiesCompleted.toString(), null, ActivityGreen)
+                ActivityMetric(R.drawable.ic2_coin, "获得金币", "+${compactNumber(activity.sessionGilEarned)}", null, ActivityCyan)
+                ActivityMetric(R.drawable.ic2_clock, "游戏时长", activityDuration(activity.sessionPlaySeconds), null, PhoneInfo)
             }
         }
         item {
