@@ -1032,13 +1032,14 @@ private fun AncestorCanvas(
                 tree.edges.forEach { e ->
                     val a = rects.getOrNull(e.fromCell) ?: return@forEach
                     val b = rects.getOrNull(e.toCell) ?: return@forEach
-                    // 用户点了任务 → 只亮「它到顶部主线」的那几条线。
+                    // 用户点了任务 → 只亮「它到顶部主线」的那几条线，
+                    // 其余的线压到几乎看不见（Emil: strongest move is delete）。
                     val lit = if (highlightCells.isEmpty()) e.onPath
                               else e.fromCell in highlightCells && e.toCell in highlightCells
                     drawElbow(
                         from = a, to = b,
-                        color = if (lit) cPath else cEdge.copy(alpha = 0.55f),
-                        width = if (lit) 3.2f else 1.6f,
+                        color = if (lit) cPath else cEdge.copy(alpha = if (highlightCells.isEmpty()) 0.55f else 0.16f),
+                        width = if (lit) 3.2f else 1.4f,
                         effect = null,
                         path = elbow,
                     )
@@ -1058,13 +1059,14 @@ private fun AncestorCanvas(
                     val litCell = i in highlightCells
 
                     val isMsqTop = c is AncestorCell.Quest && c.isMsqTop
+                    // 有高亮路线时，非路线卡片整体退暗（含边框），让亮线独行。
+                    val dim = if (highlightCells.isEmpty()) 1f else 0.32f
                     val fill = when {
                         isTarget -> cTarget
-                        // 顶部前置主线：单独一种底，让人一眼看出「链从这里开始」
-                        isMsqTop -> cMsq.copy(alpha = 0.20f)
-                        isRun -> cRun.copy(alpha = 0.16f)
+                        isMsqTop -> cMsq.copy(alpha = 0.20f * dim)
+                        isRun -> cRun.copy(alpha = 0.16f * dim)
                         litCell -> cPath.copy(alpha = 0.13f)
-                        else -> cSurface
+                        else -> cSurface.copy(alpha = dim)
                     }
                     drawRoundRect(fill, r.topLeft, r.size, radius)
                     drawRoundRect(
@@ -1072,7 +1074,7 @@ private fun AncestorCanvas(
                             isTarget || sel -> cPath
                             isMsqTop -> cMsq
                             litCell -> cPath.copy(alpha = 0.55f)
-                            else -> cBorder
+                            else -> cBorder.copy(alpha = dim)
                         },
                         r.topLeft, r.size, radius,
                         style = Stroke((if (isTarget || sel) 2.4f else if (litCell) 1.6f else 1f).dp.toPx()),
