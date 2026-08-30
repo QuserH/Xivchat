@@ -131,7 +131,7 @@ object QuestAncestry {
         val isTop = HashSet<Int>()
         val pre = HashMap<Int, MutableList<Int>>()
         tree.cells.forEachIndexed { i, c ->
-            if (c is AncestorCell.Quest && c.isMsqTop) isTop[i] = true
+            if (c is AncestorCell.Quest && c.isMsqTop) isTop.add(i)
         }
         tree.edges.forEach { pre.getOrPut(it.toCell) { mutableListOf() }.add(it.fromCell) }
         val out = HashSet<Int>()
@@ -141,7 +141,7 @@ object QuestAncestry {
         while (dq.isNotEmpty()) {
             val u = dq.removeFirst()
             // 顶部主线只作为终点亮出来，不再继续展开它的前置。
-            if (isTop[u] && u != fromCell) continue
+            if (u in isTop && u != fromCell) continue
             for (a in pre[u].orEmpty()) if (out.add(a)) dq.add(a)
         }
         return out
