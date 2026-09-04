@@ -231,11 +231,28 @@ class RecipeDb(private val context: Context) {
     }
 
     private fun extractAsset(file: File) {
-        context.assets.open(ASSET).use { input ->
-            GZIPInputStream(input, 1 shl 16).use { gz ->
-                retryIo { file.outputStream().use { gz.copyTo(it) } }
+        // AGP decompresses *.gz assets at packaging time (the APK would silently
+        // carry a plain craft.db instead), so the shipped asset uses the neutral
+        // .dbz extension; keep fallbacks for the names older packaging produced.
+        for (name in listOf("craft.dbz", "craft.db", "craft.db.gz")) {
+            try {
+                retryIo {
+                    context.assets.open(name).use { raw ->
+                        file.outputStream().use { out ->
+                            if (name != "craft.db") {
+                                GZIPInputStream(raw, 1 shl 16).copyTo(out)
+                            } else {
+                                raw.copyTo(out)
+                            }
+                        }
+                    }
+                }
+                return
+            } catch (_: java.io.FileNotFoundException) {
+                // Try the next candidate name.
             }
         }
+        throw java.io.FileNotFoundException("craft.dbz/craft.db/craft.db.gz 均未打包进 APK")
     }
 
     private fun open(file: File) {
@@ -415,7 +432,6 @@ class RecipeDb(private val context: Context) {
 
     companion object {
         const val DB_NAME = "craft.db"
-        const val ASSET = "craft.db.gz"
         const val DEFAULT_URL = "https://5p.nbb.ffxiv.cn/statics/statics.json"
         /** One statement per entry — SQLiteDatabase.execSQL compiles a single statement. */
         val SCHEMA_STATEMENTS = listOf(
