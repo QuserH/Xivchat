@@ -17,12 +17,17 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,13 +39,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.onSizeChanged
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.quserh.eorzeaphone.craft.data.JobCat
 import com.quserh.eorzeaphone.data.ItemIconLoader
 import androidx.compose.ui.platform.LocalContext
 import com.quserh.eorzeaphone.craft.data.CraftItem
@@ -278,30 +292,142 @@ fun QtyStepper(value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier
     }
 }
 
-/** 购物车悬浮按钮（仅配方搜索页与道具详情页显示）。 */
+/**
+ * 圆形购物车悬浮按钮（仅配方搜索页与道具详情页显示；推车图标用 Canvas 画，
+ * 不引入 emoji 或图片资源）。
+ */
 @Composable
 fun CartFab(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Row(
+    Box(
         modifier
-            .shadow(6.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
+            .size(54.dp)
+            .shadow(6.dp, androidx.compose.foundation.shape.CircleShape)
+            .clip(androidx.compose.foundation.shape.CircleShape)
             .background(CraftFill)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Text("购物车", style = CraftType.Row, color = Color.White)
+        Canvas(Modifier.size(26.dp)) {
+            val stroke = 2.dp.toPx()
+            val W = size.width
+            val H = size.height
+            fun x(f: Float) = W * f
+            fun y(f: Float) = H * f
+            // 把手
+            drawLine(Color.White, Offset(x(0.10f), y(0.20f)), Offset(x(0.26f), y(0.20f)), stroke, cap = StrokeCap.Round)
+            // 把手斜杆
+            drawLine(Color.White, Offset(x(0.26f), y(0.20f)), Offset(x(0.40f), y(0.62f)), stroke, cap = StrokeCap.Round)
+            // 车斗上沿
+            drawLine(Color.White, Offset(x(0.30f), y(0.32f)), Offset(x(0.94f), y(0.32f)), stroke, cap = StrokeCap.Round)
+            // 车斗右斜边
+            drawLine(Color.White, Offset(x(0.94f), y(0.32f)), Offset(x(0.80f), y(0.62f)), stroke, cap = StrokeCap.Round)
+            // 车斗下沿
+            drawLine(Color.White, Offset(x(0.40f), y(0.62f)), Offset(x(0.80f), y(0.62f)), stroke, cap = StrokeCap.Round)
+            // 两轮
+            drawCircle(Color.White, radius = stroke * 1.5f, center = Offset(x(0.46f), y(0.82f)))
+            drawCircle(Color.White, radius = stroke * 1.5f, center = Offset(x(0.74f), y(0.82f)))
+        }
         if (count > 0) {
-            Spacer(Modifier.width(6.dp))
             Text(
-                "$count",
+                count.toString(),
                 style = CraftType.Micro,
                 color = CraftFill,
                 modifier = Modifier
+                    .align(Alignment.TopEnd)
                     .clip(androidx.compose.foundation.shape.CircleShape)
                     .background(Color.White)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
             )
         }
+    }
+}
+
+/**
+ * 职业角色标签：坦克=蓝底、奶妈=绿底、战斗职业=红底、通用/生产/采集=灰底；
+ * 制造·采集类别里只有一个职业（主副手工具）时精确显示该职业名。
+ */
+@Composable
+fun RoleTag(cat: JobCat, modifier: Modifier = Modifier) {
+    val single = !cat.label.contains("·")
+    val (label, bg) = when (cat.role) {
+        "tank" -> "坦克" to RoleTank
+        "heal" -> "奶妈" to RoleHeal
+        "battle" -> "战斗职业" to RoleBattle
+        "universal" -> "通用" to RoleNeutral
+        "craft" -> (if (single) cat.label else "能工巧匠") to RoleNeutral
+        "gather" -> (if (single) cat.label else "大地使者") to RoleNeutral
+        else -> cat.label to RoleNeutral
+    }
+    Text(
+        label,
+        style = CraftType.Micro,
+        color = Color.White,
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(bg)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+    )
+}
+
+/**
+ * 左滑删除行：右侧删除层随滑动进度从右往左"填满"整行，填满后松手即删除；
+ * 未填满松手则弹回。滑动 1:1 跟手，可随时反向。
+ */
+@Composable
+fun SwipeDeleteRow(
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val density = LocalDensity.current
+    var rowWidthPx by remember { mutableStateOf(1f) }
+    var offsetX by remember { mutableStateOf(0f) }
+    val scope = rememberCoroutineScope()
+
+    fun settle() {
+        if (rowWidthPx > 0f && -offsetX >= rowWidthPx * 0.92f) {
+            onRemove()
+        } else {
+            scope.launch {
+                androidx.compose.animation.core.animate(
+                    initialValue = offsetX,
+                    targetValue = 0f,
+                ) { v, _ -> offsetX = v }
+            }
+        }
+    }
+
+    Box(modifier.fillMaxWidth().onSizeChanged { rowWidthPx = it.width.toFloat().coerceAtLeast(1f) }) {
+        val reveal = (-offsetX).coerceIn(0f, rowWidthPx)
+        if (reveal > 0.5f) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(with(density) { reveal.toDp() })
+                    .background(CraftDanger),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (reveal > rowWidthPx * 0.35f) {
+                    Text(
+                        if (reveal >= rowWidthPx * 0.92f) "松手删除" else "删除",
+                        style = CraftType.Row, color = Color.White,
+                    )
+                }
+            }
+        }
+        Row(
+            Modifier
+                .offset { IntOffset(offsetX.roundToInt(), 0) }
+                .pointerInput(rowWidthPx) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = { settle() },
+                        onDragCancel = { settle() },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        offsetX = (offsetX + dragAmount).coerceIn(-rowWidthPx, 0f)
+                    }
+                },
+        ) { content() }
     }
 }

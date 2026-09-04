@@ -142,7 +142,7 @@ class RecipeDb(private val context: Context) {
         val esc = "ESCAPE char(92)"
         val rows = mutableListOf<Pair<Int, CraftItem>>()
         val sql = """
-            SELECT id, name_cn, name_jp, name_en, icon, ilv, hq, uicat,
+            SELECT id, name_cn, name_jp, name_en, icon, ilv, hq, uicat, jobs,
                 CASE
                     WHEN name_cn = ? OR name_jp = ? OR name_en = ? THEN 0
                     WHEN name_cn LIKE ? $esc OR name_jp LIKE ? $esc OR name_en LIKE ? $esc THEN 1
@@ -158,7 +158,7 @@ class RecipeDb(private val context: Context) {
             while (cur.moveToNext()) {
                 rows += cur.getInt(8) to CraftItem(
                     cur.getInt(0), cur.getString(1) ?: "", cur.getString(2) ?: "", cur.getString(3) ?: "",
-                    cur.getInt(4), cur.getInt(5), cur.getInt(6) != 0, cur.getInt(7),
+                    cur.getInt(4), cur.getInt(5), cur.getInt(6) != 0, cur.getInt(7), cur.getInt(9),
                 )
             }
         }
@@ -169,15 +169,17 @@ class RecipeDb(private val context: Context) {
     fun item(id: Int): CraftItem? {
         val database = db ?: return null
         return database.rawQuery(
-            "SELECT name_cn, name_jp, name_en, icon, ilv, hq, uicat FROM items WHERE id=?",
+            "SELECT name_cn, name_jp, name_en, icon, ilv, hq, uicat, jobs FROM items WHERE id=?",
             arrayOf(id.toString()),
         ).use { cur ->
             if (cur.moveToFirst()) CraftItem(
                 id, cur.getString(0) ?: "", cur.getString(1) ?: "", cur.getString(2) ?: "",
-                cur.getInt(3), cur.getInt(4), cur.getInt(5) != 0, cur.getInt(6),
+                cur.getInt(3), cur.getInt(4), cur.getInt(5) != 0, cur.getInt(6), cur.getInt(7),
             ) else null
         }
     }
+
+    fun jobCatOf(categoryId: Int): JobCat? = jobcats[categoryId]
 
     fun canCraft(itemId: Int): Boolean = craftableIds.contains(itemId)
 
@@ -255,12 +257,25 @@ class RecipeDb(private val context: Context) {
         throw java.io.FileNotFoundException("craft.dbz/craft.db/craft.db.gz 均未打包进 APK")
     }
 
+    /** jobcat 查询缓存：类别 id -> (标签, 角色)。 */
+    @Volatile
+    var jobcats: Map<Int, JobCat> = emptyMap()
+        private set
+
     private fun open(file: File) {
         val database = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
         // Fail fast on a corrupt file: touch every table the app queries.
         database.rawQuery("SELECT v FROM meta WHERE k='built_at'", null).use { cur ->
             check(cur.moveToFirst()) { "meta 表为空" }
             version = cur.getString(0)
+        }
+        // Old-schema local copies are rejected here, which triggers the repair
+        // path (delete + re-extract from the bundled asset).
+        database.rawQuery("SELECT v FROM meta WHERE k='schema_version'", null).use { cur ->
+            check(cur.moveToFirst() && cur.getString(0) == EXPECTED_SCHEMA) { "配方库版本过旧" }
+        }
+        jobcats = database.rawQuery("SELECT id, label, role FROM jobcat", null).use { cur ->
+            buildMap { while (cur.moveToNext()) put(cur.getInt(0), JobCat(cur.getString(1), cur.getString(2))) }
         }
         craftableIds = database.rawQuery("SELECT DISTINCT item_id FROM recipes", null).use { cur ->
             buildSet { while (cur.moveToNext()) add(cur.getInt(0)) }
@@ -433,6 +448,7 @@ class RecipeDb(private val context: Context) {
     companion object {
         const val DB_NAME = "craft.db"
         const val DEFAULT_URL = "https://5p.nbb.ffxiv.cn/statics/statics.json"
+        const val EXPECTED_SCHEMA = "2"
         /** One statement per entry — SQLiteDatabase.execSQL compiles a single statement. */
         val SCHEMA_STATEMENTS = listOf(
             """

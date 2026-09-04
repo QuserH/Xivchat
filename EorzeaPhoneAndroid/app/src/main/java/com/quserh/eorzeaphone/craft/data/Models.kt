@@ -10,10 +10,15 @@ data class CraftItem(
     val ilv: Int,
     val hq: Boolean,
     val uicat: Int,
+    /** ClassJobCategory id of the equippable jobs (0 = 无职业限制/非装备). */
+    val jobs: Int = 0,
 ) {
     fun name(preferCn: Boolean = true): String =
         if (preferCn && nameCn.isNotBlank()) nameCn else nameJp.ifBlank { nameEn }
 }
+
+/** jobcat 表一行：可穿职业类别的中文标签与角色定位（决定标签底色）。 */
+data class JobCat(val label: String, val role: String)
 
 /** One row of recipes: how a craft job turns materials into [itemId]. */
 data class CraftRecipe(
@@ -88,6 +93,10 @@ data class InventorySnapshot(
 ) {
     fun totalOf(itemId: Int): Int =
         items.filter { it.itemId == itemId.toLong() }.sumOf { it.quantity }
+
+    /** 在背包（容器 0-3）里的数量；其余容器都算"待取回"的来源。 */
+    fun bagOf(itemId: Int): Int =
+        items.filter { it.itemId == itemId.toLong() && it.container in 0L..3L }.sumOf { it.quantity }
 
     /**
      * Where a given item lives, grouped per container, only groups that actually

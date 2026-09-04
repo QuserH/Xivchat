@@ -2,6 +2,7 @@ package com.quserh.eorzeaphone.craft.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -307,7 +308,7 @@ private fun EntryRow(state: CraftAppState, list: CraftList, item: CraftItem, qty
                 style = CraftType.Caption, color = CraftMuted,
             )
         }
-        Text("×$qty", style = CraftType.Headline, color = CraftAccent)
+        QtyStepper(qty, { state.lists.setQty(list.id, item.id, it) })
     }
     if (edit) {
         var qtyText by remember { mutableStateOf(qty.toString()) }
@@ -553,11 +554,7 @@ private fun ResultRow(
                     if (recipe != null) CraftAccent else CraftMuted,
                 )
             }
-            Text(
-                "${item.nameJp} · ${item.nameEn}",
-                style = CraftType.Caption, color = CraftMuted,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            state.db.jobCatOf(item.jobs)?.let { RoleTag(it) }
             if (craftable) {
                 QtyStepper(qty, { qty = it }, Modifier.padding(top = 6.dp))
             }
@@ -629,6 +626,7 @@ fun RecipeDetail(state: CraftAppState, itemId: Int) {
                     ) {
                         MetaChip("${CraftJobs.name(recipe.job)}")
                         MetaChip("Lv${recipe.craftLv}")
+                        state.db.jobCatOf(item.jobs)?.let { RoleTag(it) }
                         if (recipe.stars > 0) MetaChip("★".repeat(recipe.stars))
                         MetaChip("产量 ${recipe.yield}")
                         if (recipe.hq) MetaChip("可 HQ", CraftHq)
@@ -776,48 +774,49 @@ fun InventoryTab(state: CraftAppState) {
                 Box(Modifier.size(8.dp).background(if (state.inventory.items.isNotEmpty()) CraftOk else CraftMuted.copy(alpha = 0.4f), CircleShape))
             }
         }
-        if (state.inventory.items.isEmpty()) {
+        var source by remember { mutableStateOf<String?>(null) }
+        val sourceEntries = remember(source, state.cart.items.size, state.lists.lists.size) {
+            if (source == null) state.cart.items.toList()
+            else state.lists.listById(source ?: "")?.entries?.toList() ?: emptyList()
+        }
+        val calc = remember(sourceEntries, state.inventory, state.dbReady) {
+            state.repo.withHeld(state.repo.aggregate(sourceEntries), state.inventory)
+        }
+        SectionLabel("计算对象")
+        GroupCard {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SourceChip("购物车(${state.cart.items.size})", source == null) { source = null }
+                state.lists.lists.forEach { list ->
+                    SourceChip("${list.name}(${list.entries.size})", source == list.id) { source = list.id }
+                }
+            }
+        }
+        if (calc.basics.isEmpty() && calc.intermediates.isEmpty()) {
             Text(
-                "游戏在线时，这里会同步角色全部容器：背包、装备、军械库、鞍袋、雇员、部队仓库与房屋仓库。",
+                if (source == null) "购物车是空的：去「配方」页加几个道具，或选择一个清单。"
+                else "这个清单还没有道具。",
                 style = CraftType.Callout, color = CraftMuted,
                 modifier = Modifier.padding(20.dp),
             )
         } else {
-            val snapshot = state.inventory
-            val groups = remember(snapshot) { groupTotals(snapshot) }
-            SectionLabel("持有概览")
+            SectionLabel("基础材料（含水晶）")
             GroupCard {
-                groups.forEachIndexed { index, (group, total, kinds) ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(group, style = CraftType.Row, color = CraftText, modifier = Modifier.weight(1f))
-                        Text("$kinds 种 · 共 $total", style = CraftType.Callout, color = CraftMuted)
-                    }
-                    if (index < groups.size - 1) Hairline()
+                calc.basics.forEachIndexed { index, row ->
+                    CalcRow(state, row, state.inventory)
+                    if (index < calc.basics.size - 1) Hairline()
                 }
             }
-            SectionLabel("容器明细")
-            GroupCard {
-                snapshot.items
-                    .groupBy { locKeyOf(it, snapshot) }
-                    .toList()
-                    .sortedBy { it.first.first }
-                    .take(200)
-                    .forEachIndexed { index, (key, rows) ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { state.openLocations(rows.first().itemId) }.padding(horizontal = 16.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(key.second, style = CraftType.Row, color = CraftText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(key.first, style = CraftType.Caption, color = CraftMuted)
-                            }
-                            Text("${rows.sumOf { it.quantity }}", style = CraftType.Callout, color = CraftMuted)
-                        }
-                        if (index < 199) Hairline()
+            if (calc.intermediates.isNotEmpty()) {
+                SectionLabel("中间制品")
+                GroupCard {
+                    calc.intermediates.forEachIndexed { index, row ->
+                        CalcRow(state, row, state.inventory, intermediate = true)
+                        if (index < calc.intermediates.size - 1) Hairline()
                     }
+                }
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -1113,6 +1112,82 @@ private fun SkillButton(skill: SkillDef, craft: CraftState, cooling: Boolean, mo
     }
 }
 
+
+@Composable
+private fun SourceChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = CraftType.Callout,
+        color = if (active) Color.White else CraftText,
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (active) CraftFill else CraftSurface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    )
+}
+
+/**
+ * 库存计算器一行：需要 / 背包 / 待取回 / 缺少。
+ * 待取回 = 还需要但不在背包里的部分（雇员、部队仓库、房屋、鞍袋等）。
+ */
+@Composable
+private fun CalcRow(state: CraftAppState, row: AggregateRow, snapshot: InventorySnapshot, intermediate: Boolean = false) {
+    val held = snapshot.totalOf(row.item.id)
+    val inBag = snapshot.bagOf(row.item.id)
+    val retrieve = minOf((row.need - inBag).coerceAtLeast(0), (held - inBag).coerceAtLeast(0))
+    val missing = (row.need - held).coerceAtLeast(0)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { state.openLocations(row.item.id.toLong()) }
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ItemIcon(row.item, 38.dp)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.item.nameCn,
+                    style = CraftType.Row, color = CraftText,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(6.dp))
+                MetaChip("需 ${row.need}", CraftAccent)
+                if (row.crystal) {
+                    Spacer(Modifier.width(4.dp))
+                    MetaChip("水晶", CraftMuted)
+                } else if (intermediate) {
+                    Spacer(Modifier.width(4.dp))
+                    MetaChip("可制作", CraftOk)
+                }
+            }
+            Text(
+                buildString {
+                    append("背包 $inBag")
+                    append(" · 待取回 $retrieve")
+                    append(" · 缺 $missing")
+                },
+                style = CraftType.Caption,
+                color = CraftMuted,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        if (missing > 0) {
+            Text(
+                "缺 $missing",
+                style = CraftType.Headline, color = CraftDanger,
+            )
+        } else {
+            Text(
+                "够",
+                style = CraftType.Headline, color = CraftOk,
+            )
+        }
+    }
+}
+
 // ---------------------------------------------------------------- 位置弹窗
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1258,51 +1333,53 @@ fun CartPage(state: CraftAppState) {
             items(state.cart.items, key = { it.itemId }) { entry ->
                 val item = state.db.item(entry.itemId)
                 if (item != null) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = {
-                                    if (selecting) {
-                                        selected = if (entry.itemId in selected) selected - entry.itemId else selected + entry.itemId
-                                    }
-                                },
-                                onLongClick = {
-                                    selecting = true
-                                    selected = setOf(entry.itemId)
-                                },
-                            )
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (selecting) {
-                            Checkbox(
-                                checked = entry.itemId in selected,
-                                onCheckedChange = { checked ->
-                                    selected = if (checked) selected + entry.itemId else selected - entry.itemId
-                                },
-                            )
+                    val row: @Composable () -> Unit = {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        if (selecting) {
+                                            selected = if (entry.itemId in selected) selected - entry.itemId else selected + entry.itemId
+                                        }
+                                    },
+                                    onLongClick = {
+                                        selecting = true
+                                        selected = setOf(entry.itemId)
+                                    },
+                                )
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (selecting) {
+                                Checkbox(
+                                    checked = entry.itemId in selected,
+                                    onCheckedChange = { checked ->
+                                        selected = if (checked) selected + entry.itemId else selected - entry.itemId
+                                    },
+                                )
+                            }
+                            ItemIcon(item, 44.dp)
+                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                Text(item.nameCn, style = CraftType.Row, color = CraftText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    item.nameJp + " · " + item.nameEn,
+                                    style = CraftType.Caption, color = CraftMuted,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (!selecting) {
+                                QtyStepper(entry.qty, { state.cart.setQty(entry.itemId, it) })
+                            } else {
+                                Text("×" + entry.qty, style = CraftType.Row, color = CraftAccent)
+                            }
                         }
-                        ItemIcon(item, 44.dp)
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text(item.nameCn, style = CraftType.Row, color = CraftText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                item.nameJp + " · " + item.nameEn,
-                                style = CraftType.Caption, color = CraftMuted,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        if (!selecting) {
-                            QtyStepper(entry.qty, { state.cart.setQty(entry.itemId, it) })
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "移除",
-                                style = CraftType.Callout, color = CraftDanger,
-                                modifier = Modifier.clickable { state.cart.remove(entry.itemId) },
-                            )
-                        } else {
-                            Text("×" + entry.qty, style = CraftType.Row, color = CraftAccent)
-                        }
+                    }
+                    if (selecting) {
+                        row()
+                    } else {
+                        // 左滑填充删除：防误触，填满后松手才移除
+                        SwipeDeleteRow(onRemove = { state.cart.remove(entry.itemId) }) { row() }
                     }
                     Hairline()
                 }

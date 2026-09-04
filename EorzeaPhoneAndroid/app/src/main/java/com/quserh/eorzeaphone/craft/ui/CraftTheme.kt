@@ -59,6 +59,12 @@ val CraftMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVar
 val CraftLine: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
 val CraftHq = Color(0xFF9A6B1F)
 
+// 职业角色标签底色：坦克蓝 / 奶妈绿 / 战斗职业红 / 通用与生产采集灰。
+val RoleTank = Color(0xFF2F6FE4)
+val RoleHeal = Color(0xFF2F8F5B)
+val RoleBattle = Color(0xFFD5484F)
+val RoleNeutral = Color(0xFF6B7280)
+
 private fun lightColors() = lightColorScheme(
     primary = AccentInkLight,
     onPrimary = Color.White,
