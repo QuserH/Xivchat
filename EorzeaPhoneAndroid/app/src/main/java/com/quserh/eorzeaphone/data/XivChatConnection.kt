@@ -120,6 +120,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             23 -> onEvent(PhoneEvent.MarketCategories(XivChatCodec.readMarketCategories(unpacker)))
                             24 -> onEvent(PhoneEvent.MarketMonitor(XivChatCodec.readMarketMonitorEvent(unpacker)))
                             25 -> onEvent(PhoneEvent.Recipe(XivChatCodec.readRecipe(unpacker)))
+                            40 -> onEvent(PhoneEvent.CraftState(XivChatCodec.readCraftState(unpacker)))
                         }
                     } catch (error: Throwable) {
                         onEvent(PhoneEvent.Error("无法解析游戏数据 ($code): ${error.message ?: "未知错误"}"))
@@ -210,6 +211,15 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
 
     /** Request crafting recipe for one item. Reply arrives as PhoneEvent.Recipe. */
     fun requestRecipe(itemId: Int) = sendCommand(XivChatCodec.encodeRecipeRequest(itemId), 17)
+
+    /** Open the recipe note on this recipe row and start synthesizing (op 30). */
+    fun craftStart(recipeId: Int) = sendCommand(XivChatCodec.encodeCraftStart(recipeId), 30)
+
+    /** Use one crafting ability (op 31). Id >= 100000 is a CraftAction row. */
+    fun craftSkill(actionId: Long) = sendCommand(XivChatCodec.encodeCraftSkill(actionId), 31)
+
+    /** Stop receiving remote-craft state (op 32); the in-game craft continues. */
+    fun craftStop() = sendCommand(XivChatCodec.encodeCraftStop(), 32)
 
     fun requestFriends() = sendCommand(XivChatCodec.encodePlayerList(), 6)
     fun requestParty() = sendCommand(XivChatCodec.encodePlayerList(1), 6)

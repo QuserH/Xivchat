@@ -179,6 +179,21 @@ data class GameInventoryItem(
     val retainerId: Long = 0,
 )
 
+data class GameCraftState(
+    val recipeId: Int,
+    val step: Int,
+    val progress: Int,
+    val progressMax: Int,
+    val quality: Int,
+    val qualityMax: Int,
+    val durability: Int,
+    val durabilityMax: Int,
+    val cp: Int,
+    val cpMax: Int,
+    val conditionId: Int,
+    val finished: Boolean,
+)
+
 data class GameInventoryContainer(
     val type: Long,
     val size: Int,
@@ -540,6 +555,9 @@ sealed interface PhoneEvent {
     data class Chat(val message: GameChatMessage) : PhoneEvent
     data class ChatBatch(val messages: List<GameChatMessage>) : PhoneEvent
     data class Inventory(val snapshot: GameInventorySnapshot) : PhoneEvent
+
+    /** Live remote-manual-craft state pushed by the plugin (opcode 40). */
+    data class CraftState(val state: GameCraftState) : PhoneEvent
     data class Wallet(val wallet: GameWallet) : PhoneEvent
     data class Profile(val profile: PlayerProfile) : PhoneEvent
     data class Channel(val channel: Int, val name: String) : PhoneEvent

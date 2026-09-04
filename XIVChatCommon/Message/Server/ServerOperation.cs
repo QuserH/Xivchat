@@ -55,5 +55,12 @@
         /// or not a phone is connected when it fires.
         /// </summary>
         MarketMonitor = 24,
+
+        /// <summary>
+        /// Live state of one manually driven craft (progress/quality/durability/CP),
+        /// pushed a few times per second only to clients that requested the craft
+        /// and have not stopped watching. See <see cref="Client.ClientOperation.CraftStart"/>.
+        /// </summary>
+        CraftState = 40,
     }
 }

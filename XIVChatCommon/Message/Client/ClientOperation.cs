@@ -32,5 +32,14 @@ namespace XIVChatCommon.Message.Client {
         /// plugin buys matching listings itself -- see <see cref="ClientMarketMonitorSync"/>.
         /// </summary>
         MarketMonitorSync = 16,
+
+        /// <summary>Open the recipe note on the given recipe row and start synthesizing it.</summary>
+        CraftStart = 30,
+
+        /// <summary>Use one crafting ability while a remotely driven craft is running.</summary>
+        CraftSkill = 31,
+
+        /// <summary>Stop receiving remote-craft state pushes for this client.</summary>
+        CraftStop = 32,
     }
 }

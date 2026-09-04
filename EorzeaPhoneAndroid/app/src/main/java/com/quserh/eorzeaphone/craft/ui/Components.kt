@@ -298,8 +298,10 @@ fun QtyStepper(value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier
  */
 @Composable
 fun CartFab(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    // 外层不裁切，角标探出圆形边缘也不会被裁掉。
+    Box(modifier.size(58.dp), contentAlignment = Alignment.Center) {
     Box(
-        modifier
+        Modifier
             .size(54.dp)
             .shadow(6.dp, androidx.compose.foundation.shape.CircleShape)
             .clip(androidx.compose.foundation.shape.CircleShape)
@@ -327,19 +329,22 @@ fun CartFab(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
             drawCircle(Color.White, radius = stroke * 1.5f, center = Offset(x(0.46f), y(0.82f)))
             drawCircle(Color.White, radius = stroke * 1.5f, center = Offset(x(0.74f), y(0.82f)))
         }
-        if (count > 0) {
-            Text(
-                count.toString(),
-                style = CraftType.Micro,
-                color = CraftFill,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(Color.White)
-                    .padding(horizontal = 5.dp, vertical = 1.dp),
-            )
-        }
     }
+    if (count > 0) {
+        Text(
+            count.toString(),
+            style = CraftType.Micro,
+            color = CraftFill,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 3.dp, y = (-3).dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Color.White)
+                .border(0.5.dp, CraftLine, androidx.compose.foundation.shape.CircleShape)
+                .padding(horizontal = 5.dp, vertical = 1.dp),
+        )
+    }
+}
 }
 
 /**

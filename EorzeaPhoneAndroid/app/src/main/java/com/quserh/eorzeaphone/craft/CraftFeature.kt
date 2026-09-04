@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.quserh.eorzeaphone.craft.data.CartStore
+import com.quserh.eorzeaphone.craft.data.CraftRecipe
 import com.quserh.eorzeaphone.craft.data.CraftSession
 import com.quserh.eorzeaphone.craft.data.CraftingListStore
 import com.quserh.eorzeaphone.craft.data.InventoryItem
@@ -87,7 +88,7 @@ fun buildCraftSnapshot(items: List<GameInventoryItem>, retainers: List<GameRetai
 @Composable
 fun CraftListAppScreen(phone: PhoneState) {
     val context = LocalContext.current
-    val state = remember { CraftAppState(context) }
+    val state = remember { CraftAppState(context, phone) }
 
     LaunchedEffect(Unit) {
         state.prepareDb()
@@ -114,12 +115,25 @@ sealed class Page {
     data object Cart : Page()
 }
 
-class CraftAppState(context: Context) {
+class CraftAppState(private val context: Context, private val phone: PhoneState) {
     val db = RecipeDb(context)
     val repo = RecipeRepository(db)
     val lists = CraftingListStore(context)
     val cart = CartStore(context)
     val engine = MockCraftEngine(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main))
+
+    /** 远程模式是否可用：终端已连上游戏插件。 */
+    val craftConnected: Boolean get() = phone.isConnected()
+
+    private val craftBridge = object : com.quserh.eorzeaphone.craft.data.CraftRemote {
+        override val lastState: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
+        override fun craftStart(recipeId: Int) = phone.craftStart(recipeId)
+        override fun craftSkill(actionId: Long) = phone.craftSkill(actionId)
+        override fun craftStop() = phone.craftStop()
+    }
+
+    fun startRemoteCraft(recipe: CraftRecipe, itemName: String): CraftSession =
+        engine.startRemote(recipe, itemName, craftBridge)
 
     var inventory by mutableStateOf(InventorySnapshot())
     var dbReady by mutableStateOf(false)

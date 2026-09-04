@@ -158,7 +158,8 @@ data class ListEntry(val itemId: Int, val qty: Int)
 data class CraftList(
     val id: String,
     var name: String,
-    val entries: MutableList<ListEntry> = mutableListOf(),
+    // Snapshot-backed so quantity edits recompose the UI immediately.
+    val entries: androidx.compose.runtime.snapshots.SnapshotStateList<ListEntry> = androidx.compose.runtime.mutableStateListOf(),
     var updatedMs: Long = System.currentTimeMillis(),
 )
 

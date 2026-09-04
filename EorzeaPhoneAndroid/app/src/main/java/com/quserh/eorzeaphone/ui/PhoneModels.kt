@@ -57,6 +57,7 @@ import com.quserh.eorzeaphone.data.ChatStore
 import com.quserh.eorzeaphone.data.market.MarketAlertReceiver
 import com.quserh.eorzeaphone.data.market.MarketRepository
 import com.quserh.eorzeaphone.data.PhoneEvent
+import com.quserh.eorzeaphone.data.GameCraftState
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
 import com.quserh.eorzeaphone.data.ResetReminderReceiver
@@ -930,6 +931,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     val inventoryContainers = mutableStateListOf<GameInventoryContainer>()
     var inventoryLoading by mutableStateOf(false)
     val retainers = mutableStateListOf<GameRetainer>()
+
+    /** Latest remote-manual-craft push (opcode 40), or null while idle. */
+    var craftRemote by mutableStateOf<GameCraftState?>(null)
     var wallet by mutableStateOf<GameWallet?>(null)
     var weather by mutableStateOf<GameWeather?>(null)
     val jobs = mutableStateListOf<GameJob>()
@@ -2596,7 +2600,14 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    fun isConnected(): Boolean = connection.isConnected()
+
     fun sendChat(text: String) = connection.sendChat(text)
+
+    // Remote manual crafting passthroughs (see craft/CraftFeature.kt).
+    fun craftStart(recipeId: Int) = connection.craftStart(recipeId)
+    fun craftSkill(actionId: Long) = connection.craftSkill(actionId)
+    fun craftStop() = connection.craftStop()
 
     fun teleportTo(placeName: String) {
         if (connected && placeName.isNotBlank()) connection.teleport(placeName)
@@ -4000,6 +4011,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
             // current UI has no recipe surface yet, but consuming the event keeps the
             // sealed dispatch exhaustive when a compatible plugin sends opcode 25.
             is PhoneEvent.Recipe -> Unit
+            is PhoneEvent.CraftState -> craftRemote = event.state
             is PhoneEvent.Profile -> {
                 // Set the online core state first so a data-load failure can never
                 // brick the session (which used to leave the app "connecting" forever).

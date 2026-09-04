@@ -28,16 +28,20 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -57,6 +61,7 @@ import com.quserh.eorzeaphone.craft.data.InventoryGroups
 import com.quserh.eorzeaphone.craft.data.InventorySnapshot
 import com.quserh.eorzeaphone.craft.data.InventoryItem
 import com.quserh.eorzeaphone.craft.data.SkillDef
+import com.quserh.eorzeaphone.data.ItemIconLoader
 import kotlinx.coroutines.launch
 import com.quserh.eorzeaphone.craft.ui.CraftAccent
 import com.quserh.eorzeaphone.craft.ui.CraftBackground
@@ -227,15 +232,11 @@ fun ListTab(state: CraftAppState) {
 @Composable
 fun ListDetail(state: CraftAppState, listId: String) {
     val list = state.lists.listById(listId) ?: return
-    val aggregation = remember(list.entries.toList(), state.dbReady) {
-        state.repo.withHeld(state.repo.aggregate(list.entries), state.inventory)
-    }
-    val missing = (aggregation.basics + aggregation.intermediates).count { it.held < it.need }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
             title = list.name,
-            subtitle = if (missing > 0) "还缺 $missing 种材料" else if (list.entries.isEmpty()) "空清单" else "材料齐全，可以做",
+            subtitle = list.entries.size.toString() + " 种道具 · 材料汇总去「库存」页选本清单计算",
             onBack = { state.pop() },
         )
         LazyColumn(Modifier.fillMaxSize()) {
@@ -248,30 +249,6 @@ fun ListDetail(state: CraftAppState, listId: String) {
                             if (item != null) {
                                 EntryRow(state, list, item, entry.qty)
                                 if (index < list.entries.size - 1) Hairline()
-                            }
-                        }
-                    }
-                }
-                item { SectionLabel("基础材料（含水晶）") }
-                item {
-                    GroupCard {
-                        if (aggregation.basics.isEmpty()) {
-                            Text("加入道具后自动汇总", style = CraftType.Callout, color = CraftMuted, modifier = Modifier.padding(16.dp))
-                        } else {
-                            aggregation.basics.forEachIndexed { index, row ->
-                                MaterialRow(state, row)
-                                if (index < aggregation.basics.size - 1) Hairline()
-                            }
-                        }
-                    }
-                }
-                if (aggregation.intermediates.isNotEmpty()) {
-                    item { SectionLabel("中间制品（需要先做出来的）") }
-                    item {
-                        GroupCard {
-                            aggregation.intermediates.forEachIndexed { index, row ->
-                                MaterialRow(state, row, intermediate = true)
-                                if (index < aggregation.intermediates.size - 1) Hairline()
                             }
                         }
                     }
@@ -862,9 +839,10 @@ private fun Pill(text: String, filled: Boolean = false, onClick: () -> Unit) {
 fun WorkbenchTab(state: CraftAppState) {
     var targetItemId by remember { mutableStateOf<Int?>(null) }
     var showPicker by remember { mutableStateOf(false) }
+    var mode by remember { mutableStateOf(0) } // 0 模拟 1 远程
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(title = "手动工作台", subtitle = "材料够就开工；远程驱动待插件端对接")
+        ScreenHeader(title = "手动工作台", subtitle = "模拟练习 · 远程操控游戏内真实制作")
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             SectionLabel("制作目标")
             GroupCard {
@@ -923,6 +901,20 @@ fun WorkbenchTab(state: CraftAppState) {
                     }
                 }
             }
+            SectionLabel("制作方式")
+            Segmented(
+                listOf("模拟制作（离线）", "远程操控（游戏）"),
+                mode,
+                { mode = it },
+                Modifier.padding(horizontal = 16.dp),
+            )
+            if (mode == 1 && !state.craftConnected) {
+                Text(
+                    "远程操控需要终端已连接游戏插件且角色在线；当前不可用，可先用模拟模式。",
+                    style = CraftType.Caption, color = CraftDanger,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
             val session = state.session
             if (session == null) {
                 Pressable(
@@ -930,25 +922,33 @@ fun WorkbenchTab(state: CraftAppState) {
                         val id = targetItemId ?: return@Pressable
                         val recipe = state.repo.defaultRecipe(id) ?: return@Pressable
                         val item = state.db.item(id) ?: return@Pressable
-                        state.session = state.engine.startMock(recipe, item.nameCn)
+                        state.session =
+                            if (mode == 0) state.engine.startMock(recipe, item.nameCn)
+                            else state.startRemoteCraft(recipe, item.nameCn)
                     },
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    enabled = targetItemId != null,
+                    enabled = targetItemId != null && (mode == 0 || state.craftConnected),
                 ) {
                     Text(
-                        if (targetItemId == null) "先选择制作目标" else "开始制作（模拟）",
+                        when {
+                            targetItemId == null -> "先选择制作目标"
+                            mode == 0 -> "开始模拟制作"
+                            else -> "开始远程制作（游戏内）"
+                        },
                         style = CraftType.Headline,
-                        color = if (targetItemId == null) CraftMuted else Color.White,
+                        color = if (targetItemId == null || (mode == 1 && !state.craftConnected)) CraftMuted else Color.White,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (targetItemId == null) CraftSurface else CraftFill)
+                            .background(
+                                if (targetItemId == null || (mode == 1 && !state.craftConnected)) CraftSurface else CraftFill,
+                            )
                             .padding(vertical = 14.dp),
                     )
                 }
                 Text(
-                    "说明：本阶段为模拟会话，用于打磨远程操控的手感与界面。插件端实现 CraftStart / CraftSkill / CraftState 推送后，这里将驱动游戏内真实制作（方案见 docs/集成方案.md）。",
+                    "远程模式：游戏端会自动打开配方笔记并进入制作，进度/品质/耐久实时回传，技能按钮直接驱动游戏内角色施放。",
                     style = CraftType.Caption, color = CraftMuted,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
@@ -1018,6 +1018,7 @@ private fun WorkbenchSession(state: CraftAppState, session: CraftSession) {
     val craft = session.state.collectAsState().value ?: return
     val log by session.log.collectAsState()
     val cooldown by session.cooldown.collectAsState()
+    var infoSkill by remember { mutableStateOf<SkillDef?>(null) }
 
     SectionLabel("制作进度（模拟）")
     GroupCard {
@@ -1050,7 +1051,10 @@ private fun WorkbenchSession(state: CraftAppState, session: CraftSession) {
         skills.chunked(2).forEachIndexed { index, rowSkills ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 rowSkills.forEach { skill ->
-                    SkillButton(skill, craft, cooldown > 0, Modifier.weight(1f)) { session.useSkill(skill) }
+                    SkillButton(
+                        skill, craft, cooldown > 0, Modifier.weight(1f),
+                        onInfo = { infoSkill = skill },
+                    ) { session.useSkill(skill) }
                 }
                 if (rowSkills.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -1074,6 +1078,114 @@ private fun WorkbenchSession(state: CraftAppState, session: CraftSession) {
             }
         }
     }
+    infoSkill?.let { skill ->
+        SkillInfoDialog(skill) { infoSkill = null }
+    }
+}
+
+/** 长按技能弹出的说明卡：游戏同款图标 + 名称 + 消耗 + 效果全文。 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SkillButton(
+    skill: SkillDef,
+    craft: CraftState,
+    cooling: Boolean,
+    modifier: Modifier = Modifier,
+    onInfo: () -> Unit = {},
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    var iconBmp by remember(skill.icon) { mutableStateOf(ItemIconLoader.peek(skill.icon)) }
+    LaunchedEffect(skill.icon) {
+        if (skill.icon > 0 && iconBmp == null) {
+            iconBmp = ItemIconLoader.load(context, skill.icon)
+        }
+    }
+    val disabled = cooling || craft.finished || craft.cp < skill.cp
+    Column(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(CraftSurface)
+            .border(0.5.dp, if (disabled) CraftLine else CraftAccent.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+            .combinedClickable(enabled = !disabled, onClick = onClick, onLongClick = onInfo)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val bmp = iconBmp
+            if (bmp != null) {
+                Image(bmp.asImageBitmap(), null, Modifier.size(26.dp))
+            } else {
+                Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                    Text("·", style = CraftType.Row, color = CraftMuted)
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                skill.cn,
+                style = CraftType.Callout, color = if (disabled) CraftMuted else CraftText,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Text(
+            buildString {
+                if (skill.cp > 0) append("CP ${skill.cp} ")
+                if (skill.durability > 0) append("耐久 -${skill.durability}")
+                if (skill.cp == 0 && skill.durability == 0) append("辅助")
+            },
+            style = CraftType.Micro, color = CraftMuted,
+        )
+    }
+}
+
+@Composable
+private fun SkillInfoDialog(skill: SkillDef, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var iconBmp by remember(skill.id) { mutableStateOf(ItemIconLoader.peek(skill.icon)) }
+    androidx.compose.runtime.LaunchedEffect(skill.icon) {
+        if (skill.icon > 0 && iconBmp == null) {
+            iconBmp = ItemIconLoader.load(context, skill.icon)
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val bmp = iconBmp
+                if (bmp != null) {
+                    Image(bmp.asImageBitmap(), null, Modifier.size(34.dp))
+                    Spacer(Modifier.width(10.dp))
+                }
+                Column {
+                    Text(skill.cn, style = CraftType.Headline, color = CraftText)
+                    Text(skill.en, style = CraftType.Caption, color = CraftMuted)
+                }
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    buildString {
+                        append("消耗：")
+                        if (skill.cp > 0) append("CP ${skill.cp} ")
+                        if (skill.durability > 0) append("耐久 ${skill.durability}")
+                        if (skill.cp == 0 && skill.durability == 0) append("无")
+                    },
+                    style = CraftType.Caption, color = CraftMuted,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(skill.desc, style = CraftType.Body, color = CraftText)
+            }
+        },
+        confirmButton = {
+            Text(
+                "关闭",
+                style = CraftType.Row, color = CraftAccent,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        },
+        containerColor = CraftSurface,
+    )
 }
 
 @Composable

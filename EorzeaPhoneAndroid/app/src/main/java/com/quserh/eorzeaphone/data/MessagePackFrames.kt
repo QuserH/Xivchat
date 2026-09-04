@@ -599,6 +599,36 @@ internal object XivChatCodec {
         packInt(itemId)
     }
 
+    fun encodeCraftStart(recipeId: Int): ByteArray = pack { packArrayHeader(1); packInt(recipeId) }
+    fun encodeCraftSkill(actionId: Long): ByteArray = pack { packArrayHeader(1); packLong(actionId) }
+    fun encodeCraftStop(): ByteArray = pack { packArrayHeader(0) }
+
+    /**
+     * Opcode 40: live state of a remotely driven manual craft. ProgressMax/
+     * QualityMax are 0 when the plugin cannot read them; the client then tracks
+     * the running maximum.
+     */
+    fun readCraftState(unpacker: MessageUnpacker): GameCraftState {
+        unpacker.unpackArrayHeader()
+        unpacker.unpackLong() // updated unix
+        val recipeId = unpacker.unpackInt()
+        val step = unpacker.unpackInt()
+        val progress = unpacker.unpackInt()
+        val progressMax = unpacker.unpackInt()
+        val quality = unpacker.unpackInt()
+        val qualityMax = unpacker.unpackInt()
+        val durability = unpacker.unpackInt()
+        val durabilityMax = unpacker.unpackInt()
+        val cp = unpacker.unpackInt()
+        val cpMax = unpacker.unpackInt()
+        val conditionId = unpacker.unpackInt()
+        val finished = unpacker.unpackBoolean()
+        return GameCraftState(
+            recipeId, step, progress, progressMax, quality, qualityMax,
+            durability, durabilityMax, cp, cpMax, conditionId, finished,
+        )
+    }
+
     fun readRecipe(unpacker: MessageUnpacker): GameRecipe {
         val root = unpacker.unpackValue()
 

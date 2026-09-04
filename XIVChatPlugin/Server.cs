@@ -30,6 +30,9 @@ using XIVChatCommon.Message.Server;
 using Dalamud.Game.Chat;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using FFXIVClientStructs.FFXIV.Client.Game.Group;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Environment;
@@ -96,6 +99,20 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingAvailability = new();
         private readonly ConcurrentQueue<Guid> _awaitingHousingLocation = new();
         private readonly ConcurrentQueue<Guid> _awaitingInventory = new();
+
+        // Remote manual crafting (ops 30-32, push 40). All game access happens on
+        // the framework thread inside ProcessRemoteCraft(); the queues only carry
+        // requests from the network thread.
+        private readonly ConcurrentQueue<Tuple<Guid, int>> _awaitingCraftStart = new();
+        private readonly ConcurrentQueue<Tuple<Guid, uint>> _awaitingCraftSkill = new();
+        private readonly ConcurrentQueue<Guid> _awaitingCraftStop = new();
+        private readonly HashSet<Guid> _craftWatchers = new();
+        private int _craftPhase; // 0 idle, 1 opening recipe, 2 waiting for craft, 3 crafting
+        private int _craftRecipeId;
+        private int _craftDurabilityMax;
+        private long _craftPhaseDeadline;
+        private long _craftLastPush;
+        private string _craftFingerprint = "";
         private readonly ConcurrentQueue<Guid> _awaitingWallet = new();
         private readonly ConcurrentQueue<Guid> _awaitingWeather = new();
         private readonly ConcurrentQueue<Guid> _awaitingJobs = new();
@@ -662,6 +679,8 @@ namespace XIVChatPlugin {
                 client.Queue.Writer.TryWrite(this._lastHousingLocation);
             }
 
+            this.ProcessRemoteCraft();
+
             while (this._awaitingInventory.TryDequeue(out var id)) {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) {
                     continue;
@@ -888,6 +907,143 @@ namespace XIVChatPlugin {
             } catch (Exception ex) {
                 Plugin.Log.Warning($"Could not capture inventory: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Drive one remote manual craft: open the recipe note, fire the synthesize
+        /// callback, then read the Synthesis addon a few times per second and push
+        /// the state to watching clients. Techniques mirror Artisan's pre-crafting
+        /// flow (AgentRecipeNote.OpenRecipeByRecipeId + RecipeNote callback 8).
+        /// </summary>
+        private unsafe void ProcessRemoteCraft() {
+            while (this._awaitingCraftStart.TryDequeue(out var start)) {
+                if (!XIVChatPlugin.Plugin.ClientState.IsLoggedIn || XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
+                    continue;
+                }
+
+                this._craftWatchers.Add(start.Item1);
+                if (this._craftPhase == 0) {
+                    this._craftPhase = 1;
+                    this._craftRecipeId = start.Item2;
+                    this._craftDurabilityMax = 0;
+                    this._craftFingerprint = "";
+                    this._craftPhaseDeadline = Environment.TickCount64 + 12_000;
+                    AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) start.Item2);
+                }
+            }
+
+            while (this._awaitingCraftSkill.TryDequeue(out var skill)) {
+                if (this._craftPhase == 3) {
+                    ActionManager.Instance()->UseAction(
+                        skill.Item2 >= 100000 ? ActionType.CraftAction : ActionType.Action, skill.Item2);
+                }
+            }
+
+            while (this._awaitingCraftStop.TryDequeue(out var stop)) {
+                this._craftWatchers.Remove(stop);
+            }
+
+            if (this._craftWatchers.Count == 0) {
+                this._craftPhase = 0;
+                return;
+            }
+
+            var synthesis = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
+            var crafting = synthesis != null && synthesis->IsVisible;
+
+            switch (this._craftPhase) {
+                case 1: {
+                    var note = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("RecipeNote");
+                    if (note != null && note->IsVisible) {
+                        var atkValues = stackalloc AtkValue[2];
+                        atkValues[0].Type = atkValues[1].Type = AtkValueType.Int;
+                        atkValues[0].Int = 8; // synthesize
+                        atkValues[1].Int = 0;
+                        note->FireCallback(2, atkValues);
+                        this._craftPhase = 2;
+                        this._craftPhaseDeadline = Environment.TickCount64 + 8_000;
+                    } else if (Environment.TickCount64 > this._craftPhaseDeadline) {
+                        this._craftPhase = 0;
+                    }
+
+                    break;
+                }
+                case 2: {
+                    if (crafting) {
+                        this._craftPhase = 3;
+                    } else if (Environment.TickCount64 > this._craftPhaseDeadline) {
+                        this._craftPhase = 0;
+                    }
+
+                    break;
+                }
+                case 3: {
+                    if (!crafting) {
+                        this.BroadcastCraftState(true);
+                        this._craftPhase = 0;
+                        break;
+                    }
+
+                    if (Environment.TickCount64 - this._craftLastPush >= 250) {
+                        this._craftLastPush = Environment.TickCount64;
+                        this.BroadcastCraftState(false);
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        private unsafe void BroadcastCraftState(bool finished) {
+            int progress = 0, quality = 0, durability = 0, step = 0, condition = 0;
+            var addon = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
+            if (addon != null && addon->AtkValuesCount > 15) {
+                var v = addon->AtkValues;
+                progress = (int) v[5].UInt;
+                durability = (int) v[7].UInt;
+                quality = (int) v[9].UInt;
+                condition = (int) v[12].UInt;
+                step = (int) v[15].UInt;
+            }
+
+            if (this._craftDurabilityMax == 0 && durability > 0) {
+                this._craftDurabilityMax = durability;
+            }
+
+            int cp = 0, cpMax = 0;
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
+            if (player != null) {
+                cp = (int) player.CurrentCp;
+                cpMax = (int) player.MaxCp;
+            }
+
+            var state = new ServerCraftState {
+                UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                RecipeId = this._craftRecipeId,
+                Step = step,
+                Progress = progress,
+                ProgressMax = 0,
+                Quality = quality,
+                QualityMax = 0,
+                Durability = durability,
+                DurabilityMax = this._craftDurabilityMax,
+                Cp = cp,
+                CpMax = cpMax,
+                ConditionId = condition,
+                Finished = finished,
+            };
+
+            var fingerprint = $"{state.Step}|{state.Progress}|{state.Quality}|{state.Durability}|{state.Cp}|{state.ConditionId}|{state.Finished}";
+            if (!finished && fingerprint == this._craftFingerprint) {
+                return;
+            }
+
+            this._craftFingerprint = fingerprint;
+            foreach (var watcher in this._craftWatchers) {
+                if (this.Clients.TryGetValue(watcher, out var client) && client.Handshake != null) {
+                    client.Queue.Writer.TryWrite(state);
+                }
             }
         }
 
@@ -3171,6 +3327,25 @@ namespace XIVChatPlugin {
                         Plugin.Log.Error($"Could not send message: {ex.Message}");
                     }
 
+                    break;
+                case ClientOperation.CraftStart: {
+                    var craftStart = MessagePackSerializer.Deserialize<int[]>(payload);
+                    if (craftStart is { Length: > 0 }) {
+                        this._awaitingCraftStart.Enqueue(Tuple.Create(id, craftStart[0]));
+                    }
+
+                    break;
+                }
+                case ClientOperation.CraftSkill: {
+                    var craftSkill = MessagePackSerializer.Deserialize<ulong[]>(payload);
+                    if (craftSkill is { Length: > 0 }) {
+                        this._awaitingCraftSkill.Enqueue(Tuple.Create(id, (uint) craftSkill[0]));
+                    }
+
+                    break;
+                }
+                case ClientOperation.CraftStop:
+                    this._awaitingCraftStop.Enqueue(id);
                     break;
                 case ClientOperation.Message:
                     var clientMessage = ClientMessage.Decode(payload);
