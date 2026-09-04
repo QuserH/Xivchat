@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -232,3 +235,73 @@ fun CraftTabBar(current: Int, onSelect: (Int) -> Unit) {
 }
 
 private val labels = listOf("清单", "配方", "库存", "工作台")
+
+/**
+ * 数量步进器：左减右加、中间数字可直接输入。
+ * The text field keeps its own buffer so clearing it to type a new number does
+ * not fight the external value; parsing only commits valid digits.
+ */
+@Composable
+fun QtyStepper(value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier) {
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    Row(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(CraftSurface)
+            .border(0.5.dp, CraftLine, RoundedCornerShape(8.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(30.dp).clickable { onValue((value - 1).coerceAtLeast(1)) },
+            contentAlignment = Alignment.Center,
+        ) { Text("−", style = CraftType.Headline, color = CraftText) }
+        Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.foundation.text.BasicTextField(
+                value = text,
+                onValueChange = { raw ->
+                    val filtered = raw.filter { it.isDigit() }.take(5)
+                    text = filtered
+                    filtered.toIntOrNull()?.let { onValue(it.coerceAtLeast(1)) }
+                },
+                textStyle = CraftType.Row.copy(textAlign = TextAlign.Center, color = CraftText),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                ),
+                modifier = Modifier.padding(vertical = 5.dp),
+            )
+        }
+        Box(
+            Modifier.size(30.dp).clickable { onValue(value + 1) },
+            contentAlignment = Alignment.Center,
+        ) { Text("＋", style = CraftType.Headline, color = CraftText) }
+    }
+}
+
+/** 购物车悬浮按钮（仅配方搜索页与道具详情页显示）。 */
+@Composable
+fun CartFab(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier
+            .shadow(6.dp, RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(20.dp))
+            .background(CraftFill)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("购物车", style = CraftType.Row, color = Color.White)
+        if (count > 0) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "$count",
+                style = CraftType.Micro,
+                color = CraftFill,
+                modifier = Modifier
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Color.White)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+    }
+}

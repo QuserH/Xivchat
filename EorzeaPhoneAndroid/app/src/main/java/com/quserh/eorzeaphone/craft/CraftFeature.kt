@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.quserh.eorzeaphone.craft.data.CartStore
 import com.quserh.eorzeaphone.craft.data.CraftSession
 import com.quserh.eorzeaphone.craft.data.CraftingListStore
 import com.quserh.eorzeaphone.craft.data.InventoryItem
@@ -53,6 +54,7 @@ import com.quserh.eorzeaphone.craft.ui.CraftTabBar
 import com.quserh.eorzeaphone.craft.ui.CraftText
 import com.quserh.eorzeaphone.craft.ui.CraftTheme
 import com.quserh.eorzeaphone.craft.ui.CraftType
+import com.quserh.eorzeaphone.craft.ui.CartPage
 import com.quserh.eorzeaphone.craft.ui.InventoryTab
 import com.quserh.eorzeaphone.craft.ui.ListDetail
 import com.quserh.eorzeaphone.craft.ui.ListTab
@@ -109,12 +111,14 @@ sealed class Page {
     data object Root : Page()
     data class RecipeDetail(val itemId: Int) : Page()
     data class ListDetail(val listId: String) : Page()
+    data object Cart : Page()
 }
 
 class CraftAppState(context: Context) {
     val db = RecipeDb(context)
     val repo = RecipeRepository(db)
     val lists = CraftingListStore(context)
+    val cart = CartStore(context)
     val engine = MockCraftEngine(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main))
 
     var inventory by mutableStateOf(InventorySnapshot())
@@ -137,6 +141,10 @@ class CraftAppState(context: Context) {
             },
             onError = { dbError = it },
         )
+        if (dbReady) return
+        // Bundled asset missing/corrupt: self-heal once from the live source
+        // automatically — the user should not need to know the repair exists.
+        runCatching { repairDbFromNetwork() }
     }
 
     /** One-tap rebuild from the live 5p statics pack when the local db is unusable. */
@@ -162,6 +170,14 @@ class CraftAppState(context: Context) {
 
     fun openLocations(itemId: Long) {
         locationPopupItem = itemId
+    }
+
+    /** 把购物车里勾选的道具（连同数量）移入指定清单。 */
+    fun moveCartToList(listId: String, itemIds: Set<Int>) {
+        itemIds.forEach { id ->
+            cart.items.firstOrNull { it.itemId == id }?.let { lists.addEntry(listId, it.itemId, it.qty) }
+        }
+        cart.removeIds(itemIds)
     }
 }
 
@@ -199,6 +215,7 @@ fun CraftAppScaffold(state: CraftAppState) {
                     }
                     is Page.RecipeDetail -> RecipeDetail(state, top.itemId)
                     is Page.ListDetail -> ListDetail(state, top.listId)
+                    Page.Cart -> CartPage(state)
                 }
             }
             state.locationPopupItem?.let { itemId ->
