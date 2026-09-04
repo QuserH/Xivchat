@@ -732,6 +732,8 @@ private fun BomRow(state: CraftAppState, node: BomNode, depth: Int) {
 
 @Composable
 fun InventoryTab(state: CraftAppState) {
+    var showCrystals by remember { mutableStateOf(false) }
+    val crystalRows = remember(state.inventory) { state.inventory.crystals() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         ScreenHeader(title = "库存", subtitle = "由终端连接实时同步")
         SectionLabel("库存同步")
@@ -749,6 +751,23 @@ fun InventoryTab(state: CraftAppState) {
                     )
                 }
                 Box(Modifier.size(8.dp).background(if (state.inventory.items.isNotEmpty()) CraftOk else CraftMuted.copy(alpha = 0.4f), CircleShape))
+            }
+        }
+        SectionLabel("水晶")
+        GroupCard {
+            Row(
+                Modifier.fillMaxWidth().clickable { showCrystals = true }.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("水晶库存", style = CraftType.Row, color = CraftText)
+                    Text(
+                        if (crystalRows.isEmpty()) "尚无水晶数据" else "${crystalRows.size} 种水晶 · 点击查看全部",
+                        style = CraftType.Caption, color = CraftMuted,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Text("›", style = CraftType.Row, color = CraftMuted)
             }
         }
         var source by remember { mutableStateOf<String?>(null) }
@@ -798,6 +817,49 @@ fun InventoryTab(state: CraftAppState) {
         }
         Spacer(Modifier.height(24.dp))
     }
+    if (showCrystals) {
+        AlertDialog(
+            onDismissRequest = { showCrystals = false },
+            title = { Text("水晶库存", style = CraftType.Headline) },
+            text = {
+                LazyColumn(Modifier.height(320.dp)) {
+                    if (crystalRows.isEmpty()) {
+                        item { Text("尚无水晶数据", style = CraftType.Callout, color = CraftMuted) }
+                    }
+                    itemsIndexed(crystalRows, key = { _, it -> it.first.itemId }) { _, (row, qty) ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val item = state.db.item(row.itemId.toInt())
+                            if (item != null) {
+                                ItemIcon(item, 36.dp)
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                    Text(item.nameCn, style = CraftType.Row, color = CraftText)
+                                    Text(
+                                        row.name.ifBlank { item.nameJp },
+                                        style = CraftType.Caption, color = CraftMuted,
+                                    )
+                                }
+                            } else {
+                                Column(Modifier.weight(1f)) { Text("物品 ${row.itemId}", style = CraftType.Row, color = CraftText) }
+                            }
+                            Text("×$qty", style = CraftType.Headline, color = CraftAccent)
+                        }
+                        Hairline()
+                    }
+                }
+            },
+            confirmButton = {
+                Text(
+                    "关闭",
+                    style = CraftType.Row, color = CraftMuted,
+                    modifier = Modifier.clickable { showCrystals = false }.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            },
+            containerColor = CraftSurface,
+        )
+    }
 }
 
 // Avoids importing the enum type into every call site above.
@@ -840,88 +902,104 @@ fun WorkbenchTab(state: CraftAppState) {
     var targetItemId by remember { mutableStateOf<Int?>(null) }
     var showPicker by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(0) } // 0 模拟 1 远程
+    var recipeIndex by remember { mutableStateOf(0) }
 
+    val session = state.session
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title = "手动工作台", subtitle = "模拟练习 · 远程操控游戏内真实制作")
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            SectionLabel("制作目标")
-            GroupCard {
-                val item = targetItemId?.let { state.db.item(it) }
-                if (item == null) {
-                    Row(
-                        Modifier.fillMaxWidth().clickable { showPicker = true }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("选择要制作的道具", style = CraftType.Row, color = CraftAccent, modifier = Modifier.weight(1f))
-                        Text("从清单或搜索 ›", style = CraftType.Caption, color = CraftMuted)
-                    }
-                } else {
-                    val recipe = state.repo.defaultRecipe(item.id)
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ItemIcon(item, 48.dp)
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text(item.nameCn, style = CraftType.Headline, color = CraftText)
-                            if (recipe != null) {
-                                Text(
-                                    "${CraftJobs.name(recipe.job)} · Lv${recipe.craftLv}${"★".repeat(recipe.stars)} · 产量${recipe.yield}",
-                                    style = CraftType.Caption, color = CraftMuted,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
-                            }
+        if (session == null) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                SectionLabel("制作目标")
+                GroupCard {
+                    val item = targetItemId?.let { state.db.item(it) }
+                    val recipes = targetItemId?.let { state.db.recipesFor(it) } ?: emptyList()
+                    val recipe = recipes.getOrNull(recipeIndex) ?: recipes.firstOrNull()
+                    if (item == null) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { showPicker = true }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("选择要制作的道具", style = CraftType.Row, color = CraftAccent, modifier = Modifier.weight(1f))
+                            Text("从清单或搜索 ›", style = CraftType.Caption, color = CraftMuted)
                         }
-                        Text("更换", style = CraftType.Callout, color = CraftAccent, modifier = Modifier.clickable { showPicker = true })
-                    }
-                    if (recipe != null) {
-                        Hairline()
-                        SectionLabel("直接材料（做 1 个）", Modifier.padding(vertical = 4.dp))
-                        state.db.materialsFor(recipe.id).forEach { line ->
-                            val mat = state.db.item(line.itemId)
-                            if (mat != null) {
-                                val held = state.inventory.totalOf(mat.id)
-                                Row(
-                                    Modifier.fillMaxWidth().clickable { state.openLocations(mat.id.toLong()) }.padding(horizontal = 16.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    ItemIcon(mat, 30.dp)
+                    } else {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            ItemIcon(item, 48.dp)
+                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                Text(item.nameCn, style = CraftType.Headline, color = CraftText)
+                                if (recipe != null) {
                                     Text(
-                                        mat.nameCn + if (line.isCrystal) "（水晶）" else "",
-                                        style = CraftType.Callout, color = CraftText,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f).padding(start = 10.dp),
-                                    )
-                                    Text(
-                                        "$held / ${line.qty}",
-                                        style = CraftType.Callout,
-                                        color = if (held >= line.qty) CraftOk else CraftDanger,
+                                        "${CraftJobs.name(recipe.job)} · Lv${recipe.craftLv}${"★".repeat(recipe.stars)} · 产量${recipe.yield}",
+                                        style = CraftType.Caption, color = CraftMuted,
+                                        modifier = Modifier.padding(top = 2.dp),
                                     )
                                 }
                             }
+                            Text("更换", style = CraftType.Callout, color = CraftAccent, modifier = Modifier.clickable { showPicker = true })
                         }
-                        Spacer(Modifier.height(8.dp))
+                        // 一个道具多个职业都能做（如修理材料）：手动选职业配方
+                        if (recipes.size > 1) {
+                            Hairline()
+                            SectionLabel("用哪个职业的配方", Modifier.padding(vertical = 4.dp))
+                            Segmented(
+                                recipes.map { CraftJobs.abbr(it.job) },
+                                recipeIndex.coerceAtMost(recipes.size - 1),
+                                { recipeIndex = it },
+                                Modifier.padding(horizontal = 16.dp),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (recipe != null) {
+                            Hairline()
+                            SectionLabel("直接材料（做 1 个）", Modifier.padding(vertical = 4.dp))
+                            state.db.materialsFor(recipe.id).forEach { line ->
+                                val mat = state.db.item(line.itemId)
+                                if (mat != null) {
+                                    val held = state.inventory.totalOf(mat.id)
+                                    Row(
+                                        Modifier.fillMaxWidth().clickable { state.openLocations(mat.id.toLong()) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        ItemIcon(mat, 30.dp)
+                                        Text(
+                                            mat.nameCn + if (line.isCrystal) "（水晶）" else "",
+                                            style = CraftType.Callout, color = CraftText,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f).padding(start = 10.dp),
+                                        )
+                                        Text(
+                                            "$held / ${line.qty}",
+                                            style = CraftType.Callout,
+                                            color = if (held >= line.qty) CraftOk else CraftDanger,
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
                     }
                 }
-            }
-            SectionLabel("制作方式")
-            Segmented(
-                listOf("模拟制作（离线）", "远程操控（游戏）"),
-                mode,
-                { mode = it },
-                Modifier.padding(horizontal = 16.dp),
-            )
-            if (mode == 1 && !state.craftConnected) {
-                Text(
-                    "远程操控需要终端已连接游戏插件且角色在线；当前不可用，可先用模拟模式。",
-                    style = CraftType.Caption, color = CraftDanger,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                SectionLabel("制作方式")
+                Segmented(
+                    listOf("模拟制作（离线）", "远程操控（游戏）"),
+                    mode,
+                    { mode = it },
+                    Modifier.padding(horizontal = 16.dp),
                 )
-            }
-            val session = state.session
-            if (session == null) {
+                if (mode == 1 && !state.craftConnected) {
+                    Text(
+                        "远程操控需要终端已连接游戏插件且角色在线；当前不可用，可先用模拟模式。",
+                        style = CraftType.Caption, color = CraftDanger,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    )
+                }
                 Pressable(
                     onClick = {
                         val id = targetItemId ?: return@Pressable
-                        val recipe = state.repo.defaultRecipe(id) ?: return@Pressable
+                        val recipes = state.db.recipesFor(id)
+                        val recipe = recipes.getOrNull(recipeIndex) ?: state.repo.defaultRecipe(id) ?: return@Pressable
                         val item = state.db.item(id) ?: return@Pressable
+                        // 远程模式插件端会按配方的职业自动切换角色
                         state.session =
                             if (mode == 0) state.engine.startMock(recipe, item.nameCn)
                             else state.startRemoteCraft(recipe, item.nameCn)
@@ -948,18 +1026,22 @@ fun WorkbenchTab(state: CraftAppState) {
                     )
                 }
                 Text(
-                    "远程模式：游戏端会自动打开配方笔记并进入制作，进度/品质/耐久实时回传，技能按钮直接驱动游戏内角色施放。",
+                    "远程模式：游戏端按配方自动切换职业、打开配方笔记并开始制作；进度/品质/耐久实时回传，技能按钮直接驱动游戏内角色施放。",
                     style = CraftType.Caption, color = CraftMuted,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
-            } else {
-                WorkbenchSession(state, session)
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
+        } else {
+            // 制作中：进度置顶固定，技能区独立滚动，滑技能时进度始终可见
+            WorkbenchProgress(session)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                WorkbenchControls(state, session)
+            }
         }
     }
     if (showPicker) {
-        TargetPickerDialog(state, onPick = { targetItemId = it; showPicker = false }, onDismiss = { showPicker = false })
+        TargetPickerDialog(state, onPick = { targetItemId = it; recipeIndex = 0; showPicker = false }, onDismiss = { showPicker = false })
     }
 }
 
@@ -1014,16 +1096,20 @@ private fun TargetPickerDialog(state: CraftAppState, onPick: (Int) -> Unit, onDi
 }
 
 @Composable
-private fun WorkbenchSession(state: CraftAppState, session: CraftSession) {
+private fun WorkbenchProgress(session: CraftSession) {
     val craft = session.state.collectAsState().value ?: return
-    val log by session.log.collectAsState()
-    val cooldown by session.cooldown.collectAsState()
-    var infoSkill by remember { mutableStateOf<SkillDef?>(null) }
-
-    SectionLabel("制作进度（模拟）")
+    SectionLabel("制作进度")
     GroupCard {
         Column(Modifier.padding(16.dp)) {
-            Text(craft.itemName, style = CraftType.Headline, color = CraftText)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(craft.itemName, style = CraftType.Headline, color = CraftText, modifier = Modifier.weight(1f))
+                if (craft.finished) {
+                    MetaChip(
+                        if (craft.progress >= craft.progressMax) "完成" else "已结束",
+                        CraftOk,
+                    )
+                }
+            }
             Spacer(Modifier.height(10.dp))
             CraftMeter("进展", craft.progress, craft.progressMax, CraftOk)
             Spacer(Modifier.height(8.dp))
@@ -1036,47 +1122,57 @@ private fun WorkbenchSession(state: CraftAppState, session: CraftSession) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 MetaChip("第 ${craft.step} 步", CraftMuted)
                 MetaChip(craft.condition, if (craft.condition == "高品质") CraftFill else CraftMuted)
-                if (craft.finished) {
-                    MetaChip(
-                        if (craft.progress >= craft.progressMax) "完成 · HQ ${craft.hqChance}%" else "失败",
-                        CraftDanger,
-                    )
-                }
             }
         }
     }
-    SectionLabel("技能")
-    GroupCard {
-        val skills = CraftSkills.ALL
-        skills.chunked(2).forEachIndexed { index, rowSkills ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowSkills.forEach { skill ->
-                    SkillButton(
-                        skill, craft, cooldown > 0, Modifier.weight(1f),
-                        onInfo = { infoSkill = skill },
-                    ) { session.useSkill(skill) }
+}
+
+@Composable
+private fun WorkbenchControls(state: CraftAppState, session: CraftSession) {
+    val craft = session.state.collectAsState().value ?: return
+    val log by session.log.collectAsState()
+    val cooldown by session.cooldown.collectAsState()
+    var infoSkill by remember { mutableStateOf<SkillDef?>(null) }
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { SectionLabel("技能") }
+        item {
+            GroupCard {
+                val skills = CraftSkills.ALL
+                skills.chunked(2).forEachIndexed { index, rowSkills ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowSkills.forEach { skill ->
+                            SkillButton(
+                                skill, craft, cooldown > 0, Modifier.weight(1f),
+                                onInfo = { infoSkill = skill },
+                            ) { session.useSkill(skill) }
+                        }
+                        if (rowSkills.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                    if (index < (skills.size + 1) / 2 - 1) Hairline()
                 }
-                if (rowSkills.size == 1) Spacer(Modifier.weight(1f))
-            }
-            if (index < (skills.size + 1) / 2 - 1) Hairline()
-        }
-        Hairline()
-        Text(
-            "停止制作",
-            style = CraftType.Row, color = CraftDanger,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { state.engine.stop(); state.session = null }
-                .padding(vertical = 12.dp),
-        )
-    }
-    SectionLabel("记录")
-    GroupCard {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-            log.takeLast(6).reversed().forEach { line ->
-                Text(line, style = CraftType.Caption, color = CraftMuted, modifier = Modifier.padding(vertical = 2.dp))
+                Hairline()
+                Text(
+                    "停止制作",
+                    style = CraftType.Row, color = CraftDanger,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { state.engine.stop(); state.session = null }
+                        .padding(vertical = 12.dp),
+                )
             }
         }
+        item { SectionLabel("记录") }
+        item {
+            GroupCard {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    log.takeLast(6).reversed().forEach { line ->
+                        Text(line, style = CraftType.Caption, color = CraftMuted, modifier = Modifier.padding(vertical = 2.dp))
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
     }
     infoSkill?.let { skill ->
         SkillInfoDialog(skill) { infoSkill = null }

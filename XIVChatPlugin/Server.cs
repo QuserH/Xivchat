@@ -111,6 +111,7 @@ namespace XIVChatPlugin {
         private int _craftRecipeId;
         private int _craftDurabilityMax;
         private long _craftPhaseDeadline;
+        private long _craftNextRetry;
         private long _craftLastPush;
         private string _craftFingerprint = "";
         private readonly ConcurrentQueue<Guid> _awaitingWallet = new();
@@ -216,6 +217,7 @@ namespace XIVChatPlugin {
         private volatile bool _logoutObserved;
 
         private static readonly GameInventoryType[] PhoneInventoryTypes = [
+            GameInventoryType.Crystals,
             GameInventoryType.Inventory1,
             GameInventoryType.Inventory2,
             GameInventoryType.Inventory3,
@@ -928,8 +930,7 @@ namespace XIVChatPlugin {
                     this._craftRecipeId = start.Item2;
                     this._craftDurabilityMax = 0;
                     this._craftFingerprint = "";
-                    this._craftPhaseDeadline = Environment.TickCount64 + 12_000;
-                    AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) start.Item2);
+                    this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
                 }
             }
 
@@ -951,27 +952,41 @@ namespace XIVChatPlugin {
 
             var synthesis = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
             var crafting = synthesis != null && synthesis->IsVisible;
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
+            var currentJob = player == null ? 0u : player.ClassJob.RowId;
 
             switch (this._craftPhase) {
                 case 1: {
-                    var note = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("RecipeNote");
-                    if (note != null && note->IsVisible) {
-                        var atkValues = stackalloc AtkValue[2];
-                        atkValues[0].Type = atkValues[1].Type = AtkValueType.Int;
-                        atkValues[0].Int = 8; // synthesize
-                        atkValues[1].Int = 0;
-                        note->FireCallback(2, atkValues);
-                        this._craftPhase = 2;
-                        this._craftPhaseDeadline = Environment.TickCount64 + 8_000;
-                    } else if (Environment.TickCount64 > this._craftPhaseDeadline) {
-                        this._craftPhase = 0;
+                    // Resolve the recipe's craft job and switch to it first when
+                    // needed; the synthesize callback is a no-op on the wrong job.
+                    var craftType = this.CraftJobOfRecipe((uint) this._craftRecipeId);
+                    var expectedJob = craftType + 8;
+                    if (craftType >= 0 && currentJob != 0 && currentJob != (uint) expectedJob) {
+                        if (this.TryEquipJobGearset((uint) expectedJob)) {
+                            this._craftPhase = 2;
+                            this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
+                            break;
+                        }
                     }
 
+                    AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
+                    this._craftPhase = 3;
+                    this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
+                    this._craftNextRetry = 0;
                     break;
                 }
                 case 2: {
-                    if (crafting) {
+                    // Waiting for the job switch to land.
+                    if (currentJob == 0) {
+                        break;
+                    }
+
+                    var craftType = this.CraftJobOfRecipe((uint) this._craftRecipeId);
+                    if (craftType < 0 || currentJob == (uint) (craftType + 8)) {
+                        AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
                         this._craftPhase = 3;
+                        this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
+                        this._craftNextRetry = 0;
                     } else if (Environment.TickCount64 > this._craftPhaseDeadline) {
                         this._craftPhase = 0;
                     }
@@ -979,6 +994,33 @@ namespace XIVChatPlugin {
                     break;
                 }
                 case 3: {
+                    // Recipe note should be open with our recipe selected; keep
+                    // firing the single-value synthesize callback until the craft
+                    // window appears (the first attempt races the list populating).
+                    if (crafting) {
+                        this._craftPhase = 4;
+                        this._craftPhaseDeadline = 0;
+                        break;
+                    }
+
+                    if (Environment.TickCount64 >= this._craftNextRetry) {
+                        this._craftNextRetry = Environment.TickCount64 + 700;
+                        var note = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("RecipeNote");
+                        if (note != null && note->IsVisible) {
+                            var atkValues = stackalloc AtkValue[1];
+                            atkValues[0].Type = AtkValueType.Int;
+                            atkValues[0].Int = 8; // synthesize the selected recipe
+                            note->FireCallback(1, atkValues);
+                        }
+                    }
+
+                    if (Environment.TickCount64 > this._craftPhaseDeadline) {
+                        this._craftPhase = 0;
+                    }
+
+                    break;
+                }
+                case 4: {
                     if (!crafting) {
                         this.BroadcastCraftState(true);
                         this._craftPhase = 0;
@@ -993,6 +1035,40 @@ namespace XIVChatPlugin {
                     break;
                 }
             }
+        }
+
+        /// <summary>Recipe sheet craft type (0-7) of a recipe row, or -1.</summary>
+        private sbyte CraftJobOfRecipe(uint recipeId) {
+            try {
+                var row = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Recipe>()?.GetRowOrDefault(recipeId);
+                if (row != null) {
+                    return (sbyte) row.Value.CraftType.RowId;
+                }
+            } catch (Exception) {
+            }
+
+            return -1;
+        }
+
+        /// <summary>Equip the first gearset bound to the given ClassJob row id.</summary>
+        private unsafe bool TryEquipJobGearset(uint classJobId) {
+            var module = RaptureGearsetModule.Instance();
+            if (module == null) {
+                return false;
+            }
+
+            foreach (var gearset in module->Entries) {
+                if ((gearset.Flags & RaptureGearsetModule.GearsetFlag.Exists) == 0) {
+                    continue;
+                }
+
+                if ((uint) gearset.ClassJob == classJobId) {
+                    module->EquipGearset(gearset.Id);
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private unsafe void BroadcastCraftState(bool finished) {

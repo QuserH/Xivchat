@@ -94,9 +94,29 @@ data class InventorySnapshot(
     fun totalOf(itemId: Int): Int =
         items.filter { it.itemId == itemId.toLong() }.sumOf { it.quantity }
 
-    /** 在背包（容器 0-3）里的数量；其余容器都算"待取回"的来源。 */
+    /**
+     * 制作视角的"已在手上"数量：背包(0-3) + 水晶袋(11000)。制作消耗时水晶
+     * 自动从水晶袋扣，所以水晶不算"待取回"。
+     */
     fun bagOf(itemId: Int): Int =
-        items.filter { it.itemId == itemId.toLong() && it.container in 0L..3L }.sumOf { it.quantity }
+        items.filter { it.itemId == itemId.toLong() && (it.container in 0L..3L || it.container == 11000L) }
+            .sumOf { it.quantity }
+
+    /** 全部水晶（水晶袋容器 + 经典碎晶/水晶道具 id 2-13），按道具聚合。 */
+    fun crystals(): List<Pair<InventoryItem, Int>> {
+        val byItem = LinkedHashMap<Long, Int>()
+        for (item in items) {
+            val isCrystalSlot = item.container == 11000L
+            val isClassicCrystal = item.itemId in 2L..13L
+            if (!isCrystalSlot && !isClassicCrystal) continue
+            if (item.quantity <= 0) continue
+            byItem[item.itemId] = (byItem[item.itemId] ?: 0) + item.quantity
+        }
+        return byItem.map { (itemId, qty) ->
+            val any = items.first { it.itemId == itemId }
+            any to qty
+        }.sortedBy { it.first.itemId }
+    }
 
     /**
      * Where a given item lives, grouped per container, only groups that actually
@@ -128,6 +148,7 @@ object InventoryGroups {
     const val EQUIPPED = "装备"
     const val ARMOURY = "军械库"
     const val SADDLE = "鞍袋"
+    const val CRYSTAL = "水晶"
     const val RETAINER = "雇员"
     const val COMPANY = "部队仓库"
     const val HOUSING = "房屋仓库"
@@ -140,6 +161,7 @@ object InventoryGroups {
             c == 1000L -> EQUIPPED to "身上装备"
             c in 3200L..3400L || c == 3500L -> ARMOURY to "军械库"
             c in 4000L..4101L -> SADDLE to "陆行鸟鞍袋"
+            c == 11000L -> CRYSTAL to "水晶袋"
             c in 10000L..10006L -> {
                 val name = retainerNames[item.retainerId]
                 RETAINER to (if (name.isNullOrBlank()) "雇员(${item.retainerId})" else name)
