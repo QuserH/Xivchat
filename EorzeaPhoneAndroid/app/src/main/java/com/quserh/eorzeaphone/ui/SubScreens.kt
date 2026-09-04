@@ -1170,6 +1170,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
     val localTypes = inventoryTypesForGroup("bags") + inventoryTypesForGroup("armoury") + inventoryTypesForGroup("saddle") + inventoryTypesForGroup("equipped")
     val total = state.inventory.filter { it.container in localTypes }.sumOf { it.quantity }
     val rows = listOf(
+        Triple("crystals", "水晶", R.drawable.app_wallet) to Color(0xFF7E6BC4),
         Triple("bags", "兵装库与背包", R.drawable.app_inventory) to Color(0xFFC68731),
         Triple("armoury", "兵装库", R.drawable.app_muster) to Color(0xFF4F8DE8),
         Triple("equipped", "已装备", R.drawable.app_jobs) to Color(0xFF48B87D),
@@ -1243,7 +1244,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
 private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
     "bags" -> listOf(0, 1, 2, 3)
     "armoury" -> listOf(3500, 3200, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209, 3300, 3400)
-    "crystals" -> emptyList()
+    "crystals" -> listOf(11000)
     "saddle" -> listOf(4000, 4001, 4100, 4101)
     "equipped" -> listOf(1000)
     "retainers" -> listOf(10000, 10001, 10002, 10003, 10004, 10005, 10006)

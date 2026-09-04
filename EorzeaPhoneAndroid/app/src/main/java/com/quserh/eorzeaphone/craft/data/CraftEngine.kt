@@ -150,7 +150,9 @@ class RemoteCraftSession(
 
     override fun useSkill(skill: SkillDef) {
         val current = state.value ?: return
-        if (current.finished || cooldown.value > 0 || current.cp < skill.cp) return
+        // No local CP gate: the plugin-reported cp can lag or read as 0, and the
+        // game itself rejects unaffordable actions anyway.
+        if (current.finished || cooldown.value > 0) return
         cooldown.value = 2
         bridge.craftSkill(skill.id)
     }

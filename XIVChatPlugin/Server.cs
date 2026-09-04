@@ -926,6 +926,17 @@ namespace XIVChatPlugin {
 
                 this._craftWatchers.Add(start.Item1);
                 if (this._craftPhase == 0) {
+                    var synthOpen = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
+                    if (synthOpen != null && synthOpen->IsVisible) {
+                        // A craft is already in progress in game: just observe it,
+                        // reopening the recipe note would close the window.
+                        this._craftRecipeId = start.Item2;
+                        this._craftDurabilityMax = 0;
+                        this._craftFingerprint = "";
+                        this._craftPhase = 4;
+                        continue;
+                    }
+
                     this._craftPhase = 1;
                     this._craftRecipeId = start.Item2;
                     this._craftDurabilityMax = 0;
@@ -935,7 +946,7 @@ namespace XIVChatPlugin {
             }
 
             while (this._awaitingCraftSkill.TryDequeue(out var skill)) {
-                if (this._craftPhase == 3) {
+                if (this._craftPhase is 3 or 4) {
                     ActionManager.Instance()->UseAction(
                         skill.Item2 >= 100000 ? ActionType.CraftAction : ActionType.Action, skill.Item2);
                 }

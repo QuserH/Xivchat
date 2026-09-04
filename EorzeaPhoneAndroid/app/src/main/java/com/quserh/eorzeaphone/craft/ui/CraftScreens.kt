@@ -1034,6 +1034,16 @@ fun WorkbenchTab(state: CraftAppState) {
             }
         } else {
             // 制作中：进度置顶固定，技能区独立滚动，滑技能时进度始终可见
+            // 游戏内制作结束（含手动完成/中断）后自动退出制作模式。
+            androidx.compose.runtime.LaunchedEffect(session) {
+                session.state.collect { s ->
+                    if (s?.finished == true) {
+                        kotlinx.coroutines.delay(1500)
+                        state.engine.stop()
+                        state.session = null
+                    }
+                }
+            }
             WorkbenchProgress(session)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 WorkbenchControls(state, session)
