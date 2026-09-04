@@ -1,0 +1,252 @@
+package com.quserh.eorzeaphone.craft.data
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/**
+ * One crafting skill usable from the workbench. Ids follow Artisan's Skills enum
+ * (CraftActions base ids >= 100000 / Action ids otherwise) — the plugin side will
+ * resolve per-job action ids exactly like Artisan.SkillActionMap does.
+ */
+data class SkillDef(
+    val id: Long,
+    val cn: String,
+    val en: String,
+    val cp: Int,
+    val durability: Int,
+    val kind: Kind,
+    val note: String,
+) {
+    enum class Kind { PROGRESS, QUALITY, PROGRESS_QUALITY, BUFF, REPAIR, OTHER }
+}
+
+/** Standard endgame crafting skill set (PunishXIV/Artisan RawInformation Skills.cs). */
+object CraftSkills {
+    val ALL: List<SkillDef> = listOf(
+        SkillDef(100001, "基本制作", "Basic Synthesis", 0, 10, SkillDef.Kind.PROGRESS, "120p 进展"),
+        SkillDef(100203, "慎重制作", "Careful Synthesis", 7, 10, SkillDef.Kind.PROGRESS, "180p 进展"),
+        SkillDef(100363, "快速制作", "Rapid Synthesis", 0, 10, SkillDef.Kind.PROGRESS, "500p 进展 / 50% 成功"),
+        SkillDef(100403, "扎实制作", "Groundwork", 18, 20, SkillDef.Kind.PROGRESS, "360p 进展"),
+        SkillDef(100315, "集中制作", "Intensive Synthesis", 6, 10, SkillDef.Kind.PROGRESS, "400p 进展 / 需良好以上"),
+        SkillDef(100379, "专心致志", "Muscle Memory", 6, 10, SkillDef.Kind.PROGRESS, "300p 进展 / 仅首步"),
+        SkillDef(100323, "精细制作", "Delicate Synthesis", 32, 10, SkillDef.Kind.PROGRESS_QUALITY, "进展+加工 各100p"),
+        SkillDef(100002, "基本加工", "Basic Touch", 18, 10, SkillDef.Kind.QUALITY, "100p 品质"),
+        SkillDef(100004, "中级加工", "Standard Touch", 18, 10, SkillDef.Kind.QUALITY, "125p 品质(连击)"),
+        SkillDef(100411, "上级加工", "Advanced Touch", 18, 10, SkillDef.Kind.QUALITY, "150p 品质(连击)"),
+        SkillDef(100227, "节约加工", "Prudent Touch", 25, 5, SkillDef.Kind.QUALITY, "100p 品质 / 耐久-5"),
+        SkillDef(100299, "准备加工", "Preparatory Touch", 40, 20, SkillDef.Kind.QUALITY, "200p 品质 / +1内静"),
+        SkillDef(100128, "集中加工", "Precise Touch", 18, 10, SkillDef.Kind.QUALITY, "150p 品质 / 需良好以上"),
+        SkillDef(100339, "比尔格的祝福", "Byregot's Blessing", 24, 10, SkillDef.Kind.QUALITY, "品质+20×内静层数"),
+        SkillDef(100003, "工匠的妙计", "Master's Mend", 88, 0, SkillDef.Kind.REPAIR, "耐久 +30"),
+        SkillDef(100467, "完美修复", "Immaculate Mend", 112, 0, SkillDef.Kind.REPAIR, "耐久回满"),
+        SkillDef(19297, "虔敬", "Veneration", 18, 0, SkillDef.Kind.BUFF, "4 步内进展效果 +50%"),
+        SkillDef(19004, "改革", "Innovation", 18, 0, SkillDef.Kind.BUFF, "4 步内加工效果 +50%"),
+        SkillDef(260, "阔步", "Great Strides", 32, 0, SkillDef.Kind.BUFF, "下次加工效果翻倍"),
+        SkillDef(100010, "观察", "Observe", 7, 0, SkillDef.Kind.OTHER, "原地不动一步"),
+    )
+
+    fun byId(id: Long): SkillDef? = ALL.firstOrNull { it.id == id }
+}
+
+/** Live state of one craft, published while a session runs. */
+data class CraftState(
+    val recipe: CraftRecipe,
+    val itemName: String,
+    val step: Int,
+    val progress: Int,
+    val progressMax: Int,
+    val quality: Int,
+    val qualityMax: Int,
+    val durability: Int,
+    val durabilityMax: Int,
+    val cp: Int,
+    val cpMax: Int,
+    val condition: String,
+    val finished: Boolean,
+    val hqChance: Int,
+)
+
+/**
+ * Drives one manual crafting session.
+ *
+ * [MockCraftEngine] simulates everything client-side (clearly labelled 模拟 in the
+ * UI). The remote engine that talks to the game through new plugin ops replaces
+ * it after the plugin side lands — same [CraftSession] interface, see
+ * docs/集成方案.md for the op layout.
+ */
+interface CraftSession {
+    val state: StateFlow<CraftState?>
+    val log: StateFlow<List<String>>
+    /** Seconds until the next skill is allowed (the in-game 2.5s GCD). */
+    val cooldown: StateFlow<Int>
+    fun useSkill(skill: SkillDef)
+    fun stop()
+}
+
+class MockCraftEngine(private val scope: CoroutineScope) {
+
+    private var session: CraftSession? = null
+
+    fun current(): CraftSession? = session
+
+    fun startMock(recipe: CraftRecipe, itemName: String): CraftSession {
+        stop()
+        val impl = MockSession(scope, recipe, itemName)
+        session = impl
+        return impl
+    }
+
+    fun stop() {
+        session?.stop()
+        session = null
+    }
+}
+
+private class MockSession(
+    scope: CoroutineScope,
+    recipe: CraftRecipe,
+    itemName: String,
+) : CraftSession {
+
+    // Plausible maxes derived from the recipe level; real values come from the
+    // game once the remote session exists.
+    private val progressMax = 60 + recipe.craftLv * 22
+    private val qualityMax = 400 + recipe.craftLv * 130
+    private val durabilityMax = if (recipe.stars > 0) 70 else 60
+
+    private val inner = MutableStateFlow(
+        CraftState(
+            recipe = recipe, itemName = itemName, step = 0,
+            progress = 0, progressMax = progressMax,
+            quality = 0, qualityMax = qualityMax,
+            durability = durabilityMax, durabilityMax = durabilityMax,
+            cp = 400, cpMax = 400,
+            condition = "稳定", finished = false, hqChance = 1,
+        ),
+    )
+    override val state: StateFlow<CraftState?> = inner
+    override val log = MutableStateFlow(listOf("开始制作：$itemName（模拟）"))
+    override val cooldown = MutableStateFlow(0)
+
+    private var venerationSteps = 0
+    private var innovationSteps = 0
+    private var greatStrides = false
+    private var ticker: Job? = null
+
+    private val pending = mutableListOf<Pair<SkillDef, Long>>()
+    private var worker: Job? = scope.launch {
+        var lastTick = System.currentTimeMillis()
+        while (isActive && inner.value?.finished == false) {
+            delay(100)
+            val now = System.currentTimeMillis()
+            val delta = now - lastTick
+            lastTick = now
+            val cd = cooldown.value
+            if (cd > 0) cooldown.value = (cd - delta / 1000.0).toInt().coerceAtLeast(0)
+            val next = synchronized(pending) { pending.removeFirstOrNull() }
+            if (next != null && cd == 0) apply(next.first)
+        }
+    }
+
+    override fun useSkill(skill: SkillDef) {
+        val current = inner.value ?: return
+        if (current.finished || cooldown.value > 0 || current.cp < skill.cp) return
+        synchronized(pending) { pending.add(skill to System.currentTimeMillis()) }
+    }
+
+    private fun apply(skill: SkillDef) {
+        val current = inner.value ?: return
+        var progress = current.progress
+        var quality = current.quality
+        var durability = current.durability
+        var cp = current.cp
+        var condition = current.condition
+        var hqChance = current.hqChance
+
+        cooldown.value = 2
+
+        // Conditions rotate randomly like the real thing; 良好 boosts quality.
+        val good = condition == "高品质"
+        val qualityBoost = (if (good) 1.5f else 1f) * (if (innovationSteps > 0) 1.5f else 1f) *
+            (if (greatStrides) 2f else 1f)
+        val progressBoost = if (venerationSteps > 0) 1.5f else 1f
+
+        when (skill.kind) {
+            SkillDef.Kind.PROGRESS, SkillDef.Kind.PROGRESS_QUALITY -> {
+                val potency = when (skill.id) {
+                    100001L -> 120f; 100203L -> 180f; 100363L -> if (Math.random() < 0.5) 500f else 0f
+                    100403L -> 360f; 100315L -> 400f; 100379L -> 300f; else -> 100f
+                }
+                progress += (potency * progressBoost).toInt()
+                if (skill.kind == SkillDef.Kind.PROGRESS_QUALITY) quality += (100 * qualityBoost).toInt()
+                durability -= skill.durability
+            }
+            SkillDef.Kind.QUALITY -> {
+                val potency = when (skill.id) {
+                    100002L -> 100f; 100004L -> 125f; 100411L -> 150f
+                    100227L -> 100f; 100299L -> 200f; 100128L -> 150f
+                    100339L -> 100f + 20 * 3; else -> 100f
+                }
+                quality += (potency * qualityBoost).toInt()
+                if (greatStrides) greatStrides = false
+                durability -= skill.durability
+            }
+            SkillDef.Kind.REPAIR -> durability = when (skill.id) {
+                100467L -> durabilityMax
+                else -> (durability + 30).coerceAtMost(durabilityMax)
+            }
+            SkillDef.Kind.BUFF -> when (skill.id) {
+                19297L -> venerationSteps = 4
+                19004L -> innovationSteps = 4
+                260L -> greatStrides = true
+            }
+            SkillDef.Kind.OTHER -> Unit
+        }
+
+        if (skill.id == 19297L) venerationSteps = 4
+        if (skill.id == 19004L) innovationSteps = 4
+        if (venerationSteps > 0) venerationSteps--
+        if (innovationSteps > 0) innovationSteps--
+
+        cp -= skill.cp
+        condition = when {
+            Math.random() < 0.12 -> "高品质"
+            Math.random() < 0.12 -> "低品质"
+            else -> "稳定"
+        }
+
+        val done = progress >= progressMax || durability <= 0
+        if (progress >= progressMax && durability > 0) {
+            hqChance = ((quality.toFloat() / qualityMax) * 100).toInt().coerceIn(1, 100)
+        }
+        val nextState = current.copy(
+            step = current.step + 1,
+            progress = progress.coerceAtLeast(0),
+            quality = quality.coerceIn(0, qualityMax),
+            durability = durability.coerceAtLeast(0),
+            cp = cp.coerceAtLeast(0),
+            condition = condition,
+            finished = done,
+            hqChance = hqChance,
+        )
+        inner.value = nextState
+        val line = when {
+            nextState.finished && progress >= progressMax -> "第${nextState.step}步 ${skill.cn} → 制作完成！HQ 概率 $hqChance%"
+            nextState.finished -> "第${nextState.step}步 ${skill.cn} → 耐久耗尽，制作失败"
+            else -> "第${nextState.step}步 ${skill.cn}（进展 $progress/$progressMax）"
+        }
+        log.value = (log.value + line).takeLast(40)
+    }
+
+    override fun stop() {
+        worker?.cancel()
+        ticker?.cancel()
+        inner.value?.let { if (!it.finished) inner.value = it.copy(finished = true) }
+    }
+}

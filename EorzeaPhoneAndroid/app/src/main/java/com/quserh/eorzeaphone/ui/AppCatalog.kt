@@ -33,6 +33,8 @@ object AppCatalog {
         PhoneAppItem("skywatcher", "天气预报", R.drawable.app_skywatcher, teal),
         PhoneAppItem("collections", "收藏馆", R.drawable.app_collections, blue),
         PhoneAppItem("inventory", "物品栏", R.drawable.app_inventory, orange),
+        // CraftList: 制作清单（配方离线查询 / 清单材料汇总 / 库存位置 / 手动工作台）。
+        PhoneAppItem("crafting", "制作清单", R.drawable.app_notes, Color(0xFFC4A86A)),
         PhoneAppItem("fishing", "捕鱼", R.drawable.app_fishing, teal),
         PhoneAppItem("clock", "时钟", R.drawable.app_clock, coral),
         PhoneAppItem("notes", "备忘录", R.drawable.app_notes, gold),

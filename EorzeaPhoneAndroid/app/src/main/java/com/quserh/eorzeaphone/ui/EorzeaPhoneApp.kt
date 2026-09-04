@@ -199,6 +199,7 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
         PhoneScreen.Chat -> AetherphoneMessagesScreen(state)
         PhoneScreen.App -> when (val appId = target.appId) {
             "inventory" -> androidx.compose.runtime.key(appId) { InventoryScreen(state) }
+            "crafting" -> androidx.compose.runtime.key(appId) { com.quserh.eorzeaphone.craft.CraftListAppScreen(state) }
             "wallet" -> androidx.compose.runtime.key(appId) { WalletScreen(state) }
             "skywatcher" -> androidx.compose.runtime.key(appId) { SkywatcherScreen(state) }
             "character" -> androidx.compose.runtime.key(appId) { AetherphoneActivityScreen(state) }
