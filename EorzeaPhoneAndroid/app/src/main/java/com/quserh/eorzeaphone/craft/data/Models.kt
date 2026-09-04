@@ -95,18 +95,18 @@ data class InventorySnapshot(
         items.filter { it.itemId == itemId.toLong() }.sumOf { it.quantity }
 
     /**
-     * 制作视角的"已在手上"数量：背包(0-3) + 水晶袋(11000)。制作消耗时水晶
-     * 自动从水晶袋扣，所以水晶不算"待取回"。
+     * 制作视角的"已在手上"数量：背包(0-3) + 水晶袋(Dalamud 容器 2001)。
+     * 制作消耗时水晶自动从水晶袋扣，所以水晶不算"待取回"。
      */
     fun bagOf(itemId: Int): Int =
-        items.filter { it.itemId == itemId.toLong() && (it.container in 0L..3L || it.container == 11000L) }
+        items.filter { it.itemId == itemId.toLong() && (it.container in 0L..3L || it.container == InventoryGroups.CRYSTAL_CONTAINER) }
             .sumOf { it.quantity }
 
-    /** 全部水晶（水晶袋容器 + 经典碎晶/水晶道具 id 2-13），按道具聚合。 */
+    /** 全部水晶（水晶袋 2001 / 雇员水晶 12001 / 部队水晶 22001 + 经典 id 2-13），按道具聚合。 */
     fun crystals(): List<Pair<InventoryItem, Int>> {
         val byItem = LinkedHashMap<Long, Int>()
         for (item in items) {
-            val isCrystalSlot = item.container == 11000L
+            val isCrystalSlot = item.container in InventoryGroups.CRYSTAL_CONTAINERS
             val isClassicCrystal = item.itemId in 2L..13L
             if (!isCrystalSlot && !isClassicCrystal) continue
             if (item.quantity <= 0) continue
@@ -144,6 +144,9 @@ data class InventorySnapshot(
 
 /** Container id ranges match the plugin's GameInventoryType snapshot (Server.cs). */
 object InventoryGroups {
+    /** Dalamud GameInventoryType 的水晶容器值（注意与 CS 枚举不同）。 */
+    const val CRYSTAL_CONTAINER = 2001L
+    val CRYSTAL_CONTAINERS = setOf(2001L, 12001L, 22001L)
     const val BAGS = "背包"
     const val EQUIPPED = "装备"
     const val ARMOURY = "军械库"
@@ -161,7 +164,9 @@ object InventoryGroups {
             c == 1000L -> EQUIPPED to "身上装备"
             c in 3200L..3400L || c == 3500L -> ARMOURY to "军械库"
             c in 4000L..4101L -> SADDLE to "陆行鸟鞍袋"
-            c == 11000L -> CRYSTAL to "水晶袋"
+            c == 2001L -> CRYSTAL to "水晶袋"
+            c == 12001L -> RETAINER to "雇员水晶"
+            c == 22001L -> COMPANY to "部队水晶"
             c in 10000L..10006L -> {
                 val name = retainerNames[item.retainerId]
                 RETAINER to (if (name.isNullOrBlank()) "雇员(${item.retainerId})" else name)

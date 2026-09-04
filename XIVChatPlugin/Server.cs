@@ -926,17 +926,6 @@ namespace XIVChatPlugin {
 
                 this._craftWatchers.Add(start.Item1);
                 if (this._craftPhase == 0) {
-                    var synthOpen = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
-                    if (synthOpen != null && synthOpen->IsVisible) {
-                        // A craft is already in progress in game: just observe it,
-                        // reopening the recipe note would close the window.
-                        this._craftRecipeId = start.Item2;
-                        this._craftDurabilityMax = 0;
-                        this._craftFingerprint = "";
-                        this._craftPhase = 4;
-                        continue;
-                    }
-
                     this._craftPhase = 1;
                     this._craftRecipeId = start.Item2;
                     this._craftDurabilityMax = 0;
@@ -968,6 +957,14 @@ namespace XIVChatPlugin {
 
             switch (this._craftPhase) {
                 case 1: {
+                    // Let a leftover synth window (finish animation / manual craft)
+                    // close before touching the recipe note, otherwise opening the
+                    // note while Synthesis is visible closes it mid-flight.
+                    var leftover = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
+                    if (leftover != null && leftover->IsVisible) {
+                        break;
+                    }
+
                     // Resolve the recipe's craft job and switch to it first when
                     // needed; the synthesize callback is a no-op on the wrong job.
                     var craftType = this.CraftJobOfRecipe((uint) this._craftRecipeId);
@@ -1022,6 +1019,10 @@ namespace XIVChatPlugin {
                             atkValues[0].Type = AtkValueType.Int;
                             atkValues[0].Int = 8; // synthesize the selected recipe
                             note->FireCallback(1, atkValues);
+                        } else {
+                            // Note got closed (manual action, another addon, ...):
+                            // reopen it with our recipe instead of timing out.
+                            AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
                         }
                     }
 
