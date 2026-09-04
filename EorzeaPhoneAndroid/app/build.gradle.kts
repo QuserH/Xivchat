@@ -13,8 +13,8 @@ android {
         applicationId = "com.quserh.eorzeaphone"
         minSdk = 24
         targetSdk = 36
-        versionCode = 361
-        versionName = "0.7.341"
+        versionCode = 362
+        versionName = "0.7.342"
     }
 
     buildFeatures {
@@ -68,6 +68,10 @@ android {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
+    // The app ships its own chat-rendering baseline profile. Keep the installer direct
+    // instead of relying on Activity's transitive dependency so that profile delivery
+    // cannot silently disappear after an unrelated dependency upgrade.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.0")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")

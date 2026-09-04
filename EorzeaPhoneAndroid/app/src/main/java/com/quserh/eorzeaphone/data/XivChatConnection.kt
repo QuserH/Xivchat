@@ -95,7 +95,12 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             }
                             5 -> onEvent(PhoneEvent.GameAvailability(XivChatCodec.readAvailability(unpacker)))
                             6 -> XivChatCodec.readChannel(unpacker).let { onEvent(PhoneEvent.Channel(it.first, it.second)) }
-                            7 -> XivChatCodec.readBacklog(unpacker).forEach { m -> onEvent(PhoneEvent.Chat(m)) }
+                            // Deliver catch-up as one immutable batch. Posting one Main
+                            // coroutine per historical row can starve touch/scroll frames
+                            // while a reconnect is replaying the backlog.
+                            7 -> XivChatCodec.readBacklog(unpacker).let { messages ->
+                                if (messages.isNotEmpty()) onEvent(PhoneEvent.ChatBatch(messages))
+                            }
                             8 -> XivChatCodec.readPlayerList(unpacker).let { (type, players) ->
                                 if (type == 1) onEvent(PhoneEvent.PartyList(players)) else onEvent(PhoneEvent.FriendList(players))
                             }

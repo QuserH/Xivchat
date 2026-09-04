@@ -144,6 +144,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
@@ -194,6 +195,8 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private const val CHAT_TEXT_LAYOUT_CACHE_SIZE = 192
 
 private val AetherLightBackground: Color @Composable get() = MaterialTheme.colorScheme.background
 private val AetherLightSurface: Color @Composable get() = MaterialTheme.colorScheme.surface
@@ -1568,6 +1571,10 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 }
             }
             val listState = rememberLazyListState()
+            // One measurer per transcript keeps recent paragraph layouts alive after a
+            // LazyColumn row leaves composition.  A per-bubble measurer discarded its cache
+            // on every fling, so reversing direction shaped the same messages all over again.
+            val chatTextMeasurer = rememberTextMeasurer(cacheSize = CHAT_TEXT_LAYOUT_CACHE_SIZE)
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             val listLaidOut = remember(filter) { mutableStateOf(false) }
             // 进入本地列：等列表首次布局(onGloballyPositioned)后贴底
@@ -1620,7 +1627,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         }
                         val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
                         val groupStart = shouldShowLightSender(msgs, index, normalizedSelfName)
-                        LightChatBubble(author, msg, self, groupStart, state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = groupStart, senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
+                        LightChatBubble(author, msg, self, groupStart, chatTextMeasurer, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = groupStart, senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
                     }
                 }
             }
@@ -3118,6 +3125,9 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             onHidden = { selectionActive = false; selectionEpoch++ },
         )
     }
+    // TextMeasurer owns an LRU of TextLayoutResult.  Keeping it at transcript scope makes
+    // reverse flings reuse recent layouts and also avoids constructing one cache per row.
+    val chatTextMeasurer = rememberTextMeasurer(cacheSize = CHAT_TEXT_LAYOUT_CACHE_SIZE)
     val listLaidOut = remember(conversation.key) { mutableStateOf(false) }
     var anchoredBottom by remember(conversation.key) { mutableStateOf(false) }
     // 进入会话：等列表完成首次布局(onGloballyPositioned)后贴底；只在首次贴底，新消息到达时不得拽回底部
@@ -3184,7 +3194,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 val jobIconId = remember(author, state.party.size, state.friends.size) {
                     if (conversation.category == ChatCategory.Party || conversation.category == ChatCategory.Team) state.jobIconIdFor(author) else 0
                 }
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = jobIconId, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
+                LightChatBubble(author, message, self, showAuthor, chatTextMeasurer, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = jobIconId, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     // 原来是"⚠"字符 + 硬编码红。字符在部分机型上会渲染成彩色 emoji，
                     // 红色也和别处的红各写一个值，统一走 PhoneDanger。
@@ -3541,13 +3551,78 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
 @Composable
 private fun AetherphoneFilterConversationScreen(state: PhoneState, filter: ChatFilter) {
     val clearedUntil = state.clearedUntil(filter.id)
-    val conversation = remember(filter.id, state.chats.size, clearedUntil) {
-        val category = filter.categories.firstOrNull() ?: ChatCategory.Public
-        ChatConversation("tab:${filter.id}", category, filter.label).also { chat ->
-            state.chats.filter { filter.matches(it) && it.timestamp > clearedUntil }.forEach(chat::add)
-        }
+    // Observe only structural edges. The projection keeps one stable conversation and
+    // extends it incrementally; rebuilding a SnapshotStateList with thousands of add()
+    // calls for every live packet used to interrupt a fling in filter conversations.
+    val sourceSize = state.chats.size
+    val sourceFirst = state.chats.firstOrNull()
+    val sourceLast = state.chats.lastOrNull()
+    val projection = remember(filter, clearedUntil) {
+        FilterConversationProjection(filter, clearedUntil, state.chats)
     }
-    AetherphoneConversationScreen(state, conversation)
+    LaunchedEffect(projection, sourceSize, sourceFirst, sourceLast) {
+        projection.sync(state.chats)
+    }
+    AetherphoneConversationScreen(state, projection.conversation)
+}
+
+private class FilterConversationProjection(
+    private val filter: ChatFilter,
+    private val clearedUntil: Long,
+    source: List<GameChatMessage>,
+) {
+    val conversation = ChatConversation(
+        "tab:${filter.id}",
+        filter.categories.firstOrNull() ?: ChatCategory.Public,
+        filter.label,
+    )
+    private var observedFirst: GameChatMessage? = source.firstOrNull()
+    private var observedLast: GameChatMessage? = source.lastOrNull()
+
+    init {
+        conversation.addAll(filtered(source))
+    }
+
+    fun sync(source: List<GameChatMessage>) {
+        val nextFirst = source.firstOrNull()
+        val nextLast = source.lastOrNull()
+        if (source.isEmpty()) {
+            if (conversation.messages.isNotEmpty()) conversation.clear()
+            observedFirst = null
+            observedLast = null
+            return
+        }
+
+        val previousLast = observedLast
+        // A changed first identity means retention trimmed the global prefix. That is
+        // deliberately rare (batched in PhoneState), so a full reconciliation here is
+        // both simpler and cheaper than maintaining per-filter removal indexes.
+        if ((observedFirst != null && nextFirst !== observedFirst) || previousLast == null) {
+            conversation.replaceMessages(filtered(source))
+        } else if (nextLast !== previousLast) {
+            var previousIndex = source.lastIndex
+            while (previousIndex >= 0 && source[previousIndex] !== previousLast) previousIndex--
+            if (previousIndex < 0) {
+                conversation.replaceMessages(filtered(source))
+            } else if (previousIndex < source.lastIndex) {
+                val appended = ArrayList<GameChatMessage>()
+                var projectionTail = conversation.messages.lastOrNull()
+                for (index in previousIndex + 1..source.lastIndex) {
+                    val message = source[index]
+                    if (filter.matches(message) && message.timestamp > clearedUntil && message !== projectionTail) {
+                        appended += message
+                        projectionTail = message
+                    }
+                }
+                conversation.addAll(appended)
+            }
+        }
+        observedFirst = nextFirst
+        observedLast = nextLast
+    }
+
+    private fun filtered(source: List<GameChatMessage>): List<GameChatMessage> =
+        source.filter { filter.matches(it) && it.timestamp > clearedUntil }
 }
 
 private class ChatInk(
@@ -3737,19 +3812,18 @@ private fun LightSenderName(part: String, muted: Color, fontSizeSp: Int, worldIc
     }
 }
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, wrapChars: Int, recipientTitle: String = "", fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true, senderWorldIconId: Int = 0) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, textMeasurer: TextMeasurer, fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true, senderWorldIconId: Int = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
     val timeUnit = (fontSp - 5).coerceAtLeast(9).sp
     val dens = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val selfEmoteFull = self && message.category == ChatCategory.Emote && author.isNotBlank() && !message.text.startsWith(author)
     val rawText = if (selfEmoteFull) author + message.text else message.text
     val cleaned = remember(rawText, author) { cleanChatText(rawText, if (selfEmoteFull) "" else author).ifBlank { " " } }
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
-    val timeText = lightClock(message.timestamp)
+    val timeText = remember(message.timestamp) { lightClock(message.timestamp) }
     // 自己气泡里的时间跟着气泡的字色走。
     val timeColor = if (self) BrandOnBubble.copy(alpha = .72f) else AetherLightMuted
     val baseColor = when {
@@ -3767,15 +3841,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
         Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
             if (showSender) {
                 val tagColor = (message.chunks.firstNotNullOfOrNull { it.foreground }?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: themeAdjustedChannelColor(channelDefaultColor(message.channel)))
-                val authorAnnotated = buildAnnotatedString {
-                    val close = author.indexOf(']')
-                    if (author.startsWith('[') && close >= 0) {
-                        withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) { append(author.substring(0, close + 1)) }
-                        withStyle(SpanStyle(color = AetherLightMuted)) { append(" " + author.substring(close + 1).trimStart()) }
-                    } else {
-                        withStyle(SpanStyle(color = AetherLightMuted)) { append(author) }
-                    }
-                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
                     val worldIcon = (message.senderWorldIcon ?: senderWorldIconId.takeIf { it > 0 })?.takeIf { it > 0 }
                     // 状态图标只渲染可识别的导芽/身份图标（77-95），插件下发其它无法识别的值时不显示，避免名字左侧留空占位
@@ -3821,12 +3886,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) {
                     chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start)
                 }
-                // Measure once to choose the compact bubble width.  The old renderer then
-                // rebuilt an AnnotatedString with per-line letter-spacing and measured it a
-                // second time before Text performed its own layout: three shaping passes for
-                // every row entering a LazyColumn was the main fling-time hotspot. Compose's
-                // native Justify performs the same non-final-line alignment in Text's normal
-                // layout pass, so only this one sizing measurement remains.
                 val layout = remember(ink, measureStyle, contentPx) {
                     textMeasurer.measure(
                         ink.annotated,
@@ -3845,7 +3904,6 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
-                // 时间在最后一行能容纳时内联在行尾；一行放不下才另起一行放气泡右下角
                 val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
@@ -3858,15 +3916,12 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (lineCount == 0) {
                         Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End))
                     } else {
-                        // 单文本主体（两端对齐已烘焙）
                         Box(Modifier.fillMaxWidth()) {
                             Text(ink.annotated, style = displayStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
                             if (canInline) {
-                                // 最后一行能容纳时，时间右对齐到气泡右下角（内联在末行）
                                 Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 1.dp))
                             }
                         }
-                        // 塞不进时间&非空消息：时间另起一行右下
                         if (!canInline) {
                             Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                         }

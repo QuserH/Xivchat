@@ -538,6 +538,7 @@ sealed interface PhoneEvent {
     data class FriendList(val friends: List<GameFriend>) : PhoneEvent
     data class PartyList(val members: List<GameFriend>) : PhoneEvent
     data class Chat(val message: GameChatMessage) : PhoneEvent
+    data class ChatBatch(val messages: List<GameChatMessage>) : PhoneEvent
     data class Inventory(val snapshot: GameInventorySnapshot) : PhoneEvent
     data class Wallet(val wallet: GameWallet) : PhoneEvent
     data class Profile(val profile: PlayerProfile) : PhoneEvent

@@ -87,6 +87,9 @@ private const val CHAT_CACHE_GZIP_PREFIX = "gz1:"
 // Chat packets can arrive in bursts.  Coalesce their persistence work so JSON/GZIP and
 // SQLite preparation never competes with the main-thread LazyColumn during a fling.
 private const val CHAT_SAVE_DEBOUNCE_MS = 180L
+private const val CHAT_RETENTION_PRUNE_MIN_BATCH = 64
+private const val CHAT_RETENTION_PRUNE_MAX_BATCH = 256
+private const val CHAT_MAIN_BATCH_SIZE = 16
 
 private fun encodeChatCacheJson(json: String): String = runCatching {
     val bytes = java.io.ByteArrayOutputStream()
@@ -306,6 +309,22 @@ class ChatConversation(
         _lastMessage = message
     }
 
+    fun addAll(incoming: Collection<GameChatMessage>) {
+        if (incoming.isEmpty()) return
+        messages.addAll(incoming)
+        _lastMessage = incoming.last()
+    }
+
+    fun replaceMessages(incoming: Collection<GameChatMessage>) {
+        messages.clear()
+        if (incoming.isEmpty()) {
+            _lastMessage = null
+        } else {
+            messages.addAll(incoming)
+            _lastMessage = incoming.last()
+        }
+    }
+
     fun clear() {
         messages.clear()
         _lastMessage = null
@@ -462,14 +481,50 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
-    private fun chatCursorTs(charKey: String): Long = charPrefs(charKey).getLong("chatLastSeenTs", 0L)
+    // The cursor advances for every packet. Writing SharedPreferences for each one queues
+    // XML work on the UI path and can compete with a chat fling. Keep the hot value in
+    // memory and persist it together with the already-debounced chat snapshot instead.
+    private val chatCursorCache = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
+
+    private fun chatCursorTs(charKey: String): Long {
+        if (charKey.isBlank()) return 0L
+        return chatCursorCache.computeIfAbsent(charKey) {
+            java.util.concurrent.atomic.AtomicLong(charPrefs(charKey).getLong("chatLastSeenTs", 0L))
+        }.get()
+    }
 
     private fun updateChatCursorTs(ts: Long) {
         if (ts <= 0L) return
-        val store = charPrefs()
-        if (ts > store.getLong("chatLastSeenTs", 0L)) {
-            store.edit().putLong("chatLastSeenTs", ts).apply()
+        val charKey = activeCharacterKey
+        if (charKey.isBlank()) return
+        chatCursorCache.computeIfAbsent(charKey) {
+            java.util.concurrent.atomic.AtomicLong(charPrefs(charKey).getLong("chatLastSeenTs", 0L))
+        }.updateAndGet { previous -> maxOf(previous, ts) }
+    }
+
+    /** Binary-search the timestamp-ordered hot window instead of scanning up to 50k rows. */
+    private fun containsChatDuplicate(message: GameChatMessage, timestampWindowMs: Long = 0L): Boolean {
+        if (chats.isEmpty()) return false
+        val window = timestampWindowMs.coerceAtLeast(0L)
+        val lowerTimestamp = message.timestamp - window
+        val upperTimestamp = message.timestamp + window
+        var low = 0
+        var high = chats.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (chats[middle].timestamp < lowerTimestamp) low = middle + 1 else high = middle
         }
+        var index = low
+        while (index < chats.size) {
+            val candidate = chats[index]
+            if (candidate.timestamp > upperTimestamp) break
+            if (candidate.channel == message.channel &&
+                candidate.sender == message.sender &&
+                candidate.text == message.text
+            ) return true
+            index++
+        }
+        return false
     }
 
     // 切换角色后重载会话级状态（置顶/免打扰/隐藏/重命名/频道名/清空时间点/会话图标）
@@ -1076,6 +1131,8 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     // overwrite the cleared cache or reinsert a row.
     private val chatStorageMutex = Mutex()
     private var chatSaveJob: Job? = null
+    private var chatBatchDepth = 0
+    private var chatBatchSavePending = false
     // Generations are per character. A fast A -> B -> A switch must not invalidate
     // A's already-captured flush merely because B had an empty/newer snapshot.
     private val chatStorageGenerations = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
@@ -1383,10 +1440,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var teleportStatus by mutableStateOf(TeleportStatus.Idle)
     private var teleportTimer: kotlinx.coroutines.Job? = null
     private var purchaseTimer: kotlinx.coroutines.Job? = null
+    private val chatDispatchLock = Any()
+    private val queuedChatMessages = java.util.ArrayDeque<GameChatMessage>()
+    private var chatDispatchScheduled = false
     private val connection = XivChatConnection(
         context = context,
         scope = scope,
-        onEvent = { event -> scope.launch(Dispatchers.Main.immediate) { handle(event) } },
+        onEvent = ::dispatchConnectionEvent,
         onSendFailure = { scope.launch(Dispatchers.Main.immediate) { markPendingSendsFailed() } },
     )
     private val notifier = PhoneNotifier(context.applicationContext)
@@ -1396,6 +1456,51 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private var gameAvailability = false
     private var availabilityEpoch = 0
     private val pendingCharacterEvents = mutableListOf<PhoneEvent>()
+
+    /**
+     * Network decoding happens on IO. Coalesce chat bursts before crossing to Main and
+     * drain at most a small batch per dispatcher turn, so catch-up/combat spam cannot
+     * monopolise the same thread that is handling a finger drag.
+     */
+    private fun dispatchConnectionEvent(event: PhoneEvent) {
+        when (event) {
+            is PhoneEvent.Chat -> enqueueChatMessages(listOf(event.message))
+            is PhoneEvent.ChatBatch -> enqueueChatMessages(event.messages)
+            else -> scope.launch(Dispatchers.Main.immediate) { handle(event) }
+        }
+    }
+
+    private fun enqueueChatMessages(messages: Collection<GameChatMessage>) {
+        if (messages.isEmpty()) return
+        var startDrain = false
+        synchronized(chatDispatchLock) {
+            queuedChatMessages.addAll(messages)
+            if (!chatDispatchScheduled) {
+                chatDispatchScheduled = true
+                startDrain = true
+            }
+        }
+        if (startDrain) {
+            scope.launch(Dispatchers.Main.immediate) { drainChatMessages() }
+        }
+    }
+
+    private suspend fun drainChatMessages() {
+        while (true) {
+            val batch = synchronized(chatDispatchLock) {
+                if (queuedChatMessages.isEmpty()) {
+                    chatDispatchScheduled = false
+                    null
+                } else {
+                    List(minOf(CHAT_MAIN_BATCH_SIZE, queuedChatMessages.size)) {
+                        queuedChatMessages.removeFirst()
+                    }
+                }
+            } ?: return
+            handle(if (batch.size == 1) PhoneEvent.Chat(batch[0]) else PhoneEvent.ChatBatch(batch))
+            kotlinx.coroutines.yield()
+        }
+    }
 
     private fun markFriendsOffline() {
         var changed = false
@@ -1586,7 +1691,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             msgs.sortBy { it.timestamp }
             val visibleMsgs = msgs.filterNot(::isMessageSuppressedByClearMarker)
             for (m in visibleMsgs) {
-                if (chats.none { it.timestamp == m.timestamp && it.channel == m.channel && it.sender == m.sender && it.text == m.text }) {
+                if (!containsChatDuplicate(m)) {
                     chats.add(m)
                     getOrCreateConversation(m)?.add(m)
                 }
@@ -1598,7 +1703,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             // value from SharedPreferences.
             val needsCompaction = !stored.startsWith(CHAT_CACHE_GZIP_PREFIX) ||
                 msgs.size > CHAT_HOT_CACHE_LIMIT + CHAT_HOT_SYSTEM_LIMIT || visibleMsgs.size != msgs.size
-            val pruned = pruneChatRetention()
+            val pruned = pruneChatRetention(force = true)
             if (pruned || needsCompaction) saveChats()
             // SQLite is the durable source for conversational history.  A freshly
             // migrated install, a failed SharedPreferences write, or a corrupt hot
@@ -1646,19 +1751,13 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
                 val visible = rows.filterNot(::isMessageSuppressedByClearMarker)
                 for (message in visible) {
-                    if (chats.none {
-                            it.timestamp == message.timestamp &&
-                                it.channel == message.channel &&
-                                it.sender == message.sender &&
-                                it.text == message.text
-                        }
-                    ) {
+                    if (!containsChatDuplicate(message)) {
                         chats.add(message)
                         getOrCreateConversation(message)?.add(message)
                     }
                 }
                 if (visible.isNotEmpty()) {
-                    pruneChatRetention()
+                    pruneChatRetention(force = true)
                     // Re-save only the compact hot window.  appendNewer is
                     // idempotent, so this does not duplicate the recovered rows in
                     // the durable archive.
@@ -1683,33 +1782,35 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         }
     }
 
-    // 超出保留上限时，从内存与各会话中一并移除最旧消息
-    private fun pruneChatRetention(): Boolean {
+    // 超出保留上限时，从内存与各会话中一并移除最旧消息。实时收包留一个很小的
+    // 滞回区，避免列表刚到上限后每来一条就 front-trim 一次：那会迫使 LazyColumn
+    // 重建整份 key 表。启动恢复时 force=true，仍严格遵守用户设置的上限。
+    private fun pruneChatRetention(force: Boolean = false): Boolean {
         val limit = chatRetentionLimit
         if (limit <= 0 || chats.size <= limit) return false
+        val overflow = chats.size - limit
+        val pruneBatch = (limit / 20).coerceIn(
+            CHAT_RETENTION_PRUNE_MIN_BATCH,
+            CHAT_RETENTION_PRUNE_MAX_BATCH,
+        )
+        if (!force && overflow < pruneBatch) return false
         val dropCount = chats.size - limit
-        val dropped = chats.subList(0, dropCount).toList()
+        val dropped = java.util.Collections.newSetFromMap(
+            java.util.IdentityHashMap<GameChatMessage, Boolean>(),
+        )
+        for (index in 0 until dropCount) dropped.add(chats[index])
 
-        // The old implementation built a data-class HashSet and scanned every message in
-        // every conversation whenever the global list crossed the limit. Once a 5,000-row
-        // history was full this happened on every incoming packet and competed directly
-        // with LazyColumn flings on the main thread. A message belongs to at most one
-        // conversation, so remove it from that conversation by identity; emotes can be
-        // routed to a tell key, hence the small fallback search.
-        dropped.forEach { message ->
-            val likely = conversationByKey[message.conversationKey()]
-            var owner = likely?.takeIf { conversation ->
-                conversation.messages.any { it === message }
+        // All lists are timestamp ordered, so globally-old rows are a prefix of each
+        // conversation. Remove each prefix once instead of searching every conversation
+        // separately for every dropped row (dropCount × transcript length).
+        conversations.forEach { conversation ->
+            var prefix = 0
+            while (prefix < conversation.messages.size && conversation.messages[prefix] in dropped) {
+                prefix++
             }
-            if (owner == null) {
-                owner = conversations.firstOrNull { conversation ->
-                    conversation.messages.any { it === message }
-                }
-            }
-            owner?.let { conversation ->
-                val index = conversation.messages.indexOfFirst { it === message }
-                if (index >= 0) conversation.messages.removeAt(index)
-                if (conversation.messages.isEmpty()) conversation.clear()
+            if (prefix > 0) {
+                if (prefix == conversation.messages.size) conversation.clear()
+                else conversation.messages.removeRange(0, prefix)
             }
         }
         chats.removeRange(0, dropCount)
@@ -1725,6 +1826,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
      * while it still belongs to the old character.  Normal chat events stay debounced.
      */
     private fun saveChats(immediate: Boolean = false) {
+        if (!immediate && chatBatchDepth > 0) {
+            chatBatchSavePending = true
+            return
+        }
         val characterKey = activeCharacterKey
         val generation = nextChatStorageGeneration(characterKey)
         chatSaveJob?.cancel()
@@ -1780,6 +1885,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         // characters or changes the setting while this IO job is queued, the batch
         // must still be written and trimmed for the same character/limit pair.
         val archiveLimit = chatRetentionLimit
+        val cursorSnapshot = chatCursorTs(archiveKey)
         scope.launch(Dispatchers.IO) {
             chatStorageMutex.withLock {
                 // A newer mutation owns the next snapshot.  Skipping an older
@@ -1833,7 +1939,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 }
                 // Gzip keeps the XML value small even for messages with rich chunks;
                 // the prefix makes this backward-compatible with old plain JSON.
-                chatStore.edit().putString("chatCache", encodeChatCacheJson(arr.toString())).apply()
+                chatStore.edit()
+                    .putString("chatCache", encodeChatCacheJson(arr.toString()))
+                    .putLong("chatLastSeenTs", cursorSnapshot)
+                    .apply()
 
             // 长效档案，附加能力。顺序即优先级：老路径（上一行）先落地，档案后追加，
             // 所以档案怎么失败都不影响 chatCache 那次写入。
@@ -3536,7 +3645,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
 
     private fun handleImpl(event: PhoneEvent) {
         val scopedEvent = when (event) {
-            is PhoneEvent.FriendList, is PhoneEvent.Chat, is PhoneEvent.Inventory,
+            is PhoneEvent.FriendList, is PhoneEvent.Chat, is PhoneEvent.ChatBatch, is PhoneEvent.Inventory,
             is PhoneEvent.Wallet, is PhoneEvent.Weather, is PhoneEvent.Jobs,
             is PhoneEvent.Housing, is PhoneEvent.Dailies, is PhoneEvent.Activity,
             is PhoneEvent.Collections, is PhoneEvent.Maps, is PhoneEvent.Fishing,
@@ -3649,6 +3758,20 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 party.clear()
                 party.addAll(event.members.map { PhoneFriend(it.name, it.world, it.homeWorld, it.location, it.online, it.job, it.freeCompany, it.contentId, it.currentWorldId, it.homeWorldId, it.classJobId, it.status) })
             }
+            is PhoneEvent.ChatBatch -> {
+                chatBatchDepth++
+                try {
+                    // Snapshot state invalidations coalesce until this Main turn returns;
+                    // saveChats() below is likewise collapsed to one persistence request.
+                    event.messages.forEach { message -> handle(PhoneEvent.Chat(message)) }
+                } finally {
+                    chatBatchDepth--
+                    if (chatBatchDepth == 0 && chatBatchSavePending) {
+                        chatBatchSavePending = false
+                        saveChats()
+                    }
+                }
+            }
             is PhoneEvent.Chat -> {
                 // 数据归属校验：插件每条消息带角色标识（名字@服务器），与连接角色不符则丢弃防串号
                 if (connectedCharacterKey.isNotBlank()) {
@@ -3685,7 +3808,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                             echoConv.messages[existingIdx] = updated
                             val chatIdx = chats.indexOfFirst { it === existing }
                             if (chatIdx >= 0) chats[chatIdx] = updated
-                        } else if (chats.none { it.timestamp == event.message.timestamp && it.channel == 12 && it.sender == event.message.sender && it.text == event.message.text }) {
+                        } else if (!containsChatDuplicate(event.message)) {
                             chats.add(event.message)
                             echoConv.add(event.message)
                         }
@@ -3696,7 +3819,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 }
                 if (event.message.isSelfMessage(profile?.name) && consumeSelfEcho(event.message.text)) {
                     saveChats()
-                } else if (chats.none { kotlin.math.abs(it.timestamp - event.message.timestamp) < 50L && it.channel == event.message.channel && it.sender == event.message.sender && it.text == event.message.text }) {
+                } else if (!containsChatDuplicate(event.message, timestampWindowMs = 49L)) {
                     if (event.message.category == ChatCategory.System) {
                         markTellFailureFromSystem(event.message.text)
                     }

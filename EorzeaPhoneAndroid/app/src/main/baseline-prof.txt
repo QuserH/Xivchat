@@ -1,0 +1,15 @@
+# App-owned hot paths measured while opening and flinging a populated conversation.
+# Library profiles already cover LazyColumn and most Compose text internals; these rules
+# add the generated application composables and helpers that a library cannot know about.
+HSPLcom/quserh/eorzeaphone/ui/AetherphoneParityScreensKt**->**(**)**
+HSPLcom/quserh/eorzeaphone/ui/BubbleTailShape;->**(**)**
+HSPLcom/quserh/eorzeaphone/ui/ChatInk;->**(**)**
+HSPLcom/quserh/eorzeaphone/ui/MessageOccurrenceKeyCache;->**(**)**
+HSPLcom/quserh/eorzeaphone/ui/MessageOccurrenceKeys;->**(**)**
+HSPLcom/quserh/eorzeaphone/ui/ChatConversation;->**(**)**
+HSPLcom/quserh/eorzeaphone/data/GameChatMessage;->**(**)**
+
+# Compose 1.7's bundled profile covers paragraph construction but omits the public
+# TextMeasurer facade and most selection machinery used by every selectable chat bubble.
+HSPLandroidx/compose/ui/text/TextMeasurer;->**(**)**
+HSPLandroidx/compose/foundation/text/selection/**->**(**)**
