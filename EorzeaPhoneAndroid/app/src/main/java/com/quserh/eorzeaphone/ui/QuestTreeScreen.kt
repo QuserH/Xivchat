@@ -21,16 +21,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -820,9 +824,18 @@ internal fun QuestAncestryScreen(
                     )
 
                     // 点任意任务：亮「最短依赖树」——每条前置依赖一条线到顶部主线。
+                    //
+                    // Nothing picked yet (just opened): default the highlight source to the
+                    // target quest, so the whole upward tree is lit immediately. Falling back
+                    // to the edges' own onPath flag lit only ONE parent per node
+                    // (QuestAncestry step 5 keeps maxBy depth), so a deep tree opened from
+                    // search showed most upper branches dimmed until you tapped something.
                     val (highlightCells, highlightEdges) = remember(t, pickedCell) {
-                        if (pickedCell < 0) emptySet<Int>() to emptySet<Pair<Int, Int>>()
-                        else QuestAncestry.pathFrom(t, pickedCell)
+                        val from =
+                            if (pickedCell >= 0) pickedCell
+                            else t.cells.indexOfFirst { it is AncestorCell.Quest && it.isTarget }
+                        if (from < 0) emptySet<Int>() to emptySet<Pair<Int, Int>>()
+                        else QuestAncestry.pathFrom(t, from)
                     }
                     AncestorCanvas(
                         tree = t,
@@ -1212,20 +1225,55 @@ internal fun QuestSearchResults(
     val context = LocalContext.current.applicationContext
     var hits by remember { mutableStateOf<List<QuestHit>>(emptyList()) }
     var chainHits by remember { mutableStateOf<List<QuestChainMeta>>(emptyList()) }
+    var total by remember { mutableStateOf(0) }
+    var page by remember { mutableStateOf(0) }
+    var appending by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
 
     LaunchedEffect(query) {
         if (query.isBlank()) {
-            hits = emptyList(); chainHits = emptyList(); done = false
+            hits = emptyList(); chainHits = emptyList(); total = 0
+            page = 0; done = false
             return@LaunchedEffect
         }
         loading = true
+        page = 0
         hits = runCatching { QuestDb.search(context, query) }.getOrDefault(emptyList())
         chainHits = runCatching { QuestDb.searchChains(context, query) }
             .getOrDefault(emptyList())
+        // 总数单独查：翻到底之前要让用户知道一共多少条，
+        // 否则「列表到这儿没了」会被读成「库里没有了」
+        //（用户报过「感觉缺少了很多任务」）
+        total = runCatching { QuestDb.countSearch(context, query) }.getOrDefault(0)
         loading = false
         done = true
+    }
+
+    val listState = rememberLazyListState()
+    val canLoadMore by remember {
+        derivedStateOf { !loading && !appending && hits.size < total }
+    }
+
+    // 滚到接近底部就追加下一页。和物品检索同一套做法。
+    LaunchedEffect(listState, canLoadMore) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= hits.size - 8
+        }.distinctUntilChanged().collect { near ->
+            if (near && canLoadMore) {
+                appending = true
+                val next = page + 1
+                runCatching { QuestDb.search(context, query, page = next) }
+                    .onSuccess { more ->
+                        if (more.isNotEmpty()) {
+                            hits = hits + more
+                            page = next
+                        }
+                    }
+                appending = false
+            }
+        }
     }
 
     val margin = LocalContentMargin.current
@@ -1255,8 +1303,24 @@ internal fun QuestSearchResults(
             }
             LazyColumn(
                 Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding = PaddingValues(bottom = 18.dp),
             ) {
+                // 命中总数。已加载 < 总数时把两个数都摆出来，
+                // 不然「列表到这儿没了」会被读成「库里没有了」。
+                if (total > 0) {
+                    item {
+                        Text(
+                            if (hits.size < total) "共 $total 条，已加载 ${hits.size} 条"
+                            else "共 $total 条",
+                            color = PhoneMuted, fontSize = 11.sp,
+                            modifier = Modifier.padding(
+                                start = margin.dp, end = margin.dp,
+                                top = 8.dp, bottom = 2.dp,
+                            ),
+                        )
+                    }
+                }
                 // 只按块名命中的（没有具体任务匹配），整块给一个入口
                 if (chainOnly.isNotEmpty()) {
                     item {
@@ -1377,6 +1441,20 @@ internal fun QuestSearchResults(
                         }
                         Spacer(Modifier.height(10.dp))
                         PhoneHairlineRow()
+                    }
+                }
+                // 追加下一页时的转圈。没有它的话滚到底像是卡住了。
+                if (appending) {
+                    item {
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                color = PhoneAccent, strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
             }

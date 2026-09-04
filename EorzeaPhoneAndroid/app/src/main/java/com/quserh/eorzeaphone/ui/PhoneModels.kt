@@ -43,6 +43,19 @@ import com.quserh.eorzeaphone.data.GameMaps
 import com.quserh.eorzeaphone.data.GameFishingLog
 import com.quserh.eorzeaphone.data.GameSubmarine
 import com.quserh.eorzeaphone.data.GameSubmarineVessel
+import com.quserh.eorzeaphone.data.GameMarket
+import com.quserh.eorzeaphone.data.GameMarketListing
+import com.quserh.eorzeaphone.data.GameMarketMonitorEvent
+import com.quserh.eorzeaphone.data.GameMarketPurchase
+import com.quserh.eorzeaphone.data.GameMarketPurchaseStatus
+import com.quserh.eorzeaphone.data.GameMonitorEventKind
+import com.quserh.eorzeaphone.data.GameMarketCategories
+import com.quserh.eorzeaphone.data.GameMarketCategory
+import com.quserh.eorzeaphone.data.GameMarketItem
+import com.quserh.eorzeaphone.data.GameMarketSubcategory
+import com.quserh.eorzeaphone.data.ChatStore
+import com.quserh.eorzeaphone.data.market.MarketAlertReceiver
+import com.quserh.eorzeaphone.data.market.MarketRepository
 import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
@@ -54,9 +67,47 @@ import com.quserh.eorzeaphone.data.cleanPlayerName
 import com.quserh.eorzeaphone.data.tellNamePart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
+
+// Persistent chat storage is intentionally split into a small hot snapshot and
+// the SQLite archive.  The snapshot is what the first frame needs; keeping the
+// whole transcript as one XML/SharedPreferences value was the main source of
+// repeated writes and large on-disk copies.
+private const val CHAT_HOT_CACHE_LIMIT = 400
+private const val CHAT_HOT_SYSTEM_LIMIT = 80
+private const val CHAT_CACHE_GZIP_PREFIX = "gz1:"
+// Chat packets can arrive in bursts.  Coalesce their persistence work so JSON/GZIP and
+// SQLite preparation never competes with the main-thread LazyColumn during a fling.
+private const val CHAT_SAVE_DEBOUNCE_MS = 180L
+
+private fun encodeChatCacheJson(json: String): String = runCatching {
+    val bytes = java.io.ByteArrayOutputStream()
+    java.util.zip.GZIPOutputStream(bytes).use { it.write(json.toByteArray(Charsets.UTF_8)) }
+    CHAT_CACHE_GZIP_PREFIX + android.util.Base64.encodeToString(
+        bytes.toByteArray(), android.util.Base64.NO_WRAP,
+    )
+}.getOrDefault(json)
+
+private fun decodeChatCacheJson(raw: String?): String {
+    val value = raw.orEmpty()
+    if (!value.startsWith(CHAT_CACHE_GZIP_PREFIX)) return value.ifBlank { "[]" }
+    return runCatching {
+        val compressed = android.util.Base64.decode(
+            value.removePrefix(CHAT_CACHE_GZIP_PREFIX), android.util.Base64.DEFAULT,
+        )
+        java.util.zip.GZIPInputStream(compressed.inputStream()).use {
+            it.readBytes().toString(Charsets.UTF_8)
+        }
+    }.getOrDefault("[]")
+}
 
 enum class PhoneScreen {
     Home,
@@ -298,7 +349,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         "walletCache", "jobsCache", "dailiesCache", "activityCache", "weatherCache", "housingCache",
         "mapsCache", "fishingLogCache", "submarineCache", "collectionsCache", "friendCache",
     )
-    private val charStoreStateKeys = listOf("clearedChatFilters", "convIcons", "groupChannelNames", "groupTitleOverrides")
+    private val charStoreStateKeys = listOf("clearedChatFilters", "clearedChatConversations", "convIcons", "groupChannelNames", "groupTitleOverrides")
     private val charStoreSetKeys = listOf("mutedChatConvs", "pinnedChatConvs", "hiddenChatConvs")
 
     private fun charStoreFileName(charKey: String): String {
@@ -343,9 +394,19 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         runCatching {
             val edit = store.edit()
             var dirty = false
+            val copiedStrings = mutableListOf<Pair<String, String>>()
             for (key in charStoreDataKeys) {
-                val old = prefs.getString("$key::$charKey", null)
-                if (old != null && !store.contains(key)) { edit.putString(key, old); dirty = true }
+                val oldKey = "$key::$charKey"
+                val old = prefs.getString(oldKey, null)
+                if (old != null && !store.contains(key)) {
+                    edit.putString(key, old)
+                    dirty = true
+                }
+                // Only remove the legacy copy after the new value has been
+                // durably committed and is byte-for-byte identical.  This is
+                // important for large chat JSON: a failed migration must never
+                // turn into data loss just because cleanup ran early.
+                if (old != null) copiedStrings += oldKey to old
             }
             for (key in charStoreStateKeys) {
                 val old = prefs.getString(key, null)
@@ -353,10 +414,51 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             }
             for (key in charStoreSetKeys) {
                 val old = prefs.getStringSet(key, null)
-                if (old != null && !store.contains(key)) { edit.putStringSet(key, old); dirty = true }
+                if (old != null) {
+                    if (!store.contains(key)) { edit.putStringSet(key, old); dirty = true }
+                }
             }
 
-            if (dirty) edit.apply()
+            // A one-time commit is intentional here.  It gives cleanup a hard
+            // durability boundary; subsequent normal writes remain asynchronous.
+            if (dirty && !edit.commit()) return@runCatching
+
+            val cleanup = prefs.edit()
+            var cleanupDirty = false
+            for ((oldKey, old) in copiedStrings) {
+                val key = oldKey.substringBefore("::$charKey")
+                if (store.getString(key, null) == old && prefs.getString(oldKey, null) == old) {
+                    cleanup.remove(oldKey)
+                    cleanupDirty = true
+                }
+            }
+            // State/set values in the legacy file were global rather than
+            // character-scoped.  Do not delete those keys: another character
+            // may still rely on them until its own migration has completed.
+            if (cleanupDirty) cleanup.apply()
+        }
+    }
+
+    /**
+     * Trigger the guarded legacy migration for saved characters that are not active today.
+     *
+     * Pre-SQLite builds kept one `chatCache::<character>` XML value per character in the
+     * global preferences file.  The normal migration runs when a character is opened; users
+     * who have many saved characters could otherwise retain every old copy indefinitely.
+     * `charPrefs` performs a commit-before-remove check, so this is safe even if the process
+     * is killed during startup.  We only probe explicit known keys and never enumerate
+     * `prefs.all`, avoiding a several-hundred-MB allocation on affected installs.
+     */
+    private fun cleanupLegacyChatCopies() {
+        val keys = (knownCharacters.map { it.key } + activeCharacterKey)
+            .filter { it.isNotBlank() }
+            .distinct()
+        for (key in keys) {
+            runCatching {
+                if (prefs.contains("chatCache::$key")) charPrefs(key)
+            }.onFailure { error ->
+                android.util.Log.w("ChatArchive", "legacy cache cleanup failed for $key", error)
+            }
         }
     }
 
@@ -378,6 +480,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             val cf = JSONObject(store.getString("clearedChatFilters", "{}"))
             val it = cf.keys()
             while (it.hasNext()) { val k = it.next(); clearedFilters[k] = cf.getLong(k) }
+            clearedConversations.clear()
+            val cc = JSONObject(store.getString("clearedChatConversations", "{}"))
+            val itc = cc.keys()
+            while (itc.hasNext()) { val k = itc.next(); clearedConversations[k] = cc.getLong(k) }
             mutedConversations.clear()
             mutedConversations.addAll(store.getStringSet("mutedChatConvs", emptySet()) ?: emptySet())
             pinnedConversations.clear()
@@ -497,6 +603,11 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun appsForPage(page: Int): List<PhoneAppItem> =
         homePageIds.getOrElse(page) { emptyList() }.mapNotNull { allApps[it] }
 
+    /** Resolve an app from a navigation snapshot while AnimatedContent keeps the old
+     * layer alive.  The mutable [selectedApp] points at the newest route, so using it for
+     * the outgoing layer can turn an old screen into the newly selected app mid-transition. */
+    fun appItem(id: String): PhoneAppItem? = allApps[id]
+
     fun storeApps(): List<PhoneAppItem> {
         val apps = AppCatalog.firstPage + AppCatalog.secondPage
         return apps.sortedByDescending { it.id == "appstore" }
@@ -540,6 +651,22 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         homeLibraryIds = (listOf(id) + homeLibraryIds.filterNot { it == id }).distinct()
         saveHomeLayout()
         saveHomeLibrary()
+    }
+
+    fun moveToNextPage(page: Int, id: String) {
+        if (id == "appstore") return
+        if (page !in homePageIds.indices) return
+        val nextPage = page + 1
+        if (nextPage >= homePageIds.size) return
+        val current = homePageIds[page].toMutableList()
+        if (!current.remove(id)) return
+        val next = homePageIds[nextPage].toMutableList()
+        next.add(0, id)
+        homePageIds = homePageIds.toMutableList().also {
+            it[page] = current
+            it[nextPage] = next
+        }
+        saveHomeLayout()
     }
 
     fun restoreToHome(page: Int, id: String) {
@@ -664,7 +791,18 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val _reducedMotion = boolPref("reducedMotion", false)
     var reducedMotion: Boolean
         get() = _reducedMotion.value
-        set(value) { _reducedMotion.value = value }
+        set(value) { _reducedMotion.value = value; PhoneMotion.reducedMotion = value }
+    /**
+     * Ignore the system animation scale. See [PhoneMotion].
+     *
+     * Defaults ON: 省电模式 zeroes the system scale without saying it touched animations,
+     * so respecting it by default just reads as "the app has no animations". Users who
+     * genuinely want no motion have 减弱动态效果, which still overrides this.
+     */
+    private val _forceMotion = boolPref("forceMotion", true)
+    var forceMotion: Boolean
+        get() = _forceMotion.value
+        set(value) { _forceMotion.value = value; PhoneMotion.forceMotion = value }
     private val _compactDock = boolPref("compactDock", false)
     var compactDock: Boolean
         get() = _compactDock.value
@@ -747,6 +885,99 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var maps by mutableStateOf<GameMaps?>(null)
     var fishingLog by mutableStateOf<GameFishingLog?>(null)
     var submarine by mutableStateOf<GameSubmarine?>(null)
+
+    /**
+     * Live market board listings read from the game client, for the last item the
+     * phone asked about. Request/reply rather than a polled snapshot, and never
+     * persisted -- see the PhoneEvent.Market branch.
+     */
+    var liveMarket by mutableStateOf<GameMarket?>(null)
+
+    /**
+     * The listing a purchase is currently in flight for, or null. Gates the buy
+     * buttons: the plugin serialises purchases anyway, so a second tap could only
+     * ever come back Busy.
+     */
+    var pendingPurchaseListingId by mutableStateOf<Long?>(null)
+        private set
+
+    /**
+     * Result of the last purchase attempt, for the confirmation sheet to show.
+     * Cleared when the sheet is dismissed rather than on a timer -- a gil
+     * transaction's outcome should not disappear on its own.
+     */
+    var lastPurchaseResult by mutableStateOf<GameMarketPurchase?>(null)
+
+    /**
+     * Market category tree. Loaded once on first market screen visit, then cached
+     * for the session lifetime.
+     */
+    var marketCategories by mutableStateOf<GameMarketCategories?>(null)
+
+    /**
+     * NPC gil prices learned from market replies/category metadata during this
+     * process.  This is deliberately an in-memory index rather than another large
+     * persistent copy of the item database; the category cache already carries the
+     * durable values when available.  Keeping a small session index also means a
+     * price learned from an older plugin reply survives switching market scopes.
+     */
+    private val marketNpcPrices = mutableStateMapOf<Int, Int>()
+
+    /**
+     * Return a vendor price only when the plugin positively identified a GilShopItem
+     * entry.  A zero value means "not sold for gil" (or an old plugin that did not
+     * provide the metadata), so callers must hide the benchmark in that case.
+     */
+    fun npcPriceFor(itemId: Int): Int {
+        if (itemId <= 0) return 0
+        val live = liveMarket?.takeIf { it.itemId == itemId }?.npcPrice ?: 0
+        if (live > 0) return live
+        marketNpcPrices[itemId]?.takeIf { it > 0 }?.let { return it }
+        return marketCategories?.categories.orEmpty()
+            .asSequence()
+            .flatMap { it.subcategories.asSequence() }
+            .flatMap { it.items.asSequence() }
+            .firstOrNull { it.id == itemId }
+            ?.npcPrice?.takeIf { it > 0 } ?: 0
+    }
+
+    private fun indexNpcPrices(tree: GameMarketCategories) {
+        tree.categories.asSequence()
+            .flatMap { it.subcategories.asSequence() }
+            .flatMap { it.items.asSequence() }
+            .forEach { item ->
+                if (item.npcPrice > 0) marketNpcPrices[item.id] = item.npcPrice
+            }
+        // A corrupt/hostile plugin should not be able to grow this map without
+        // bound.  Category metadata is also available through marketCategories, so
+        // evict arbitrary old session entries once the safety ceiling is reached.
+        if (marketNpcPrices.size > 4096) {
+            marketNpcPrices.keys.take(marketNpcPrices.size - 4096).forEach { marketNpcPrices.remove(it) }
+        }
+    }
+
+    /**
+     * Market category screen scroll position and filter state.
+     * Keyed by categoryId so each category remembers its own state.
+     */
+    data class MarketCategoryState(
+        var scrollIndex: Int = 0,
+        var scrollOffset: Int = 0,
+        var showFilter: Boolean = false,
+        var minLevel: Int = 1,
+        var maxLevel: Int = 100,
+        var sortDescending: Boolean = true,
+    )
+
+    private val marketCategoryStates = mutableMapOf<Int, MarketCategoryState>()
+
+    fun getMarketCategoryState(categoryId: Int): MarketCategoryState =
+        marketCategoryStates.getOrPut(categoryId) { MarketCategoryState() }
+
+    /** Latest price-monitor event from the plugin, for in-app surfaces. */
+    var lastMonitorEvent by mutableStateOf<GameMarketMonitorEvent?>(null)
+        private set
+
     private val favoriteMapIds = mutableStateListOf<Long>().apply {
         addAll(prefs.getStringSet("favoriteMapIds", emptySet()).orEmpty().mapNotNull(String::toLongOrNull))
     }
@@ -776,7 +1007,22 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val _chatRetentionLimit = mutableStateOf(prefs.getInt("chatRetentionLimit", 5000))
     var chatRetentionLimit: Int
         get() = _chatRetentionLimit.value
-        set(value) { _chatRetentionLimit.value = value.coerceIn(0, 50000); prefs.edit().putInt("chatRetentionLimit", _chatRetentionLimit.value).apply() }
+        set(value) {
+            val next = value.coerceIn(0, 50000)
+            val changed = next != _chatRetentionLimit.value
+            _chatRetentionLimit.value = next
+            prefs.edit().putInt("chatRetentionLimit", next).apply()
+            // The setting used to trim only the in-memory JSON copy.  Keep every
+            // character's SQLite archive in sync as soon as the user changes it;
+            // otherwise an old unlimited archive would continue consuming storage.
+            if (changed && next > 0) {
+                scheduleChatArchiveMaintenance(
+                    keys = (knownCharacters.map { it.key } + activeCharacterKey).toSet(),
+                    limit = next,
+                    compact = true,
+                )
+            }
+        }
     var currentChannel by mutableStateOf(1)
     var currentChannelName by mutableStateOf("说话")
     var selectedChatFilterId by mutableStateOf("")
@@ -798,6 +1044,21 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         clearedFilters.forEach { (k, v) -> o.put(k, v) }
         charPrefs().edit().putString("clearedChatFilters", o.toString()).apply()
     }
+    // A conversation clear is a tombstone, not just an in-memory operation.  The
+    // SQLite archive intentionally outlives the hot cache, so without this marker
+    // a later historical search/recovery could make cleared messages reappear.
+    private val clearedConversations = mutableStateMapOf<String, Long>().apply {
+        runCatching {
+            val o = JSONObject(charPrefs().getString("clearedChatConversations", "{}"))
+            o.keys().forEach { k -> put(k, o.getLong(k)) }
+        }
+    }
+    fun conversationClearedUntil(key: String): Long = clearedConversations[key] ?: 0L
+    private fun persistClearedConversations() {
+        val o = JSONObject()
+        clearedConversations.forEach { (k, v) -> o.put(k, v) }
+        charPrefs().edit().putString("clearedChatConversations", o.toString()).apply()
+    }
     val conversations = mutableStateListOf<ChatConversation>()
     private val conversationByKey = mutableMapOf<String, ChatConversation>()
     var openConversationKey by mutableStateOf<String?>(null)
@@ -808,6 +1069,24 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     private val hiddenConversations = mutableStateOf((charPrefs().getStringSet("hiddenChatConvs", emptySet()) ?: emptySet()).toMutableSet())
     private val pendingSelfTexts = mutableMapOf<String, String>()
     private val pendingSends = mutableListOf<GameChatMessage>()
+    // saveChats() is called from many event paths.  Serialize the hot-cache
+    // write/archive append/delete operations and coalesce bursts so a chat flood does
+    // not enqueue one JSON/GZIP job per packet.  Generation checks discard snapshots
+    // superseded by a later mutation; otherwise a delayed pre-clear snapshot could
+    // overwrite the cleared cache or reinsert a row.
+    private val chatStorageMutex = Mutex()
+    private var chatSaveJob: Job? = null
+    // Generations are per character. A fast A -> B -> A switch must not invalidate
+    // A's already-captured flush merely because B had an empty/newer snapshot.
+    private val chatStorageGenerations = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
+
+    private fun nextChatStorageGeneration(characterKey: String): Long =
+        chatStorageGenerations.computeIfAbsent(characterKey) {
+            java.util.concurrent.atomic.AtomicLong(0L)
+        }.incrementAndGet()
+
+    private fun currentChatStorageGeneration(characterKey: String): Long =
+        chatStorageGenerations[characterKey]?.get() ?: 0L
     /**
      * 用户**自己**给好友挑的头像。只有从"更换好友头像"进去选过才会写这里。
      *
@@ -948,11 +1227,47 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     fun setFriendAvatar(friend: PhoneFriend, iconId: String) = setFriendAvatar(friendAvatarOwner(friend), iconId)
 
+    /**
+     * Store a user-selected avatar as a bounded, decoded image instead of copying
+     * the original camera/gallery file verbatim.  Modern phone photos are often
+     * 5–20 MB; the UI renders these tiles below 512 px, so retaining the source
+     * resolution only inflated app data.  The original URI remains untouched in
+     * the user's gallery.
+     */
+    private fun savePickedImage(uri: android.net.Uri, target: java.io.File): String? = runCatching {
+        target.parentFile?.mkdirs()
+        val resolver = appContext.contentResolver
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= 768 || bounds.outHeight / (sample * 2) >= 768) sample *= 2
+        val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = resolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, options)
+        } ?: return@runCatching null
+        val max = maxOf(decoded.width, decoded.height)
+        val bitmap = if (max > 768) {
+            val scale = 768f / max.toFloat()
+            android.graphics.Bitmap.createScaledBitmap(
+                decoded, (decoded.width * scale).roundToInt().coerceAtLeast(1),
+                (decoded.height * scale).roundToInt().coerceAtLeast(1), true,
+            ).also { if (it !== decoded) decoded.recycle() }
+        } else decoded
+        val format = if (bitmap.hasAlpha()) android.graphics.Bitmap.CompressFormat.PNG
+            else android.graphics.Bitmap.CompressFormat.JPEG
+        val tmp = java.io.File(target.parentFile, target.name + ".tmp")
+        val encoded = java.io.FileOutputStream(tmp).use { out -> bitmap.compress(format, 86, out) }
+        if (!encoded) { tmp.delete(); return@runCatching null }
+        if (target.exists()) target.delete()
+        if (!tmp.renameTo(target)) { tmp.delete(); return@runCatching null }
+        target.absolutePath
+    }.getOrNull()
+
     fun savePickedFriendAvatar(friend: PhoneFriend, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "friend-avatars").apply { mkdirs() }
         val file = java.io.File(dir, "fa-${friendAvatarOwner(friend).hashCode()}.png")
-        appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
-        file.absolutePath
+        savePickedImage(uri, file)
     }.getOrNull()
 
     private fun linkFriendAvatars(friendEntries: Iterable<PhoneFriend>) {
@@ -1037,14 +1352,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun savePickedAvatar(key: String, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "avatars").apply { mkdirs() }
         val file = java.io.File(dir, "avatar-${key.hashCode()}.png")
-        appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
-        file.absolutePath
+        savePickedImage(uri, file)
     }.getOrNull()
     fun savePickedIcon(key: String, uri: android.net.Uri): String? = runCatching {
         val dir = java.io.File(appContext.filesDir, "conv-icons").apply { mkdirs() }
         val file = java.io.File(dir, "icon-${key.hashCode()}.png")
-        appContext.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { it.write(input.readBytes()) } }
-        file.absolutePath
+        savePickedImage(uri, file)
     }.getOrNull()
     fun renameGroup(key: String, name: String) {
         val clean = name.trim().take(20)
@@ -1069,6 +1382,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     var teleportTarget by mutableStateOf<String?>(null)
     var teleportStatus by mutableStateOf(TeleportStatus.Idle)
     private var teleportTimer: kotlinx.coroutines.Job? = null
+    private var purchaseTimer: kotlinx.coroutines.Job? = null
     private val connection = XivChatConnection(
         context = context,
         scope = scope,
@@ -1113,11 +1427,44 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         get() = calendarNotifyPref.value
         set(v) { calendarNotifyPref.value = v }
 
+    private val localNotifySayPref = boolPref("localNotifySay", false)
+    private val localNotifyYellPref = boolPref("localNotifyYell", false)
+    private val localNotifyShoutPref = boolPref("localNotifyShout", false)
+    var localNotifySay: Boolean
+        get() = localNotifySayPref.value
+        set(v) { localNotifySayPref.value = v }
+    var localNotifyYell: Boolean
+        get() = localNotifyYellPref.value
+        set(v) { localNotifyYellPref.value = v }
+    var localNotifyShout: Boolean
+        get() = localNotifyShoutPref.value
+        set(v) { localNotifyShoutPref.value = v }
+
     private val dockIdsPref = stringPref("dockApps", "gamechat|contacts|settings")
     /** Editable dock contents (app ids, '|'-joined in prefs). */
     var dockAppIds: List<String>
         get() = dockIdsPref.value.split('|').filter { it.isNotBlank() }
         set(v) { dockIdsPref.value = v.filter { it.isNotBlank() }.joinToString("|") }
+
+    /**
+     * Clear a stale `reducedMotion` once.
+     *
+     * That switch was persisted from the day it was added but nothing ever read it, so it
+     * silently did nothing. Wiring it up to the real motion policy turned every old stored
+     * `true` into "this install has no animations at all" — a setting the user may have
+     * flipped long ago while it was inert, with no way to guess it was now the cause.
+     *
+     * A value that never had an effect cannot carry intent, so it is reset exactly once.
+     * The switch keeps working normally from here on.
+     */
+    private fun migrateStaleReducedMotion() {
+        if (prefs.getBoolean("motionPolicyMigrated", false)) return
+        _reducedMotion.value = false
+        prefs.edit()
+            .putBoolean("reducedMotion", false)
+            .putBoolean("motionPolicyMigrated", true)
+            .apply()
+    }
 
     private fun boolPref(key: String, default: Boolean): MutableState<Boolean> {
         val backing = mutableStateOf(prefs.getBoolean(key, default))
@@ -1135,8 +1482,25 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     val party = mutableStateListOf<PhoneFriend>()
 
     init {
+        migrateStaleReducedMotion()
+        // Mirror the persisted motion prefs into PhoneMotion before anything animates —
+        // the recomposer's MotionDurationScale reads them from outside composition.
+        PhoneMotion.reducedMotion = _reducedMotion.value
+        PhoneMotion.forceMotion = _forceMotion.value
         ResetReminderReceiver.configure(appContext, resetNotifications)
         loadSavedChats()
+        // Complete migration for characters already known to the user.  The cleanup uses
+        // explicit keys rather than `SharedPreferences.all`, so a legacy multi-megabyte chat
+        // value is never materialised just to inspect unrelated preferences.
+        cleanupLegacyChatCopies()
+        // Trim archives left by older builds even when no new chat arrives, and
+        // reclaim sparse SQLite pages after a previous limit change. This is all
+        // background work; the first frame never waits on the database.
+        scheduleChatArchiveMaintenance(
+            keys = (knownCharacters.map { it.key } + activeCharacterKey).toSet(),
+            limit = chatRetentionLimit,
+            compact = true,
+        )
         linkFriendAvatars(friends)
         ensureFriendAvatars(friends)
         loadSavedInventory()
@@ -1144,6 +1508,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         loadSavedCollections()
         loadFishingLog()
         loadSubmarine()
+        loadMarketCategoriesCache()
         if (notes.isEmpty() && noteText.isNotBlank()) {
             notes += LocalNote(System.currentTimeMillis(), noteText, System.currentTimeMillis())
             saveLocalNotes()
@@ -1187,8 +1552,10 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun loadSavedChats() {
+        var recoverFromArchive = false
         runCatching {
-            val arr = JSONArray(charPrefs().getString("chatCache", "[]"))
+            val stored = charPrefs().getString("chatCache", "[]").orEmpty()
+            val arr = JSONArray(decodeChatCacheJson(stored))
             val msgs = mutableListOf<GameChatMessage>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
@@ -1217,13 +1584,102 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 )
             }
             msgs.sortBy { it.timestamp }
-            for (m in msgs) {
+            val visibleMsgs = msgs.filterNot(::isMessageSuppressedByClearMarker)
+            for (m in visibleMsgs) {
                 if (chats.none { it.timestamp == m.timestamp && it.channel == m.channel && it.sender == m.sender && it.text == m.text }) {
                     chats.add(m)
                     getOrCreateConversation(m)?.add(m)
                 }
             }
-            if (pruneChatRetention()) saveChats()
+            // Re-encode legacy/plain snapshots and compact old installs on the
+            // first successful read.  saveChats() takes the full in-memory list
+            // as its archive input before writing only the hot window, so this
+            // migration does not lose history while it removes the large XML
+            // value from SharedPreferences.
+            val needsCompaction = !stored.startsWith(CHAT_CACHE_GZIP_PREFIX) ||
+                msgs.size > CHAT_HOT_CACHE_LIMIT + CHAT_HOT_SYSTEM_LIMIT || visibleMsgs.size != msgs.size
+            val pruned = pruneChatRetention()
+            if (pruned || needsCompaction) saveChats()
+            // SQLite is the durable source for conversational history.  A freshly
+            // migrated install, a failed SharedPreferences write, or a corrupt hot
+            // snapshot can leave this list empty even though the archive is healthy;
+            // request a small latest window below so the chat list is not blank.
+            recoverFromArchive = chats.none { it.category != ChatCategory.System }
+        }.onFailure { error ->
+            // Do not leave a partially parsed snapshot around and then append it to
+            // the new character's archive.  Recovery will rebuild the visible window
+            // from SQLite if one exists.
+            android.util.Log.w("ChatArchive", "hot chat cache could not be read", error)
+            chats.clear()
+            conversations.clear()
+            conversationByKey.clear()
+            recoverFromArchive = true
+        }
+        if (recoverFromArchive && activeCharacterKey.isNotBlank()) {
+            scheduleChatArchiveRecovery(activeCharacterKey)
+        }
+    }
+
+    /**
+     * Hydrate the initial chat window from SQLite when the compressed hot snapshot is
+     * absent or damaged.  Only the captured character may be touched: a reconnect or
+     * manual character switch can happen while the query is running.
+     */
+    private fun scheduleChatArchiveRecovery(charKey: String) {
+        if (charKey.isBlank()) return
+        val capturedKey = charKey
+        val limit = CHAT_HOT_CACHE_LIMIT
+        scope.launch(Dispatchers.IO) {
+            val rows = runCatching {
+                ChatStore.of(appContext).latest(capturedKey, limit)
+            }.onFailure { error ->
+                android.util.Log.w("ChatArchive", "archive recovery read failed", error)
+            }.getOrDefault(emptyList())
+            if (rows.isEmpty()) return@launch
+
+            withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                // A new message or a character switch wins over this best-effort
+                // background hydration.  Never mix rows from two character stores.
+                if (activeCharacterKey != capturedKey ||
+                    chats.any { it.category != ChatCategory.System }
+                ) return@withContext
+
+                val visible = rows.filterNot(::isMessageSuppressedByClearMarker)
+                for (message in visible) {
+                    if (chats.none {
+                            it.timestamp == message.timestamp &&
+                                it.channel == message.channel &&
+                                it.sender == message.sender &&
+                                it.text == message.text
+                        }
+                    ) {
+                        chats.add(message)
+                        getOrCreateConversation(message)?.add(message)
+                    }
+                }
+                if (visible.isNotEmpty()) {
+                    pruneChatRetention()
+                    // Re-save only the compact hot window.  appendNewer is
+                    // idempotent, so this does not duplicate the recovered rows in
+                    // the durable archive.
+                    saveChats()
+                }
+            }
+        }
+    }
+
+    private fun isMessageSuppressedByClearMarker(message: GameChatMessage): Boolean {
+        val candidates = buildList {
+            add(message.conversationKey())
+            if (message.category == ChatCategory.Tell || message.category == ChatCategory.Emote) {
+                message.tellTarget().takeIf { it.isNotBlank() }?.let { add("tell:${it.normalizedPlayerName()}") }
+                message.targetName?.takeIf { it.isNotBlank() }?.let {
+                    add("tell:${it.normalizedPlayerName()}")
+                }
+            }
+        }
+        return candidates.any { key ->
+            !key.startsWith("tab:") && message.timestamp <= (clearedConversations[key] ?: 0L)
         }
     }
 
@@ -1232,25 +1688,126 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         val limit = chatRetentionLimit
         if (limit <= 0 || chats.size <= limit) return false
         val dropCount = chats.size - limit
-        val dropSet = HashSet(chats.take(dropCount))
-        var removed = false
-        for (conv in conversations) {
-            val r = conv.messages.removeAll { it in dropSet }
-            if (r && conv.messages.isEmpty()) conv.clear()
-            removed = removed || r
+        val dropped = chats.subList(0, dropCount).toList()
+
+        // The old implementation built a data-class HashSet and scanned every message in
+        // every conversation whenever the global list crossed the limit. Once a 5,000-row
+        // history was full this happened on every incoming packet and competed directly
+        // with LazyColumn flings on the main thread. A message belongs to at most one
+        // conversation, so remove it from that conversation by identity; emotes can be
+        // routed to a tell key, hence the small fallback search.
+        dropped.forEach { message ->
+            val likely = conversationByKey[message.conversationKey()]
+            var owner = likely?.takeIf { conversation ->
+                conversation.messages.any { it === message }
+            }
+            if (owner == null) {
+                owner = conversations.firstOrNull { conversation ->
+                    conversation.messages.any { it === message }
+                }
+            }
+            owner?.let { conversation ->
+                val index = conversation.messages.indexOfFirst { it === message }
+                if (index >= 0) conversation.messages.removeAt(index)
+                if (conversation.messages.isEmpty()) conversation.clear()
+            }
         }
-        chats.removeAll { it in dropSet }
+        chats.removeRange(0, dropCount)
         return true
     }
 
-    private fun saveChats() {
-        pruneChatRetention()
-        val snapshot = chats.toList()
-        val chatStore = charPrefs()
+    /**
+     * Request persistence without doing serialization on the UI event that delivered a
+     * chat packet.  A short debounce collapses bursts (catch-up can deliver hundreds of
+     * packets); the latest snapshot is the only one that needs to reach disk.
+     *
+     * [immediate] is used at character switches/backgrounding so the snapshot is captured
+     * while it still belongs to the old character.  Normal chat events stay debounced.
+     */
+    private fun saveChats(immediate: Boolean = false) {
+        val characterKey = activeCharacterKey
+        val generation = nextChatStorageGeneration(characterKey)
+        chatSaveJob?.cancel()
+        if (immediate) {
+            persistChatsSnapshot(generation, characterKey)
+        } else {
+            chatSaveJob = scope.launch {
+                delay(CHAT_SAVE_DEBOUNCE_MS)
+                if (generation == currentChatStorageGeneration(characterKey)) {
+                    persistChatsSnapshot(generation, characterKey)
+                }
+            }
+        }
+    }
+
+    /** Flush a pending chat snapshot before a lifecycle or character boundary. */
+    internal fun flushChatPersistence() {
+        if (activeCharacterKey.isNotBlank() && chats.isNotEmpty()) {
+            saveChats(immediate = true)
+        } else {
+            chatSaveJob?.cancel()
+            chatSaveJob = null
+            nextChatStorageGeneration(activeCharacterKey)
+        }
+    }
+
+    private fun persistChatsSnapshot(generation: Long, archiveKey: String) {
+        // 归档快照在 prune 之前取：稳态下两者等价（消息到达即归档，远早于被裁），
+        // 但重连后插件补发 backlog 时，那一批可能一次把 chats 顶过上限，
+        // prune 会裁掉最旧的——其中从未归档过的就永久没了。先取快照堵住这个缺口。
+        //
+        // 白名单：只归档对话，System（战斗日志/系统提示）不入档。判据是项目自己的
+        // 那条——"游戏关掉之后还有意义吗"。三个月前某次 AoE 打了多少伤害没有意义，
+        // 三个月前朋友说的话有。实测这一条过滤掉 98% 的行
+        // （_probe_chat_whitelist_watermark.py：20000 条里只留 400 条）。
+        //
+        // 过滤放在 snapshot 侧而不是 ChatStore 里：档案层不该懂频道语义。
+        // 和水位线的交互已验——整批被过滤掉时水位线不会被污染，之后的对话照常入档。
+        val archiveSource = chats.toList()
+        val pruned = pruneChatRetention()
+        val snapshot = if (pruned) chats.toList() else archiveSource
+        // SharedPreferences is an XML key/value store, not a transcript database.
+        // Persist only the small hot window needed to render the first frame.  The
+        // complete conversational snapshot has already been captured above and is
+        // appended to SQLite, so old search/history remains available without
+        // keeping the same text in two full-size JSON copies.  System/combat lines
+        // are deliberately limited to a tiny recent tail; they are high-volume and
+        // are not part of the durable archive whitelist.
+        val chatStore = charPrefs(archiveKey)
+        // 和 snapshot/chatStore 一样在协程外捕获：若在协程排队期间切了角色，
+        // 协程内读 activeCharacterKey 会拿到新角色，这批消息就会写进错的档案分区。
+        // Capture the limit together with the snapshot. If the user switches
+        // characters or changes the setting while this IO job is queued, the batch
+        // must still be written and trimmed for the same character/limit pair.
+        val archiveLimit = chatRetentionLimit
         scope.launch(Dispatchers.IO) {
-            val arr = JSONArray()
-            snapshot.forEach { m ->
-                arr.put(JSONObject().apply {
+            chatStorageMutex.withLock {
+                // A newer mutation owns the next snapshot.  Skipping an older
+                // queued job prevents stale data from winning the race on disk.
+                if (generation != currentChatStorageGeneration(archiveKey)) return@withLock
+                val archiveSnapshot = archiveSource.filter { it.category != ChatCategory.System }
+                // Select both hot tails in one reverse scan. Filtering the full transcript
+                // three times plus sorting used to happen before the IO launch, i.e. on the
+                // Compose thread every 180 ms during a chat burst.
+                var conversationSlots = CHAT_HOT_CACHE_LIMIT
+                var systemSlots = CHAT_HOT_SYSTEM_LIMIT
+                val hotSnapshot = ArrayList<GameChatMessage>(CHAT_HOT_CACHE_LIMIT + CHAT_HOT_SYSTEM_LIMIT)
+                for (index in snapshot.indices.reversed()) {
+                    val message = snapshot[index]
+                    if (message.category == ChatCategory.System) {
+                        if (systemSlots <= 0) continue
+                        systemSlots--
+                    } else {
+                        if (conversationSlots <= 0) continue
+                        conversationSlots--
+                    }
+                    hotSnapshot.add(message)
+                    if (conversationSlots <= 0 && systemSlots <= 0) break
+                }
+                hotSnapshot.reverse()
+                val arr = JSONArray()
+                hotSnapshot.forEach { m ->
+                    arr.put(JSONObject().apply {
                     put("timestamp", m.timestamp)
                     put("sender", m.sender)
                     put("text", m.text)
@@ -1272,9 +1829,107 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     if (m.targetName != null) put("targetName", m.targetName)
                     if (m.targetWorld != null) put("targetWorld", m.targetWorld)
                     if (m.selfFlag) put("selfFlag", true)
-                })
+                    })
+                }
+                // Gzip keeps the XML value small even for messages with rich chunks;
+                // the prefix makes this backward-compatible with old plain JSON.
+                chatStore.edit().putString("chatCache", encodeChatCacheJson(arr.toString())).apply()
+
+            // 长效档案，附加能力。顺序即优先级：老路径（上一行）先落地，档案后追加，
+            // 所以档案怎么失败都不影响 chatCache 那次写入。
+            //
+            // try/catch 是必须的，不是保险：这个 scope 没装 CoroutineExceptionHandler
+            // （全项目零个），未捕获异常会走到 MainActivity 的 default handler，
+            // 那个 handler 写完 crash 文件后调 defaultHandler.uncaughtException()，
+            // 进程直接死。档案不能连坐主存储，更不能崩 App。
+            //
+            // 失败不静默：appendNewer 内部已把原因记进 lastError，这里再留一条日志。
+                try {
+                    val archive = ChatStore.of(appContext)
+                    val written = archive.appendNewer(archiveKey, archiveSnapshot)
+                    if (written < 0) {
+                        android.util.Log.w("ChatArchive", "append failed: " +
+                            archive.lastError)
+                    } else if (archiveLimit > 0) {
+                    // The archive is a second, durable copy, so it needs the same
+                    // bound as chatCache. Only run the count/delete query after a
+                    // successful append; startup/setting maintenance handles an
+                    // already-over-limit archive when there is no new message.
+                        val removed = archive.trimToLimit(archiveKey, archiveLimit)
+                        if (removed < 0) {
+                            android.util.Log.w("ChatArchive", "trim failed: ${archive.lastError}")
+                        } else if (removed > 0) {
+                        // VACUUM is gated internally (>=16 MiB and >=25% free), so
+                        // this is cheap for normal small trims and recovers a large
+                        // one-time deletion promptly.
+                            archive.compactIfWasteful()
+                        }
+                    }
+                } catch (t: Throwable) {
+                    android.util.Log.w("ChatArchive", "append threw", t)
+                }
             }
-            chatStore.edit().putString("chatCache", arr.toString()).apply()
+        }
+    }
+
+    /**
+     * Run archive retention/compaction away from the main thread.
+     *
+     * [keys] is captured before launching so a character switch cannot make a
+     * maintenance job operate on the wrong partition. The helper is deliberately
+     * best-effort: chatCache remains the primary UI store and a database failure
+     * must never prevent the app from starting.
+     */
+    private fun scheduleChatArchiveMaintenance(
+        keys: Collection<String>,
+        limit: Int,
+        compact: Boolean,
+    ) {
+        val capturedKeys = keys.filter { it.isNotBlank() }.toSet()
+        if (capturedKeys.isEmpty() && !compact) return
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val archive = ChatStore.of(appContext)
+                if (limit > 0) {
+                    for (key in capturedKeys) {
+                        val count = archive.trimToLimit(key, limit)
+                        if (count < 0) {
+                            android.util.Log.w("ChatArchive", "startup trim failed for $key: ${archive.lastError}")
+                        }
+                    }
+                }
+                // PRAGMA checks are cheap and VACUUM itself is strongly gated in
+                // ChatStore, so startup may also recover freelist pages left by an
+                // older build even when today's trim removed no additional rows.
+                if (compact) {
+                    archive.compactIfWasteful()
+                }
+            }.onFailure { t ->
+                android.util.Log.w("ChatArchive", "archive maintenance failed", t)
+            }
+        }
+    }
+
+    /** Delete rows cleared from the UI without blocking the main thread. */
+    private fun scheduleArchiveDelete(
+        charKey: String,
+        messages: Collection<GameChatMessage>,
+    ) {
+        val capturedKey = charKey
+        val captured = messages.toList()
+        if (capturedKey.isBlank() || captured.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            chatStorageMutex.withLock {
+                runCatching {
+                    val store = ChatStore.of(appContext)
+                    val removed = store.deleteMessages(capturedKey, captured)
+                    if (removed < 0) {
+                        android.util.Log.w("ChatArchive", "delete failed: ${store.lastError}")
+                    }
+                }.onFailure { t ->
+                    android.util.Log.w("ChatArchive", "delete threw", t)
+                }
+            }
         }
     }
 
@@ -1645,14 +2300,21 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     private fun loadCharacter(key: String, persistSelection: Boolean) {
         if (activeCharacterKey != key) {
+            // Capture the previous character before clearing its in-memory transcript.
+            // Normal packet writes are debounced; a character switch is the boundary at
+            // which that debounce must be flushed to the old partition.
+            flushChatPersistence()
             activeCharacterKey = key
             if (persistSelection) prefs.edit().putString("activeCharacterKey", key).apply()
             chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
             wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null; fishingLog = null
             friends.clear()
             profile = loadProfileCache()
-            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); loadSubmarine(); friends.addAll(loadFriends()); repairTellRecipients()
+            // Load per-character tombstones/preferences before rebuilding chats;
+            // otherwise a switch could briefly hydrate messages cleared under the
+            // previous character and then persist them back to the new store.
             reloadPerCharacterState()
+            loadSavedChats(); loadSavedInventory(); loadSavedExtras(); loadSavedCollections(); loadFishingLog(); loadSubmarine(); friends.addAll(loadFriends()); repairTellRecipients()
         }
     }
 
@@ -1711,6 +2373,53 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     fun openApp(id: String) { allApps[id]?.let(::open) }
+
+    /**
+     * Item the wiki app should jump straight to on open, set by callers outside it
+     * (inventory long-press "查看 wiki"). WikiScreen consumes it and clears it.
+     *
+     * A plain id rather than WikiDest: that type is `internal` to WikiScreens.kt, and
+     * keeping this hook id-only avoids coupling PhoneState to the wiki nav model.
+     */
+    var pendingWikiItemId: Int? by mutableStateOf(null)
+    var wikiReturnToApp: String? by mutableStateOf(null)
+
+    /** Open the wiki app already navigated to [itemId]. */
+    fun openWikiItem(itemId: Int) {
+        wikiReturnToApp = selectedApp?.id
+        pendingWikiItemId = itemId
+        openApp("wiki")
+    }
+
+    /** Same idea for the market app (inventory long-press "查价格"). */
+    var pendingMarketItemId: Int? by mutableStateOf(null)
+    var marketReturnToApp: String? by mutableStateOf(null)
+
+    /** Open the market app already navigated to [itemId]'s price page. */
+    fun openMarketItem(itemId: Int) {
+        marketReturnToApp = selectedApp?.id
+        pendingMarketItemId = itemId
+        openApp("market")
+    }
+
+    /**
+     * Gather node the clock app should open on launch, set from the wiki item page's
+     * source list. Same id space: both read the `nodes` table via WikiDb.open.
+     */
+    var pendingGatherNodeId: Int? by mutableStateOf(null)
+
+    /**
+     * Place name of [pendingGatherNodeId], used as a search fallback: the clock only
+     * loads the 226 timed nodes, so a permanent node has no detail page to open.
+     */
+    var pendingGatherNodeName: String? by mutableStateOf(null)
+
+    /** Open the gather clock already navigated to [nodeId]'s detail. */
+    fun openGatherNode(nodeId: Int, placeName: String = "") {
+        pendingGatherNodeId = nodeId
+        pendingGatherNodeName = placeName.ifBlank { null }
+        openApp("gatherclock")
+    }
 
     fun showMessagesTab(contacts: Boolean) {
         appInForeground = true
@@ -1844,6 +2553,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                 conversations.removeAll(bogus)
                 bogus.forEach { conversationByKey.remove(it.key) }
                 chats.removeAll(bogusMessages)
+                scheduleArchiveDelete(activeCharacterKey, bogusMessages)
                 changed = true
             }
         }
@@ -2037,6 +2747,92 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         openConversationKey = null
     }
 
+    /**
+     * Search the durable archive for one conversation.  The UI keeps only a
+     * small hot snapshot in SharedPreferences; querying SQLite here means the
+     * search screen still finds older messages without loading an entire
+     * transcript into memory at startup.
+     */
+    suspend fun searchConversationHistory(
+        conversation: ChatConversation,
+        query: String,
+        limit: Int = 500,
+    ): List<GameChatMessage> {
+        val charKey = currentCharacterKey
+        if (charKey.isBlank() || query.isBlank() || limit <= 0) return emptyList()
+        val rows = withContext(Dispatchers.IO) {
+            runCatching {
+                // A text hit is not necessarily a hit for this conversation (the
+                // archive deliberately stores a compact channel/message shape).  A
+                // single LIMIT 2,000 query could therefore fill up with other channels
+                // and hide an older tell.  Walk bounded pages until enough rows survive
+                // the routing predicate; this keeps the common case one query while still
+                // making sparse conversations searchable.
+                val store = ChatStore.of(appContext)
+                val pageSize = (limit * 2).coerceIn(200, 1_000)
+                val maxScan = (limit * 40).coerceAtMost(20_000)
+                val collected = ArrayList<GameChatMessage>(limit)
+                var offset = 0
+                while (offset < maxScan && collected.size < limit) {
+                    val page = store.search(
+                        charKey = charKey,
+                        query = query,
+                        limit = pageSize,
+                        offset = offset,
+                    )
+                    if (page.isEmpty()) break
+                    collected.addAll(page)
+                    offset += page.size
+                    if (page.size < pageSize) break
+                }
+                collected
+            }.getOrDefault(emptyList())
+        }
+        val clearedUntil = when {
+            conversation.key == "local" -> localClearedUntil
+            conversation.key.startsWith("tab:") ->
+                clearedUntil(conversation.key.removePrefix("tab:"))
+            else -> conversationClearedUntil(conversation.key)
+        }
+        return rows.asSequence()
+            .filter { it.timestamp > clearedUntil }
+            .filter { messageBelongsToConversation(it, conversation) }
+            .take(limit)
+            .toList()
+    }
+
+    /** Best-effort routing predicate for rows written by the current/older builds. */
+    private fun messageBelongsToConversation(
+        message: GameChatMessage,
+        conversation: ChatConversation,
+    ): Boolean {
+        val key = conversation.key
+        if (key == "local") {
+            return (message.category == ChatCategory.Public || message.category == ChatCategory.Emote) &&
+                message.channel !in setOf(27, 75, 94)
+        }
+        if (key.startsWith("tab:")) {
+            val id = key.removePrefix("tab:")
+            return chatFilters.firstOrNull { it.id == id }?.matches(message) == true
+        }
+        if (key == "novice") return message.channel in setOf(27, 75, 94)
+        if (key.startsWith("linkshell:")) {
+            val channel = key.removePrefix("linkshell:").toIntOrNull()
+            return message.category == ChatCategory.Linkshell &&
+                (channel == null || message.channel == channel)
+        }
+        if (conversation.category == ChatCategory.Tell || key.startsWith("tell:")) {
+            val wanted = conversation.tellRecipient.tellNamePart()
+            if (wanted.isBlank()) return message.conversationKey() == key
+            val sender = message.tellNamePart()
+            val target = message.targetName?.tellNamePart().orEmpty()
+            // Normal tells use sender/tellTarget; routed emotes may only carry a
+            // target field, so accept either side of the interaction.
+            return sender == wanted || target == wanted || message.conversationKey() == key
+        }
+        return message.category == conversation.category || message.conversationKey() == key
+    }
+
     // 未读角标：只统计会显示在消息列表里的会话（排除隐藏会话，以及以自己名字命名的会话），首页聊天图标角标与消息标签共用
     fun badgeUnread(): Int = conversations
         .filter { c ->
@@ -2089,8 +2885,14 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
             return
         }
         val removed = conv.messages.toSet()
+        // Persist a tombstone even for messages that have already fallen out of
+        // the hot cache.  Otherwise the durable archive would repopulate this
+        // conversation the next time historical search runs.
+        clearedConversations[conv.key] = System.currentTimeMillis()
+        persistClearedConversations()
         chats.removeAll(removed)
         conv.clear()
+        scheduleArchiveDelete(activeCharacterKey, removed)
         saveChats()
     }
 
@@ -2101,10 +2903,12 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
             val until = clearedFilters[f.id] ?: 0L
             chats.forEach { m -> if (f.matches(m) && m.timestamp > until) referenced.add(m) }
         }
+        val removed = chats.filter { it !in referenced }
         val kept = chats.filter { it in referenced }
         if (kept.size != chats.size) {
             chats.clear()
             chats.addAll(kept)
+            scheduleArchiveDelete(activeCharacterKey, removed)
             saveChats()
         }
     }
@@ -2464,6 +3268,222 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
         statusMessage = "正在切换到 ${job.name}"
     }
 
+    /**
+     * Ask the game client for live board listings.
+     *
+     * Requires the game to be online, not just the socket: the plugin reads the
+     * character's own item search proxy. Deliberately does NOT clear the previous
+     * result here -- the previous rows stay on screen until the fresh reply lands,
+     * so a reconnect blip can no longer wipe what the player was reading. A reply
+     * for a different item is ignored by the screen's own `takeIf(itemId)`.
+     */
+    fun searchLiveMarket(itemId: Int, hqOnly: Boolean = false) {
+        if (!connected || !gameOnline || itemId <= 0) return
+        connection.searchMarket(itemId, hqOnly)
+    }
+
+    /** True when a live query is worth offering at all. */
+    val canQueryLiveMarket: Boolean get() = connected && gameOnline
+
+    /**
+     * Buy one listing off the local board.
+     *
+     * Sends the price/quantity/HQ the caller displayed so the plugin can refuse if the
+     * board moved underneath it. Callers pass the row they rendered, not an index.
+     */
+    fun purchaseLiveMarket(itemId: Int, listing: GameMarketListing) {
+        if (!connected || !gameOnline || itemId <= 0) return
+        if (pendingPurchaseListingId != null) return
+        pendingPurchaseListingId = listing.listingId
+        lastPurchaseResult = null
+        connection.purchaseMarket(
+            itemId, listing.listingId, listing.unitPrice, listing.quantity, listing.hq,
+        )
+        // A reply that never arrives would otherwise leave every buy button greyed out
+        // for the rest of the process. Report it as Timeout, whose wording already says
+        // the purchase may or may not have gone through -- which is exactly the truth
+        // when the plugin has stopped answering.
+        purchaseTimer?.cancel()
+        purchaseTimer = scope.launch(Dispatchers.Main) {
+            delay(20_000)
+            val stuck = pendingPurchaseListingId ?: return@launch
+            if (stuck != listing.listingId) return@launch
+            pendingPurchaseListingId = null
+            lastPurchaseResult = GameMarketPurchase(
+                updatedUnix = System.currentTimeMillis() / 1000,
+                itemId = itemId,
+                statusCode = GameMarketPurchaseStatus.Timeout.code,
+                listingId = listing.listingId,
+                unitPrice = listing.unitPrice,
+                quantity = listing.quantity,
+                tax = 0,
+                errorId = 0,
+            )
+        }
+    }
+
+    /**
+     * Ask the plugin for the category tree. Only needs the socket: the tree comes
+     * from the game's Excel sheets, not the live character, so it works even when
+     * nobody is logged in. A cached (on-disk) tree does not suppress the request --
+     * one refresh per connection keeps the cache current after game patches; the
+     * 15s rate limit keeps concurrent screens from double-firing.
+     */
+    fun requestMarketCategories() {
+        if (!connected) return
+        val now = System.currentTimeMillis()
+        if (now - lastCategoriesRequestAt < 15_000) return
+        lastCategoriesRequestAt = now
+        connection.requestMarketCategories()
+    }
+
+    private var lastCategoriesRequestAt = 0L
+
+    /** Drop the in-memory tree (retry button path); the disk cache is untouched. */
+    fun invalidateMarketCategories() {
+        lastCategoriesRequestAt = 0
+        marketCategories = null
+    }
+
+    /**
+     * Offline browsing of the category tree: persist what the plugin sent and load
+     * it back on startup, so tapping 分类 works with the PC closed. ~17k items --
+     * compact item arrays keep the file near a megabyte.
+     */
+    private fun saveMarketCategoriesCache(tree: GameMarketCategories) {
+        runCatching {
+            val root = JSONObject()
+            root.put("updatedUnix", System.currentTimeMillis() / 1000)
+            root.put("timestampMs", tree.timestampMs)
+            root.put("gameVersion", tree.gameVersion)
+            val cats = JSONArray()
+            tree.categories.forEach { c ->
+                val subs = JSONArray()
+                c.subcategories.forEach { s ->
+                    val items = JSONArray()
+                    s.items.forEach { it2 ->
+                        items.put(
+                            JSONArray()
+                                .put(it2.id).put(it2.name).put(it2.iconId)
+                                .put(it2.levelItem).put(it2.canBeHq).put(it2.npcPrice)
+                        )
+                    }
+                    subs.put(
+                        JSONObject()
+                            .put("id", s.id).put("name", s.name).put("order", s.order)
+                            .put("icon", s.iconId).put("items", items)
+                    )
+                }
+                cats.put(
+                    JSONObject()
+                        .put("id", c.id).put("name", c.name).put("order", c.order)
+                        .put("icon", c.iconId).put("subcategories", subs)
+                )
+            }
+            root.put("categories", cats)
+            java.io.File(appContext.filesDir, "market_categories_cache.json")
+                .writeText(root.toString())
+        }
+    }
+
+    private fun loadMarketCategoriesCache() {
+        // Disk parse of a ~1 MB tree stays off the main thread; until it lands the
+        // connected path simply behaves as before.
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val f = java.io.File(appContext.filesDir, "market_categories_cache.json")
+                if (!f.exists()) return@runCatching
+                val root = JSONObject(f.readText())
+                val timestampMs = root.optLong("timestampMs", 0L)
+                val gameVersion = root.optString("gameVersion", "")
+                val cats = root.optJSONArray("categories") ?: return@runCatching
+                val parsed = buildList(cats.length()) {
+                    for (i in 0 until cats.length()) {
+                        val c = cats.getJSONObject(i)
+                        // Current format: nested subcategories. The first release
+                        // cached a flat item list -- keep that readable as one
+                        // synthetic subcategory so an old cache still shows something.
+                        val subsJson = c.optJSONArray("subcategories")
+                        val subs = buildList(subsJson?.length() ?: 0) {
+                            if (subsJson != null) {
+                                for (k in 0 until subsJson.length()) {
+                                    val s = subsJson.getJSONObject(k)
+                                    add(readCachedSub(s))
+                                }
+                            }
+                        }
+                        val subsOrFlat = if (subs.isNotEmpty()) subs
+                        else {
+                            val flat = c.optJSONArray("items")
+                            if (flat != null && flat.length() > 0) {
+                                listOf(readCachedSub(JSONObject()
+                                    .put("id", c.optInt("id")).put("name", c.optString("name"))
+                                    .put("items", flat)))
+                            } else emptyList()
+                        }
+                        if (subsOrFlat.isNotEmpty()) {
+                            add(
+                                GameMarketCategory(
+                                    c.optInt("id"), c.optString("name"), c.optInt("order"),
+                                    c.optInt("icon"), subsOrFlat,
+                                )
+                            )
+                        }
+                    }
+                }
+                if (parsed.isNotEmpty()) {
+                    val tree = GameMarketCategories(parsed, timestampMs, gameVersion)
+                    marketCategories = tree
+                    indexNpcPrices(tree)
+                }
+            }
+        }
+    }
+
+    private fun readCachedSub(s: JSONObject): GameMarketSubcategory {
+        val items = s.optJSONArray("items")
+        val itemList = buildList(items?.length() ?: 0) {
+            if (items != null) {
+                for (j in 0 until items.length()) {
+                    val a = items.getJSONArray(j)
+                    add(
+                        GameMarketItem(
+                            a.optInt(0), a.optString(1), a.optInt(2),
+                            a.optInt(3), a.optBoolean(4), a.optInt(5),
+                        )
+                    )
+                }
+            }
+        }
+        return GameMarketSubcategory(
+            s.optInt("id"), s.optString("name"), s.optInt("order"),
+            s.optInt("icon"), itemList,
+        )
+    }
+
+    /**
+     * Push the monitor rules to the plugin. Fire-and-forget over the socket; the
+     * plugin answers with a Sync event that only updates in-app state. Called when
+     * a connection is established and whenever a rule is edited.
+     */
+    fun pushMonitorRules() {
+        if (!connected) return
+        scope.launch {
+            val rules = MarketRepository.monitorRules(appContext)
+            if (rules.isNotEmpty() || monitorSyncedOnce) {
+                connection.syncMarketMonitor(rules)
+                monitorSyncedOnce = true
+            }
+        }
+    }
+
+    private var monitorSyncedOnce = false
+
+    /** Dismiss the purchase outcome sheet. */
+    fun clearPurchaseResult() {
+        lastPurchaseResult = null
+    }
+
     fun addChatFilter(label: String, categories: Set<ChatCategory>, channels: Set<Int> = emptySet(), tintIndex: Int = 0,
                       sendChannel: Int? = null, layout: ChatLayout = ChatLayout.Bubbles,
                       historyPolicy: ChatHistoryPolicy = ChatHistoryPolicy.ThirtyDays,
@@ -2515,11 +3535,14 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
     }
 
     private fun handleImpl(event: PhoneEvent) {
-        val scopedEvent = event is PhoneEvent.FriendList || event is PhoneEvent.Chat || event is PhoneEvent.Inventory ||
-            event is PhoneEvent.Wallet || event is PhoneEvent.Weather || event is PhoneEvent.Jobs ||
-            event is PhoneEvent.Housing || event is PhoneEvent.Dailies || event is PhoneEvent.Activity ||
-            event is PhoneEvent.Collections || event is PhoneEvent.Maps || event is PhoneEvent.Fishing ||
-            event is PhoneEvent.PartyList || event is PhoneEvent.Channel || event is PhoneEvent.Submarine
+        val scopedEvent = when (event) {
+            is PhoneEvent.FriendList, is PhoneEvent.Chat, is PhoneEvent.Inventory,
+            is PhoneEvent.Wallet, is PhoneEvent.Weather, is PhoneEvent.Jobs,
+            is PhoneEvent.Housing, is PhoneEvent.Dailies, is PhoneEvent.Activity,
+            is PhoneEvent.Collections, is PhoneEvent.Maps, is PhoneEvent.Fishing,
+            is PhoneEvent.PartyList, is PhoneEvent.Channel, is PhoneEvent.Submarine -> true
+            else -> false
+        }
         if (scopedEvent && !connectedCharacterConfirmed) {
             if (awaitingCharacterProfile) pendingCharacterEvents += event
             return
@@ -2551,6 +3574,11 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 sessionGilBaseline = wallet?.gil
                 serverLabel = "已连接游戏"
                 statusMessage = "连接成功"
+                // Rules live in the plugin, but the phone is their source of truth:
+                // re-push on every connect so an edit made while offline still lands.
+                pushMonitorRules()
+                // Refresh the on-disk category tree once per connection.
+                requestMarketCategories()
             }
             is PhoneEvent.Disconnected -> {
                 connected = false
@@ -2562,6 +3590,9 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 awaitingCharacterProfile = false
                 pendingCharacterEvents.clear()
                 serverLabel = "未连接游戏"
+                // The reply can only arrive over the socket that just died, so holding
+                // the pending id would grey out every buy button for good.
+                pendingPurchaseListingId = null
                 markFriendsOffline()
                 if (statusMessage.isBlank() || statusMessage == "连接成功") statusMessage = event.reason
             }
@@ -2573,6 +3604,9 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                     connectedCharacterConfirmed = false
                     awaitingCharacterProfile = false
                     pendingCharacterEvents.clear()
+                    // Same reason as on disconnect: nothing will answer a purchase once
+                    // the character is gone.
+                    pendingPurchaseListingId = null
                     serverLabel = if (connected) "游戏角色离线" else "未连接游戏"
                     statusMessage = if (connected) "终端已连接，角色未进入游戏" else statusMessage
                     markFriendsOffline()
@@ -2701,7 +3735,15 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                         val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
                         val isTell = event.message.category == ChatCategory.Tell
                         val isRecent = System.currentTimeMillis() - event.message.timestamp < 30_000L
-                        val allow = !isSelf && chatNotifications && conv.notify && !appInForeground && isRecent && (if (isTell) tellNotifications else true)
+                        val isLocalPublic = event.message.category == ChatCategory.Public
+                        val localChannelAllowed = when (event.message.channel) {
+                            10, 81 -> localNotifySay
+                            11, 82 -> localNotifyYell
+                            30, 83 -> localNotifyShout
+                            else -> false
+                        }
+                        val allow = !isSelf && chatNotifications && conv.notify && !appInForeground && isRecent &&
+                            (if (isTell) tellNotifications else if (isLocalPublic) localChannelAllowed else true)
                         if (allow) {
                             val title = conv.title.ifBlank { if (isTell) event.message.sender else event.message.category.label }
                             notifier.chat(event.message, tellNotifications && isTell, title)
@@ -2780,6 +3822,61 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 submarine = event.submarine
                 saveSubmarine()
             }
+            // Not persisted: live board data is only meaningful while connected, and
+            // a stale cached copy would look current.
+            is PhoneEvent.Market -> {
+                liveMarket = event.market
+                // Keep a small session-level vendor index.  NPC metadata is stable
+                // across market scopes, and a refusal/empty-board reply still carries
+                // it; requiring Status.Ok here was the reason the benchmark vanished
+                // whenever the PC board was open or the player was in a duty.
+                event.market.npcPrice.takeIf { it > 0 }?.let {
+                    marketNpcPrices[event.market.itemId] = it
+                    if (marketNpcPrices.size > 4096) {
+                        marketNpcPrices.keys.firstOrNull()?.let(marketNpcPrices::remove)
+                    }
+                }
+            }
+            is PhoneEvent.MarketPurchase -> {
+                // Before anything else: the watchdog would otherwise fire later and
+                // overwrite this real outcome with a fabricated Timeout.
+                purchaseTimer?.cancel()
+                purchaseTimer = null
+                pendingPurchaseListingId = null
+                lastPurchaseResult = event.result
+                // A successful buy consumed the listing and changed gil, so the cached
+                // board is stale. Drop it rather than leave a row the player can tap
+                // again -- the screen re-queries on its own.
+                if (event.result.status == GameMarketPurchaseStatus.Ok) {
+                    liveMarket = null
+                }
+            }
+            is PhoneEvent.MarketCategories -> {
+                // Only update if server data is newer than cached data, or if cache is empty
+                val currentTimestamp = marketCategories?.timestampMs ?: 0L
+                if (event.tree.timestampMs > currentTimestamp || currentTimestamp == 0L) {
+                    marketCategories = event.tree
+                    indexNpcPrices(event.tree)
+                    // Persist for offline browsing: with the PC closed the tree still
+                    // opens, and item pages fall back to Universalis as usual.
+                    scope.launch(Dispatchers.IO) { saveMarketCategoriesCache(event.tree) }
+                }
+            }
+            is PhoneEvent.MarketMonitor -> {
+                lastMonitorEvent = event.event
+                // Sync echoes are bookkeeping; the rest are worth a notification even
+                // while the app sits in the background -- that is the whole point of
+                // monitoring from the phone.
+                if (event.event.kind != GameMonitorEventKind.Sync) {
+                    scope.launch {
+                        MarketAlertReceiver.notifyMonitor(appContext, event.event)
+                    }
+                }
+            }
+            // Recipe frames are optional/experimental and are not persisted.  The
+            // current UI has no recipe surface yet, but consuming the event keeps the
+            // sealed dispatch exhaustive when a compatible plugin sends opcode 25.
+            is PhoneEvent.Recipe -> Unit
             is PhoneEvent.Profile -> {
                 // Set the online core state first so a data-load failure can never
                 // brick the session (which used to leave the app "connecting" forever).

@@ -7,11 +7,11 @@ package com.quserh.eorzeaphone.ui
  * 由别处维护（加应用的人改那里）；这份是"商店怎么介绍它们"。
  * 两件事分开，加应用时不需要动商店，写文案时不会碰坏桌面布局。
  *
- * [implemented] 记的是**有没有自己的界面**——这是从 EorzeaPhoneApp.kt 的
- * 路由表逐条对出来的事实（`when (state.selectedApp?.id)` 里有分支的就有，
- * 落到 `GenericAppScreen` 的就没有）。商店里如实标出来：
- * 一个只有图标和一句话的占位，装上去显示"等待游戏数据"，
- * 商店要是也说得像做好了，那是骗人。
+ * [implemented] 记的是**有没有自己的界面**——从 EorzeaPhoneApp.kt 的路由表
+ * 逐条对出来的事实（`when (state.selectedApp?.id)` 里有分支的就有）。
+ *
+ * 目前表里全是 true：只做「离开游戏后仍然用得上」的功能，做不到的不上架，
+ * 不留占位。所以这个字段现在是个不变量，将来加没做完的东西时才会重新用上。
  */
 data class AppStoreEntry(
     val id: String,
@@ -26,7 +26,6 @@ enum class AppStoreCategory(val label: String, val hint: String) {
     Tools("工具", "算数、记事、计时这类不依赖游戏也能用的"),
     GameData("游戏数据", "要连上插件才有内容，数据来自当前角色"),
     Social("社交", "和别人打交道的"),
-    Fun("娱乐", "打发时间的"),
 }
 
 object AppStoreCatalog {
@@ -65,20 +64,7 @@ object AppStoreCatalog {
         AppStoreEntry("notifications", "通知：把插件推来的消息集中在一处", AppStoreCategory.Tools, true),
         AppStoreEntry("appstore", "就是这儿。装应用、卸应用、看桌面还剩多少位置", AppStoreCategory.Tools, true),
 
-        // ---- 还没做界面的：装上去只有一句占位 ----
-        AppStoreEntry("chirper", "叽叽：短消息，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("aethergram", "以太图集：图片流，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("velvet", "Velvet，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("polls", "投票，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("announcements", "公告，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("feedback", "反馈，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("yellowpages", "黄页，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("muster", "Muster：集合点名，界面还没做", AppStoreCategory.Social, false),
-        AppStoreEntry("venues", "场馆，界面还没做", AppStoreCategory.Fun, false),
-        AppStoreEntry("games", "游戏，界面还没做", AppStoreCategory.Fun, false),
-        AppStoreEntry("gamba", "Gamba，界面还没做", AppStoreCategory.Fun, false),
-        AppStoreEntry("coin", "Aether Coin，界面还没做", AppStoreCategory.Fun, false),
-        AppStoreEntry("market", "市场板：查价格，界面还没做", AppStoreCategory.GameData, false),
+        AppStoreEntry("market", "市场板：各服价格、走势图、降价提醒", AppStoreCategory.GameData, true),
     )
 
     private val byId = entries.associateBy { it.id }

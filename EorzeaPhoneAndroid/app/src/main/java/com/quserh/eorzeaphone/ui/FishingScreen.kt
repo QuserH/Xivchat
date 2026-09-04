@@ -6,9 +6,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -232,9 +229,22 @@ fun FishingScreen(state: PhoneState) {
 
     val currentMapSpot = mapSpot
     val fishingRoute = selected?.id to mapSpot?.id
+    val motion = phoneMotionEnabled()
+    // Map opens from the detail screen, so this is three real levels, not two.
+    fun depthOf(fishId: Int?, spotId: Int?): Int = when {
+        spotId != null -> 2
+        fishId != null -> 1
+        else -> 0
+    }
     AnimatedContent(
         targetState = fishingRoute,
-        transitionSpec = { (fadeIn(tween(220)) + scaleIn(tween(240), initialScale = .97f)).togetherWith(fadeOut(tween(150)) + scaleOut(tween(170), targetScale = 1.02f)) },
+        transitionSpec = {
+            phoneNavTransition(
+                motionAllowed = motion,
+                targetDepth = depthOf(targetState.first, targetState.second),
+                initialDepth = depthOf(initialState.first, initialState.second),
+            )
+        },
         label = "fishing-detail",
     ) { route ->
         val fish = catalog?.fish?.firstOrNull { it.id == route.first }

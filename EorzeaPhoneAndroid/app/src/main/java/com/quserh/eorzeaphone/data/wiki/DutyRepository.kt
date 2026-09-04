@@ -114,6 +114,29 @@ data class WikiDuty(
     /** "60分钟" */
     val timeText: String get() = if (timeLimit > 0) "${timeLimit}分钟" else ""
 
+    /**
+     * 图标种类，UI 拿它换成 `R.drawable.ic2_duty_*`。
+     *
+     * ## 为什么不用 [imageId]
+     *
+     * `imageId` 是站点的副本**横幅图**（112021 那种，实测 55-60 KB 的宽幅 PNG）。
+     * 塞进列表里 34dp 的方框会被压得看不出是什么，而且每一行都要联网拉一张图。
+     * 用户要的是「副本图片用通用的就好了，迷宫就用迷宫的图标」——
+     * 按类型给一套矢量图标，离线、清晰、一眼分得出种类。
+     *
+     * ## 为什么按 [typeId] 分派而不是按 [type] 字符串
+     *
+     * `typeId` 是数据库里的稳定字段；`type` 是展示用的中文名，站点改字就断。
+     * 而且有 16 个副本**没有** `type`（宝物库 10 个、节日副本 4 个、
+     * 卓异的悲寂那 2 个），但它们的 `typeId` 是有值的（0 / 22 / 39），
+     * 按 ID 分派这些也能拿到对的图标。
+     *
+     * 实测 type_id 取值（427 个副本，全覆盖）：
+     * 0=宝物库10、2=迷宫挑战104、3=行会令14、4=讨伐歼灭战118、5=大型任务155、
+     * 22=节日副本4、28=绝境战7、30=特殊迷宫探索12、37=诛灭战1、39=卓异的悲寂2。
+     */
+    val iconKind: String get() = DutyDb.kindForTypeId(typeId)
+
     /** 列表副标题："讨伐歼灭战 · Lv50 · 炎帝陵" */
     val subtitle: String
         get() = buildList {
@@ -163,13 +186,20 @@ object DutyDb {
      * BOSS 名参与匹配是故意的：用户搜「泰坦」想找的是泰坦歼灭战，
      * 而副本名里未必含 BOSS 名（「究极神兵破坏作战」的 BOSS 是究极神兵）。
      *
-     * 排序：完全同名最前，前缀匹配次之，然后按等级、类内排序。
+     * 排序分 6 档：同名 → 名字前缀 → **名字包含** → BOSS 前缀 →
+     * BOSS 包含 → 只靠类型命中。
+     *
+     * 「名字包含」必须排在「只靠类型命中」前面，否则搜「歼灭战」头几条是
+     * *幻巧战* —— 它们的 `类型` 正是「讨伐歼灭战」，于是和真正名字里带
+     * 「歼灭战」的挤在同一档，再按等级降序一排就翻到前面去了。
+     * 这是打包出 APK 后按真实数据核出来的，不是推测。
      */
     suspend fun search(context: Context, query: String): List<WikiDuty> =
         withContext(Dispatchers.IO) {
             val q = query.trim()
             if (q.isBlank() || !hasTable(context)) return@withContext emptyList()
             val like = "%$q%"
+            val prefix = "$q%"
             val sql = """
                 SELECT $COLS FROM duties
                 WHERE name LIKE ? OR name_ja LIKE ? OR LOWER(name_en) LIKE ?
@@ -177,7 +207,9 @@ object DutyDb {
                 ORDER BY
                   CASE WHEN name = ? THEN 0
                        WHEN name LIKE ? THEN 1
-                       WHEN bosses LIKE ? THEN 2 ELSE 3 END,
+                       WHEN name LIKE ? THEN 2
+                       WHEN bosses LIKE ? THEN 3
+                       WHEN bosses LIKE ? THEN 4 ELSE 5 END,
                   level_min DESC, type_id, sort
                 LIMIT $SEARCH_LIMIT
             """.trimIndent()
@@ -186,7 +218,7 @@ object DutyDb {
                     sql,
                     arrayOf(
                         like, like, "%${q.lowercase()}%", like, like,
-                        q, "$q%", "$q%",
+                        q, prefix, like, prefix, like,
                     ),
                 ).use { c -> buildList(c.count) { while (c.moveToNext()) add(readRow(c)) } }
             }.getOrDefault(emptyList())
@@ -229,20 +261,63 @@ object DutyDb {
             }.getOrDefault(emptyList())
         }
 
-    /** 有哪些副本类型（带计数），用来填浏览页的分组。缺类型的归 [TYPE_OTHER]。 */
-    suspend fun types(context: Context): List<Pair<String, Int>> =
+    /**
+     * 浏览页的一个类型分组。
+     *
+     * [iconKind] 是这一组该用的图标；组里混了多种 type_id 时是 [KIND_MIXED]。
+     * 只有 [TYPE_OTHER] 会混 —— 它装的是源数据没给类型名的 16 个，
+     * 内部实际有 3 种（0 宝物库 / 22 节日副本 / 39 卓异的悲寂），
+     * 给它们同一个图标会有两种是错的，所以这一组标成混合。
+     * 组**内部**每一行仍然用各自的 [WikiDuty.iconKind]，那是准的。
+     */
+    data class DutyTypeGroup(val name: String, val count: Int, val iconKind: String)
+
+    /** 一组里混了多种 type_id 时的图标标记。 */
+    const val KIND_MIXED = "mixed"
+
+    /** 有哪些副本类型（带计数 + 图标），用来填浏览页的分组。缺类型的归 [TYPE_OTHER]。 */
+    suspend fun types(context: Context): List<DutyTypeGroup> =
         withContext(Dispatchers.IO) {
             if (!hasTable(context)) return@withContext emptyList()
             runCatching {
                 WikiDb.open(context).rawQuery(
                     "SELECT CASE WHEN type IS NULL OR type = '' THEN '$TYPE_OTHER' " +
-                        "ELSE type END AS t, COUNT(*) FROM duties " +
-                        "GROUP BY t ORDER BY COUNT(*) DESC", null,
+                        "ELSE type END AS t, COUNT(*), " +
+                        "COUNT(DISTINCT type_id), MIN(type_id) " +
+                        "FROM duties GROUP BY t ORDER BY COUNT(*) DESC", null,
                 ).use { c ->
-                    buildList { while (c.moveToNext()) add(c.getString(0) to c.getInt(1)) }
+                    buildList {
+                        while (c.moveToNext()) {
+                            val distinctIds = c.getInt(2)
+                            val kind = if (distinctIds == 1) {
+                                // 组内只有一种 type_id，复用 WikiDuty 那张表
+                                kindForTypeId(c.getInt(3))
+                            } else {
+                                KIND_MIXED
+                            }
+                            add(DutyTypeGroup(c.getString(0), c.getInt(1), kind))
+                        }
+                    }
                 }
             }.getOrDefault(emptyList())
         }
+
+    /**
+     * type_id → 图标种类。[WikiDuty.iconKind] 和 [types] 共用这一张表，
+     * 免得两处各写一份、改一处漏一处。
+     */
+    internal fun kindForTypeId(typeId: Int): String = when (typeId) {
+        2 -> "dungeon"      // 迷宫挑战
+        3 -> "guildhest"    // 行会令
+        4 -> "trial"        // 讨伐歼灭战
+        5 -> "raid"         // 大型任务
+        28, 37, 39 -> "ultimate"   // 绝境战 / 诛灭战 / 卓异的悲寂
+        30 -> "deep"        // 特殊迷宫探索（深宫、多变迷宫）
+        22 -> "seasonal"    // 节日副本
+        0 -> "treasure"     // 宝物库
+        // 新补丁加的类型会走到这里。宁可给个通用图标，也别崩或留空白。
+        else -> "dungeon"
+    }
 
     /** 这个副本掉什么。 */
     suspend fun drops(context: Context, dutyId: Int): List<DutyDrop> =

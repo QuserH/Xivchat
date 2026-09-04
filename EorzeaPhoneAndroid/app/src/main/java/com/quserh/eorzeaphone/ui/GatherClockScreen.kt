@@ -2,6 +2,7 @@ package com.quserh.eorzeaphone.ui
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -103,6 +104,23 @@ fun GatherClockScreen(state: PhoneState) {
         loading = false
     }
 
+    // Jumped here from the wiki item page's source list. Loads the node by id instead of
+    // looking it up in `all`: the list holds only the 226 timed nodes, so searching it
+    // silently dropped every jump to one of the other 416 -- which is most of them.
+    // Clear the pending id only *after* the load. It is this effect's own key, so nulling
+    // it first recomposed and relaunched the effect, cancelling the suspend query at its
+    // first suspension point -- `detail` never got assigned and the jump read as a no-op.
+    // Clear on a miss too, or a stale id hijacks the next plain open of this app.
+    LaunchedEffect(state.pendingGatherNodeId) {
+        val want = state.pendingGatherNodeId ?: return@LaunchedEffect
+        val hit = runCatching { GatherClockDb.node(context, want) }.getOrNull()
+        if (hit != null) detail = hit else query = state.pendingGatherNodeName.orEmpty()
+        // Either way: a filtered list hiding the searched node also reads as "nothing happened".
+        onlyActive = false
+        state.pendingGatherNodeId = null
+        state.pendingGatherNodeName = null
+    }
+
     // 一秒一跳。艾时一分钟只有 2.9 真实秒，跳慢了倒计时看着是卡的。
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -110,12 +128,6 @@ fun GatherClockScreen(state: PhoneState) {
             nowMs = System.currentTimeMillis()
             delay(1000)
         }
-    }
-
-    val open = detail
-    if (open != null) {
-        GatherDetailScreen(state, open, nowMs) { detail = null }
-        return
     }
 
     // 负值 = 正在开，升序排即"可采集"在最前，其次最快要开的
@@ -139,94 +151,113 @@ fun GatherClockScreen(state: PhoneState) {
     val (etH, etM) = EorzeaTime.nowHourMinute(nowMs)
     val margin = LocalContentMargin.current
 
-    ScreenFrame {
-        ScreenHeader(
-            "采集时钟",
-            state,
-            trailing = {
-                // 艾时钟放页头右上：整屏所有倒计时都以它为基准
-                Text(
-                    "艾 %02d:%02d".format(etH, etM),
-                    color = PhoneAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                )
-            },
-        )
-
-        GatherSearchField(query) { query = it }
-
-        Row(
-            Modifier.fillMaxWidth().padding(start = margin.dp, end = margin.dp, top = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (loading) "读取中…" else "$activeCount 处开放中 · 共 ${ranked.size} 处",
-                color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f),
+    // Detail used to be an early `return`, which meant entering and leaving it was an
+    // instant content snap with no transition at all.
+    val motion = phoneMotionEnabled()
+    AnimatedContent(
+        targetState = detail,
+        transitionSpec = {
+            phoneNavTransition(
+                motionAllowed = motion,
+                targetDepth = if (targetState != null) 1 else 0,
+                initialDepth = if (initialState != null) 1 else 0,
             )
-            PhonePressable(onClick = { onlyActive = !onlyActive }, shape = PhoneChipShape) {
+        },
+        label = "gather-detail",
+    ) { open ->
+        if (open != null) {
+            GatherDetailScreen(state, open, nowMs) { detail = null }
+        } else {
+            ScreenFrame {
+                ScreenHeader(
+                    "采集时钟",
+                    state,
+                    trailing = {
+                        // 艾时钟放页头右上：整屏所有倒计时都以它为基准
+                        Text(
+                            "艾 %02d:%02d".format(etH, etM),
+                            color = PhoneAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                )
+
+                GatherSearchField(query) { query = it }
+
                 Row(
+                    Modifier.fillMaxWidth().padding(start = margin.dp, end = margin.dp, top = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    // 底用 BrandFill、字用 BrandOnFill，而不是 PhoneAccent + 白字。
-                    // PhoneAccent 是**字色**（它自己的注释就这么写），当底用时
-                    // 深色主题下取到 inkDark（浅色），白字压上去只有 1.81:1，
-                    // 9 个强调色预设全部不达标。BrandOnFill 会按填充明度自己选
-                    // 白字还是深墨。见 HANDOFF.md §5.3、wiki-feature/check_contrast.py。
-                    modifier = Modifier.clip(PhoneChipShape)
-                        .background(if (onlyActive) BrandFill else PhoneSurfaceRaised)
-                        .padding(horizontal = 11.dp, vertical = 7.dp),
                 ) {
-                    ImageGlyph(
-                        R.drawable.ic2_filter,
-                        if (onlyActive) BrandOnFill else PhoneMuted,
-                        Modifier.size(13.dp),
-                    )
                     Text(
-                        "仅看开放中",
-                        color = if (onlyActive) BrandOnFill else PhoneMuted,
-                        fontSize = 12.sp,
-                        fontWeight = if (onlyActive) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier.padding(start = 5.dp),
+                        if (loading) "读取中…" else "$activeCount 处开放中 · 共 ${ranked.size} 处",
+                        color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f),
                     )
+                    PhonePressable(onClick = { onlyActive = !onlyActive }, shape = PhoneChipShape) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            // 底用 BrandFill、字用 BrandOnFill，而不是 PhoneAccent + 白字。
+                            // PhoneAccent 是**字色**（它自己的注释就这么写），当底用时
+                            // 深色主题下取到 inkDark（浅色），白字压上去只有 1.81:1，
+                            // 9 个强调色预设全部不达标。BrandOnFill 会按填充明度自己选
+                            // 白字还是深墨。见 HANDOFF.md §5.3、wiki-feature/check_contrast.py。
+                            modifier = Modifier.clip(PhoneChipShape)
+                                .background(if (onlyActive) BrandFill else PhoneSurfaceRaised)
+                                .padding(horizontal = 11.dp, vertical = 7.dp),
+                        ) {
+                            ImageGlyph(
+                                R.drawable.ic2_filter,
+                                if (onlyActive) BrandOnFill else PhoneMuted,
+                                Modifier.size(13.dp),
+                            )
+                            Text(
+                                "仅看开放中",
+                                color = if (onlyActive) BrandOnFill else PhoneMuted,
+                                fontSize = 12.sp,
+                                fontWeight = if (onlyActive) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.padding(start = 5.dp),
+                            )
+                        }
+                    }
                 }
-            }
-        }
 
-        Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(10.dp))
 
-        when {
-            loading -> Box(
-                Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(
-                    color = PhoneAccent, strokeWidth = 2.dp, modifier = Modifier.size(26.dp),
-                )
-            }
-            failure != null -> Box(
-                Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                PhoneEmpty("读取采集点失败", failure, R.drawable.ic2_warning)
-            }
-            shown.isEmpty() -> Box(
-                Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                PhoneEmpty(
-                    if (onlyActive) "现在没有开放的采集点" else "没有符合条件的采集点",
-                    if (onlyActive) "关掉「仅看开放中」看全部 226 处"
-                    else "换个物品名或地区试试",
-                    R.drawable.ic2_clock,
-                )
-            }
-            else -> LazyColumn(
-                Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(
-                    start = margin.dp, end = margin.dp, bottom = 18.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                lazyItems(shown, key = { it.first.id }) { (node, ms) ->
-                    GatherRow(node, ms) { detail = node }
+                when {
+                    loading -> Box(
+                        Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            color = PhoneAccent, strokeWidth = 2.dp, modifier = Modifier.size(26.dp),
+                        )
+                    }
+                    failure != null -> Box(
+                        Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PhoneEmpty("读取采集点失败", failure, R.drawable.ic2_warning)
+                    }
+                    shown.isEmpty() -> Box(
+                        Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PhoneEmpty(
+                            if (onlyActive) "现在没有开放的采集点" else "没有符合条件的采集点",
+                            if (onlyActive) "关掉「仅看开放中」看全部 226 处"
+                            else "换个物品名或地区试试",
+                            R.drawable.ic2_clock,
+                        )
+                    }
+                    else -> LazyColumn(
+                        Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = PaddingValues(
+                            start = margin.dp, end = margin.dp, bottom = 18.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        lazyItems(shown, key = { it.first.id }) { (node, ms) ->
+                            GatherRow(node, ms) { detail = node }
+                        }
+                    }
                 }
             }
         }
@@ -349,8 +380,12 @@ private fun GatherDetailScreen(
     onBack: () -> Unit,
 ) {
     val margin = LocalContentMargin.current
+    // Reachable for a permanent node now that the wiki can jump straight here, and
+    // nextWindowMs returns MAX_VALUE for one -- rendering that as a countdown would
+    // read as "opens in 2.5 million hours" under a 常驻 point.
     val ms = EorzeaTime.nextWindowMs(node.etHours, node.durationEtMin, nowMs)
-    val active = ms < 0
+    val timed = node.etHours.isNotEmpty() && node.durationEtMin > 0 && ms != Long.MAX_VALUE
+    val active = timed && ms < 0
     val remain = if (active) -ms else ms
 
     ScreenFrame {
@@ -382,12 +417,16 @@ private fun GatherDetailScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        EorzeaTime.formatCountdown(remain),
+                        if (timed) EorzeaTime.formatCountdown(remain) else "常驻",
                         color = if (active) PhoneGreen else PhoneText,
-                        fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                        fontSize = if (timed) 30.sp else 26.sp, fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        if (active) "开放中 · 剩余" else "距下次出现",
+                        when {
+                            !timed -> "无时间限制 · 随时可采"
+                            active -> "开放中 · 剩余"
+                            else -> "距下次出现"
+                        },
                         color = if (active) PhoneGreen else PhoneMuted, fontSize = 12.sp,
                         modifier = Modifier.padding(top = 3.dp),
                     )
@@ -420,13 +459,17 @@ private fun GatherDetailScreen(
                             add("等级" to ("Lv${node.level}" +
                                 "★".repeat(node.stars.coerceIn(0, 3))))
                         }
-                        add("出现时刻" to "艾 ${node.etHoursText}")
-                        // 站点按艾时说"4小时"，这里两个都给，免得对不上
-                        add("持续" to buildString {
-                            append("${node.durationEtMin} 艾分")
-                            val real = EorzeaTime.etMinutesToRealMs(node.durationEtMin) / 60000.0
-                            append("（现实约 %.0f 分钟）".format(real))
-                        })
+                        if (timed) {
+                            add("出现时刻" to "艾 ${node.etHoursText}")
+                            // 站点按艾时说"4小时"，这里两个都给，免得对不上
+                            add("持续" to buildString {
+                                append("${node.durationEtMin} 艾分")
+                                val real = EorzeaTime.etMinutesToRealMs(node.durationEtMin) / 60000.0
+                                append("（现实约 %.0f 分钟）".format(real))
+                            })
+                        } else {
+                            add("出现时刻" to "常驻（无限时）")
+                        }
                         node.folkloreName.takeIf { it.isNotBlank() }
                             ?.let { add("传承录" to it) }
                         add("采集点 ID" to node.id.toString())

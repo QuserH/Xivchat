@@ -1,6 +1,7 @@
 package com.quserh.eorzeaphone.ui
 
 import android.annotation.SuppressLint
+import com.quserh.eorzeaphone.ui.theme.PhoneType
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -132,7 +133,9 @@ import androidx.compose.runtime.mutableStateMapOf
 // 职业名/分组用 Wiki 的本地字典：石之家自己的 ShizhijiaJob 要现拉 recruit 接口，
 // 而且 id 是另一套字符串。WikiDicts 的 id 空间和幻化 job_ids 对得上（拿 8 篇真帖验过）。
 import com.quserh.eorzeaphone.data.wiki.WikiDicts
+import com.quserh.eorzeaphone.data.CacheMaintenance
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaApi
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaAutoCheckIn
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaCosUpload
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaArea
 import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaBoundCharacter
@@ -263,25 +266,22 @@ internal val SzjMetaStyle = TextStyle(fontSize = 11.sp, letterSpacing = 0.4.sp, 
 internal val SzjLabelStyle = TextStyle(fontSize = 12.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.SemiBold)
 
 // ---- 动效 ----
-/** 系统「减少动画」开着时把动效降到 0，无障碍设置优先于观感。 */
+/**
+ * 系统「减少动画」开着时把动效降到 0，无障碍设置优先于观感。
+ *
+ * 走 [rememberMotionEnabled]：同一套判断（应用内开关 + 系统设置实时变化），
+ * 免得石之家和外面两处各判一次、结论还不一样。
+ */
 @Composable
-internal fun szjMotionEnabled(): Boolean {
-    val ctx = LocalContext.current
-    return remember {
-        runCatching {
-            android.provider.Settings.Global.getFloat(
-                ctx.contentResolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            ) > 0f
-        }.getOrDefault(true)
-    }
-}
+internal fun szjMotionEnabled(): Boolean = rememberMotionEnabled()
 
 /** 按压回弹：低刚度弹簧，手指离开时"浮"回来而不是弹回来。 */
 internal val SzjPressSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
 private val SzjMorphSpring = spring<Float>(dampingRatio = 0.75f, stiffness = 320f)
 private const val SZJ_ENTER_MS = 260
+
+/** 滚动中出现的项：更短，免得跟手指赛跑。 */
+private const val SZJ_SCROLL_ENTER_MS = 170
 private const val SZJ_STAGGER_MS = 26
 
 /**
@@ -365,22 +365,34 @@ internal fun SzjCardSurface(
 }
 
 /**
- * 列表项入场：淡入 + 小幅上浮，按序号错开。
- * 只在首屏那几项做（index < 10），翻页加载出来的不再逐个动，
- * 否则无限滚动会一直有东西在动，反而显得廉价。
+ * 列表项入场：淡入 + 小幅上浮。
+ *
+ * 首屏（index < 10）按序号错开，营造「一批一起进场」；再往下滚动出现的项**也动**，
+ * 但取消错开、时长缩短、位移减半 —— 滚动时每项各自入场，不该整批延迟。
+ *
+ * 原来 `index >= 10` 直接不动，理由是「无限滚动一直有东西在动显得廉价」。但用户报的
+ * 就是「滚动的时候的动效压根没生效」：实测动画系统本身是正常的（真机一次滑动 210 帧、
+ * 0 jank），唯一真的不动的就是这一条 —— 滚过第 10 项之后所有内容都是硬弹出来的。
+ * 所以改成「都动，但滚动时更克制」。
  */
 @Composable
 internal fun SzjRise(index: Int, content: @Composable () -> Unit) {
     val motion = szjMotionEnabled()
-    if (!motion || index >= 10) { content(); return }
+    if (!motion) { content(); return }
+    val firstScreen = index < 10
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val p by animateFloatAsState(
         if (shown) 1f else 0f,
-        tween(SZJ_ENTER_MS, delayMillis = index * SZJ_STAGGER_MS, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        tween(
+            durationMillis = if (firstScreen) SZJ_ENTER_MS else SZJ_SCROLL_ENTER_MS,
+            delayMillis = if (firstScreen) index * SZJ_STAGGER_MS else 0,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
         label = "szjRise",
     )
-    Box(Modifier.graphicsLayer { alpha = p; translationY = (1f - p) * 22f }) { content() }
+    val rise = if (firstScreen) 22f else 11f
+    Box(Modifier.graphicsLayer { alpha = p; translationY = (1f - p) * rise }) { content() }
 }
 
 /**
@@ -1316,36 +1328,38 @@ private fun ShizhijiaHomeScreen(
     val scope = rememberCoroutineScope()
     val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
     var signedToday by remember { mutableStateOf(ShizhijiaSession.signDate(context) == todayStr) }
-    // Auto check-in once per day when logged in, and refresh the top bar state.
+    // Login state is still refreshed when this screen is shown, but check-in itself is owned
+    // by the application-level coordinator. That way opening the app on another feature also
+    // signs in, and this screen cannot race a startup/resume request.
     LaunchedEffect(Unit) {
-        val logged = ShizhijiaApi.isLoggedIn(context)
+        val hadSession = ShizhijiaSession.hasSession(context)
+        val logged = if (hadSession) runCatching { ShizhijiaApi.isLoggedIn(context) }.getOrDefault(false) else false
         loggedIn = logged
         if (logged) {
             loginUser = ShizhijiaApi.getLoginUser(context)
             loginUser?.let { ShizhijiaSession.cacheLoginUser(context, it) }
             android.util.Log.d("ShizhijiaLogin", "loginUser=${loginUser?.name} ava=${(loginUser?.avatar ?: "").take(50)}")
-            if (!signedToday) {
-                val ok = ShizhijiaApi.signIn(context)
-                if (ok) { signedToday = true; ShizhijiaSession.setSignDate(context, todayStr); android.widget.Toast.makeText(context, "签到成功", android.widget.Toast.LENGTH_SHORT).show() }
-            }
-        } else {
+        } else if (!hadSession) {
             ShizhijiaSession.clearCachedUser(context)
             loginUser = null
         }
+        val result = ShizhijiaAutoCheckIn.ensure(context)
+        if (result.signedToday) signedToday = true
     }
-    // Manual check-in from the top bar button. A duplicate check-in is rejected
-    // by the server with a non-10000 code, so on failure we cross-check the
-    // monthly sign log - when today shows up there the state still flips to 已签到.
+    // Manual check-in uses the same serialized path as startup/resume. A duplicate check-in
+    // is confirmed through the server log, so a transient non-10000 response is not shown as
+    // a false failure.
     val onSignIn: () -> Unit = {
         scope.launch {
-            val ok = ShizhijiaApi.signIn(context) || ShizhijiaApi.isSignedToday(context)
-            if (ok) {
-                signedToday = true
-                ShizhijiaSession.setSignDate(context, todayStr)
-                android.widget.Toast.makeText(context, "今日已签到", android.widget.Toast.LENGTH_SHORT).show()
-            } else {
-                android.widget.Toast.makeText(context, "签到失败，请稍后再试", android.widget.Toast.LENGTH_SHORT).show()
+            val result = ShizhijiaAutoCheckIn.ensure(context, force = true)
+            if (result.signedToday) signedToday = true
+            val message = when (result.status) {
+                ShizhijiaAutoCheckIn.Status.Signed -> "签到成功"
+                ShizhijiaAutoCheckIn.Status.AlreadySigned -> "今日已签到"
+                ShizhijiaAutoCheckIn.Status.NoSession -> "请先登录石之家"
+                ShizhijiaAutoCheckIn.Status.Failed -> "签到失败，请稍后再试"
             }
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2410,8 +2424,11 @@ private fun SzjPostRow(post: ShizhijiaPostCard, onClick: () -> Unit) {
         }
         Text(
             post.title,
-            color = SzjText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-            lineHeight = 23.sp, letterSpacing = 0.1.sp,
+            color = SzjText,
+            // 原来是 16sp + **正** 0.1sp 字距：字号越大，字距越该收紧，正值让标题散开。
+            // 行高保持 23sp（比字阶里的 21sp 松）—— 标题允许折两行，中文没有 x-height
+            // 缓冲，两行之间要更松才不挤。
+            style = PhoneType.Headline.copy(lineHeight = 23.sp),
             maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
         // Line 2: 配图。**不管几张，每格都是同一个固定 1/3 宽**。
@@ -2571,7 +2588,9 @@ private fun SzjDynamicRow(d: ShizhijiaDynamic, onClick: () -> Unit) {
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
         onClick = onClick,
     ) {
-        Column(Modifier.padding(13.dp)) {
+        // 14dp 和帖子卡/招募卡对齐（原来是 13dp）。单看看不出来，但两种卡在同一条
+        // 列表里交替出现时，内容左边缘差 1dp 会让整列看起来没对齐。
+        Column(Modifier.padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SzjAvatar(d.characterName, d.avatar, d.uuid, 38)
             Spacer(Modifier.width(10.dp))
@@ -6854,6 +6873,32 @@ private fun ShizhijiaLoginScreen(state: PhoneState, pop: () -> Unit) {
     // Show a friendly "loading" hint above the WebView while the QQ page loads,
     // which can take a while on a real device.
     var pageLoading by remember { mutableStateOf(false) }
+    // Keep the Android WebView outside the Compose tree only for the duration of
+    // the SDO login.  WebView's disk cache lives in app_webview (not cacheDir) and
+    // used to survive every login, which is a common source of a several-hundred-
+    // megabyte "app data" reading.  The reference is also needed to stop/destroy
+    // it deterministically when the login succeeds or the user presses Back.
+    val loginWebView = remember { arrayOfNulls<WebView>(1) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            val web = loginWebView[0]
+            loginWebView[0] = null
+            if (web != null) {
+                runCatching {
+                    web.stopLoading()
+                    web.loadUrl("about:blank")
+                    web.clearHistory()
+                    // clearCache does not clear cookies; the persisted SDO session
+                    // therefore survives while the transient page assets do not.
+                    web.clearCache(true)
+                    web.webChromeClient = WebChromeClient()
+                    web.webViewClient = WebViewClient()
+                    web.destroy()
+                }
+                CacheMaintenance.webViewStopped(context)
+            }
+        }
+    }
     // null = probing, true = stored cookie works, false = no/invalid session.
     var verified by remember { mutableStateOf<Boolean?>(null) }
 
@@ -6926,6 +6971,8 @@ private fun ShizhijiaLoginScreen(state: PhoneState, pop: () -> Unit) {
                 AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        loginWebView[0] = this
+                        CacheMaintenance.webViewStarted()
                         // The SSO dance jumps across domains (app -> pass.sdo.com
                         // -> app), so both first- and third-party cookies must be
                         // accepted for the session cookie to survive the redirects.
@@ -6933,7 +6980,11 @@ private fun ShizhijiaLoginScreen(state: PhoneState, pop: () -> Unit) {
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
+                        // The SDO flow only needs DOM storage/cookies.  Web SQL
+                        // databases are not used and can grow without the normal
+                        // WebView cache limits, so keep them disabled.
+                        settings.databaseEnabled = false
+                        settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
                         // A realistic phone Chrome UA avoids being mistaken for a bot.
                         settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
                         // The WeGame/QQ OAuth page mixes http sub-resources into

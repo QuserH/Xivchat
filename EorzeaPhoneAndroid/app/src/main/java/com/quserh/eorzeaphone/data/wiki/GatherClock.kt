@@ -147,40 +147,68 @@ object EorzeaTime {
 }
 
 object GatherClockDb {
-    /** 只取限时点，连带产出物品。642 个点里 226 个限时。 */
-    suspend fun timedNodes(context: Context): List<GatherNode> = withContext(Dispatchers.IO) {
+    private const val NODE_COLS =
+        "id, kind_id, level, stars, map_name, area_name, region, x, y, " +
+            "et_hours, duration, folklore_name, map_file, size_factor"
+
+    private fun android.database.Cursor.toGatherNode() = GatherNode(
+        id = getInt(0),
+        kindId = getInt(1),
+        level = getInt(2),
+        stars = getInt(3),
+        mapName = getString(4) ?: "",
+        areaName = getString(5) ?: "",
+        region = getString(6) ?: "",
+        x = getFloat(7),
+        y = getFloat(8),
+        etHours = (getString(9) ?: "").trim(',').split(',').mapNotNull(String::toIntOrNull),
+        durationEtMin = getInt(10),
+        folkloreName = getString(11) ?: "",
+        items = emptyList(),
+        mapFile = getString(12) ?: "",
+        sizeFactor = getInt(13).takeIf { it > 0 } ?: 100,
+    )
+
+    /**
+     * One node by id, timed or not, with its items and aetherytes.
+     *
+     * The list only loads the 226 timed nodes, but the wiki links to all 642 -- a jump
+     * from an item's source list has to be able to land on a permanent node too.
+     */
+    suspend fun node(context: Context, id: Int): GatherNode? = withContext(Dispatchers.IO) {
         val db = WikiDb.open(context)
-        val nodes = db.rawQuery(
-            "SELECT id, kind_id, level, stars, map_name, area_name, region, x, y, " +
-                "et_hours, duration, folklore_name, map_file, size_factor FROM nodes " +
-                "WHERE et_hours <> '' AND duration > 0",
-            null,
+        val node = db.rawQuery("SELECT $NODE_COLS FROM nodes WHERE id = ?", arrayOf("$id"))
+            .use { c -> if (c.moveToNext()) c.toGatherNode() else null }
+            ?: return@withContext null
+        val items = db.rawQuery(
+            "SELECT i.id, i.name_cn, i.icon_id, i.icon_hash FROM node_items ni " +
+                "JOIN items i ON i.id = ni.item_id WHERE ni.node_id = ? " +
+                "ORDER BY i.item_level DESC",
+            arrayOf("$id"),
         ).use { c ->
             buildList(c.count) {
                 while (c.moveToNext()) {
-                    add(
-                        GatherNode(
-                            id = c.getInt(0),
-                            kindId = c.getInt(1),
-                            level = c.getInt(2),
-                            stars = c.getInt(3),
-                            mapName = c.getString(4) ?: "",
-                            areaName = c.getString(5) ?: "",
-                            region = c.getString(6) ?: "",
-                            x = c.getFloat(7),
-                            y = c.getFloat(8),
-                            etHours = (c.getString(9) ?: "").trim(',').split(',')
-                                .mapNotNull(String::toIntOrNull),
-                            durationEtMin = c.getInt(10),
-                            folkloreName = c.getString(11) ?: "",
-                            items = emptyList(),
-                            mapFile = c.getString(12) ?: "",
-                            sizeFactor = c.getInt(13).takeIf { it > 0 } ?: 100,
-                        ),
-                    )
+                    add(GatherItem(c.getInt(0), c.getString(1) ?: "", c.getInt(2), c.getString(3) ?: ""))
                 }
             }
         }
+        val aetherytes = db.rawQuery(
+            "SELECT name, x, y FROM aetherytes WHERE map_name = ?", arrayOf(node.mapName),
+        ).use { c ->
+            buildList(c.count) {
+                while (c.moveToNext()) {
+                    add(GatherAetheryte(c.getString(0) ?: "", c.getFloat(1), c.getFloat(2)))
+                }
+            }
+        }
+        node.copy(items = items, aetherytes = aetherytes)
+    }
+
+    /** 只取限时点，连带产出物品。642 个点里 226 个限时。 */
+    suspend fun timedNodes(context: Context): List<GatherNode> = withContext(Dispatchers.IO) {
+        val db = WikiDb.open(context)
+        val nodes = db.rawQuery("SELECT $NODE_COLS FROM nodes WHERE et_hours <> '' AND duration > 0", null)
+            .use { c -> buildList(c.count) { while (c.moveToNext()) add(c.toGatherNode()) } }
         // 以太之光按地图名一次捞完（38 张图 / 68 个点，不值得按需查）
         val aethersByMap = db.rawQuery(
             "SELECT map_name, name, x, y FROM aetherytes", null,

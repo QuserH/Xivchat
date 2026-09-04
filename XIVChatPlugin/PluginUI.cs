@@ -189,6 +189,28 @@ namespace XIVChatPlugin {
 
                 ImGui.Spacing();
 
+                var allowMarketPurchase = this.Plugin.Config.AllowMarketPurchase;
+                if (WithWhiteText(() => ImGui.Checkbox("允许手机端市场下单", ref allowMarketPurchase))) {
+                    this.Plugin.Config.AllowMarketPurchase = allowMarketPurchase;
+                    this.Plugin.Config.Save();
+                }
+
+                ImGui.SameLine();
+                HelpMarker("关闭时手机端只能查看板子价格，下单请求会被拒绝。开启后手机端可以直接花掉游戏里的金币购买，且这属于第三方自动交易行为，有被封号的风险。默认关闭。");
+
+                ImGui.Spacing();
+
+                var allowMonitorAutoBuy = this.Plugin.Config.AllowMonitorAutoBuy;
+                if (WithWhiteText(() => ImGui.Checkbox("允许价格监控自动购买", ref allowMonitorAutoBuy))) {
+                    this.Plugin.Config.AllowMonitorAutoBuy = allowMonitorAutoBuy;
+                    this.Plugin.Config.Save();
+                }
+
+                ImGui.SameLine();
+                HelpMarker("价格监控是手机端推送的规则，插件每 60 秒替每条规则查一次板子。开启后，满足\"低于阈值\"条件的挂单会被自动买下（同样属于第三方自动交易行为，有被封号的风险）。关闭时监控只提醒不购买。");
+
+                ImGui.Spacing();
+
                 var pairingMode = this.Plugin.Config.PairingMode;
                 if (WithWhiteText(() => ImGui.Checkbox("配对模式", ref pairingMode))) {
                     this.Plugin.Config.PairingMode = pairingMode;

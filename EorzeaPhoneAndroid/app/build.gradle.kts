@@ -13,13 +13,42 @@ android {
         applicationId = "com.quserh.eorzeaphone"
         minSdk = 24
         targetSdk = 36
-        versionCode = 306
-        versionName = "0.7.283"
+        versionCode = 361
+        versionName = "0.7.341"
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    signingConfigs {
+        // Release is signed with the *debug* key on purpose. Every build handed out so far
+        // (0.7.258 onward) was debug-signed, so reusing that key keeps release installable
+        // straight over the top with no uninstall and no data loss. Swap in a real keystore
+        // before any public distribution.
+        create("releaseWithDebugKey") {
+            storeFile = File(System.getProperty("user.home"), ".android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
+    buildTypes {
+        release {
+            // The point of this build type: debuggable=false. A debuggable APK loses ART's
+            // optimizations, and Compose is allocation-heavy — on real mid-range ARM that
+            // reads as "animations don't work" because frames are produced but far too slow.
+            // Emulators on a desktop CPU mask it, which is why MuMu always looked fine.
+            isDebuggable = false
+            // R8 left off deliberately: msgpack / JNA / lazysodium resolve reflectively and
+            // would need keep rules first. debuggable=false is the win worth having now;
+            // shrinking is a separate change with its own verification.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("releaseWithDebugKey")
+        }
     }
 
     compileOptions {

@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -18,7 +19,9 @@ using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
+using Dalamud.Hooking;
 using Dalamud.Utility;
+using FFXIVClientStructs.Interop;
 using Lumina.Excel.Sheets;
 using XIVChatCommon;
 using XIVChatCommon.Message;
@@ -30,6 +33,8 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Group;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Environment;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 
 namespace XIVChatPlugin {
@@ -50,6 +55,7 @@ namespace XIVChatPlugin {
         ];
 
         private readonly Plugin _plugin;
+        private readonly MarketDataCache _marketCache;
 
         private readonly Stopwatch _sendWatch = new();
         private readonly Stopwatch _inventoryWatch = new();
@@ -100,6 +106,66 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingFishing = new();
 
         private readonly ConcurrentQueue<Guid> _awaitingParty = new();
+
+        // Market search is request/reply rather than a polled snapshot: issuing one
+        // mutates InfoProxyItemSearch, which the PC's own market UI also owns.
+        private readonly ConcurrentQueue<(Guid Client, uint ItemId, bool HqOnly)> _marketSearches = new();
+        private readonly ConcurrentQueue<Guid> _awaitingMarketCategories = new();
+        private Guid _marketRequester;
+        private uint _marketPendingItemId;
+        private bool _marketAwaitingListings;
+
+        /// <summary>
+        /// Whether WaitingForListings has been observed true since the request went out.
+        /// Without this the empty proxy read before the flag flips is indistinguishable
+        /// from an empty board.
+        /// </summary>
+        private bool _marketSawWaiting;
+        private readonly Stopwatch _marketWatch = new();
+        private uint _marketSavedSearchItemId;
+
+        /// <summary>
+        /// Earliest moment the next search may be handed to the game. The client
+        /// throttles market searches internally (~7 s); a request fired inside the
+        /// window is silently ignored -- WaitingForListings stays up forever, the
+        /// 10 s timeout fires, the next queued request repeats the mistake, and the
+        /// queue turns into a convoy where every query times out (observed as six
+        /// consecutive timeouts with mismatched SearchItemId in the log). Gating the
+        /// dequeue on this keeps one request alive long enough for the game to
+        /// actually answer it.
+        /// </summary>
+        private DateTimeOffset _marketCooldownUntil = DateTimeOffset.MinValue;
+
+        // Purchases ride the same single-flight slot as searches, because they need the
+        // same thing: a fresh Listings array for this item. A purchase is a search whose
+        // ready-state hands off to SendPurchaseRequestPacket instead of replying. Sharing
+        // the slot is also what keeps a purchase from racing a query for the array both
+        // of them read.
+        private readonly ConcurrentQueue<(Guid Client, ClientMarketPurchase Request)> _marketPurchases = new();
+
+        /// <summary>
+        /// The purchase whose confirming re-query is in flight, if any. Non-null means
+        /// the current market request must end in a purchase attempt rather than a reply.
+        /// </summary>
+        private ClientMarketPurchase? _marketPurchaseRequest;
+
+        /// <summary>
+        /// Set once the packet is away, while waiting for the game's purchase-response
+        /// callback. Success is only ever reported from that callback: the request
+        /// succeeding locally says nothing about whether the server took it.
+        /// </summary>
+        private bool _marketAwaitingPurchaseReply;
+        private Guid _marketPurchaseRequester;
+        private uint _marketPurchaseItemId;
+        private ulong _marketPurchaseListingId;
+        private uint _marketPurchasePrice;
+        private uint _marketPurchaseQuantity;
+        private uint _marketPurchaseTax;
+        private readonly Stopwatch _marketPurchaseWatch = new();
+
+        private unsafe delegate void PurchaseResponseDelegate(InfoProxyItemSearch* proxy, uint itemId, uint errorId);
+        private Hook<PurchaseResponseDelegate>? _purchaseResponseHook;
+
         private volatile bool _running;
         private bool Running => this._running;
 
@@ -189,6 +255,11 @@ namespace XIVChatPlugin {
             if (this._plugin.Config.KeyPair == null) {
                 this.RegenerateKeyPair();
             }
+
+            // Initialize market data cache (global, version-stamped)
+            var cacheDir = Path.Combine(Path.GetDirectoryName(Plugin.Interface.ConfigFile.FullName) ?? "", "XIVChat");
+            this._marketCache = new MarketDataCache(Plugin.DataManager, cacheDir);
+            this._marketCache.Initialize();
 
             this._lastHousingLocation = this._plugin.Functions.HousingLocation;
 
@@ -513,6 +584,17 @@ namespace XIVChatPlugin {
             if (gameAvailable && this._sendPlayerData) {
                 this.BroadcastPlayerData();
                 this._sendPlayerData = false;
+                // Pre-warm the category tree in the background so the phone's first
+                // browse request is answered from cache instead of stalling the tick.
+                if (this._marketCategoriesCache == null || !this._marketCache.GilShopDataReady) {
+                    System.Threading.Tasks.Task.Run(() => {
+                        try {
+                            this.GetMarketCategories();
+                        } catch (Exception ex) {
+                            Plugin.Log.Warning($"Could not pre-build market categories: {ex.Message}");
+                        }
+                    });
+                }
             }
 
             var housingLocation = this._plugin.Functions.HousingLocation;
@@ -532,6 +614,9 @@ namespace XIVChatPlugin {
             this.UpdateSubmarine();
             this.UpdateActivity();
             this.UpdateParty();
+            this.UpdateMarket();
+            this.UpdateMarketPurchase();
+            this.UpdateMarketMonitor();
 
             while (this._friendActions.TryDequeue(out var friendAction)) {
                 try {
@@ -644,6 +729,26 @@ namespace XIVChatPlugin {
                 var fishing = this.BuildFishingSnapshot();
                 if (fishing != null) client.Queue.Writer.TryWrite(fishing);
             }
+
+            while (this._awaitingMarketCategories.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                // Built once per plugin load, then served from cache: the game's item
+                // sheet does not change while running, and a full rebuild per request
+                // made the first reply take seconds. Pre-warmed on login below, so the
+                // phone's first request is answered instantly (how BetterMarketBoard
+                // gets its instant category grid).
+                // The first category request can arrive before the GilShopItem sheet is
+                // ready.  Resolve through the guarded accessor rather than caching that
+                // transient all-zero tree for the rest of the session.
+                var categories = this.GetMarketCategories();
+                if (categories != null) {
+                    // Attach cache timestamp so phone can skip re-download if unchanged
+                    categories.TimestampMs = _marketCache.CacheTimestampMs;
+                    categories.GameVersion = _marketCache.CacheGameVersion;
+                    client.Queue.Writer.TryWrite(categories);
+                }
+            }
+
             while (this._awaitingParty.TryDequeue(out var id)) {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
                 var party = this.BuildPartyList() ?? new ServerPlayerList(PlayerListType.Party, []);
@@ -783,6 +888,943 @@ namespace XIVChatPlugin {
             } catch (Exception ex) {
                 Plugin.Log.Warning($"Could not capture inventory: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// How long to wait for the game to fill in listings before giving up.
+        /// Listings arrive in pages of ten, so a busy item needs several round trips;
+        /// 10s leaves room for that while still bounding the client's wait.
+        /// </summary>
+        private static readonly TimeSpan MarketTimeout = TimeSpan.FromSeconds(10);
+
+        /// <summary>
+        /// Drives one market query at a time, in three stages across ticks:
+        /// accept a request, wait for the game to populate listings, push the result.
+        ///
+        /// Serialised deliberately. InfoProxyItemSearch is a single shared slot that
+        /// the PC's own market window also writes, so overlapping searches would
+        /// return each other's rows.
+        /// </summary>
+        private unsafe void UpdateMarket() {
+            if (this._marketAwaitingListings) {                var proxy = InfoProxyItemSearch.Instance();
+                if (proxy == null) {
+                    if (this._marketPurchaseRequest != null) {
+                        this.FailQueuedPurchase(MarketPurchaseStatus.Timeout);
+                    } else {
+                        this.FinishMarket(MarketStatus.Timeout, []);
+                    }
+                    return;
+                }
+
+                // Phase one: confirm the request actually started. WaitingForListings is
+                // not set the instant RequestData returns -- it flips on a later tick --
+                // so anything read before that belongs to the PREVIOUS search. Both
+                // earlier bugs came from skipping this: waiting only for the flag to go
+                // false timed out (it had not gone true yet), and judging by the array
+                // reported "nobody is selling" (an untouched proxy has EntryCount 0).
+                if (proxy->WaitingForListings) {
+                    this._marketSawWaiting = true;
+                }
+
+                if (this._marketSawWaiting && !proxy->WaitingForListings
+                    && proxy->SearchItemId == this._marketPendingItemId) {
+                    if (this._marketPurchaseRequest != null) {
+                        this.AttemptPurchase(proxy);
+                    } else {
+                        this.FinishMarket(MarketStatus.Ok, this.ReadMarketListings(proxy));
+                    }
+                    return;
+                }
+
+                // Fallback: some replies land without the flag ever being observed true
+                // (a tick can straddle both edges). Only trusted once the array is
+                // self-consistent AND non-empty, so it can never manufacture a "0 rows"
+                // answer -- an empty result must come from the flag path above.
+                if (MarketListingsReady(proxy, this._marketPendingItemId)) {
+                    if (this._marketPurchaseRequest != null) {
+                        this.AttemptPurchase(proxy);
+                    } else {
+                        this.FinishMarket(MarketStatus.Ok, this.ReadMarketListings(proxy));
+                    }
+                    return;
+                }
+
+                if (this._marketWatch.Elapsed > MarketTimeout) {
+                    // Log the proxy state, not just the fact of the timeout: the first
+                    // version of this code timed out silently and left nothing to go on.
+                    Plugin.Log.Warning(
+                        $"Market query for {this._marketPendingItemId} timed out: "
+                        + $"SearchItemId={proxy->SearchItemId} "
+                        + $"ListingCount={proxy->ListingCount} "
+                        + $"EntryCount={proxy->EntryCount} "
+                        + $"WaitingForListings={proxy->WaitingForListings} "
+                        + $"sawWaiting={this._marketSawWaiting}"
+                    );
+                    // A timed-out window usually means the throttle ate the request;
+                    // give the game a full quiet cycle before the next attempt.
+                    this._marketCooldownUntil = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+                    if (this._marketPurchaseRequest != null) {
+                        this.FailQueuedPurchase(MarketPurchaseStatus.Timeout);
+                    } else {
+                        this.FinishMarket(MarketStatus.Timeout, []);
+                    }
+                }
+
+                return;
+            }
+
+            // Dequeue the next search or purchase. Purchases go through the same
+            // awaiting-listings flow because they need a fresh Listings array to verify
+            // against. The purchase request is stashed so the ready-state can hand off to
+            // AttemptPurchase instead of replying.
+            if (DateTimeOffset.UtcNow < this._marketCooldownUntil) {
+                // Inside the game's search throttle. Holding the queue here (instead of
+                // dequeue-and-time-out) is what breaks the convoy: the request at the
+                // head keeps its place and gets a fresh 10 s window once the gate opens.
+                return;
+            }
+
+            if (this._marketPurchases.TryDequeue(out var purchase)) {
+                this._marketRequester = purchase.Client;
+                this._marketPendingItemId = purchase.Request.ItemId;
+                this._marketPurchaseRequest = purchase.Request;
+            } else if (this._marketSearches.TryDequeue(out var searchRequest)) {
+                if (searchRequest.Client == Guid.Empty) {
+                    this._monitorQueued = false;
+                }
+
+                this._marketRequester = searchRequest.Client;
+                this._marketPendingItemId = searchRequest.ItemId;
+                this._marketPurchaseRequest = null;
+            } else {
+                return;
+            }
+
+            var requestedItemId = this._marketPendingItemId;
+
+            var refusal = this.MarketRefusalReason(requestedItemId);
+            if (refusal != MarketStatus.Ok) {
+                // A purchase refused on preconditions has to answer on the purchase
+                // channel; FinishMarket would send a ServerMarket the phone is not
+                // waiting for and leave the buy button spinning.
+                if (this._marketPurchaseRequest != null) {
+                    this.FailQueuedPurchase((MarketPurchaseStatus) refusal);
+                } else {
+                    this.FinishMarket(refusal, []);
+                }
+                return;
+            }
+
+            var search = InfoProxyItemSearch.Instance();
+            if (search == null) {
+                if (this._marketPurchaseRequest != null) {
+                    this.FailQueuedPurchase(MarketPurchaseStatus.Timeout);
+                } else {
+                    this.FinishMarket(MarketStatus.Timeout, []);
+                }
+                return;
+            }
+
+            try {
+                // Remember what the player had searched on the PC so the query does
+                // not silently wipe their own search box.
+                this._marketSavedSearchItemId = search->SearchItemId;
+                search->EndRequest();
+                search->SearchItemId = requestedItemId;
+                if (!search->RequestData()) {
+                    // Refused outright by the game -- distinct from waiting and never
+                    // being answered, and previously indistinguishable in the log.
+                    Plugin.Log.Warning(
+                        $"Market RequestData refused for {requestedItemId}"
+                    );
+                    if (this._marketPurchaseRequest != null) {
+                        this.FailQueuedPurchase(MarketPurchaseStatus.Timeout);
+                    } else {
+                        this.FinishMarket(MarketStatus.Timeout, []);
+                    }
+                    return;
+                }
+
+                // The game accepted the call; its internal throttle needs ~7 s before
+                // the next one, and a timeout deserves a longer breather so the next
+                // queued request starts from a clean window instead of another convoy.
+                this._marketCooldownUntil = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(8);
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not request market data: {ex.Message}");
+                if (this._marketPurchaseRequest != null) {
+                    this.FailQueuedPurchase(MarketPurchaseStatus.Timeout);
+                } else {
+                    this.FinishMarket(MarketStatus.Timeout, []);
+                }
+                return;
+            }
+
+            this._marketAwaitingListings = true;
+            this._marketSawWaiting = false;
+            this._marketWatch.Restart();
+        }
+
+        /// <summary>
+        /// True when the proxy visibly holds rows for <paramref name="itemId"/>.
+        ///
+        /// Secondary signal only -- <see cref="UpdateMarket"/> prefers the
+        /// WaitingForListings edge. Deliberately cannot return true for an empty
+        /// result: "nobody is selling" and "the reply has not arrived" look identical
+        /// in this struct, and reporting the first when it is really the second is the
+        /// bug this guard exists to prevent. An untouched proxy has ListingCount 0 and
+        /// EntryCount 0, which is exactly what a genuinely empty board also looks like.
+        ///
+        /// Shape of the check follows BetterMarketBoard: every priced row must belong to
+        /// the current search, and their number must equal <c>ListingCount</c>. Listings
+        /// arrive in pages of ten, so <c>EntryCount</c> decides how full "full" is.
+        /// </summary>
+        private static unsafe bool MarketListingsReady(InfoProxyItemSearch* proxy, uint itemId) {
+            if (proxy->SearchItemId != itemId || proxy->ListingCount == 0) {
+                return false;
+            }
+
+            // Scan only ListingCount rows, not the whole array. Listings.Length is the
+            // fixed capacity, and ClearListData resets the counts without wiping the
+            // rows, so everything past ListingCount is still the PREVIOUS search's
+            // data. Scanning the full span made every query after the first fail on
+            // the foreign-item check below and time out.
+            var listings = proxy->Listings;
+            var upTo = Math.Min((int) proxy->ListingCount, listings.Length);
+            var priced = 0;
+            for (var i = 0; i < upTo; i++) {
+                var listing = listings[i];
+                if (listing.UnitPrice == 0) {
+                    continue;
+                }
+
+                // A row for another item means the array still holds the previous
+                // search; not ready, and reading now would mix results.
+                if (listing.ItemId != itemId) {
+                    return false;
+                }
+
+                priced++;
+            }
+
+            if (priced != upTo) {
+                return false;
+            }
+
+            return proxy->EntryCount <= 10 || proxy->ListingCount >= 10;
+        }
+
+        /// <summary>
+        /// Conditions under which the game will not serve a market query. Mirrors the
+        /// gate the BetterMarketBoard module uses, for the same reason: the native
+        /// board window and this code share one InfoProxyItemSearch slot.
+        /// </summary>
+        private unsafe MarketStatus MarketRefusalReason(uint itemId) {
+            if (!Plugin.ClientState.IsLoggedIn || Plugin.ObjectTable.LocalPlayer == null) {
+                return MarketStatus.NotLoggedIn;
+            }
+
+            var gameMain = GameMain.Instance();
+            if (gameMain == null || gameMain->CurrentContentFinderConditionId != 0) {
+                return MarketStatus.InDuty;
+            }
+
+            if (IsMarketBoardOpen()) {
+                return MarketStatus.BoardOpen;
+            }
+
+            if (!Plugin.DataManager.GetExcelSheet<Item>().TryGetRow(itemId, out var item)
+                || item.ItemSearchCategory.RowId == 0) {
+                return MarketStatus.NotMarketable;
+            }
+
+            return MarketStatus.Ok;
+        }
+
+        /// <summary>
+        /// True when the player has the market board result window up on the PC.
+        /// Checked via the addon manager because this plugin does not take IGameGui.
+        /// </summary>
+        private static unsafe bool IsMarketBoardOpen() {
+            try {
+                var manager = RaptureAtkUnitManager.Instance();
+                if (manager == null) {
+                    return false;
+                }
+
+                var addon = manager->GetAddonByName("ItemSearchResult");
+                return addon != null && addon->IsVisible;
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not check market board state: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Retainer city for a listing, or empty when the id is unknown.
+        /// </summary>
+        private static string TownName(byte townId) {
+            if (townId == 0) {
+                return string.Empty;
+            }
+
+            return Plugin.DataManager.GetExcelSheet<Town>().GetRowOrDefault(townId)
+                ?.Name.ExtractText() ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Copies listings out of the proxy.
+        ///
+        /// No per-listing world: <c>MarketBoardListing</c> has no world field. The
+        /// game only exposes the world name through the ItemSearchResult UI string
+        /// array, and this path deliberately runs with that window closed, so there
+        /// is nothing trustworthy to read. The reply labels the whole result with the
+        /// character's current world instead, and cross-world comparison stays on the
+        /// Universalis path where world is a real field.
+        ///
+        /// No retainer name either, and it is not an oversight: the only string on
+        /// <c>MarketBoardListing</c> is <c>CharacterName</c>, which FFXIVClientStructs
+        /// documents as "only populated when item is being sold as a set". It is blank
+        /// for ordinary listings, so reading it produced an always-empty field. The
+        /// city (<c>TownId</c>) is real for every listing and is what buyers can act
+        /// on, so it takes that slot. Universalis does carry retainer names -- the
+        /// cross-world rows still show them.
+        /// </summary>
+        private unsafe ServerMarketListing[] ReadMarketListings(InfoProxyItemSearch* proxy) {
+            var rows = new List<ServerMarketListing>();
+            var count = Math.Min((int) proxy->ListingCount, proxy->Listings.Length);
+            for (var i = 0; i < count; i++) {
+                var listing = proxy->Listings[i];
+                if (listing.UnitPrice == 0) {
+                    continue;
+                }
+
+                // ClearListData leaves stale rows in place, so a row that belongs to
+                // another item means we are reading too early. Drop it rather than
+                // reporting another item's price for this one.
+                if (listing.ItemId != this._marketPendingItemId) {
+                    continue;
+                }
+
+                rows.Add(new ServerMarketListing {
+                    ListingId = listing.ListingId,
+                    UnitPrice = listing.UnitPrice,
+                    Quantity = listing.Quantity,
+                    IsHq = listing.IsHqItem,
+                    TownName = TownName(listing.TownId),
+                    Tax = listing.TotalTax,
+                    IsSet = listing.IsSellingAsSet,
+                    MateriaCount = listing.MateriaCount,
+                });
+            }
+
+            return rows.ToArray();
+        }
+
+        /// <summary>
+        /// Sends the reply, restores the player's own search, and clears the slot so
+        /// the next queued request can run.
+        /// </summary>
+        private unsafe void FinishMarket(MarketStatus status, ServerMarketListing[] listings) {
+            var itemId = this._marketPendingItemId;
+            var requester = this._marketRequester;
+
+            this._marketAwaitingListings = false;
+            this._marketSawWaiting = false;
+            this._marketPendingItemId = 0;
+            this._marketRequester = Guid.Empty;
+            this._marketWatch.Reset();
+
+            try {
+                var proxy = InfoProxyItemSearch.Instance();
+                if (proxy != null) {
+                    proxy->SearchItemId = this._marketSavedSearchItemId;
+                    if (this._marketSavedSearchItemId == 0) {
+                        proxy->ClearListData();
+                    }
+                }
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not restore market search state: {ex.Message}");
+            }
+
+            this._marketSavedSearchItemId = 0;
+
+            // A Guid.Empty requester is the price monitor, not a phone: its results
+            // feed the monitor rules instead of any client queue.
+            if (requester == Guid.Empty) {
+                this.ProcessMonitorResult(itemId, status, listings);
+                return;
+            }
+
+            var world = Plugin.ObjectTable.LocalPlayer?.CurrentWorld.ValueNullable?.Name.ExtractText()
+                ?? string.Empty;
+            var message = new ServerMarket(
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), itemId, status, listings, world,
+                this.NpcGilPrice(itemId));
+            Plugin.Log.Info(
+                $"Market reply: item {itemId} status {status} rows {listings.Length} npc {message.NpcPrice}");
+
+            // Reply only to the phone that asked; an unsolicited market push would be
+            // meaningless to the other clients.
+            if (this.Clients.TryGetValue(requester, out var client)) {
+                client.Queue.Writer.TryWrite(message);
+            }
+        }
+
+        /// <summary>
+        /// What NPC shops charge for <paramref name="itemId"/> in gil, 0 when none does.
+        ///
+        /// This is <c>Item.PriceMid</c>, the same column BetterMarketBoard reads out
+        /// of GilShop entries, so it matches what the player would actually pay at a
+        /// vendor. Items no shop sells carry 0, and the phone hides the benchmark line.
+        /// </summary>
+        private uint NpcGilPrice(uint itemId) {
+            try {
+                // Excel sheets can become ready a little after plugin construction. Repair
+                // an empty startup cache lazily instead of treating every item as unavailable
+                // for the rest of the game session.
+                _marketCache.EnsureGilShopData();
+                // GilShopItem is the authoritative availability gate. Item.PriceMid by
+                // itself is also populated for items that are not directly purchasable, so
+                // never expose it unless this item occurs in a real gil vendor shop.
+                if (!_marketCache.GilShopItemIds.Contains(itemId)) {
+                    return 0;
+                }
+
+                // Only return PriceMid if item is actually sold in a Gil shop
+                if (Plugin.DataManager.GetExcelSheet<Item>().TryGetRow(itemId, out var item)) {
+                    return item.PriceMid > 0 ? item.PriceMid : 0;
+                }
+
+                return 0;
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not read NPC price for {itemId}: {ex.Message}");
+                return 0;
+            }
+        }
+
+        // ---- price monitor ----
+        //
+        // The phone pushes rules (ClientMarketMonitorSync); this side re-queries the
+        // board for each rule on a timer and acts on the result. The design copies
+        // BetterMarketBoard's: drive the game's own InfoProxyItemSearch on a slow
+        // cadence, never craft packets, and reuse the exact same single-flight slot
+        // as the manual queries so a monitor poll can never interleave with a phone
+        // search or purchase. Guid.Empty as the client id marks monitor traffic.
+
+        /// <summary>How often one item is re-checked, matching BetterMarketBoard.</summary>
+        private static readonly TimeSpan MonitorInterval = TimeSpan.FromSeconds(60);
+
+        /// <summary>A standing cheap listing must not re-notify (or re-buy) every minute.</summary>
+        private static readonly TimeSpan MonitorRepeatGuard = TimeSpan.FromMinutes(30);
+
+        private int _monitorCursor;
+        private DateTimeOffset _lastMonitorPoll = DateTimeOffset.MinValue;
+
+        /// <summary>
+        /// True while a monitor-driven query sits in the queue. At most one monitor
+        /// request may wait at a time: the queue is shared with the phone's manual
+        /// queries, and a backlog of monitor polls starves them (the convoy in the
+        /// logs). Manual traffic also outranks it -- see the enqueue conditions.
+        /// </summary>
+        private bool _monitorQueued;
+
+        /// <summary>
+        /// Cached category tree.  The Item sheets are static in-session, but the
+        /// GilShopItem subrow sheet can become available a little later than them.  Keep
+        /// the vendor-index timestamp beside the tree so an early all-zero snapshot is
+        /// replaced as soon as real NPC prices are ready.
+        /// </summary>
+        private ServerMarketCategories? _marketCategoriesCache;
+        private long _marketCategoriesGilShopTimestamp;
+        private readonly object _marketCategoriesGate = new();
+
+        private List<MarketMonitorConfig> MonitorRules => this._plugin.Config.MarketMonitors;
+
+        /// <summary>
+        /// True while any monitor request could still mutate shared purchase state:
+        /// used to keep a fresh phone-initiated purchase from colliding with one the
+        /// monitor just queued.
+        /// </summary>
+        private bool MonitorBusy =>
+            this._marketAwaitingListings || this._marketAwaitingPurchaseReply
+            || this._marketPurchaseRequest != null;
+
+        /// <summary>
+        /// Enqueues at most one board query per interval, round-robin over the rules.
+        /// Runs before UpdateMarket in the tick so the request joins the queue behind
+        /// anything the phone asked for: manual traffic always wins the slot.
+        /// </summary>
+        private unsafe void UpdateMarketMonitor() {
+            var rules = this.MonitorRules;
+            if (rules.Count == 0) {
+                return;
+            }
+
+            // Manual traffic first: never enqueue while the phone has a search or a
+            // purchase pending, never queue a second monitor request, and never run
+            // inside the game's search throttle. The monitor can always afford to
+            // wait -- the phone's query cannot.
+            if (this.MonitorBusy || this._monitorQueued
+                || !this._marketSearches.IsEmpty || !this._marketPurchases.IsEmpty
+                || DateTimeOffset.UtcNow < this._marketCooldownUntil
+                || DateTimeOffset.UtcNow - this._lastMonitorPoll < MonitorInterval) {
+                return;
+            }
+
+            // Same gates the manual path enforces, checked up front so a monitor poll
+            // never even queues while the game cannot answer (duty, board open, logout).
+            if (Plugin.ObjectTable.LocalPlayer == null || !Plugin.ClientState.IsLoggedIn) {
+                return;
+            }
+
+            if (IsMarketBoardOpen()) {
+                return;
+            }
+
+            var gameMain = GameMain.Instance();
+            if (gameMain == null || gameMain->CurrentContentFinderConditionId != 0) {
+                return;
+            }
+
+            // Round-robin; skip rules whose item is no longer tradable so a stale rule
+            // does not consume the whole cadence.
+            for (var attempt = 0; attempt < rules.Count; attempt++) {
+                this._monitorCursor = (this._monitorCursor + 1) % rules.Count;
+                var rule = rules[this._monitorCursor];
+                var marketable = false;
+                try {
+                    marketable = Plugin.DataManager.GetExcelSheet<Item>()
+                        .TryGetRow(rule.ItemId, out var item) && item.ItemSearchCategory.RowId != 0;
+                } catch {
+                    marketable = false;
+                }
+
+                if (marketable && rule.PriceThreshold > 0) {
+                    this._lastMonitorPoll = DateTimeOffset.UtcNow;
+                    this._monitorQueued = true;
+                    Plugin.Log.Info($"Monitor poll: item {rule.ItemId} (threshold {rule.PriceThreshold})");
+                    this._marketSearches.Enqueue((Guid.Empty, rule.ItemId, rule.HqOnly));
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// A board read for a monitor rule finished. Decides whether to notify and
+        /// whether to auto-buy, then routes a purchase through the normal queue.
+        /// </summary>
+        private void ProcessMonitorResult(uint itemId, MarketStatus status, ServerMarketListing[] listings) {
+            // The dequeue clears this first; clearing again here is a cheap guarantee
+            // that an early return can never strand the flag and silence the monitor.
+            this._monitorQueued = false;
+            var rule = this.MonitorRules.FirstOrDefault(r => r.ItemId == itemId);
+            if (rule == null) {
+                return;
+            }
+
+            if (status != MarketStatus.Ok) {
+                Plugin.Log.Info($"Monitor query for {itemId} returned {status}; will retry next cycle");
+                return;
+            }
+
+            var matches = listings
+                .Where(l => l.UnitPrice > 0 && l.UnitPrice <= rule.PriceThreshold
+                            && (!rule.HqOnly || l.IsHq))
+                .OrderBy(l => l.UnitPrice)
+                .ToArray();
+
+            if (matches.Length == 0) {
+                return;
+            }
+
+            var cheapest = matches[0];
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var repeat =
+                rule.LastFirePrice == cheapest.UnitPrice
+                && now - rule.LastFireMs < (long) MonitorRepeatGuard.TotalMilliseconds;
+
+            if (rule.AutoBuy) {
+                // Auto-buy has its own, shorter repeat guard: after a failed attempt the
+                // same listing is still there, and retrying once a minute for a buy the
+                // game keeps refusing helps nobody. A changed price resets the guard.
+                var buyRepeat = repeat || now - rule.LastFireMs < TimeSpan.FromMinutes(10).TotalMilliseconds;
+                if (!buyRepeat) {
+                    this.FireMonitor(rule, cheapest.UnitPrice, cheapest.Quantity,
+                        MarketMonitorEventKind.Found, $"{matches.Length} 条低于 {rule.PriceThreshold}");
+
+                    if (rule.BuyCap > 0 && rule.BoughtQty >= rule.BuyCap) {
+                        this.FireMonitor(rule, cheapest.UnitPrice, cheapest.Quantity,
+                            MarketMonitorEventKind.CapReached,
+                            $"已达自动购买上限 {rule.BuyCap} 件");
+                    } else if (!this._plugin.Config.AllowMonitorAutoBuy) {
+                        this.FireMonitor(rule, cheapest.UnitPrice, cheapest.Quantity,
+                            MarketMonitorEventKind.BuyFailed, "插件设置里自动购买已关闭");
+                    } else {
+                        // The slot is free by construction here: FinishMarket just ran on
+                        // the same single-flight state this reads.
+                        this._marketPurchases.Enqueue((Guid.Empty, new ClientMarketPurchase {
+                            ItemId = rule.ItemId,
+                            ListingId = cheapest.ListingId,
+                            ExpectedUnitPrice = cheapest.UnitPrice,
+                            ExpectedQuantity = cheapest.Quantity,
+                            ExpectedHq = cheapest.IsHq,
+                        }));
+                        Plugin.Log.Info(
+                            $"Monitor auto-buy queued: item {itemId} listing {cheapest.ListingId} "
+                            + $"at {cheapest.UnitPrice} gil"
+                        );
+                    }
+                }
+            } else if (!repeat) {
+                this.FireMonitor(rule, cheapest.UnitPrice, cheapest.Quantity,
+                    MarketMonitorEventKind.Found, $"{matches.Length} 条低于 {rule.PriceThreshold}");
+            }
+        }
+
+        /// <summary>
+        /// The monitor's own purchase attempt finished. Updates the bought-quantity
+        /// budget and broadcasts the outcome.
+        /// </summary>
+        private void ProcessMonitorPurchaseResult(uint itemId, MarketPurchaseStatus status,
+            uint price, uint quantity, uint tax, uint errorId) {
+            var rule = this.MonitorRules.FirstOrDefault(r => r.ItemId == itemId);
+            if (rule == null) {
+                return;
+            }
+
+            if (status == MarketPurchaseStatus.Ok) {
+                rule.BoughtQty += quantity;
+                rule.LastFireMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                rule.LastFirePrice = price;
+                this._plugin.Config.Save();
+
+                this.BroadcastMonitorEvent(new ServerMarketMonitorEvent(
+                    itemId, MarketMonitorEventKind.Purchased, price, quantity,
+                    $"自动买入 {quantity} 件，单价 {price} gil（含税 {tax}）"));
+                Plugin.Log.Info(
+                    $"Monitor bought {quantity}x item {itemId} at {price} gil/unit (tax {tax})");
+                return;
+            }
+
+            if (status == MarketPurchaseStatus.Busy) {
+                // Normal while a phone purchase holds the slot; not worth notifying.
+                return;
+            }
+
+            this.FireMonitor(rule, price, quantity, MarketMonitorEventKind.BuyFailed,
+                $"自动购买未成功：{status}（错误码 {errorId}）");
+        }
+
+        /// <summary>
+        /// Records the fire and pushes the event to every connected client, whether
+        /// or not a phone is watching: the notification only matters when one is, but
+        /// the log line always is.
+        /// </summary>
+        private void FireMonitor(MarketMonitorConfig rule, uint price, uint quantity,
+            MarketMonitorEventKind kind, string detail) {
+            rule.LastFireMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            rule.LastFirePrice = price;
+            this._plugin.Config.Save();
+            this.BroadcastMonitorEvent(new ServerMarketMonitorEvent(
+                rule.ItemId, kind, price, quantity, detail));
+        }
+
+        private void BroadcastMonitorEvent(ServerMarketMonitorEvent message) {
+            Plugin.Log.Info($"Monitor event: item {message.ItemId} {message.Kind} {message.Detail}");
+            foreach (var client in this._clients.Values) {
+                client.Queue.Writer.TryWrite(message);
+            }
+        }
+
+        /// <summary>
+        /// Replaces the monitor list from the phone. Bookkeeping (bought budget, last
+        /// fire) follows the item id across the replace so re-saving an unchanged rule
+        /// does not reset its cap or guards.
+        /// </summary>
+        private void HandleMonitorSync(ClientMarketMonitorSync sync) {
+            var old = this.MonitorRules.ToDictionary(r => r.ItemId);
+            var rules = sync.Entries.Select(e => {
+                if (old.TryGetValue(e.ItemId, out var prev)) {
+                    prev.PriceThreshold = e.PriceThreshold;
+                    prev.HqOnly = e.HqOnly;
+                    prev.AutoBuy = e.AutoBuy;
+                    prev.BuyCap = e.BuyCap;
+                    return prev;
+                }
+
+                return new MarketMonitorConfig {
+                    ItemId = e.ItemId,
+                    PriceThreshold = e.PriceThreshold,
+                    HqOnly = e.HqOnly,
+                    AutoBuy = e.AutoBuy,
+                    BuyCap = e.BuyCap,
+                };
+            }).ToList();
+
+            this._plugin.Config.MarketMonitors = rules;
+            this._plugin.Config.Save();
+            this._monitorCursor = 0;
+            this._lastMonitorPoll = DateTimeOffset.MinValue; // let the first check run now
+
+            Plugin.Log.Info($"Monitor list replaced: {rules.Count} rule(s)");
+            this.BroadcastMonitorEvent(new ServerMarketMonitorEvent(
+                0, MarketMonitorEventKind.Sync, 0, 0, $"{rules.Count} 条监控规则已同步"));
+        }
+
+        /// <summary>
+        /// Abandons the confirming re-query for a queued purchase and answers on the
+        /// purchase channel. Clears the shared market slot the same way FinishMarket
+        /// does, minus the reply.
+        /// </summary>
+        private unsafe void FailQueuedPurchase(MarketPurchaseStatus status) {
+            var req = this._marketPurchaseRequest;
+            var requester = this._marketRequester;
+
+            this._marketAwaitingListings = false;
+            this._marketSawWaiting = false;
+            this._marketPendingItemId = 0;
+            this._marketRequester = Guid.Empty;
+            this._marketWatch.Reset();
+            this._marketPurchaseRequest = null;
+
+            try {
+                var proxy = InfoProxyItemSearch.Instance();
+                if (proxy != null) {
+                    proxy->SearchItemId = this._marketSavedSearchItemId;
+                    if (this._marketSavedSearchItemId == 0) {
+                        proxy->ClearListData();
+                    }
+                }
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not restore market search state: {ex.Message}");
+            }
+
+            this._marketSavedSearchItemId = 0;
+
+            this.FinishPurchase(requester, req?.ItemId ?? 0, req?.ListingId ?? 0, status);
+        }
+
+        /// <summary>
+        /// Listings are ready and this request is a purchase: find the target listing,
+        /// verify it still matches what the phone showed, and send the packet if it does.
+        /// </summary>
+        private unsafe void AttemptPurchase(InfoProxyItemSearch* proxy) {
+            var req = this._marketPurchaseRequest!;
+            var itemId = req.ItemId;
+            var listingId = req.ListingId;
+            var requester = this._marketRequester;
+
+            // Clear the search state now so the slot is free for the next request, then
+            // enter purchase-reply wait. The purchase half has its own state machine
+            // because success can only be reported from the callback, not from here.
+            this._marketAwaitingListings = false;
+            this._marketSawWaiting = false;
+            this._marketPendingItemId = 0;
+            this._marketRequester = Guid.Empty;
+            this._marketWatch.Reset();
+            this._marketPurchaseRequest = null;
+
+            // Listings is a Span over memory inside the proxy itself, so &span[i] is
+            // rejected as unfixed even though the target never moves. Take the address
+            // through the span's own reference instead of copying the row out: the game
+            // stores the pointer it is handed, so it has to be the real one.
+            MarketBoardListing* found = null;
+            var listings = proxy->Listings;
+            var count = Math.Min((int) proxy->ListingCount, listings.Length);
+            for (var i = 0; i < count; i++) {
+                if (listings[i].ListingId == listingId) {
+                    found = (MarketBoardListing*) Unsafe.AsPointer(ref listings[i]);
+                    break;
+                }
+            }
+
+            if (found == null) {
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.ListingGone);
+                return;
+            }
+
+            if (found->UnitPrice != req.ExpectedUnitPrice || found->Quantity != req.ExpectedQuantity
+                || found->IsHqItem != req.ExpectedHq) {
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Changed);
+                return;
+            }
+
+            var manager = InventoryManager.Instance();
+            if (manager == null) {
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Timeout);
+                return;
+            }
+
+            var gil = manager->GetGil();
+            var cost = (ulong) found->UnitPrice * found->Quantity + found->TotalTax;
+            if (gil < cost) {
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.NotEnoughGil);
+                return;
+            }
+
+            this._marketPurchaseRequester = requester;
+            this._marketPurchaseItemId = itemId;
+            this._marketPurchaseListingId = listingId;
+            this._marketPurchasePrice = found->UnitPrice;
+            this._marketPurchaseQuantity = found->Quantity;
+            this._marketPurchaseTax = found->TotalTax;
+
+            if (this._purchaseResponseHook == null) {
+                // Member function, not a vtable slot -- the vtable only carries the
+                // InfoProxyInterface virtuals.
+                var addr = (nint) InfoProxyItemSearch.MemberFunctionPointers.ProcessPurchaseResponse;
+                this._purchaseResponseHook = Plugin.GameInteropProvider.HookFromAddress<PurchaseResponseDelegate>(
+                    addr, this.OnPurchaseResponse
+                );
+                this._purchaseResponseHook.Enable();
+            }
+
+            try {
+                if (!proxy->SetLastPurchasedItem(found)) {
+                    this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Refused, 0);
+                    return;
+                }
+
+                if (!proxy->SendPurchaseRequestPacket()) {
+                    this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Refused, 0);
+                    return;
+                }
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not send purchase packet: {ex.Message}");
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Refused, 0);
+                return;
+            }
+
+            this._marketAwaitingPurchaseReply = true;
+            this._marketPurchaseWatch.Restart();
+        }
+
+        /// <summary>
+        /// Called by the game when the server replies to a market purchase. The only
+        /// reliable success signal: SendPurchaseRequestPacket succeeding locally means
+        /// nothing if the server rejected it.
+        /// </summary>
+        private unsafe void OnPurchaseResponse(InfoProxyItemSearch* proxy, uint itemId, uint errorId) {
+            try {
+                this._purchaseResponseHook?.Original(proxy, itemId, errorId);
+            } catch {
+                // Calling the original is courtesy, not a requirement; if it throws the
+                // purchase still went through (or didn't) and the phone still needs the
+                // result.
+            }
+
+            if (!this._marketAwaitingPurchaseReply || itemId != this._marketPurchaseItemId) {
+                return;
+            }
+
+            var requester = this._marketPurchaseRequester;
+            var listingId = this._marketPurchaseListingId;
+
+            if (errorId == 0) {
+                var price = this._marketPurchasePrice;
+                var quantity = this._marketPurchaseQuantity;
+                var tax = this._marketPurchaseTax;
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Ok,
+                    errorId, price, quantity, tax);
+            } else {
+                this.FinishPurchase(requester, itemId, listingId, MarketPurchaseStatus.Refused, errorId);
+            }
+        }
+
+        /// <summary>
+        /// Drives the purchase-reply wait and its timeout. Called every tick once a
+        /// purchase packet is away.
+        /// </summary>
+        private void UpdateMarketPurchase() {
+            if (!this._marketAwaitingPurchaseReply) {
+                return;
+            }
+
+            if (this._marketPurchaseWatch.Elapsed > MarketTimeout) {
+                Plugin.Log.Warning(
+                    $"Market purchase for item {this._marketPurchaseItemId} "
+                    + $"listing {this._marketPurchaseListingId} timed out waiting for server reply"
+                );
+                this.FinishPurchase(
+                    this._marketPurchaseRequester,
+                    this._marketPurchaseItemId,
+                    this._marketPurchaseListingId,
+                    MarketPurchaseStatus.Timeout
+                );
+            }
+        }
+
+        /// <summary>
+        /// Refuses a purchase without touching the shared purchase state. Cannot go
+        /// through FinishPurchase: a Busy refusal arrives while another purchase is in
+        /// flight, and clearing the state would strand that one with no reply.
+        /// </summary>
+        private void RefusePurchase(Guid requester, ClientMarketPurchase request,
+            MarketPurchaseStatus status) {
+            // The monitor's queued buy can land here (Busy while a manual one runs,
+            // Disabled when purchases are off). Answer on the monitor channel instead.
+            if (requester == Guid.Empty) {
+                this.ProcessMonitorPurchaseResult(
+                    request.ItemId, status, 0, 0, 0, 0);
+                return;
+            }
+
+            var message = new ServerMarketPurchase(
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                request.ItemId, status, request.ListingId, 0, 0, 0, 0
+            );
+
+            var delivered = this.Clients.TryGetValue(requester, out var client)
+                            && client.Queue.Writer.TryWrite(message);
+            Plugin.Log.Info(
+                $"Market purchase refused: item {request.ItemId} "
+                + $"listing {request.ListingId} status {status} delivered={delivered}"
+            );
+        }
+
+        /// <summary>
+        /// Sends the purchase result and clears the purchase wait state.
+        /// </summary>
+        private void FinishPurchase(Guid requester, uint itemId, ulong listingId,
+            MarketPurchaseStatus status, uint errorId = 0, uint price = 0, uint quantity = 0, uint tax = 0) {
+            this._marketAwaitingPurchaseReply = false;
+            this._marketPurchaseRequester = Guid.Empty;
+            this._marketPurchaseItemId = 0;
+            this._marketPurchaseListingId = 0;
+            this._marketPurchasePrice = 0;
+            this._marketPurchaseQuantity = 0;
+            this._marketPurchaseTax = 0;
+            this._marketPurchaseWatch.Reset();
+
+            var message = new ServerMarketPurchase(
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                itemId, status, listingId, price, quantity, tax, errorId
+            );
+
+            // Guid.Empty requester = the price monitor's own auto-buy; its outcome
+            // becomes a monitor event rather than a reply to a phone.
+            if (requester == Guid.Empty) {
+                this.ProcessMonitorPurchaseResult(itemId, status, price, quantity, tax, errorId);
+                return;
+            }
+
+            if (this.Clients.TryGetValue(requester, out var client)) {
+                client.Queue.Writer.TryWrite(message);
+            }
+
+            // Log every outcome, including refusals: a status that reached the phone and
+            // a reply that was never sent are otherwise indistinguishable afterwards.
+            if (status == MarketPurchaseStatus.Ok) {
+                Plugin.Log.Info(
+                    $"Purchased {quantity}x item {itemId} at {price} gil/unit (tax {tax}) via phone"
+                );
+            } else {
+                Plugin.Log.Info(
+                    $"Market purchase reply: item {itemId} listing {listingId} "
+                    + $"status {status} errorId {errorId} "
+                    + $"delivered={requester != Guid.Empty && this.Clients.ContainsKey(requester)}"
+                );
             }
         }
 
@@ -1794,6 +2836,156 @@ namespace XIVChatPlugin {
             return XIVChatPlugin.Plugin.DataManager.GetExcelSheet<World>().GetRowOrDefault(id)?.Name.ExtractText();
         }
 
+        /// <summary>
+        /// Subcategory row ids per top-level board group, in display order.
+        ///
+        /// This is hardcoded because the sheet's own <c>Category</c> column is NOT a
+        /// parent pointer: on the CN client its values are 1-4 with unrelated
+        /// semantics (1 lumps weapons AND tools together, 4 is furniture), which
+        /// produced "制作工具 containing 防具" nonsense. The row ids themselves have
+        /// been stable for a decade (7.0 appended 91/92), and unknown ids fall into
+        /// 其他 below, so a future patch degrades gracefully.
+        /// </summary>
+        private static readonly Dictionary<byte, byte[]> BoardGroupSubcategories = new() {
+            [1] = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 73, 76, 77, 78, 83, 84, 85, 86, 87, 88, 89, 91, 92], // 武器
+            [2] = [19, 20, 21, 22, 23, 24, 25, 26],                                                             // 主工具
+            [3] = [27, 28, 29, 30],                                                                             // 副工具
+            [4] = [31, 32, 33, 34, 35, 36, 37, 38],                                                             // 防具
+            [5] = [39, 40, 41, 42],                                                                             // 首饰
+            [6] = [43, 44, 45, 46, 53],                                                                         // 药品
+            [7] = [47, 48, 49, 50, 51, 52, 54, 55, 57, 58, 59],                                                 // 素材
+            [8] = [56, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 74, 75, 79, 80, 81, 82, 90],         // 其他(含家具)
+        };
+
+        /// <summary>
+        /// Return the market category snapshot, rebuilding it when the vendor sheet has
+        /// transitioned from "not ready" to ready (or when its cache generation changed).
+        ///
+        /// Category requests are drained on the framework thread while the login
+        /// pre-warm runs on a worker.  Both paths therefore go through one lock; a plain
+        /// null-coalescing assignment was racy and, more importantly, could permanently
+        /// retain a tree whose every <c>NpcPrice</c> was zero when GilShopItem had not
+        /// loaded yet.
+        /// </summary>
+        private ServerMarketCategories? GetMarketCategories() {
+            lock (this._marketCategoriesGate) {
+                this._marketCache.EnsureGilShopData();
+                var vendorTimestamp = this._marketCache.GilShopDataTimestampMs;
+                if (this._marketCategoriesCache != null
+                    && this._marketCategoriesGilShopTimestamp == vendorTimestamp) {
+                    return this._marketCategoriesCache;
+                }
+
+                var built = this.BuildMarketCategories();
+                if (built == null) {
+                    // Do not replace a usable previous snapshot with null just because
+                    // an Excel sheet briefly disappeared during a zone/login transition.
+                    return this._marketCategoriesCache;
+                }
+
+                this._marketCategoriesCache = built;
+                this._marketCategoriesGilShopTimestamp = vendorTimestamp;
+                return built;
+            }
+        }
+
+        private ServerMarketCategories? BuildMarketCategories() {
+            try {
+                var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
+                var categorySheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ItemSearchCategory>();
+                if (itemSheet == null || categorySheet == null) return null;
+
+                // The category tree is also the offline source for the NPC benchmark.
+                // Ensure the GilShopItem index has had a chance to load before taking
+                // the snapshot; an empty early-start sheet must not permanently turn
+                // every vendor price into zero for this plugin session.
+                this._marketCache.EnsureGilShopData();
+                var gilShopItems = this._marketCache.GilShopItemIds;
+
+                // Items grouped by their search subcategory row.
+                var bySub = new Dictionary<byte, List<ServerMarketItem>>();
+                foreach (var item in itemSheet) {
+                    if (item.RowId == 0) continue;
+                    var searchCat = item.ItemSearchCategory.RowId;
+                    if (searchCat == 0) continue;
+
+                    var key = (byte) searchCat;
+                    if (!bySub.TryGetValue(key, out var list)) {
+                        list = new List<ServerMarketItem>();
+                        bySub[key] = list;
+                    }
+
+                    list.Add(new ServerMarketItem {
+                        ItemId = item.RowId,
+                        Name = item.Name.ExtractText(),
+                        IconId = item.Icon,
+                        LevelItem = (byte) item.LevelItem.RowId,
+                        CanBeHq = item.CanBeHq,
+                        // PriceMid is only exposed when the item is actually present
+                        // in a gil shop.  PriceMid by itself is not a sufficient gate
+                        // (some unsellable items carry a resale value in the sheet).
+                        NpcPrice = gilShopItems.Contains(item.RowId) && item.PriceMid > 0
+                            ? item.PriceMid : 0,
+                    });
+                }
+
+                var categories = new List<ServerMarketCategory>();
+                foreach (var (groupId, subIds) in BoardGroupSubcategories.OrderBy(kv => kv.Key)) {
+                    // Name/icon come from the sheet's own top-level row (1-8), so the
+                    // labels stay localised with the client language.
+                    categorySheet.TryGetRow(groupId, out var parentRow);
+                    var subs = new List<ServerMarketSubcategory>();
+                    foreach (var subId in subIds) {
+                        if (!bySub.TryGetValue(subId, out var items)) continue;
+                        items.Sort((a, b) => a.LevelItem.CompareTo(b.LevelItem));
+                        if (!categorySheet.TryGetRow(subId, out var subRow)) continue;
+                        subs.Add(new ServerMarketSubcategory {
+                            CategoryId = subId,
+                            Name = subRow.Name.ExtractText(),
+                            Order = (byte) subs.Count,
+                            IconId = (uint) subRow.Icon,
+                            Items = items.ToArray(),
+                        });
+                    }
+
+                    if (subs.Count == 0) continue;
+                    categories.Add(new ServerMarketCategory {
+                        CategoryId = groupId,
+                        Name = parentRow.Name.ExtractText(),
+                        Order = groupId,
+                        IconId = (uint) parentRow.Icon,
+                        Subcategories = subs.ToArray(),
+                    });
+
+                    // Anything the mapping did not name (a brand-new patch subcategory)
+                    // still has to show up -- append it to 其他 rather than dropping it.
+                    if (groupId == 8) {
+                        var mapped = subIds.ToHashSet();
+                        foreach (var (subId, items) in bySub) {
+                            if (mapped.Contains(subId)) continue;
+                            if (BoardGroupSubcategories.Values.Any(ids => ids.Contains(subId))) continue;
+                            items.Sort((a, b) => a.LevelItem.CompareTo(b.LevelItem));
+                            if (!categorySheet.TryGetRow(subId, out var subRow)) continue;
+                            var last = categories[^1].Subcategories;
+                            categories[^1].Subcategories = last.Append(new ServerMarketSubcategory {
+                                CategoryId = subId,
+                                Name = subRow.Name.ExtractText(),
+                                Order = (byte) last.Length,
+                                IconId = (uint) subRow.Icon,
+                                Items = items.ToArray(),
+                            }).ToArray();
+                        }
+                    }
+                }
+
+                categories.Sort((a, b) => a.Order.CompareTo(b.Order));
+                return new ServerMarketCategories(categories.ToArray());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not build market categories: {ex.Message}");
+                return null;
+            }
+        }
+
 
         private static long ActivityFingerprint(ServerActivity value) {
             unchecked {
@@ -2114,6 +3306,46 @@ namespace XIVChatPlugin {
                     if (!string.IsNullOrWhiteSpace(teleport.PlaceName)) {
                         this._plugin.Functions.ProcessChatBox($"/tp {teleport.PlaceName}");
                     }
+                    break;
+                case ClientOperation.MarketSearch:
+                    var marketSearch = ClientMarketSearch.Decode(payload);
+                    if (marketSearch.ItemId > 0) {
+                        this._marketSearches.Enqueue((id, marketSearch.ItemId, marketSearch.HqOnly));
+                    }
+
+                    break;
+                case ClientOperation.MarketCategories:
+                    this._awaitingMarketCategories.Enqueue(id);
+                    break;
+                case ClientOperation.MarketMonitorSync:
+                    this.HandleMonitorSync(ClientMarketMonitorSync.Decode(payload));
+                    break;
+                case ClientOperation.MarketPurchase:
+                    // Decode first so a refusal can echo back the item and listing the
+                    // phone asked about. Replying with zeros made the phone unable to
+                    // tell the refusal apart from a reply for some other request.
+                    var purchase = ClientMarketPurchase.Decode(payload);
+
+                    if (!this._plugin.Config.AllowMarketPurchase) {
+                        this.RefusePurchase(id, purchase, MarketPurchaseStatus.Disabled);
+                        break;
+                    }
+
+                    if (this._marketAwaitingListings || this._marketAwaitingPurchaseReply) {
+                        this.RefusePurchase(id, purchase, MarketPurchaseStatus.Busy);
+                        break;
+                    }
+
+                    if (purchase.ItemId > 0 && purchase.ListingId > 0) {
+                        var refusal = this.MarketRefusalReason(purchase.ItemId);
+                        if (refusal != MarketStatus.Ok) {
+                            this.FinishPurchase(id, purchase.ItemId, purchase.ListingId,
+                                (MarketPurchaseStatus) refusal);
+                        } else {
+                            this._marketPurchases.Enqueue((id, purchase));
+                        }
+                    }
+
                     break;
             }
         }
@@ -2717,6 +3949,7 @@ namespace XIVChatPlugin {
 
         public void Dispose() {
             this._activityTracker.Dispose();
+            this._purchaseResponseHook?.Dispose();
             // stop accepting new clients
             this._tokenSource.Cancel();
             foreach (var client in this._clients.Values) {

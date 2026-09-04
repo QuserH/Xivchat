@@ -16,7 +16,9 @@ import java.net.URL
  * writing each downloaded icon to disk so later loads are instant and work offline.
  */
 object ItemIconLoader {
-    private val memCache = object : LruCache<String, Bitmap>(96_000) {
+    // 32 MiB is enough for thousands of 40-80px UI icons; the old 96 MiB budget was
+    // disproportionate on phones and competed with post/map bitmaps for no visible gain.
+    private val memCache = object : LruCache<String, Bitmap>(32_000) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
     }
 
@@ -44,16 +46,21 @@ object ItemIconLoader {
             val file = File(diskCache(app), "$iconId.png")
             if (file.exists()) {
                 BitmapFactory.decodeFile(file.absolutePath)?.let {
+                    runCatching { file.setLastModified(System.currentTimeMillis()) }
                     memCache.put(url, it)
                     return@withContext it
                 }
+                runCatching { file.delete() }
             }
 
             val bmp = download(url) ?: return@withContext null
             try {
                 file.parentFile?.mkdirs()
-                FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                val tmp = File(file.parentFile, "$iconId.tmp")
+                FileOutputStream(tmp).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                if (!tmp.renameTo(file)) tmp.delete()
             } catch (_: Exception) { }
+            CacheMaintenance.schedule(app)
             memCache.put(url, bmp)
             bmp
         }

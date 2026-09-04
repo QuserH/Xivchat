@@ -93,15 +93,24 @@ object ShizhijiaSession {
 
     fun save(context: Context, cookieString: String) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit()
+        val previousCookie = prefs.getString(KEY_COOKIE, null)
+        val edit = prefs.edit()
             .putString(KEY_COOKIE, cookieString)
             .putLong(KEY_TIME, System.currentTimeMillis())
-            .apply()
+        // A sign marker belongs to an account/session, not merely to the device
+        // date.  If another account has just logged in, force the coordinator to
+        // verify/sign for that account instead of incorrectly reusing today's marker.
+        if (previousCookie != cookieString) edit.remove(KEY_SIGN)
+        edit.apply()
+        // A successful login should not require opening the 石之家 screen before the
+        // daily check-in runs. The coordinator is fire-and-forget and deduplicates with any
+        // application-start/foreground trigger already in flight.
+        ShizhijiaAutoCheckIn.schedule(context)
     }
 
     fun clear(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit().remove(KEY_COOKIE).remove(KEY_TIME).apply()
+        prefs.edit().remove(KEY_COOKIE).remove(KEY_TIME).remove(KEY_SIGN).apply()
         // 名册是账号相关的数据，换账号/退登必须清掉，
         // 否则联系人列表还挂着上一个账号看到的头像和 uuid。
         ShizhijiaFriendRoster.clear(context)

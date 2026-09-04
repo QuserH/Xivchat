@@ -119,58 +119,63 @@ private data class Key(val isRun: Boolean, val id: Int)
 object QuestAncestry {
 
     /**
-     * 交互高亮：从选中的格子向上的**最短路径树**（Dijkstra，边权 1）。
+     * 交互高亮：从选中的格子**向上可达的全部祖先**，以及可达集内部的全部边。
      *
-     * 之前 BFS 的「首达边」在深层选中时会选错：某些节点经绕路先被发现，
-     * 保留的那条边不在最短路上，高亮树就缺枝 —— 表现就是「从第一层点下去
-     * 全亮、直接点深层缺一块」。改成按距离逐层松弛，每个节点保留的边
-     * 一定在最短路径上；距离相同时取边序号小的（稳定）。
-     * 碰到顶部主线就停（它自己的前置不在图里）。
+     * 需求是「点一个任务，它的所有前置线都连到顶」，**不是最短路径树**。
+     * 一个任务有两个前置就该亮两条 —— 这是用户明确要的。
+     *
+     * ## 为什么不再用 Dijkstra
+     *
+     * 上一版是最短路径树（`bestEdge` 每个节点存一条入边）。它有个更早的
+     * 历史包袱：最初 BFS 的「首达边」在深层选中时会选错，于是改成按距离松弛。
+     * 但**只要是「树」就注定一个节点只留一条边**，而这里需要的是子图不是树。
+     *
+     * 更要紧的是 `bestEdge` 的 key 是**源节点**，所以一个前置只能留一条出边。
+     * 这个 bug 长期存在但不可触发：`build()` 里那条「一源一边剪枝」原本无条件
+     * 删边，删完每个节点出度必然 ≤ 1，key 永不冲突。我给剪枝加上可达性检查
+     * （兄弟边不再被误删，见 step 3.5）之后出度可以 > 1，它就暴露了。
+     *
+     * 实测（不折叠的树，即 ≤ [NO_COLLAPSE_LIMIT] 个节点）：出度 > 1 的
+     * 437 棵（其中非主线 435 棵 + 主线 2 棵），**全部丢边，无一例外**。
+     * 最惨「友谊地久天长」应亮 51 条只亮 37 条 —— `石卫塔霸主` 喂 5 个已亮任务，
+     * 只有 `来自深海` 那条边活下来，其余画成暗线。
+     * 诊断由另一个会话（claude-ee）提出，我独立复现后确认。
+     *
+     * ## 为什么「集内边全亮」不会多亮
+     *
+     * 边的方向是 前置 → 后继。取到一条边 x→y 时：y 在可达集里，说明 y 是
+     * fromCell 的祖先（或它本身）；x 是 y 的前置。那么 x→y→…→fromCell
+     * 本身就是一条上溯路径，所以这条边天然在路径上。
+     * 全库实测：漏亮 0、多亮 0，高亮**节点集**与旧版逐棵一致（3348/3348）。
+     *
+     * 碰到顶部主线就停（它自己的前置不在图里），但指进主线的边照亮 ——
+     * 「高亮线要连到顶部主线」靠的就是这些边。
      */
     fun pathFrom(tree: AncestorTree, fromCell: Int): Pair<Set<Int>, Set<Pair<Int, Int>>> {
         if (fromCell !in tree.cells.indices) return emptySet<Int>() to emptySet()
         val isTop = HashSet<Int>()
-        val pre = HashMap<Int, MutableList<Pair<Int, Int>>>()
         tree.cells.forEachIndexed { i, c ->
             if (c is AncestorCell.Quest && c.isMsqTop) isTop.add(i)
         }
-        tree.edges.forEachIndexed { ei, e ->
-            pre.getOrPut(e.toCell) { mutableListOf() }.add(e.fromCell to ei)
+        val pre = HashMap<Int, MutableList<Int>>()
+        tree.edges.forEach { e -> pre.getOrPut(e.toCell) { mutableListOf() }.add(e.fromCell) }
+
+        // 向上可达集
+        val lit = HashSet<Int>()
+        lit.add(fromCell)
+        val stack = ArrayDeque<Int>()
+        stack.add(fromCell)
+        while (stack.isNotEmpty()) {
+            val u = stack.removeFirst()
+            if (u in isTop && u != fromCell) continue   // 主线：终点，不再上溯
+            for (a in pre[u].orEmpty()) if (lit.add(a)) stack.add(a)
         }
-        val dist = HashMap<Int, Int>()
-        val bestEdge = HashMap<Int, Pair<Int, Int>>()   // node -> (fromCell, toCell)
-        dist[fromCell] = 0
-        // 简易 Dijkstra：层数最多 = cells.size，每轮处理一整层。
-        val frontier = ArrayDeque<Int>()
-        frontier.add(fromCell)
-        while (frontier.isNotEmpty()) {
-            val next = ArrayDeque<Int>()
-            while (frontier.isNotEmpty()) {
-                val u = frontier.removeFirst()
-                val du = dist[u] ?: 0
-                if (u in isTop && u != fromCell) continue   // 主线：终点，不再上溯
-                for ((a, ei) in pre[u].orEmpty()) {
-                    val nd = du + 1
-                    val known = dist[a]
-                    if (known == null || nd < known) {
-                        dist[a] = nd
-                        bestEdge[a] = a to u
-                        next.add(a)
-                    }
-                }
-            }
-            frontier.clear()
-            // 下一层（去重后继续）
-            val seen = HashSet<Int>()
-            while (next.isNotEmpty()) {
-                val v = next.removeFirst()
-                if (seen.add(v)) frontier.add(v)
-            }
+
+        val litEdges = HashSet<Pair<Int, Int>>()
+        tree.edges.forEach { e ->
+            if (e.fromCell in lit && e.toCell in lit) litEdges.add(e.fromCell to e.toCell)
         }
-        val cells = dist.keys.toHashSet()
-        val litEdges = bestEdge.values.toHashSet()
-        cells.add(fromCell)
-        return cells to litEdges
+        return lit to litEdges
     }
 
     /** 安全上限。实测最大 1090，留一倍余量防脏数据成环。 */
@@ -359,10 +364,64 @@ object QuestAncestry {
             }
         }
 
-        // --- 3.5 一源一边剪枝（用户规则）：一个前置 gated 一条线上的多个任务时，
+        // --- 3.2 顶部主线之间的边不画：主线一律待在第 0 层 ---
+        //
+        // 用户原话：「主线就老老实实放在一层，不要跑到二层去了」。
+        //
+        // 机制：BFS 碰到主线就停，但那只挡住「从这条主线继续往上」。若两条主线
+        // 各自被不同的非主线后代收进 tops，而它们彼此又有前置关系，那条边照样
+        // 会被建出来（建边是对 sub 内所有对做的）。于是后一条主线有了入边、
+        // 不再是 root，被压到第 1 层，再往下第 2 层。
+        //
+        // 实测最深的「丈夫的危机」：闪耀的明星 → 试炼的第一步 → 模儿一族
+        // 三条主线串成一条，被排在第 0/1/2 层。
+        //
+        // 主线内部的推进顺序本来就不是这一页要表达的东西（主线不展开），
+        // 画出来等于「主线被部分展开」—— 正是造成困惑的原因。去掉之后所有 top
+        // 都没有入边，自然全部落在第 0 层。
+        //
+        // 全库实测（4402 棵不折叠的树）：受影响 69 棵，去掉 96 条边，
+        // 之后「仍有 top 不在第 0 层」的 **0 棵**、target 深度变化 **0 棵**、
+        // 「top 变得从 target 到不了」的 **0 棵** —— 每个 top 仍然经非主线路径
+        // 连得上，高亮不断线（那 96 条里原本有 88 条是亮的，但它们连的是
+        // 主线↔主线，不是 target 上溯路径的必要部分）。
+        //
+        // 这个现象和我改剪枝无关：修前 66 棵、修后 69 棵，差的 3 棵只是
+        // 保住的兄弟边让更多主线进了同一棵树。
+        // 顶部主线永不折叠（见上面 kept 的 filter），所以 !isRun 就够判定
+        fun isTopKey(k: Key) = !k.isRun && k.id in topSet
+        if (topSet.size > 1) {
+            for (a in cNext.keys.toList()) {
+                if (!isTopKey(a)) continue
+                for (b in cNext[a].orEmpty().toList()) {
+                    if (!isTopKey(b)) continue
+                    cNext[a]?.remove(b)
+                    cPre[b]?.remove(a)
+                    if (cPre[b]?.isEmpty() == true) cPre.remove(b)
+                }
+            }
+        }
+
+        // --- 3.5 一源一边剪枝（用户规则）：一个前置 gated **一条线上**的多个任务时，
         // 只连「最早的那一个」—— 比如残酷的真相同时前置龙诗之始和好想回家，
         // 只画 残酷的真相→龙诗之始（最早），它经由虎口拔牙照样包含好想回家，
         // 直连好想回家的重复边不再出现。
+        //
+        // **删边前必须确认「绕路也能到」**，也就是只做传递归约。
+        //
+        // 这一步原来是无条件删的：一个源有多个后继就只留 preDepth 最小的那个。
+        // 但「一条线上」是这条规则成立的前提 —— 两个后继是**兄弟**（互不可达）时，
+        // 被删的那个就失去了全部入边，于是在下面第 4 步被当成 root、画到第 0 层，
+        // 和顶部主线并排。
+        //
+        // 用户报的就是这个：「它们的目标」的两个前置 莫古呜咔的不安 / 莫古欧库的预感
+        // 都由 紧急情报 gate，preDepth 都是 8，按 id 比较留下了前者，
+        // 后者被删成孤儿 → depth 0 → 跑到主线那一层，而且它自己的前置
+        // （紧急情报）也就画不出来了。
+        //
+        // 全库实测：修前 4477 棵树里有 460 棵中招，808 个节点被误顶到第 0 层；
+        // 加上可达性检查后是 0。边数 28910 → 30201（+4.5%，就是这些该留的边）。
+        // 复现与回归见 `开发/WIKI/wiki-feature/validate_ancestry_prune.py`。
         val preDepth = HashMap<Key, Int>()
         val preIndeg = keys.associateWithTo(HashMap()) { cPre[it]?.size ?: 0 }
         val pdq = ArrayDeque(keys.filter { preIndeg[it] == 0 })
@@ -375,11 +434,29 @@ object QuestAncestry {
                 if ((preIndeg[v] ?: 0) == 0) pdq.add(v)
             }
         }
-        for (a in cNext.keys.toList()) {
+
+        /** 不走 a→b 这条直接边，b 还能从 a 到达吗。图是 DAG，深度有限。 */
+        fun reachableWithout(a: Key, b: Key): Boolean {
+            val stack = ArrayDeque(cNext[a].orEmpty().filter { it != b })
+            val seen = HashSet(stack)
+            while (stack.isNotEmpty()) {
+                val u = stack.removeFirst()
+                if (u == b) return true
+                for (v in cNext[u].orEmpty()) if (seen.add(v)) stack.add(v)
+            }
+            return false
+        }
+
+        for (a in cNext.keys.sortedWith(compareBy({ it.isRun }, { it.id }))) {
             val bs = cNext[a].orEmpty().toList()
             if (bs.size <= 1) continue
-            val keep = bs.minWith(compareBy({ preDepth[it] ?: 0 }, { it.id }))
-            for (b in bs) if (b != keep) {
+            // preDepth 深的先试删：留下的自然是「最早的那一个」，
+            // 和原规则的意图一致。判定跑在**当前**边集上，所以不会把
+            // 互为理由的两条边同时删掉。
+            for (b in bs.sortedWith(compareByDescending<Key> { preDepth[it] ?: 0 }
+                    .thenByDescending { it.id })) {
+                if ((cNext[a]?.size ?: 0) <= 1) break
+                if (!reachableWithout(a, b)) continue   // 兄弟节点，删了就成孤儿
                 cNext[a]?.remove(b)
                 cPre[b]?.remove(a)
                 if (cPre[b]?.isEmpty() == true) cPre.remove(b)
@@ -411,6 +488,16 @@ object QuestAncestry {
         }
 
         // --- 5. 选中任务的直接上溯路径（UI 加粗这条） ---
+        //
+        // **这一条只留一个父**（`maxByOrNull { depth }`），所以它不是「全部前置线」，
+        // 一个任务有两个前置时只会标出一条。真正的高亮走 [pathFrom]（可达集语义），
+        // `AncestorCell.onPath` / `AncestorEdge.onPath` 只是 `highlightEdges` 为空时的
+        // 兜底（`QuestTreeScreen.kt` 那处 `if (highlightEdges.isEmpty()) e.onPath`）。
+        //
+        // 实测那个兜底走不到：4402 棵不折叠的树里，「有边但 pathFrom 返回空边集」
+        // 的有 **0 棵** —— 只要画得出线，pathFrom 就一定给出非空边集。
+        // 所以这里保持单父不影响显示。**但别拿这两个字段当「完整前置线」用**，
+        // 要那个语义就调 pathFrom。
         val targetKey = keyOf(target.id)
         val onPath = HashSet<Key>()
         run {

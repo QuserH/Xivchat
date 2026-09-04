@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalTextStyle
@@ -51,7 +53,10 @@ import com.quserh.eorzeaphone.data.wiki.QuestMap
 import com.quserh.eorzeaphone.data.wiki.QuestNode
 import com.quserh.eorzeaphone.data.wiki.WikiDb
 import com.quserh.eorzeaphone.data.wiki.WikiDuty
+import com.quserh.eorzeaphone.data.wiki.WikiIconCache
 import com.quserh.eorzeaphone.data.wiki.WikiInstance
+import com.quserh.eorzeaphone.data.wiki.WikiPage
+import com.quserh.eorzeaphone.data.wiki.WikiSearch
 import com.quserh.eorzeaphone.data.wiki.WikiItem
 import com.quserh.eorzeaphone.data.wiki.WikiNode
 import com.quserh.eorzeaphone.data.wiki.WikiQuest
@@ -500,15 +505,31 @@ internal fun WikiInstanceScreen(
             ) {
                 item {
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        d.type.takeIf { it.isNotBlank() }
-                            ?.let { WikiChipBadge(it, PhoneAccent) }
-                        d.levelText.takeIf { it.isNotBlank() }
-                            ?.let { WikiChipBadge(it, PhoneInfo) }
-                        d.timeText.takeIf { it.isNotBlank() }
-                            ?.let { WikiChipBadge(it, PhoneWarn) }
+                        // 类型图标（迷宫/歼灭战/团队本…）。不用站点那张横幅图：
+                        // 55 KB 的宽幅 PNG，压进小方框看不出是什么，还要联网。
+                        Box(
+                            Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+                                .background(PhoneWarn.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ImageGlyph(
+                                dutyIconRes(d.iconKind), PhoneWarn, Modifier.size(22.dp),
+                            )
+                        }
+                        Row(
+                            Modifier.weight(1f).padding(start = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            d.type.takeIf { it.isNotBlank() }
+                                ?.let { WikiChipBadge(it, PhoneAccent) }
+                            d.levelText.takeIf { it.isNotBlank() }
+                                ?.let { WikiChipBadge(it, PhoneInfo) }
+                            d.timeText.takeIf { it.isNotBlank() }
+                                ?.let { WikiChipBadge(it, PhoneWarn) }
+                        }
                     }
                 }
                 item { WikiLinkSection("副本信息") }
@@ -749,7 +770,8 @@ internal fun WikiNodeScreen(state: PhoneState, id: Int, onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
     var node by remember(id) { mutableStateOf<WikiNode?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
-    LaunchedEffect(id) {
+    var retry by remember(id) { mutableStateOf(0) }
+    LaunchedEffect(id, retry) {
         node = runCatching { WikiDb.node(context, id) }.getOrNull()
         loading = false
     }
@@ -757,7 +779,7 @@ internal fun WikiNodeScreen(state: PhoneState, id: Int, onBack: () -> Unit) {
     val margin = LocalContentMargin.current
     when {
         loading -> WikiLoadingScreen("采集点", state, onBack)
-        n == null -> WikiMissingScreen("采集点 $id", state, onBack)
+        n == null -> WikiMissingScreen("采集点 $id", state, onBack) { retry++ }
         else -> ScreenFrame {
             ScreenHeader(n.placeText.ifBlank { "采集点 $id" }, state, onBack = onBack)
             LazyColumn(
@@ -931,5 +953,353 @@ private fun WikiItemLinkList(
             }
             if (i < pairs.lastIndex) PhoneHairlineRow(12.dp)
         }
+    }
+}
+
+// ---- 普通 wiki 条目（怪物/地名/NPC/攻略…）----
+
+/**
+ * 正文里的一段。[level] 0 = 正文段落，1/2/3 = `==`/`===`/`====` 小节标题。
+ */
+private data class ExtractBlock(val level: Int, val text: String)
+
+/**
+ * 把 `exsectionformat=wiki` 的纯文本正文切成小节 + 段落。
+ *
+ * 站点回来的形状（实测「弗栗多」）：
+ * ```
+ * == 简介 ==
+ * 弗栗多是尘世幻龙的子嗣……
+ *
+ * == 人物经历 ==
+ * === 早年 ===
+ * 尘世幻龙携带七枚龙蛋……
+ * ```
+ * 全塞进一个 Text 里会变成一堵墙，所以按 `==` 的层级切开分别排版。
+ */
+private fun parseExtract(extract: String): List<ExtractBlock> = buildList {
+    for (raw in extract.split("\n")) {
+        val line = raw.trim()
+        if (line.isEmpty()) continue
+        val m = Regex("^(={2,4})\\s*(.+?)\\s*\\1$").find(line)
+        if (m != null) {
+            add(ExtractBlock(m.groupValues[1].length - 1, m.groupValues[2]))
+        } else {
+            add(ExtractBlock(0, line))
+        }
+    }
+}
+
+/**
+ * 正文里的一块：小节标题或段落。
+ *
+ * ## 三级标题必须各有样式
+ *
+ * 原来是就地一个 `when (b.level)`，只写了 `0 ->`、`1 ->`、`else ->` —— 于是
+ * `===` 和 `====` 落进同一支，渲染成一模一样的小标题。31 个小节的页面
+ * （萨维奈岛）看着只有两级，层级读不出来。这是「排版太丑」的主因，不是间距。
+ *
+ * 实测（弗栗多）三级都出现：`==` 9 个、`===` 6 个、`====` 5 个，所以四档分开。
+ *
+ * ## 间距按 4/8dp 节奏分档
+ *
+ * 原来是 `8/18/2/12/1/22/10/6` 这种随手值，层级之间只差 6dp，看不出主次。
+ * 现在 24/16/12/8 对应 level 1/2/3/正文 —— 依据是 ui-ux-pro-max 的
+ * `references/pro-rules.md`「8dp spacing rhythm」＋「Section spacing hierarchy」。
+ *
+ * level 1 上面还加一条 hairline：31 个小节光靠字号分不开，需要一条线来断章。
+ * [first] 为真时不画，避免和上方的缩略图/标签之间多出一条孤线。
+ */
+@Composable
+private fun ExtractBlockRow(b: ExtractBlock, first: Boolean) {
+    when (b.level) {
+        1 -> Column(Modifier.padding(top = if (first) 8.dp else 24.dp)) {
+            if (!first) {
+                PhoneHairlineRow(0.dp)
+                Spacer(Modifier.height(12.dp))
+            }
+            Text(
+                b.text,
+                color = PhoneText, fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        2 -> Text(
+            b.text,
+            color = PhoneText, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        3 -> Text(
+            b.text,
+            color = PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        // 正文。行高 22sp（≈1.7 倍）：中文长段落比英文更需要行距，
+        // 原来 21sp 偏挤。pro-rules 的 line-height 1.5 是下限，不是目标值。
+        else -> Text(
+            b.text,
+            color = PhoneText, fontSize = 13.sp, lineHeight = 22.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+/**
+ * 在 App 内显示一个普通 wiki 条目。
+ *
+ * ## 为什么有这一页
+ *
+ * 用户的诉求是「所有条目都在 App 里能找到，不要跳网页」。物品/任务/副本都有
+ * 本地表了；怪物、地名、NPC、攻略这些没有，以前命中 [WikiHit.Page] 就直接
+ * `Intent.ACTION_VIEW` 踢到浏览器。现在走 [WikiRemote.wikiPage] 取纯文本正文
+ * 在这里排版显示（实测：伊弗利特 959 字、弗栗多 3226 字、萨维奈岛 4349 字）。
+ *
+ * ## 表格页的处理
+ *
+ * TextExtracts **会丢掉表格**，所以纯表格的攻略页（「坐骑获取方式」）正文是空的。
+ * 这种页面（[WikiPage.isThin]）**明说「这一页的内容主要是表格，App 里显示不全」**
+ * 再给浏览器入口 —— 不能显示一片空白装作加载成功了。
+ *
+ * 「在浏览器打开」始终留着（右上角），因为正文再全也没有表格、模板和图片。
+ * 但它从**唯一出路**变成了**补充**。
+ */
+@Composable
+internal fun WikiPageScreen(
+    state: PhoneState,
+    title: String,
+    onBack: () -> Unit,
+    onOpen: (WikiDest) -> Unit,
+) {
+    val context = LocalContext.current
+    val app = context.applicationContext
+    var page by remember(title) { mutableStateOf<WikiPage?>(null) }
+    var localDuty by remember(title) { mutableStateOf<WikiDuty?>(null) }
+    var loading by remember(title) { mutableStateOf(true) }
+    var retry by remember(title) { mutableStateOf(0) }
+
+    LaunchedEffect(title, retry) {
+        loading = true
+        val p = runCatching { WikiRemote.wikiPage(app, title) }.getOrNull()
+        page = p
+        // 重定向跟随之后的标题才是真名，所以要在拿到 p 之后再查本地。
+        // 「A12」这种黑话本地一定搜不到，但它指向的
+        // 「亚历山大机神城 天动之章4」在 duties 表里有完整资料
+        // （BOSS、掉落、人数），比这一页 11 个字的正文强得多。
+        localDuty = if (p == null) null else runCatching {
+            DutyDb.search(app, p.title).firstOrNull { it.name == p.title }
+        }.getOrNull()
+        loading = false
+    }
+
+    val openInBrowser: () -> Unit = {
+        runCatching {
+            context.startActivity(
+                android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(WikiSearch.pageUrl(page?.title ?: title)),
+                )
+            )
+        }
+    }
+
+    val p = page
+    val margin = LocalContentMargin.current
+    when {
+        loading -> WikiLoadingScreen(title, state, onBack)
+        p == null -> WikiMissingScreen(title, state, onBack) { retry++ }
+        // 本地已经有更好的那一份 → 直接给本地入口，别拿 11 个字的正文糊弄
+        localDuty != null -> {
+            val d = localDuty!!
+            ScreenFrame {
+                ScreenHeader(p.title, state, onBack = onBack)
+                Column(
+                    Modifier.fillMaxSize()
+                        .padding(horizontal = margin.dp),
+                ) {
+                    Text(
+                        "这一页在本地库里有完整资料",
+                        color = PhoneMuted, fontSize = 11.sp, lineHeight = 17.sp,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 12.dp),
+                    )
+                    WikiLocalDutyCard(d) { onOpen(WikiDest.Instance(d.id)) }
+                }
+            }
+        }
+        else -> ScreenFrame {
+            ScreenHeader(
+                p.title, state, onBack = onBack,
+                trailing = {
+                    // 38dp 方块 + ImageGlyph，和聊天页页头那些动作图标同一个规格。
+                    // 用图标而不是「↗」字符：字符和旁边真图标的基线/粗细对不齐。
+                    Box(
+                        Modifier.size(38.dp).clip(RoundedCornerShape(9.dp))
+                            .clickable(onClick = openInBrowser),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ImageGlyph(R.drawable.ic2_link, PhoneMuted, Modifier.size(18.dp))
+                    }
+                },
+            )
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = margin.dp, end = margin.dp, bottom = 24.dp,
+                ),
+            ) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        WikiChipBadge(p.kindLabel, PhoneAccent)
+                        // 分类里第二个往后当补充标签（BOSS + 蛮神）
+                        p.categories.drop(1).take(2).forEach {
+                            WikiChipBadge(it, PhoneMuted)
+                        }
+                    }
+                }
+                // 「经『AF』命中」——用户搜的是黑话，得让他知道跳到哪儿了
+                p.redirectedFrom?.let { from ->
+                    item {
+                        Text(
+                            "「$from」是这一页的别名",
+                            color = PhoneAccent, fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+                if (p.thumbUrl.isNotBlank()) {
+                    item { WikiPageThumb(p.thumbUrl) }
+                }
+                if (p.isThin) {
+                    item { WikiThinPageNotice(p.extract, openInBrowser) }
+                } else {
+                    val blocks = parseExtract(p.extract)
+                    itemsIndexed(blocks) { i, b ->
+                        ExtractBlockRow(b, first = i == 0)
+                    }
+                    item {
+                        // 正文再全也没有表格、模板和图片，说清楚再给入口。
+                        // 32dp 是「章节之间」那一档，比 level-1 的 24dp 再大一级 ——
+                        // 这块不是正文的一部分，要断得更开。
+                        Column(Modifier.padding(top = 32.dp)) {
+                            PhoneHairlineRow(0.dp)
+                            Text(
+                                "正文取自 wiki，表格和图片没有包含在内。",
+                                color = PhoneMuted, fontSize = 11.sp, lineHeight = 17.sp,
+                                modifier = Modifier.padding(top = 12.dp),
+                            )
+                            PhoneButton(
+                                "在浏览器看完整页面",
+                                onClick = openInBrowser,
+                                kind = PhoneButtonKind.Ghost,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 站点条目其实指向一个本地副本时给的卡片。
+ *
+ * 「A12」→「亚历山大机神城 天动之章4」这条路：站点那一页正文只有 11 个字，
+ * 但同一个副本在本地库里有类型、等级、人数、BOSS 和掉落。给本地那一份。
+ */
+@Composable
+private fun WikiLocalDutyCard(d: WikiDuty, onClick: () -> Unit) {
+    PhoneCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WikiChipBadge(d.type.ifBlank { "副本" }, PhoneWarn)
+                    d.levelText.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it, color = PhoneMuted, fontSize = 11.sp,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+                Text(
+                    d.name, color = PhoneText, fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                val sub = buildList {
+                    d.sizeText.takeIf { it.isNotBlank() }?.let(::add)
+                    (d.place.takeIf { it.isNotBlank() } ?: d.mapPlace)
+                        .takeIf { it.isNotBlank() }?.let(::add)
+                    d.bosses.firstOrNull()?.let { add("BOSS: $it") }
+                }.joinToString(" · ")
+                if (sub.isNotBlank()) {
+                    Text(
+                        sub, color = PhoneMuted, fontSize = 11.sp, lineHeight = 17.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+            ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(16.dp))
+        }
+    }
+}
+
+/** 条目配图。取不到就整块不显示，不占一个空框。 */
+@Composable
+private fun WikiPageThumb(url: String) {
+    val context = LocalContext.current.applicationContext
+    var bmp by remember(url) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(url) {
+        bmp = runCatching { WikiIconCache.loadUrl(context, url) }.getOrNull()
+    }
+    val b = bmp ?: return
+    Image(
+        bitmap = b.asImageBitmap(),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+            .clip(RoundedCornerShape(12.dp)),
+    )
+}
+
+/**
+ * 正文取不到（或只有十几个字）时的说明。
+ *
+ * 关键是**说清楚为什么**：不是没网、不是没这一页，是这一页的内容在表格里，
+ * TextExtracts 取不出来。含糊地说「加载失败」会让用户去重试，白等。
+ */
+@Composable
+private fun WikiThinPageNotice(extract: String, onOpen: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 16.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(PhoneSurface).padding(16.dp),
+    ) {
+        if (extract.isNotBlank()) {
+            Text(
+                extract,
+                color = PhoneText, fontSize = 13.sp, lineHeight = 22.sp,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ImageGlyph(R.drawable.ic2_info, PhoneMuted, Modifier.size(16.dp))
+            Text(
+                "这一页的内容主要是表格，App 里显示不全",
+                color = PhoneMuted, fontSize = 11.sp, lineHeight = 17.sp,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        PhoneButton(
+            "在浏览器打开",
+            onClick = onOpen,
+            kind = PhoneButtonKind.Ghost,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }

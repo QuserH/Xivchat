@@ -15,15 +15,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -67,15 +58,26 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.core.view.WindowCompat
 import com.quserh.eorzeaphone.R
+import com.quserh.eorzeaphone.data.CacheMaintenance
+import com.quserh.eorzeaphone.data.shizhijia.ShizhijiaAutoCheckIn
 import com.quserh.eorzeaphone.ui.theme.EorzeaPhoneTheme
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
+import com.quserh.eorzeaphone.ui.theme.PhoneBackground
 
 private data class PhoneRoute(val screen: PhoneScreen, val appId: String, val friendId: Long)
 
-private fun PhoneRoute.level(): Int = when (screen) {
+/**
+ * Position in the navigation hierarchy, which picks the transition direction.
+ *
+ * Contacts / Chat / App / Settings are siblings of each other and children of Home, so they
+ * all sit at 1 and swap with a crossfade rather than a slide. The previous version collapsed
+ * everything except Home and ContactDetail into "else -> 1" while treating equal levels as
+ * forward, so every sibling swap replayed the push animation and back looked like forward.
+ */
+private fun PhoneRoute.depth(): Int = when (screen) {
     PhoneScreen.Home -> 0
     PhoneScreen.ContactDetail -> 2
-    else -> 1
+    PhoneScreen.Settings, PhoneScreen.Contacts, PhoneScreen.Chat, PhoneScreen.App -> 1
 }
 
 @Composable
@@ -125,8 +127,23 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
         val lifecycleOwner = LocalLifecycleOwner.current
         DisposableEffect(state, lifecycleOwner) {
             val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME || event == Lifecycle.Event.ON_START) { if (event == Lifecycle.Event.ON_RESUME) state.ensureConnectedOnResume(); state.appInForeground = true }
-                else if (event == Lifecycle.Event.ON_STOP) state.appInForeground = false
+                if (event == Lifecycle.Event.ON_RESUME || event == Lifecycle.Event.ON_START) {
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        state.ensureConnectedOnResume()
+                        // Re-check the day when the process stayed alive across midnight and
+                        // trim any cache growth accumulated while it was in the foreground.
+                        ShizhijiaAutoCheckIn.schedule(context)
+                        CacheMaintenance.schedule(context)
+                    }
+                    state.appInForeground = true
+                }
+                else if (event == Lifecycle.Event.ON_STOP) {
+                    // The normal chat writer is debounced to keep packet bursts off the
+                    // UI thread.  Flush once when the activity leaves the foreground so
+                    // a process kill/background cleanup cannot lose the tail of a chat.
+                    state.flushChatPersistence()
+                    state.appInForeground = false
+                }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
@@ -136,74 +153,79 @@ fun EorzeaPhoneApp(deepLink: MutableState<String?>) {
         BackHandler(enabled = state.screen != PhoneScreen.Home) { state.back() }
         BackHandler(enabled = state.screen == PhoneScreen.Home && state.homeEditMode) { state.exitEditMode() }
 
-        val route = PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
+        val route = remember(state.screen, state.selectedApp?.id, state.selectedFriend?.contentId) {
+            PhoneRoute(state.screen, state.selectedApp?.id.orEmpty(), state.selectedFriend?.contentId ?: 0)
+        }
         CompositionLocalProvider(LocalContentMargin provides state.contentMargin) {
-        Box(Modifier.fillMaxSize().onSizeChanged { state.updateShellSize(it.width, it.height) }) {
-            // Reduced motion: gentle crossfade only, no slide/scale travel.
+        // Opaque floor under every transition. Without it the backdrop is the raw window,
+        // which is black on this device -- so any moment where the outgoing screen has
+        // faded past the incoming one, or where a scaled screen does not reach the edges,
+        // flashed black. Screens paint their own background too; this only ever shows
+        // during a transition.
+        Box(
+            Modifier.fillMaxSize()
+                .background(PhoneBackground)
+                .onSizeChanged { state.updateShellSize(it.width, it.height) },
+        ) {
             val motionAllowed = phoneMotionEnabled()
             AnimatedContent(
             targetState = route,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (!motionAllowed) {
-                    (fadeIn(tween(90)) togetherWith fadeOut(tween(60)))
-                } else {
-                val forward = targetState.level() >= initialState.level()
-                if (forward) {
-                    // zoom-in from where the tile was tapped, plus a slide
-                    val pivot = androidx.compose.ui.graphics.TransformOrigin(state.launchPivotX, state.launchPivotY)
-                    (
-                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(230, easing = FastOutSlowInEasing))
-                            + fadeIn(tween(180))
-                            + scaleIn(initialScale = 0.86f, animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f), transformOrigin = pivot)
-                        ).togetherWith(
-                        slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(210, easing = FastOutSlowInEasing))
-                            + fadeOut(tween(140))
-                            + scaleOut(targetScale = 0.94f, animationSpec = tween(260), transformOrigin = pivot),
-                    )
-                } else {
-                    (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(170, 40)))
-                        .togetherWith(slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(210, easing = FastOutSlowInEasing)) + fadeOut(tween(140)))
-                }
-                }
+                phoneNavTransition(
+                    motionAllowed = motionAllowed,
+                    targetDepth = targetState.depth(),
+                    initialDepth = initialState.depth(),
+                    // A feature -> desktop return must not keep the old feature alive
+                    // for a fade; the user otherwise sees a ghost frame before Home.
+                    instantPopToRoot = true,
+                )
             },
             label = "phone-navigation",
             ) { target ->
+                // [target] is the route snapshot for this animation layer.  Reading
+                // selectedApp/selectedFriend directly here is racy: Back clears them before
+                // the outgoing layer finishes, so it briefly renders a duplicate or the
+                // wrong app. Resolve all route-specific inputs from the snapshot instead.
+                val targetApp = target.appId.takeIf { it.isNotBlank() }?.let(state::appItem)
+                val targetFriend = target.friendId.takeIf { it != 0L }
+                    ?.let { id -> state.friends.firstOrNull { it.contentId == id } }
                 Box(Modifier.fillMaxSize()) {
                 when (target.screen) {
         PhoneScreen.Home -> HomeScreen(state)
         PhoneScreen.Settings -> SettingsSubScreen(state)
         PhoneScreen.Contacts -> AetherphoneMessagesScreen(state)
-        PhoneScreen.ContactDetail -> AetherphoneContactDetailScreen(state)
+        PhoneScreen.ContactDetail -> AetherphoneContactDetailScreen(state, targetFriend)
         PhoneScreen.Chat -> AetherphoneMessagesScreen(state)
-        PhoneScreen.App -> when (state.selectedApp?.id) {
-            "inventory" -> InventoryScreen(state)
-            "wallet" -> WalletScreen(state)
-            "skywatcher" -> SkywatcherScreen(state)
-            "character" -> AetherphoneActivityScreen(state)
-            "jobs" -> AetherphoneJobsScreen(state)
-            "collections" -> CollectionsScreen(state)
-            "clock" -> ClockScreen(state)
-            "calculator" -> CalculatorScreen(state)
-            "notes" -> AetherphoneNotesScreen(state)
-            "timers" -> TimersScreen(state)
-            "calendar" -> CalendarScreen(state)
-            "dailies" -> DailiesScreen(state)
-            "submarine" -> SubmarineScreen(state)
-            "housing" -> HousingScreen(state)
-            "notifications" -> NotificationsScreen(state)
-            "camera" -> CameraScreen(state)
-            "photos" -> PhotosScreen(state)
-            "shortcuts" -> ShortcutsScreen(state)
-            "fishing" -> FishingScreen(state)
-            "maps" -> MapsScreen(state)
-            "health" -> HealthScreen(state)
-            "shizhijia" -> ShizhijiaScreen(state)
-            "wiki" -> WikiScreen(state)
-            "gatherclock" -> GatherClockScreen(state)
-            "appstore" -> AppStoreScreen(state)
-            else -> GenericAppScreen(state)
-            }
+        PhoneScreen.App -> when (val appId = target.appId) {
+            "inventory" -> androidx.compose.runtime.key(appId) { InventoryScreen(state) }
+            "wallet" -> androidx.compose.runtime.key(appId) { WalletScreen(state) }
+            "skywatcher" -> androidx.compose.runtime.key(appId) { SkywatcherScreen(state) }
+            "character" -> androidx.compose.runtime.key(appId) { AetherphoneActivityScreen(state) }
+            "jobs" -> androidx.compose.runtime.key(appId) { AetherphoneJobsScreen(state) }
+            "collections" -> androidx.compose.runtime.key(appId) { CollectionsScreen(state) }
+            "clock" -> androidx.compose.runtime.key(appId) { ClockScreen(state) }
+            "calculator" -> androidx.compose.runtime.key(appId) { CalculatorScreen(state) }
+            "notes" -> androidx.compose.runtime.key(appId) { AetherphoneNotesScreen(state) }
+            "timers" -> androidx.compose.runtime.key(appId) { TimersScreen(state) }
+            "calendar" -> androidx.compose.runtime.key(appId) { CalendarScreen(state) }
+            "dailies" -> androidx.compose.runtime.key(appId) { DailiesScreen(state) }
+            "submarine" -> androidx.compose.runtime.key(appId) { SubmarineScreen(state) }
+            "housing" -> androidx.compose.runtime.key(appId) { HousingScreen(state) }
+            "notifications" -> androidx.compose.runtime.key(appId) { NotificationsScreen(state) }
+            "camera" -> androidx.compose.runtime.key(appId) { CameraScreen(state) }
+            "photos" -> androidx.compose.runtime.key(appId) { PhotosScreen(state) }
+            "shortcuts" -> androidx.compose.runtime.key(appId) { ShortcutsScreen(state) }
+            "fishing" -> androidx.compose.runtime.key(appId) { FishingScreen(state) }
+            "maps" -> androidx.compose.runtime.key(appId) { MapsScreen(state) }
+            "health" -> androidx.compose.runtime.key(appId) { HealthScreen(state) }
+            "shizhijia" -> androidx.compose.runtime.key(appId) { ShizhijiaScreen(state) }
+            "wiki" -> androidx.compose.runtime.key(appId) { WikiScreen(state) }
+            "gatherclock" -> androidx.compose.runtime.key(appId) { GatherClockScreen(state) }
+            "market" -> androidx.compose.runtime.key(appId) { MarketScreen(state) }
+            "appstore" -> androidx.compose.runtime.key(appId) { AppStoreScreen(state) }
+            else -> androidx.compose.runtime.key(appId) { GenericAppScreen(state, targetApp) }
+                }
                 }
             }
             if (state.teleportStatus != TeleportStatus.Idle) {

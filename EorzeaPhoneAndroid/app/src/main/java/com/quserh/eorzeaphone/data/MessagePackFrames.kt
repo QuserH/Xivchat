@@ -16,7 +16,10 @@ internal object XivChatCodec {
     const val MAGIC_0 = 14
     const val MAGIC_1 = 20
     const val MAGIC_2 = 67
-    private const val MAX_FRAME = 128_000
+    // Must match the plugin's SecretMessage.MaxMessageLen. 8 MB: the category tree
+    // is a single ~2 MB frame, and the old 128 KB cap made both sides reject it
+    // (the plugin refused to send; this side would have dropped the connection).
+    const val MAX_FRAME = 8_000_000
 
     fun deriveClientKeys(sodium: LazySodiumAndroid, publicKey: ByteArray, secretKey: ByteArray, serverPublic: ByteArray): Pair<ByteArray, ByteArray> {
         val shared = sodium.cryptoScalarMult(Key.fromBytes(secretKey), Key.fromBytes(serverPublic)).asBytes
@@ -30,7 +33,18 @@ internal object XivChatCodec {
         val header = ByteArray(28)
         input.readFully(header)
         val length = ByteBuffer.wrap(header, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int
-        require(length in 16..MAX_FRAME) { "无效的加密帧长度: $length" }
+        // Over-limit frames are SKIPPED, never fatal. The old behaviour (throw ->
+        // drop the connection) made every app older than the 8 MB limit enter a
+        // 30 s reconnect loop against the new plugin: connect, request categories,
+        // hit the 2 MB tree frame, disconnect, repeat -- and every reconnect reset
+        // the live board mid-read. Read the frame out and move on instead; the
+        // caller's empty-frame branch already skips it.
+        if (length <= 16 || length > MAX_FRAME) {
+            if (length in (MAX_FRAME + 1) until (1 shl 30)) {
+                input.readFully(ByteArray(length))
+            }
+            return ByteArray(0)
+        }
         val nonce = header.copyOfRange(4, 28)
         val cipher = ByteArray(length)
         input.readFully(cipher)
@@ -66,7 +80,10 @@ internal object XivChatCodec {
     }
     fun encodePreferences(): ByteArray = pack {
         packArrayHeader(1)
-        packMapHeader(10)
+        // Must equal the number of packInt/packBoolean pairs below. A short header
+        // makes the server stop reading early, silently dropping the trailing
+        // preferences -- this was already off by one before market was added.
+        packMapHeader(12)
         packInt(3)
         packBoolean(true)
         packInt(4)
@@ -88,6 +105,8 @@ internal object XivChatCodec {
         packInt(11)
         packBoolean(true)
         packInt(12)
+        packBoolean(true)
+        packInt(13)
         packBoolean(true)
     }
 
@@ -357,6 +376,275 @@ internal object XivChatCodec {
     fun encodeTeleport(name: String): ByteArray = pack {
         packArrayHeader(1)
         packString(name)
+    }
+
+    fun encodeMarketSearch(itemId: Int, hqOnly: Boolean): ByteArray = pack {
+        packArrayHeader(2)
+        packInt(itemId)
+        packBoolean(hqOnly)
+    }
+
+    /**
+     * Buy one listing.
+     *
+     * Carries what the screen showed rather than a row index: the plugin re-reads the
+     * board and refuses unless price/quantity/HQ still match, so a board that changed
+     * between render and tap aborts instead of buying the wrong listing.
+     */
+    fun encodeMarketPurchase(
+        itemId: Int,
+        listingId: Long,
+        expectedUnitPrice: Int,
+        expectedQuantity: Int,
+        expectedHq: Boolean,
+    ): ByteArray = pack {
+        packArrayHeader(5)
+        packInt(itemId)
+        packLong(listingId)
+        packInt(expectedUnitPrice)
+        packInt(expectedQuantity)
+        packBoolean(expectedHq)
+    }
+
+    /** Request the market category/item tree. */
+    fun encodeMarketCategories(): ByteArray = pack {
+        packArrayHeader(0)
+    }
+
+    /**
+     * Live market listings read from the game client.
+     *
+     * Status is read before the rows so an empty result can explain itself (board
+     * open on the PC, in a duty, item untradable) instead of rendering a blank table.
+     */
+    fun readMarket(unpacker: MessageUnpacker): GameMarket {
+        val fields = unpacker.unpackArrayHeader()
+        val updatedUnix = unpacker.unpackLong()
+        val itemId = unpacker.unpackInt()
+        val status = unpacker.unpackInt()
+        val count = unpacker.unpackArrayHeader()
+        val rows = ArrayList<GameMarketListing>(count)
+        repeat(count) {
+            val listingFields = unpacker.unpackArrayHeader()
+            val listingId = unpacker.unpackLong()
+            val unitPrice = unpacker.unpackInt()
+            val quantity = unpacker.unpackInt()
+            val hq = unpacker.unpackBoolean()
+            // Key(4) used to be RetainerName, which the game never fills for ordinary
+            // listings; it now carries the retainer city. Older plugins sent only the
+            // original four fields, so do not consume the next row/result field when
+            // the optional town value is absent.
+            val town = if (listingFields > 4) nullableString(unpacker) ?: "" else ""
+            val tax = if (listingFields > 5) unpacker.unpackInt() else 0
+            val isSet = if (listingFields > 6) unpacker.unpackBoolean() else false
+            val materia = if (listingFields > 7) unpacker.unpackInt() else 0
+            repeat((listingFields - 8).coerceAtLeast(0)) { unpacker.skipValue() }
+            rows += GameMarketListing(
+                listingId, unitPrice, quantity, hq, town, tax, isSet, materia,
+            )
+        }
+        val world = if (fields > 4) nullableString(unpacker) ?: "" else ""
+        // Key(5) NPC vendor price (Item.PriceMid), added when benchmark lines arrived.
+        val npcPrice = if (fields > 5) unpacker.unpackInt() else 0
+        return GameMarket(updatedUnix, itemId, status, rows, world, npcPrice)
+    }
+
+    /**
+     * Opcode 22: outcome of a purchase attempt from the phone.
+     *
+     * Always sent, refusals included, so the app never has to infer the result of
+     * a gil transaction from silence.
+     */
+    fun readMarketPurchase(unpacker: MessageUnpacker): GameMarketPurchase {
+        unpacker.unpackArrayHeader()
+        val updatedUnix = unpacker.unpackLong()
+        val itemId = unpacker.unpackInt()
+        val status = unpacker.unpackInt()
+        val listingId = unpacker.unpackLong()
+        val unitPrice = unpacker.unpackInt()
+        val quantity = unpacker.unpackInt()
+        val tax = unpacker.unpackInt()
+        val errorId = unpacker.unpackInt()
+        return GameMarketPurchase(updatedUnix, itemId, status, listingId, unitPrice, quantity, tax, errorId)
+    }
+
+    /**
+     * Opcode 23: market category tree with all tradable items.
+     *
+     * The plugin serialises MessagePack array layout, so a category is
+     * `[id, name, order, subcategories[], iconId]` and an item is
+     * `[itemId, name, iconId, level, canBeHq, npcPrice]`. Trailing fields were added
+     * later; the readers stay tolerant of older plugins that sent the original
+     * three-field shape (`[id, name, items]`, items `[id, name]`), which is what
+     * shipped before the wire ever decoded successfully.
+     */
+    fun readMarketCategories(unpacker: MessageUnpacker): GameMarketCategories {
+        if (unpacker.tryUnpackNil()) return GameMarketCategories(emptyList())
+        val topFields = unpacker.unpackArrayHeader()
+        val categoryCount = unpacker.unpackArrayHeader()
+        val categories = (0 until categoryCount).map {
+            val catFields = unpacker.unpackArrayHeader()
+            val id = unpacker.unpackInt()
+            val name = unpacker.unpackString()
+            if (catFields > 3) {
+                // New: [id, name, order, subcategories[], iconId?]
+                val order = unpacker.unpackInt()
+                val subCount = unpacker.unpackArrayHeader()
+                val subs = ArrayList<GameMarketSubcategory>()
+                var iconId = 0
+                repeat(subCount) {
+                    if (unpacker.tryUnpackNil()) return@repeat
+                    val subFields = unpacker.unpackArrayHeader()
+                    val subId = unpacker.unpackInt()
+                    val subName = unpacker.unpackString()
+                    val subOrder = if (subFields > 2) unpacker.unpackInt() else 0
+                    val subItemCount = unpacker.unpackArrayHeader()
+                    val items = ArrayList<GameMarketItem>(subItemCount)
+                    repeat(subItemCount) { readMarketItem(unpacker)?.let(items::add) }
+                    val subIcon = if (subFields > 4) unpacker.unpackInt() else 0
+                    subs += GameMarketSubcategory(subId, subName, subOrder, subIcon, items)
+                    if (iconId == 0) iconId = subIcon
+                }
+                if (catFields > 4) iconId = unpacker.unpackInt()
+                GameMarketCategory(id, name, order, iconId, subs)
+            } else {
+                // Old plugin: [id, name, items[]] with two-field items -- keep it
+                // browsable as a single synthetic subcategory.
+                val items = if (catFields == 3) {
+                    val n = unpacker.unpackArrayHeader()
+                    (0 until n).map {
+                        unpacker.unpackArrayHeader()
+                        GameMarketItem(unpacker.unpackInt(), unpacker.unpackString())
+                    }
+                } else emptyList()
+                GameMarketCategory(
+                    id, name, 0, 0,
+                    if (items.isEmpty()) emptyList()
+                    else listOf(GameMarketSubcategory(id, name, 0, 0, items)),
+                )
+            }
+        }
+
+        // Read optional timestamp (Key 1) and game version (Key 2) if present
+        var timestampMs = 0L
+        var gameVersion = ""
+        if (topFields > 1) {
+            timestampMs = unpacker.unpackLong()
+        }
+        if (topFields > 2) {
+            gameVersion = unpacker.unpackString()
+        }
+
+        return GameMarketCategories(categories, timestampMs, gameVersion)
+    }
+
+    /** One `[itemId, name, iconId, level, canBeHq, npcPrice]` row; nil-tolerant for safety. */
+    private fun readMarketItem(unpacker: MessageUnpacker): GameMarketItem? {
+        if (unpacker.tryUnpackNil()) return null
+        val fields = unpacker.unpackArrayHeader()
+        val itemId = unpacker.unpackInt()
+        val itemName = unpacker.unpackString()
+        val iconId = if (fields > 2) unpacker.unpackInt() else 0
+        val level = if (fields > 3) unpacker.unpackInt() else 0
+        val hq = if (fields > 4) unpacker.unpackBoolean() else false
+        val npcPrice = if (fields > 5) unpacker.unpackInt() else 0
+        repeat((fields - 6).coerceAtLeast(0)) { unpacker.skipValue() }
+        return GameMarketItem(itemId, itemName, iconId, level, hq, npcPrice)
+    }
+
+    /**
+     * Opcode 24: unsolicited price-monitor event.
+     *
+     * `[updatedUnix, itemId, kind, price, quantity, detail]` -- kind indexes
+     * [GameMonitorEventKind].
+     */
+    fun readMarketMonitorEvent(unpacker: MessageUnpacker): GameMarketMonitorEvent {
+        unpacker.unpackArrayHeader()
+        val updatedUnix = unpacker.unpackLong()
+        val itemId = unpacker.unpackInt()
+        val kind = unpacker.unpackInt()
+        val price = unpacker.unpackInt()
+        val quantity = unpacker.unpackInt()
+        val detail = nullableString(unpacker) ?: ""
+        return GameMarketMonitorEvent(updatedUnix, itemId, kind, price, quantity, detail)
+    }
+
+    /**
+     * Replace the plugin's monitor rules. A full-list sync keeps the phone the
+     * source of truth: the plugin keeps its bookkeeping (bought counts) for rules
+     * whose item id survives the replace.
+     */
+    fun encodeMarketMonitorSync(entries: List<MarketMonitorRule>): ByteArray = pack {
+        packArrayHeader(1)
+        packArrayHeader(entries.size)
+        entries.forEach { e ->
+            packArrayHeader(5)
+            packInt(e.itemId)
+            packInt(e.threshold)
+            packBoolean(e.hqOnly)
+            packBoolean(e.autoBuy)
+            packInt(e.buyCap)
+        }
+    }
+
+    /**
+     * Crafting-recipe request/response codec kept for compatibility with the
+     * experimental recipe event. Current plugin builds do not emit opcode 25,
+     * but older development APKs may still send the compact array described here.
+     * Keeping the decoder tolerant means an optional plugin update cannot break
+     * the whole encrypted stream just because a recipe frame is encountered.
+     */
+    fun encodeRecipeRequest(itemId: Int): ByteArray = pack {
+        packArrayHeader(1)
+        packInt(itemId)
+    }
+
+    fun readRecipe(unpacker: MessageUnpacker): GameRecipe {
+        val root = unpacker.unpackValue()
+
+        fun field(value: Value?, index: Int, vararg names: String): Value? = when {
+            value == null -> null
+            value.isArrayValue() -> value.asArrayValue().getOrNilValue(index)
+            value.isMapValue() -> value.asMapValue().entrySet().firstOrNull { entry ->
+                val key = entry.key
+                (key.isIntegerValue() && key.asIntegerValue().asInt() == index) ||
+                    (key.isStringValue() && key.asStringValue().asString() in names)
+            }?.value
+            else -> null
+        }
+        fun int(value: Value?): Int = when {
+            value?.isIntegerValue() == true -> value.asIntegerValue().asInt()
+            value?.isFloatValue() == true -> value.asFloatValue().toFloat().toInt()
+            value?.isStringValue() == true -> value.asStringValue().asString().toIntOrNull() ?: 0
+            else -> 0
+        }
+        fun text(value: Value?): String = when {
+            value?.isStringValue() == true -> value.asStringValue().asString()
+            else -> ""
+        }
+        fun values(value: Value?): List<Value> = when {
+            value?.isArrayValue() == true -> value.asArrayValue().list()
+            value?.isMapValue() == true -> value.asMapValue().values().toList()
+            else -> emptyList()
+        }
+
+        val ingredients = values(field(root, 6, "ingredients", "Ingredients")).mapNotNull { raw ->
+            val itemId = int(field(raw, 0, "itemId", "ItemId", "id", "Id"))
+            val name = text(field(raw, 1, "name", "Name"))
+            val amount = int(field(raw, 2, "amount", "Amount", "quantity", "Quantity"))
+            val icon = int(field(raw, 3, "iconId", "IconId", "icon", "Icon"))
+            if (itemId == 0 && name.isBlank() && amount == 0) null
+            else GameRecipeIngredient(itemId, name, amount, icon)
+        }
+        return GameRecipe(
+            recipeId = int(field(root, 0, "recipeId", "RecipeId", "id", "Id")),
+            itemId = int(field(root, 1, "itemId", "ItemId")),
+            itemName = text(field(root, 2, "itemName", "ItemName", "name", "Name")),
+            jobId = int(field(root, 3, "jobId", "JobId")),
+            jobName = text(field(root, 4, "jobName", "JobName")),
+            recipeLevel = int(field(root, 5, "recipeLevel", "RecipeLevel", "level", "Level")),
+            ingredients = ingredients,
+        )
     }
 
     fun readHousing(unpacker: MessageUnpacker): GameHousingLocation {

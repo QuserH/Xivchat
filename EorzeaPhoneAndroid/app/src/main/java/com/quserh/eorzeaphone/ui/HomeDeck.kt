@@ -60,32 +60,53 @@ private val DeckAccentInk: Color @Composable get() = if (phoneLight) Color(0xFF2
 private val DeckSubInk: Color @Composable get() = if (phoneLight) Color(0xFF4A6353) else Color(0xFF9FC0A8)
 private val DeckChipBg: Color @Composable get() = if (phoneLight) Color(0xCCFFFFFF) else Color(0xB31E3326)
 
-/** Next UTC 15:00 daily reset and next Tuesday 15:00 UTC weekly reset, from [now]. */
+/**
+ * Time until the next daily reset and the next weekly reset, from [now].
+ *
+ * Daily is 15:00 UTC (23:00 CN); weekly is Tuesday 08:00 UTC (16:00 CN) -- a different
+ * hour of day, not just a different weekday. Both used to share one hardcoded 15:00,
+ * so the weekly figure ran seven hours long and every Tuesday matched the daily one.
+ */
 private fun resetDelaysMillis(now: Long): Pair<Long, Long> {
-    val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-    fun nextAt(dayOfWeek: Int?): Long {
+    fun nextAt(hourUtc: Int, dayOfWeek: Int?): Long {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
         cal.timeInMillis = now
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 15)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hourUtc)
         cal.set(java.util.Calendar.MINUTE, 0)
         cal.set(java.util.Calendar.SECOND, 0)
         cal.set(java.util.Calendar.MILLISECOND, 0)
-        if (dayOfWeek != null) cal.set(java.util.Calendar.DAY_OF_WEEK, dayOfWeek)
+        if (dayOfWeek != null) {
+            // Day arithmetic, not set(DAY_OF_WEEK): that resolves inside the locale's
+            // notion of "this week", whose first day differs by locale (Mon in zh, Sun
+            // in en), so the same code lands on different Tuesdays.
+            val delta = (dayOfWeek - cal.get(java.util.Calendar.DAY_OF_WEEK) + 7) % 7
+            cal.add(java.util.Calendar.DAY_OF_YEAR, delta)
+        }
         if (cal.timeInMillis <= now) {
-            if (dayOfWeek != null) cal.add(java.util.Calendar.DAY_OF_YEAR, 7) else cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+            cal.add(java.util.Calendar.DAY_OF_YEAR, if (dayOfWeek != null) 7 else 1)
         }
         return cal.timeInMillis
     }
-    return (nextAt(null) - now) to (nextAt(java.util.Calendar.TUESDAY) - now)
+    return (nextAt(15, null) - now) to
+        (nextAt(8, java.util.Calendar.TUESDAY) - now)
 }
 
+/**
+ * Remaining time as 天/时/分, dropping leading units that are zero.
+ *
+ * The hour case used to render "5:07", which under a "日常重置" label reads as a clock
+ * time (resets at 5:07) rather than a duration. Every unit now carries its character.
+ * Zeros are dropped only from the front -- "2天0时30分" keeps the 0时, since "2天30分"
+ * invites reading the 30 as hours.
+ */
 private fun formatCountdown(ms: Long): String {
     val minutes = (ms + 59_999L) / 60_000L
     val d = minutes / 1440
     val h = minutes % 1440 / 60
     val m = minutes % 60
     return when {
-        d > 0 -> "${d}天${h}时"
-        h > 0 -> "$h:${m.toString().padStart(2, '0')}"
+        d > 0 -> "${d}天${h}时${m}分"
+        h > 0 -> "${h}时${m}分"
         else -> "${m}分"
     }
 }

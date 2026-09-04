@@ -26,5 +26,34 @@
         Fishing = 19,
         /// <summary>Housing workshop submarine vessels and their voyages.</summary>
         Submarine = 20,
+
+        /// <summary>
+        /// Live market board listings, read from the game client's own item search
+        /// proxy. Sent in reply to <see cref="Client.ClientOperation.MarketSearch"/>,
+        /// never unsolicited: a search mutates shared game state, so it only happens
+        /// when the phone asks.
+        /// </summary>
+        Market = 21,
+
+        /// <summary>
+        /// Outcome of a <see cref="Client.ClientOperation.MarketPurchase"/>. Always
+        /// sent, refusals included, so the phone never has to infer the result of a
+        /// gil transaction from silence.
+        /// </summary>
+        MarketPurchase = 22,
+
+        /// <summary>
+        /// List of all market board item categories with their subcategories and
+        /// items. Sent in reply to <see cref="Client.ClientOperation.MarketCategories"/>.
+        /// </summary>
+        MarketCategories = 23,
+
+        /// <summary>
+        /// Price-monitor event: a monitored item dropped below its threshold, an
+        /// automatic purchase happened (or failed), or the monitor list was replaced.
+        /// Broadcast to every client, since monitoring runs inside the plugin whether
+        /// or not a phone is connected when it fires.
+        /// </summary>
+        MarketMonitor = 24,
     }
 }

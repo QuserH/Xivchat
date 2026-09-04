@@ -3,11 +3,7 @@ package com.quserh.eorzeaphone.ui
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -262,14 +258,17 @@ fun ClockScreen(state: PhoneState) {
     var detail by remember { mutableStateOf<ClockDetail?>(null) }
     BackHandler(enabled = detail != null) { detail = null }
 
+    val motion = phoneMotionEnabled()
     ScreenFrame {
         AnimatedContent(
             targetState = detail,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                val entering = targetState != null
-                (slideIntoContainer(if (entering) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right, tween(250)) + fadeIn(tween(170)))
-                    .togetherWith(slideOutOfContainer(if (entering) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right, tween(250)) + fadeOut(tween(150)))
+                phoneNavTransition(
+                    motionAllowed = motion,
+                    targetDepth = if (targetState != null) 1 else 0,
+                    initialDepth = if (initialState != null) 1 else 0,
+                )
             },
             label = "clock-detail",
         ) { target ->

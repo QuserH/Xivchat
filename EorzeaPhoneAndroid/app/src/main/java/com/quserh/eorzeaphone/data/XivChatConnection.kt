@@ -110,6 +110,11 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             18 -> onEvent(PhoneEvent.Maps(XivChatCodec.readMaps(unpacker)))
                             19 -> onEvent(PhoneEvent.Fishing(XivChatCodec.readFishing(unpacker)))
                             20 -> onEvent(PhoneEvent.Submarine(XivChatCodec.readSubmarine(unpacker)))
+                            21 -> onEvent(PhoneEvent.Market(XivChatCodec.readMarket(unpacker)))
+                            22 -> onEvent(PhoneEvent.MarketPurchase(XivChatCodec.readMarketPurchase(unpacker)))
+                            23 -> onEvent(PhoneEvent.MarketCategories(XivChatCodec.readMarketCategories(unpacker)))
+                            24 -> onEvent(PhoneEvent.MarketMonitor(XivChatCodec.readMarketMonitorEvent(unpacker)))
+                            25 -> onEvent(PhoneEvent.Recipe(XivChatCodec.readRecipe(unpacker)))
                         }
                     } catch (error: Throwable) {
                         onEvent(PhoneEvent.Error("无法解析游戏数据 ($code): ${error.message ?: "未知错误"}"))
@@ -169,6 +174,37 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     fun equipGearset(gearsetId: Int) = sendCommand(XivChatCodec.encodeJobsAction(gearsetId), 11)
 
     fun teleport(placeName: String) = sendCommand(XivChatCodec.encodeTeleport(placeName), 12)
+
+    /** Ask the game client for live listings. Reply arrives as PhoneEvent.Market. */
+    fun searchMarket(itemId: Int, hqOnly: Boolean = false) =
+        sendCommand(XivChatCodec.encodeMarketSearch(itemId, hqOnly), 13)
+
+    /** Buy one listing. Result arrives as PhoneEvent.MarketPurchase, always. */
+    fun purchaseMarket(
+        itemId: Int,
+        listingId: Long,
+        expectedUnitPrice: Int,
+        expectedQuantity: Int,
+        expectedHq: Boolean,
+    ) = sendCommand(
+        XivChatCodec.encodeMarketPurchase(
+            itemId, listingId, expectedUnitPrice, expectedQuantity, expectedHq,
+        ),
+        14,
+    )
+
+    /** Request the market category/item tree. Reply arrives as PhoneEvent.MarketCategories. */
+    fun requestMarketCategories() = sendCommand(XivChatCodec.encodeMarketCategories(), 15)
+
+    /**
+     * Push the monitor rules to the plugin, replacing its whole list. The plugin
+     * polls these on its own timer; results arrive as PhoneEvent.MarketMonitor.
+     */
+    fun syncMarketMonitor(rules: List<MarketMonitorRule>) =
+        sendCommand(XivChatCodec.encodeMarketMonitorSync(rules), 16)
+
+    /** Request crafting recipe for one item. Reply arrives as PhoneEvent.Recipe. */
+    fun requestRecipe(itemId: Int) = sendCommand(XivChatCodec.encodeRecipeRequest(itemId), 17)
 
     fun requestFriends() = sendCommand(XivChatCodec.encodePlayerList(), 6)
     fun requestParty() = sendCommand(XivChatCodec.encodePlayerList(1), 6)

@@ -59,6 +59,9 @@ namespace XIVChatCommon.Message.Client {
 
         [Preference(typeof(bool))]
         PhoneSubmarineSupport = 12,
+
+        [Preference(typeof(bool))]
+        PhoneMarketSupport = 13,
     }
 
     public static class ClientPreferencesExtension {

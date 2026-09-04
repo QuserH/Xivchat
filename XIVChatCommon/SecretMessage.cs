@@ -8,7 +8,11 @@ using XIVChatCommon.Message;
 
 namespace XIVChatCommon {
     public static class SecretMessage {
-        private const uint MaxMessageLen = 128_000;
+        // 8 MB. The old 128 KB limit silently ate the market category tree (~1-2 MB
+        // of MessagePack), which is how "categories never load" happened: the plugin
+        // threw here, the send loop logged, and the phone just span forever. The
+        // frame is a single SecretBox blob in memory, so a bigger cap costs nothing.
+        public const uint MaxMessageLen = 8_000_000;
 
         public static async Task<byte[]> ReadSecretMessage(Stream s, byte[] key, CancellationToken token = default) {
             var read = 0;

@@ -1,5 +1,7 @@
 package com.quserh.eorzeaphone.data
 
+import androidx.compose.runtime.Immutable
+
 data class GameFriend(
     val name: String,
     val world: String,
@@ -15,8 +17,10 @@ data class GameFriend(
     val status: Long = 0,
 )
 
+@Immutable
 data class GameChatChunk(val text: String? = null, val icon: Int? = null, val italic: Boolean = false, val foreground: Long? = null)
 
+@Immutable
 data class GameChatMessage(
     val timestamp: Long,
     val sender: String,
@@ -354,6 +358,178 @@ data class GameSubmarine(
     val vessels: List<GameSubmarineVessel>,
 )
 
+/**
+ * One live listing from the game client.
+ *
+ * No world: the game's listing struct has no world field, so the whole result is
+ * labelled with [GameMarket.currentWorldName] instead.
+ */
+data class GameMarketListing(
+    val listingId: Long,
+    val unitPrice: Int,
+    val quantity: Int,
+    val hq: Boolean,
+    /**
+     * Retainer city. Not the retainer *name* -- the game's listing struct has no such
+     * field for ordinary listings, so there is nothing to show. Universalis rows do
+     * carry names; only this local-board path cannot.
+     */
+    val townName: String,
+    /** Tax in gil. Not included in unitPrice * quantity. */
+    val tax: Int,
+    /** Sold as a set: the quantity cannot be split. */
+    val isSet: Boolean = false,
+    val materiaCount: Int = 0,
+) {
+    val total: Int get() = unitPrice * quantity
+    val totalWithTax: Int get() = total + tax
+}
+
+/** Mirrors the plugin's MarketStatus. */
+enum class GameMarketStatus {
+    Ok, NotLoggedIn, InDuty, BoardOpen, NotMarketable, Timeout, Unknown;
+
+    companion object {
+        fun of(code: Int): GameMarketStatus = entries.getOrElse(code) { Unknown }
+    }
+}
+
+data class GameMarket(
+    val updatedUnix: Long,
+    val itemId: Int,
+    val statusCode: Int,
+    val listings: List<GameMarketListing>,
+    val currentWorldName: String,
+    /** What NPC shops charge; 0 = no shop sells it (older plugins always send 0). */
+    val npcPrice: Int = 0,
+) {
+    val status: GameMarketStatus get() = GameMarketStatus.of(statusCode)
+}
+
+/**
+ * Purchase statuses 0-5 line up with [GameMarketStatus] so the shared precondition
+ * check can be reused. Everything from 6 up is purchase-specific.
+ */
+enum class GameMarketPurchaseStatus(val code: Int) {
+    Ok(0), NotLoggedIn(1), InDuty(2), BoardOpen(3), NotMarketable(4),
+    Timeout(5), ListingGone(6), Changed(7), NotEnoughGil(8), Refused(9),
+    Disabled(10), Busy(11);
+
+    companion object {
+        fun of(code: Int) = entries.firstOrNull { it.code == code } ?: Timeout
+    }
+}
+
+data class GameMarketPurchase(
+    val updatedUnix: Long,
+    val itemId: Int,
+    val statusCode: Int,
+    val listingId: Long,
+    val unitPrice: Int,
+    val quantity: Int,
+    val tax: Int,
+    val errorId: Int,
+) {
+    val status: GameMarketPurchaseStatus get() = GameMarketPurchaseStatus.of(statusCode)
+}
+
+/**
+ * One market-board search category. [iconId] is the game's own
+ * ItemSearchCategory icon, so category tiles can use the exact art the in-game
+ * board grid shows. The tree is two-level, mirroring the in-game board:
+ * top-level groups (武器/防具/素材/...) hold search subcategories (剑/斧/头/...).
+ */
+data class GameMarketCategory(
+    val id: Int,
+    val name: String,
+    val order: Int = 0,
+    val iconId: Int = 0,
+    val subcategories: List<GameMarketSubcategory>,
+) {
+    /** Every item in the group, subcategory order preserved (level-sorted within). */
+    val items: List<GameMarketItem> get() = subcategories.flatMap { it.items }
+}
+
+data class GameMarketSubcategory(
+    val id: Int,
+    val name: String,
+    val order: Int = 0,
+    val iconId: Int = 0,
+    val items: List<GameMarketItem>,
+)
+
+data class GameMarketItem(
+    val id: Int,
+    val name: String,
+    val iconId: Int = 0,
+    val levelItem: Int = 0,
+    val canBeHq: Boolean = false,
+    /** NPC gil-shop price; zero means no real gil vendor sells this item. */
+    val npcPrice: Int = 0,
+)
+
+data class GameMarketCategories(
+    val categories: List<GameMarketCategory>,
+    val timestampMs: Long = 0L,
+    val gameVersion: String = "",
+)
+
+/** What the plugin's price monitor did; mirrors the plugin's MarketMonitorEventKind. */
+enum class GameMonitorEventKind {
+    Found, Purchased, BuyFailed, CapReached, Sync;
+
+    companion object {
+        fun of(code: Int): GameMonitorEventKind = entries.getOrElse(code) { Sync }
+    }
+}
+
+data class GameMarketMonitorEvent(
+    val updatedUnix: Long,
+    val itemId: Int,
+    val kindCode: Int,
+    val price: Int,
+    val quantity: Int,
+    val detail: String,
+) {
+    val kind: GameMonitorEventKind get() = GameMonitorEventKind.of(kindCode)
+}
+
+/**
+ * One monitor rule the phone pushes to the plugin (opcode 16). The plugin polls
+ * the board for these on its own timer and, with auto-buy on, buys matching
+ * listings through the same verified path as a manual purchase.
+ */
+data class MarketMonitorRule(
+    val itemId: Int,
+    val threshold: Int,
+    val hqOnly: Boolean,
+    val autoBuy: Boolean,
+    val buyCap: Int,
+)
+
+/**
+ * One ingredient in a crafting recipe.
+ */
+data class GameRecipeIngredient(
+    val itemId: Int,
+    val name: String,
+    val amount: Int,
+    val iconId: Int = 0,
+)
+
+/**
+ * Complete crafting recipe for one item, returned from the plugin via Lumina.
+ */
+data class GameRecipe(
+    val recipeId: Int,
+    val itemId: Int,
+    val itemName: String,
+    val jobId: Int,
+    val jobName: String,
+    val recipeLevel: Int,
+    val ingredients: List<GameRecipeIngredient>,
+)
+
 sealed interface PhoneEvent {
     data object Connected : PhoneEvent
     data class Disconnected(val reason: String) : PhoneEvent
@@ -375,4 +551,9 @@ sealed interface PhoneEvent {
     data class Maps(val maps: GameMaps) : PhoneEvent
     data class Fishing(val log: GameFishingLog) : PhoneEvent
     data class Submarine(val submarine: GameSubmarine) : PhoneEvent
+    data class Market(val market: GameMarket) : PhoneEvent
+    data class MarketPurchase(val result: GameMarketPurchase) : PhoneEvent
+    data class MarketCategories(val tree: GameMarketCategories) : PhoneEvent
+    data class MarketMonitor(val event: GameMarketMonitorEvent) : PhoneEvent
+    data class Recipe(val recipe: GameRecipe) : PhoneEvent
 }

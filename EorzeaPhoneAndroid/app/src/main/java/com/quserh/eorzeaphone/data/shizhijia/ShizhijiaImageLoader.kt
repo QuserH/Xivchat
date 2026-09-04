@@ -4,10 +4,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import com.quserh.eorzeaphone.data.CacheMaintenance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -23,7 +26,13 @@ import java.net.URL
  */
 object ShizhijiaImageLoader {
 
-    private const val MEM_CACHE_BYTES = 64_000 // ~64MB of decoded bitmaps
+    private const val MEM_CACHE_BYTES = 32_000 // ~32MB of decoded bitmaps
+    private const val MAX_IMAGE_DIMENSION = 2_048
+    // A CDN response is compressed on the wire, so this is a guard against an
+    // accidentally returned original/video or a maliciously large chunked body.  The
+    // decoded bitmap is downsampled separately below; never let the response itself grow
+    // without a bound first.
+    private const val MAX_RESPONSE_BYTES = 16L * 1024L * 1024L
     // v2: v1 cached every image as JPEG which destroyed transparency (medal /
     // badge icons got black backgrounds). Bumping the dir abandons those files.
     private const val DISK_DIR = "shizhijia-img-v2"
@@ -78,10 +87,12 @@ object ShizhijiaImageLoader {
 
             val file = File(diskDir(context), cacheFileName(url))
             if (file.exists() && file.length() > 0) {
-                BitmapFactory.decodeFile(file.absolutePath)?.let {
+                decodeFileSampled(file)?.let {
+                    runCatching { file.setLastModified(System.currentTimeMillis()) }
                     memCache.put(url, it); rememberSize(url, it)
                     return@withContext it
                 }
+                runCatching { file.delete() }
             }
 
             val bmp = download(url) ?: return@withContext null
@@ -91,8 +102,12 @@ object ShizhijiaImageLoader {
                 // Preserve alpha: JPEG has no transparency, so transparent PNGs
                 // (medals, badges) would get black backgrounds. Store those as PNG.
                 val fmt = if (bmp.hasAlpha()) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-                FileOutputStream(file).use { bmp.compress(fmt, 90, it) }
+                val tmp = File(file.parentFile, file.name + ".tmp")
+                FileOutputStream(tmp).use { bmp.compress(fmt, 86, it) }
+                if (file.exists()) file.delete()
+                if (!tmp.renameTo(file)) tmp.delete()
             }
+            CacheMaintenance.schedule(context)
             memCache.put(url, bmp)
             bmp
         }
@@ -118,15 +133,22 @@ object ShizhijiaImageLoader {
         }
         try {
             if (connection.responseCode in 200..299) {
-                // Read the whole body then decode: decodeStream on an
-                // HttpURLConnection stream returns null for some CDN responses,
-                // while decodeByteArray is reliable.
-                val bytes = connection.inputStream.use { it.readBytes() }
-                if (bytes.isEmpty()) {
+                // Keep decodeByteArray (some CDN streams return null from decodeStream),
+                // but read through a hard cap.  `InputStream.readBytes()` used to retain
+                // an unbounded original in RAM before the bounds pass, which made one
+                // oversized post image capable of spiking memory by hundreds of MiB.
+                val bytes = connection.inputStream.use { readBounded(it, MAX_RESPONSE_BYTES) }
+                if (bytes == null) {
+                    android.util.Log.w("ShizhijiaImg", "response exceeds ${MAX_RESPONSE_BYTES} bytes for $url")
+                    null
+                } else if (bytes.isEmpty()) {
                     android.util.Log.w("ShizhijiaImg", "empty body for $url")
                     null
                 } else {
-                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    // Phone layouts never display a multi-thousand-pixel source at native
+                    // size. Downsample before decoding so one post photo cannot consume tens
+                    // of MiB in RAM and then be written back at unnecessary resolution.
+                    val bmp = decodeBytesSampled(bytes)
                     if (bmp == null) android.util.Log.w("ShizhijiaImg", "decode null (${bytes.size} bytes) for $url")
                     bmp
                 }
@@ -141,5 +163,50 @@ object ShizhijiaImageLoader {
         // Surface the real reason in logcat so device-side failures are debuggable.
         android.util.Log.w("ShizhijiaImg", "download failed for $url: ${e::class.simpleName}: ${e.message}")
         null
+    }
+
+    /** Read a response without ever allocating beyond [limit] bytes. */
+    private fun readBounded(input: InputStream, limit: Long): ByteArray? {
+        val out = ByteArrayOutputStream(minOf(limit, 64L * 1024L).toInt())
+        val buffer = ByteArray(16 * 1024)
+        var total = 0L
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > limit) return null
+            out.write(buffer, 0, count)
+        }
+        return out.toByteArray()
+    }
+
+    private fun decodeFileSampled(file: File): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
+        }
+        return BitmapFactory.decodeFile(file.absolutePath, options)
+    }
+
+    private fun decodeBytesSampled(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
+        }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    }
+
+    private fun sampleSize(width: Int, height: Int): Int {
+        var sample = 1
+        while (width / (sample * 2) >= MAX_IMAGE_DIMENSION ||
+            height / (sample * 2) >= MAX_IMAGE_DIMENSION
+        ) {
+            sample *= 2
+        }
+        return sample
     }
 }

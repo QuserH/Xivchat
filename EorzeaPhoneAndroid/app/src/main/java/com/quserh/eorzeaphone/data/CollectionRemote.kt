@@ -38,7 +38,13 @@ object CollectionRemote {
                 val sources = buildList {
                     if (sourcesJson != null) for (index in 0 until sourcesJson.length()) {
                         val source = sourcesJson.optJSONObject(index) ?: continue
-                        add(CollectionSource(source.optString("type", "获取来源"), source.optString("text")))
+                        // Translate at the parse boundary so every consumer gets Chinese.
+                        add(
+                            CollectionSource(
+                                CollectionSourceNames.type(source.optString("type")),
+                                source.optString("text"),
+                            ),
+                        )
                     }
                 }
                 CollectionRemoteDetail(

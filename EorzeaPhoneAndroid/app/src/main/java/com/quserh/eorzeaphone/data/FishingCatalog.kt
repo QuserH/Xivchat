@@ -279,7 +279,10 @@ object FishingMapImageLoader {
         if (mapFile.isBlank()) return@withContext null
         val safeName = mapFile.replace('/', '_')
         val file = java.io.File(context.cacheDir, "maps/$safeName.jpg")
-        if (file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.let { return@withContext it }
+        if (file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.let {
+            runCatching { file.setLastModified(System.currentTimeMillis()) }
+            return@withContext it
+        }
         val area = mapFile.substringBefore('/')
         val layer = mapFile.substringAfter('/', "00")
         val urls = listOf(
@@ -298,7 +301,14 @@ object FishingMapImageLoader {
                 finally { connection.disconnect() }
             }.getOrNull()
         } ?: return@withContext null
-        runCatching { file.parentFile?.mkdirs(); java.io.FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) } }
+        runCatching {
+            file.parentFile?.mkdirs()
+            val tmp = java.io.File(file.parentFile, file.name + ".tmp")
+            java.io.FileOutputStream(tmp).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+            if (file.exists()) file.delete()
+            if (!tmp.renameTo(file)) tmp.delete()
+        }
+        CacheMaintenance.schedule(context)
         bitmap
     }
 }

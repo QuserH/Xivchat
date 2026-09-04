@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.core.content.FileProvider
+import com.quserh.eorzeaphone.data.CacheMaintenance
 import java.io.File
 import java.io.FileOutputStream
 
@@ -59,6 +60,7 @@ object SzjShareImage {
         FileOutputStream(file).use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
+        CacheMaintenance.schedule(context)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.share", file)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"

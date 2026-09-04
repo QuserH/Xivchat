@@ -1,15 +1,21 @@
 package com.quserh.eorzeaphone.ui
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.quserh.eorzeaphone.ui.theme.AccentPalette
 import com.quserh.eorzeaphone.ui.theme.PhoneOutline
+import com.quserh.eorzeaphone.ui.theme.PhoneType
+import com.quserh.eorzeaphone.ui.theme.PhoneHairline
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -200,8 +206,7 @@ fun ScreenHeader(
         Text(
             title,
             color = titleColor.takeOrElse { PhoneText },
-            fontSize = 19.sp,
-            fontWeight = FontWeight.Bold,
+            style = PhoneType.Header,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -241,8 +246,33 @@ fun SettingsScreen(state: PhoneState) {
             if (path != null) state.setCharacterAvatar(avatarKey, path)
         }
     }
+    val licenseContext = LocalContext.current
     ScreenFrame {
-        ScreenHeader("设置", state, showBack = false)
+        ScreenHeader(
+            "设置", state, showBack = false,
+            trailing = {
+                // Icon-only attribution entry. This app is a reimplementation of
+                // XeldarAlz/FFXIV-Aetherphone, which is AGPL-3.0 — that licence requires the
+                // source of a derivative to be offered to whoever receives a build, so the
+                // link has to be reachable from inside the app, not only from a repo file.
+                Box(
+                    Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+                        .clickable {
+                            runCatching {
+                                licenseContext.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(AETHERPHONE_SOURCE_URL),
+                                    ),
+                                )
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ImageGlyph(R.drawable.ic2_info, PhoneMuted, Modifier.size(19.dp))
+                }
+            },
+        )
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -344,7 +374,7 @@ fun SettingsScreen(state: PhoneState) {
                         hint = "与游戏同一内网的 IP 和端口",
                         onClick = { showServerEdit = !showServerEdit },
                     ) {
-                        Text("\${state.host}:\${state.port}", color = PhoneMuted, fontSize = 13.sp)
+                        Text("${state.host}:${state.port}", color = PhoneMuted, fontSize = 13.sp)
                         ImageGlyph(
                             if (showServerEdit) R.drawable.ic2_chevron_down else R.drawable.ic2_chevron_right,
                             PhoneMuted,
@@ -424,6 +454,14 @@ fun SettingsScreen(state: PhoneState) {
 // padding，行之间没有分隔线，副值和箭头的间距也各算一次。
 // ---------------------------------------------------------------------------
 
+/**
+ * Upstream project this app is a reimplementation of.
+ *
+ * Aetherphone is AGPL-3.0. Reachable from the 设置 header so a build carries its own
+ * attribution and source pointer.
+ */
+const val AETHERPHONE_SOURCE_URL = "https://github.com/XeldarAlz/FFXIV-Aetherphone"
+
 /** 设置行高。52dp 比原来的 60dp 紧一档，一屏能多放一项，仍高于 48dp 触控下限。 */
 private val SettingsRowHeight = 52.dp
 /** 图标尺寸。20dp 配 15sp 的标题，视觉重量差不多。 */
@@ -480,9 +518,11 @@ private fun SettingsRow(
             ImageGlyph(icon, chipTint, Modifier.size(18.dp))
         }
         Column(Modifier.weight(1f).padding(start = 14.dp, end = 10.dp)) {
-            Text(label, color = PhoneText, fontSize = 15.sp)
+            Text(label, color = PhoneText, style = PhoneType.Row)
             if (hint != null) {
-                Text(hint, color = PhoneMuted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 2.dp))
+                // Callout not Caption: a hint is a readable sentence, so it wants body-ish
+                // leading (17sp on 12sp) rather than the tight metadata leading.
+                Text(hint, color = PhoneMuted, style = PhoneType.Callout, modifier = Modifier.padding(top = 3.dp))
             }
         }
         trailing?.invoke(this)
@@ -544,12 +584,28 @@ private fun SettingsStepper(
 }
 @Composable
 fun SettingsSubScreen(state: PhoneState) {
-    when (state.settingsPage) {
-        SettingsPage.General -> GeneralSettingsScreen(state)
-        SettingsPage.Appearance -> AppearanceSettingsScreen(state)
-        SettingsPage.Sound -> SoundSettingsScreen(state)
-        SettingsPage.Notifications -> NotificationsSettingsScreen(state)
-        null -> SettingsScreen(state)
+    // 和 market/wiki 同一个问题：app 层的 AnimatedContent 认 PhoneScreen，而设置页内部
+    // 换的是 settingsPage，PhoneScreen 没变，所以进出子页是硬切、没有转场。
+    // 这里只有两层（null = 根，其余 = 子页），所以深度就是 0 / 1。
+    val motion = phoneMotionEnabled()
+    AnimatedContent(
+        targetState = state.settingsPage,
+        transitionSpec = {
+            phoneNavTransition(
+                motionAllowed = motion,
+                targetDepth = if (targetState != null) 1 else 0,
+                initialDepth = if (initialState != null) 1 else 0,
+            )
+        },
+        label = "settings-navigation",
+    ) { page ->
+        when (page) {
+            SettingsPage.General -> GeneralSettingsScreen(state)
+            SettingsPage.Appearance -> AppearanceSettingsScreen(state)
+            SettingsPage.Sound -> SoundSettingsScreen(state)
+            SettingsPage.Notifications -> NotificationsSettingsScreen(state)
+            null -> SettingsScreen(state)
+        }
     }
 }
 @Composable
@@ -584,7 +640,7 @@ private fun GeneralSettingsScreen(state: PhoneState) {
                 "保留消息上限",
                 R.drawable.ic2_history,
                 if (state.chatRetentionLimit == 0) "不限" else state.chatRetentionLimit.toString(),
-                hint = "每个角色保留最近 N 条，超出自动清理最旧的；0 = 永久保留",
+                hint = "SQLite 历史档案保留最近 N 条；首页只保留 400 条热缓存，0 = 永久保留",
                 onMinus = { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) },
                 onPlus = { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) },
             )
@@ -626,6 +682,27 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
         SectionLabel("动效与屏幕")
         SettingsGroup {
             ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.ic2_motion, "关掉按压缩放、骨架微光等过渡动画") { state.reducedMotion = it }
+            SettingsDivider()
+            // 提示语报**实测值**，不报意图：省电模式把 animator_duration_scale 压成 0 时
+            // 不说一声，用户只会觉得「App 没动画」。把系统值、覆盖是否装上、最终生效值
+            // 都摊出来，出问题时不用连电脑也能看出卡在哪一环。
+            val appCtx = LocalContext.current.applicationContext
+            val sysScale = PhoneMotion.systemScale(appCtx)
+            ToggleRow(
+                "强制动效",
+                state.forceMotion && !state.reducedMotion,
+                R.drawable.ic2_swipe,
+                when {
+                    state.reducedMotion -> "已被上面的「减弱动态效果」关掉"
+                    PhoneMotion.overrideError != null ->
+                        "接管失败：${PhoneMotion.overrideError}（请把这行告诉开发者）"
+                    !PhoneMotion.overrideInstalled ->
+                        "动画接管未生效，系统动画倍速 $sysScale"
+                    sysScale <= 0f ->
+                        "系统已关闭动画（倍速 0，省电模式或开发者选项），本项已接管 → 实际播放"
+                    else -> "系统动画倍速 $sysScale，忽略系统开关始终播放动效"
+                },
+            ) { if (!state.reducedMotion) state.forceMotion = it }
             SettingsDivider()
             ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.ic2_brightness, "看攻略或等窗口时屏幕不自动熄灭") { state.keepScreenOn = it }
         }
@@ -957,32 +1034,47 @@ private fun SectionLabel(text: String) {
     // 组标题跟着下面那张卡走：上间距大、下间距小，读起来才是"这一段的标题"。
     Text(
         text,
-        color = PhoneMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.4.sp,
-        modifier = Modifier.padding(start = 4.dp, top = 10.dp, bottom = 2.dp),
+        color = PhoneMuted, style = PhoneType.SectionLabel,
+        // 上 14 / 下 6：原来 10/2 让标题几乎贴在卡上沿，读着像卡里的第一行字。
+        // iOS 分组标题是明显「浮在卡上方」的。
+        modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 6.dp),
     )
 }
+
+/**
+ * Inventory 的导航状态。
+ *
+ * 必须活在 composable 外面：从 Wiki/Market 返回时 `state.openApp("inventory")`
+ * 会重建 InventoryScreen，`remember` 的东西全丢——所以返回后滚动位置丢失。
+ * 放到 object 里之后，selectedGroup/selectedRetainerId/scrollState 不会因为重建而丢失。
+ */
+private object InventoryNav {
+    var selectedGroup by mutableStateOf<String?>(null)
+    var selectedRetainerId by mutableStateOf<Long?>(null)
+    val scrollState = androidx.compose.foundation.lazy.LazyListState()
+    var menuItem by mutableStateOf<GameInventoryItem?>(null)
+    var menuOffset by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+}
+
 @Composable
 fun InventoryScreen(state: PhoneState) {
     var query by remember { mutableStateOf("") }
-    var selectedGroup by remember { mutableStateOf<String?>(null) }
-    var selectedRetainerId by remember { mutableStateOf<Long?>(null) }
     var showSearch by remember { mutableStateOf(false) }
     val groups = listOf("bags" to "背包", "armoury" to "兵装库", "saddle" to "陆行鸟鞍囊", "equipped" to "当前装备", "retainers" to "雇员", "company" to "部队仓库", "housing" to "房屋仓库")
-    val selectedTypes = inventoryTypesForGroup(selectedGroup ?: "bags")
+    val selectedTypes = inventoryTypesForGroup(InventoryNav.selectedGroup ?: "bags")
     val filtered = state.inventory.filter {
-        (selectedGroup == null || it.container in selectedTypes) &&
-            (selectedGroup != "retainers" || selectedRetainerId == null || it.retainerId == selectedRetainerId) &&
+        (InventoryNav.selectedGroup == null || it.container in selectedTypes) &&
+            (InventoryNav.selectedGroup != "retainers" || InventoryNav.selectedRetainerId == null || it.retainerId == InventoryNav.selectedRetainerId) &&
             (query.isBlank() || it.name.contains(query, true))
     }
     // system back inside a sub-stock collapses back to the inventory hub rather
     // than popping the whole inventory screen.
-    BackHandler(enabled = showSearch || selectedGroup != null) {
-        if (showSearch) { showSearch = false; query = "" } else { selectedGroup = null; selectedRetainerId = null; query = "" }
+    BackHandler(enabled = showSearch || InventoryNav.selectedGroup != null) {
+        if (showSearch) { showSearch = false; query = "" } else { InventoryNav.selectedGroup = null; InventoryNav.selectedRetainerId = null; query = "" }
     }
     Box(Modifier.fillMaxSize().background(PhoneBackground)) {
     ScreenFrame(background = Color.Transparent) {
-        val inventoryTitle = selectedRetainerId?.let { id -> state.retainers.firstOrNull { it.id == id }?.name } ?: groups.firstOrNull { it.first == selectedGroup }?.second ?: "物品栏"
+        val inventoryTitle = InventoryNav.selectedRetainerId?.let { id -> state.retainers.firstOrNull { it.id == id }?.name } ?: groups.firstOrNull { it.first == InventoryNav.selectedGroup }?.second ?: "物品栏"
         ScreenHeader(inventoryTitle, state,
             trailing = { Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${formatCount(state.inventory.size)} 件", color = PhoneMuted, fontSize = 12.sp)
@@ -991,8 +1083,8 @@ fun InventoryScreen(state: PhoneState) {
                     if (!showSearch) query = ""
                 }, contentAlignment = Alignment.Center) { ImageGlyph(R.drawable.ic2_search, PhoneAccent, Modifier.size(20.dp)) }
             } },
-            onBack = if (selectedGroup == null) null else ({ selectedGroup = null; selectedRetainerId = null; query = "" }),
-            showBack = selectedGroup != null)
+            onBack = if (InventoryNav.selectedGroup == null) null else ({ InventoryNav.selectedGroup = null; InventoryNav.selectedRetainerId = null; query = "" }),
+            showBack = InventoryNav.selectedGroup != null)
         if (state.inventoryLoading) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth().height(3.dp),
@@ -1011,11 +1103,14 @@ fun InventoryScreen(state: PhoneState) {
                     Text("背包数据通过加密端口同步", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }
-        } else if (selectedGroup == null && query.isBlank()) {
-            InventoryHub(state, open = { selectedGroup = it }, openRetainer = { id -> selectedRetainerId = id; selectedGroup = "retainers" })
+        } else if (InventoryNav.selectedGroup == null && query.isBlank()) {
+            InventoryHub(state, open = { InventoryNav.selectedGroup = it }, openRetainer = { id -> InventoryNav.selectedRetainerId = id; InventoryNav.selectedGroup = "retainers" })
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 15.dp, vertical = 12.dp)) {
-                items(filtered.sortedWith(compareBy({ it.container }, { it.slot })), key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item) }
+            LazyColumn(
+                state = InventoryNav.scrollState,
+                modifier = Modifier.fillMaxSize().padding(horizontal = 15.dp, vertical = 12.dp)
+            ) {
+                items(filtered.sortedWith(compareBy({ it.container }, { it.slot })), key = { "${it.container}-${it.slot}-${it.itemId}" }) { item -> InventorySearchRow(item, state) }
                 item("inventory-end") { Spacer(Modifier.height(18.dp)) }
             }
         }
@@ -1027,6 +1122,23 @@ fun InventoryScreen(state: PhoneState) {
             Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars)
                 .padding(top = 66.dp, start = 30.dp, end = 30.dp).zIndex(2f),
         )
+    }
+    // Global menu overlay: always on top, single instance
+    val menuItem = InventoryNav.menuItem
+    if (menuItem != null) {
+        Box(
+            Modifier.fillMaxSize()
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = { InventoryNav.menuItem = null }
+                )
+                .zIndex(100f)
+        ) {
+            Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(InventoryNav.menuOffset.x.toInt(), InventoryNav.menuOffset.y.toInt()) }) {
+                InventoryItemMenu(item = menuItem, expanded = true, onDismiss = { InventoryNav.menuItem = null }, state = state)
+            }
+        }
     }
     }
 }
@@ -1173,14 +1285,99 @@ internal fun ItemIcon(iconId: Int, modifier: Modifier = Modifier, fallback: Stri
     }
 }
 @Composable
-private fun InventorySearchRow(item: GameInventoryItem) {
-    Row(Modifier.fillMaxWidth().background(PhoneSurface).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun InventorySearchRow(item: GameInventoryItem, state: PhoneState) {
+    var rowPosition by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    Row(
+        Modifier.fillMaxWidth().background(PhoneSurface)
+            .onGloballyPositioned { coords ->
+                rowPosition = coords.localToWindow(androidx.compose.ui.geometry.Offset.Zero)
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { localOffset ->
+                        InventoryNav.menuItem = item
+                        InventoryNav.menuOffset = rowPosition + localOffset
+                    },
+                    onLongPress = { localOffset ->
+                        InventoryNav.menuItem = item
+                        InventoryNav.menuOffset = rowPosition + localOffset
+                    }
+                )
+            }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         InventorySlotCell(item, Modifier.size(49.dp))
-        Text(item.name, color = PhoneText, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 16.dp))
+        Text(item.name, color = PhoneText, style = PhoneType.Body, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 16.dp))
         if (item.hq) Text("HQ", color = Color(0xFFFFC071), fontSize = 9.sp, modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(Color(0xFF9A4D13)).padding(horizontal = 5.dp, vertical = 3.dp))
         Text("×${"%,d".format(item.quantity)}", color = PhoneWarn, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
     }
     Divider(Modifier.padding(horizontal = 20.dp), color = PhoneLine)
+}
+
+/**
+ * Long-press actions for one inventory item.
+ *
+ * Both entries open the other app on that item's own page, not its home screen --
+ * see [PhoneState.openWikiItem] / [PhoneState.openMarketItem].
+ *
+ * Apple-style context menu: rounded card anchored near the clicked row, not Material dropdown.
+ */
+@Composable
+private fun InventoryItemMenu(
+    item: GameInventoryItem,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    state: PhoneState,
+) {
+    if (!expanded) return
+
+    Column(
+        Modifier
+            .width(200.dp)
+            .shadow(12.dp, PhoneCardShape)
+            .clip(PhoneCardShape)
+            .background(PhoneSurface)
+            .border(1.dp, PhoneHairline, PhoneCardShape)
+    ) {
+        InventoryMenuItem(
+            text = "查看 wiki",
+            icon = R.drawable.ic2_book,
+            onClick = {
+                onDismiss()
+                state.openWikiItem(item.itemId.toInt())
+            }
+        )
+        Divider(Modifier.padding(horizontal = 16.dp), color = PhoneLine.copy(alpha = 0.5f))
+        InventoryMenuItem(
+            text = "查价格",
+            icon = R.drawable.ic2_market,
+            onClick = {
+                onDismiss()
+                state.openMarketItem(item.itemId.toInt())
+            }
+        )
+    }
+}
+
+@Composable
+private fun InventoryMenuItem(
+    text: String,
+    @DrawableRes icon: Int,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ImageGlyph(icon, PhoneAccent, Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, color = PhoneText, fontSize = 16.sp, style = PhoneType.Row)
+    }
 }
 @Composable
 fun SkywatcherScreen(state: PhoneState) {
@@ -1459,8 +1656,12 @@ fun WalletScreen(state: PhoneState) {
  * 两处不会各说一套。
  */
 @Composable
-fun GenericAppScreen(state: PhoneState) {
-    val app = state.selectedApp
+fun GenericAppScreen(state: PhoneState, appOverride: PhoneAppItem? = null) {
+    // The app route is immutable for the duration of an AnimatedContent transition;
+    // [state.selectedApp] is not (Back clears it before the outgoing layer is gone).
+    // Rendering from the snapshot keeps the title and icon from turning into the next
+    // app for one frame.
+    val app = appOverride ?: state.selectedApp
     ScreenFrame {
         ScreenHeader(app?.label ?: "应用", state)
         Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -2039,20 +2240,14 @@ fun PhoneButton(
     }
 }
 
-/** 系统关掉动画时（开发者选项 / 省电）不做缩放，只保留点击。 */
+/**
+ * 系统关掉动画时（开发者选项 / 省电）不做缩放，只保留点击。
+ *
+ * See [rememberMotionEnabled]: also honours the in-app 减弱动态效果 / 强制动效 switches,
+ * and reacts to the system setting changing instead of caching the first answer forever.
+ */
 @Composable
-fun phoneMotionEnabled(): Boolean {
-    val ctx = LocalContext.current
-    return remember {
-        runCatching {
-            android.provider.Settings.Global.getFloat(
-                ctx.contentResolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            ) > 0f
-        }.getOrDefault(true)
-    }
-}
+fun phoneMotionEnabled(): Boolean = rememberMotionEnabled()
 
 /**
  * 可按压容器：按下缩到 [pressedScale]，松手弹回。没有 ripple。

@@ -199,8 +199,15 @@ data class QuestMap(val mapFile: String, val sizeFactor: Int) {
 }
 
 object QuestDb {
-    /** 搜索结果上限。块搜索一次给不了太多，够翻就行。 */
-    private const val SEARCH_LIMIT = 80
+    /**
+     * 一页多少条。
+     *
+     * 原来是硬上限 80：加了按类型/分类搜之后单次命中能到几百
+     * （「日常任务」566、搜「支线」2159），80 那一刀砍下去看着就像「库里没有了」。
+     * 现在是分页（[search] 带 page/pageSize，滚到底自动追加），
+     * 配合 [countSearch] 显示「共 N 条」，够得到全部。
+     */
+    private const val SEARCH_LIMIT = 300
 
     private const val COLS =
         "id, name, name_en, level, type, category, expansion, job_group, " +
@@ -229,29 +236,87 @@ object QuestDb {
         leadName = c.getString(10) ?: "",
     )
 
+    /** 搜索的 WHERE 与参数。[count] 和 [search] 共用，免得两边口径跑偏。 */
+    private fun searchWhere(q: String): Pair<String, Array<String>> {
+        val like = "%$q%"
+        return "q.name LIKE ? OR q.name_en LIKE ? OR q.type LIKE ? " +
+            "OR q.category LIKE ? OR q.place LIKE ?" to
+            arrayOf(like, like, like, like, like)
+    }
+
     /**
-     * 按名字搜任务。中文名优先，英文名兜底。
+     * 命中总数（不受 [SEARCH_LIMIT] 影响）。
      *
-     * 返回的是「命中的任务 + 它所在的块」，UI 拿 chainId 去开树。
+     * UI 要拿它显示「共 N 条」——不然截断是**看不见**的，用户会以为库里没那些任务。
+     * 用户反馈「感觉缺少了很多任务」就是这么来的。
      */
-    suspend fun search(context: Context, query: String): List<QuestHit> =
+    suspend fun countSearch(context: Context, query: String): Int =
+        withContext(Dispatchers.IO) {
+            val q = query.trim()
+            if (q.isBlank()) return@withContext 0
+            val (where, args) = searchWhere(q)
+            WikiDb.open(context).rawQuery(
+                "SELECT COUNT(*) FROM quests q " +
+                    "JOIN quest_chain c ON c.id = q.chain_id WHERE $where",
+                args,
+            ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        }
+
+    /**
+     * 搜任务。名字（中/英）、**类型、分类、地点**都吃。
+     *
+     * ## 为什么要搜 type/category/place
+     *
+     * 原来只搜 `name` / `name_en`，于是用户按分类名搜什么都搜不到 —— 实测：
+     *
+     * | 搜的词 | 库里有 | 原来命中 |
+     * | --- | --- | --- |
+     * | 日常任务 | 566 | **0** |
+     * | 剧情任务 | 218 | **0** |
+     * | 重生之境 | 215 | **0** |
+     * | 支线任务：萨纳兰 | 138 | **0** |
+     *
+     * 任务**不叫**这些名字，但它们是 `类型`/`CategoryName` 的值，也是用户
+     * 最自然会输入的词。数据一条不缺（本地 5360 = 站点 5360，逐 ID 比对过），
+     * 纯粹是搜不出来 —— 用户报的「感觉缺少了很多任务」就是这个。
+     *
+     * 加 `place` 是顺带：搜地名（「格里达尼亚」）找那一带的任务也说得通。
+     *
+     * 排序：完全同名 → 名字前缀 → 名字包含 → 其余（只靠 type/category/place 命中的）。
+     * 名字命中必须压过类型命中，否则搜一个具体任务名时会被同类型的几百条淹掉
+     * （和副本检索踩的是同一个坑）。
+     */
+    suspend fun search(
+        context: Context,
+        query: String,
+        page: Int = 0,
+        pageSize: Int = SEARCH_LIMIT,
+    ): List<QuestHit> =
         withContext(Dispatchers.IO) {
             val q = query.trim()
             if (q.isBlank()) return@withContext emptyList()
             val db = WikiDb.open(context)
             val like = "%$q%"
+            val (where, whereArgs) = searchWhere(q)
+            // ORDER BY 里的 CASE 必须和 countSearch 的 WHERE 同源（searchWhere），
+            // 否则翻页会漏行或重复。
             val sql = """
                 SELECT q.id, q.name, q.level, q.type, q.icon_id,
                        q.chain_id, c.title, c.members, q.place
                 FROM quests q JOIN quest_chain c ON c.id = q.chain_id
-                WHERE q.name LIKE ? OR q.name_en LIKE ?
+                WHERE $where
                 ORDER BY
                   CASE WHEN q.name = ? THEN 0
-                       WHEN q.name LIKE ? THEN 1 ELSE 2 END,
+                       WHEN q.name LIKE ? THEN 1
+                       WHEN q.name LIKE ? THEN 2 ELSE 3 END,
                   q.level, q.id
-                LIMIT $SEARCH_LIMIT
+                LIMIT ? OFFSET ?
             """.trimIndent()
-            db.rawQuery(sql, arrayOf(like, like, q, "$q%")).use { c ->
+            val args = whereArgs + arrayOf(
+                q, "$q%", like,
+                pageSize.toString(), (page * pageSize).toString(),
+            )
+            db.rawQuery(sql, args).use { c ->
                 buildList {
                     while (c.moveToNext()) {
                         add(

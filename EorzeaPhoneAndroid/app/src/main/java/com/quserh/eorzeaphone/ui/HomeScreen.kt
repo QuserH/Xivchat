@@ -114,7 +114,12 @@ fun HomeScreen(state: PhoneState) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < .5f
     val homeText = if (darkTheme) Color.White else MaterialTheme.colorScheme.onBackground
     val totalPages = state.homePageCount
-    Box(Modifier.fillMaxSize()) {
+    // The wallpaper can miss the very first GPU frame after a feature is popped.  The
+    // light-theme veil below is intentionally translucent, so without an opaque floor the
+    // outgoing feature shows through it for one frame even though the navigation transition
+    // itself is disabled.  Paint the desktop background first; wallpaper + veil remain the
+    // same visually once the image is ready.
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Image(
             painter = painterResource(R.drawable.wallpaper_dusk_dark),
             contentDescription = null,
@@ -156,6 +161,16 @@ fun HomeScreen(state: PhoneState) {
         )
         LaunchedEffect(pager.currentPage) { state.homePage = pager.currentPage }
         val scope = rememberCoroutineScope()
+        var dragToNextPage by remember { mutableStateOf<Pair<Int, String>?>(null) }
+        LaunchedEffect(dragToNextPage) {
+            dragToNextPage?.let { (page, appId) ->
+                state.moveToNextPage(page, appId)
+                if (page + 1 < totalPages) {
+                    scope.launch { pager.animateScrollToPage(page + 1) }
+                }
+                dragToNextPage = null
+            }
+        }
         var sheetHeightPx by remember { mutableStateOf(0f) }
         val sheetY = remember { Animatable(-100000f) }
         val sheetVisible = sheetY.value > -sheetHeightPx + 1f
@@ -222,7 +237,7 @@ fun HomeScreen(state: PhoneState) {
             HomeEditBar(state, homeText, trashActive, onTrashBounds = { trashBounds = it })
             HorizontalPager(
                 state = pager,
-                userScrollEnabled = !state.homeEditMode,
+                userScrollEnabled = true,
                 modifier = Modifier.weight(1f),
             ) { page ->
                 SocialPage(
@@ -232,6 +247,7 @@ fun HomeScreen(state: PhoneState) {
                     onTrashActive = { trashActive = it },
                     onDragUpdate = { dragPoint = it },
                     onDrop = { target, appId -> handleDrop(page, target, appId) },
+                    onSwipeToNextPage = { appId -> dragToNextPage = page to appId },
                 )
             }
             PageIndicator(pager.currentPage, totalPages, homeText)
@@ -363,6 +379,7 @@ private fun SocialPage(
     onTrashActive: (Boolean) -> Unit,
     onDragUpdate: (Offset?) -> Unit,
     onDrop: (String, String) -> Unit,
+    onSwipeToNextPage: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         if (page == 0) {
@@ -376,6 +393,7 @@ private fun SocialPage(
             onDragUpdate = onDragUpdate,
             onTrashDrop = { onDrop("trash", "") },
             onDockDrop = { onDrop("dock", it) },
+            onSwipeToNextPage = onSwipeToNextPage,
         )
     }
 }
@@ -391,6 +409,7 @@ private fun AppsGrid(
     onDragUpdate: (Offset?) -> Unit,
     onTrashDrop: () -> Unit,
     onDockDrop: (String) -> Unit,
+    onSwipeToNextPage: (String) -> Unit,
 ) {
     val hapticView = LocalView.current
     val bounds = remember { mutableStateMapOf<String, Rect>() }
@@ -398,6 +417,7 @@ private fun AppsGrid(
     var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
     var originRect by remember(page) { mutableStateOf<Rect?>(null) }
     var originIndex by remember(page) { mutableStateOf(0) }
+    var swipeDetected by remember(page) { mutableStateOf(false) }
     // home grid layout: 4 columns, used to compute the drop slot from finger position
     val cols = 4
 
@@ -458,6 +478,11 @@ private fun AppsGrid(
                                         onDragUpdate(pos)
                                         inTrash = trashBounds?.contains(pos) == true
                                         onTrashActive(inTrash)
+                                        if (!swipeDetected && dragOffset.x > 200f && kotlin.math.abs(dragOffset.y) < 100f) {
+                                            swipeDetected = true
+                                            onSwipeToNextPage(app.id)
+                                            if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                        }
                                     }
                                 }
                             },
@@ -468,11 +493,14 @@ private fun AppsGrid(
                                 val dx = dragOffset.x
                                 val dy = dragOffset.y
                                 val pos = fromOrigin?.let { pointerPos(it, dx, dy) }
+                                val wasSwipe = swipeDetected
                                 dragId = null
                                 originRect = null
                                 dragOffset = Offset.Zero
+                                swipeDetected = false
                                 onDragUpdate(null)
                                 onTrashActive(false)
+                                if (wasSwipe) return@HomeTile
                                 val dockSlot = pos?.let { pt -> dockBounds.indexOfFirst { it.contains(pt) } } ?: -1
                                 when {
                                     pos != null && trashBounds?.contains(pos) == true -> onTrashDrop()
@@ -535,7 +563,10 @@ private fun HomeTile(
                 alpha = if (dimmed) 0.45f else 1f
                 translationX = if (dragging) dragOffset.x else 0f
                 translationY = if (dragging) dragOffset.y else 0f
-                shadowElevation = if (dragging) 18f else 0f
+                // No shadowElevation here: this layer has no shape, so it defaults to
+                // RectangleShape and drew a rectangular shadow around the whole column
+                // (icon + label) while dragging. The lift belongs on the rounded tile
+                // below, which has a real shape to cast from.
             }
             .then(
                 if (editDrag) {
@@ -569,6 +600,8 @@ private fun HomeTile(
             val tileBase = if (dark) lerp(Color(0xFF18211B), app.color, 0.16f) else lerp(Color.White, app.color, 0.13f)
             val tileBorder = lerp(Color.White, app.color, 0.30f)
             val glyphTint = if (dark) lerp(app.color, Color.White, 0.45f) else lerp(app.color, Color.Black, 0.35f)
+            // Captured outside graphicsLayer: MaterialTheme is not readable inside that lambda.
+            val tileShape = MaterialTheme.shapes.large
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -577,10 +610,15 @@ private fun HomeTile(
                         scaleX = if (dragging) 1f else scale
                         scaleY = if (dragging) 1f else scale
                         rotationZ = if (editDrag && !dragging) rotation else 0f
+                        // Lift the dragged tile from its own rounded outline. 12f rather
+                        // than the old 18f: the shadow now actually shows, so it needs less.
+                        shadowElevation = if (dragging) 12f else 0f
+                        shape = tileShape
+                        clip = false
                     }
-                    .clip(MaterialTheme.shapes.large)
+                    .clip(tileShape)
                     .background(tileBase)
-                    .border(1.dp, tileBorder, MaterialTheme.shapes.large),
+                    .border(1.dp, tileBorder, tileShape),
             ) {
                 Image(
                     painter = painterResource(app.icon),

@@ -30,9 +30,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quserh.eorzeaphone.R
+import com.quserh.eorzeaphone.data.CacheMaintenance
 import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
@@ -61,6 +64,10 @@ import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // DESIGN-SPEC v2 §2: cards 18dp, nested controls 12dp.
 private val UtilityCardShape = RoundedCornerShape(18.dp)
@@ -305,28 +312,145 @@ private fun MapDestinationRow(name: String, favorite: Boolean, accent: Color, in
 fun HealthScreen(state: PhoneState) {
     val online = state.friends.count { it.online }
     val p = state.profile
-    FeatureFrame("健康", state) {
-        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.fillMaxWidth().clip(UtilityCardShape).background(Color(0xFF47732E)).padding(20.dp)) {
-                Text("游戏会话", color = Color.White.copy(alpha = .75f))
-                Text(if (state.connected) "状态良好" else "当前未连接", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                if (p != null) {
-                    Text("${p.jobName.ifBlank { "冒险者" }} · Lv.${p.level}", color = Color.White.copy(alpha = .85f), fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
-                    if (p.itemLevel > 0) Text("平均品级 ${p.itemLevel}", color = Color.White.copy(alpha = .75f), fontSize = 13.sp)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // 档案是只写的：写进去之后没有任何界面读它，所以"一行没写进去"和"一切正常"
+    // 在界面上长得一样。这一行是唯一的窗口，别删。
+    var archiveLine by remember { mutableStateOf("读取中…") }
+    LaunchedEffect(state.currentCharacterKey, state.chats.size) {
+        val key = state.currentCharacterKey
+        archiveLine = if (key.isBlank()) {
+            "未识别角色"
+        } else {
+            // count() 是读路径、允许抛（见 ChatStore 类注释），所以这里必须自己兜：
+            // 这是个诊断显示，不该因为诊断本身失败而崩掉整个页面。
+            withContext(Dispatchers.IO) {
+                try {
+                    val store = com.quserh.eorzeaphone.data.ChatStore.of(context)
+                    val n = store.count(key)
+                    // 写失败会记在 lastError 里。不显示它的话，写挂了看起来就像"还没有记录"。
+                    store.lastError?.let { "$n 条（写入异常：$it）" } ?: "$n 条"
+                } catch (t: Throwable) {
+                    "读取失败：${t.javaClass.simpleName}"
                 }
             }
-            if (p != null && p.maxHp > 0) {
-                HealthBar("HP", p.currentHp, p.maxHp, PhoneGreen)
-                if (p.maxMp > 0) HealthBar("MP", p.currentMp, p.maxMp, PhoneInfo)
-                if (p.maxCp > 0) HealthRow("制作力", "${p.currentCp} / ${p.maxCp}")
-                if (p.maxGp > 0) HealthRow("采集力", "${p.currentGp} / ${p.maxGp}")
-            } else {
-                HealthRow("连接状态", if (state.connected) "已连接" else "离线")
-            }
-            HealthRow("在线好友", "$online 人")
-            HealthRow("消息缓存", "${state.chats.size} 条")
-            HealthRow("数据模块", listOf(state.inventory.isNotEmpty(), state.wallet != null, state.weather != null, state.jobs.isNotEmpty()).count { it }.let { "$it / 4 正常" })
         }
+    }
+    var storageReport by remember { mutableStateOf<CacheMaintenance.StorageReport?>(null) }
+    var storageBusy by remember { mutableStateOf(false) }
+    var storageMessage by remember { mutableStateOf("") }
+    var storageRefreshToken by remember { mutableStateOf(0) }
+    LaunchedEffect(storageRefreshToken) {
+        storageReport = withContext(Dispatchers.IO) {
+            runCatching { CacheMaintenance.storageReport(context) }.getOrNull()
+        }
+    }
+    FeatureFrame("健康", state) {
+        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                Column(Modifier.fillMaxWidth().clip(UtilityCardShape).background(Color(0xFF47732E)).padding(20.dp)) {
+                    Text("游戏会话", color = Color.White.copy(alpha = .75f))
+                    Text(if (state.connected) "状态良好" else "当前未连接", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    if (p != null) {
+                        Text("${p.jobName.ifBlank { "冒险者" }} · Lv.${p.level}", color = Color.White.copy(alpha = .85f), fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                        if (p.itemLevel > 0) Text("平均品级 ${p.itemLevel}", color = Color.White.copy(alpha = .75f), fontSize = 13.sp)
+                    }
+                }
+            }
+            item {
+                if (p != null && p.maxHp > 0) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        HealthBar("HP", p.currentHp, p.maxHp, PhoneGreen)
+                        if (p.maxMp > 0) HealthBar("MP", p.currentMp, p.maxMp, PhoneInfo)
+                        if (p.maxCp > 0) HealthRow("制作力", "${p.currentCp} / ${p.maxCp}")
+                        if (p.maxGp > 0) HealthRow("采集力", "${p.currentGp} / ${p.maxGp}")
+                    }
+                } else {
+                    HealthRow("连接状态", if (state.connected) "已连接" else "离线")
+                }
+            }
+            item { HealthRow("在线好友", "$online 人") }
+            item { HealthRow("消息热缓存", "${state.chats.size} 条") }
+            item { HealthRow("聊天档案", archiveLine) }
+            item { HealthRow("数据模块", listOf(state.inventory.isNotEmpty(), state.wallet != null, state.weather != null, state.jobs.isNotEmpty()).count { it }.let { "$it / 4 正常" }) }
+            item {
+                StorageHealthCard(
+                    report = storageReport,
+                    busy = storageBusy,
+                    message = storageMessage,
+                    onRefresh = { storageRefreshToken++ },
+                    onClear = {
+                        if (!storageBusy) {
+                            storageBusy = true
+                            storageMessage = "正在清理…"
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching { CacheMaintenance.clearTemporaryCaches(context) }.getOrNull()
+                                }
+                                storageBusy = false
+                                storageMessage = result?.let {
+                                    if (it.deletedBytes > 0L) "已清理 ${formatStorageBytes(it.deletedBytes)}"
+                                    else "没有可清理的临时文件"
+                                } ?: "清理失败，请稍后重试"
+                                storageRefreshToken++
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageHealthCard(
+    report: CacheMaintenance.StorageReport?,
+    busy: Boolean,
+    message: String,
+    onRefresh: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().utilityCard().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("应用存储", color = PhoneText, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(report?.let { formatStorageBytes(it.totalBytes) } ?: "读取中…", color = PhoneText, fontWeight = FontWeight.Bold)
+        }
+        if (report != null) {
+            Text(
+                "可清理 ${formatStorageBytes(report.reclaimableBytes)} · 聊天记录、照片和登录状态会保留",
+                color = PhoneMuted,
+                fontSize = 12.sp,
+            )
+            report.entries.sortedByDescending { it.bytes }.take(9).forEach { entry ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(entry.label, color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    if (entry.reclaimable) {
+                        Text("可清理", color = PhoneGreen, fontSize = 10.sp, modifier = Modifier.padding(end = 8.dp))
+                    }
+                    Text(formatStorageBytes(entry.bytes), color = PhoneText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = onClear, enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = PhoneAccent), modifier = Modifier.weight(1f)) {
+                Text(if (busy) "清理中…" else "清理临时缓存")
+            }
+            TextButton(onClick = onRefresh, enabled = !busy) { Text("刷新", color = PhoneAccent) }
+        }
+        if (message.isNotBlank()) Text(message, color = PhoneMuted, fontSize = 11.sp)
+    }
+}
+
+private fun formatStorageBytes(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0L)
+    return when {
+        value < 1024L -> "$value B"
+        value < 1024L * 1024L -> String.format(Locale.getDefault(), "%.1f KB", value / 1024.0)
+        value < 1024L * 1024L * 1024L -> String.format(Locale.getDefault(), "%.1f MB", value / (1024.0 * 1024.0))
+        else -> String.format(Locale.getDefault(), "%.2f GB", value / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

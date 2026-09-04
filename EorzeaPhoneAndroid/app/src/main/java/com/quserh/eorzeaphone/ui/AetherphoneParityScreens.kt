@@ -99,6 +99,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -127,7 +128,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -669,17 +669,45 @@ fun AetherphoneMessagesScreen(state: PhoneState) {
         showLocalScreen -> "local"
         else -> "list"
     }
+    // "list" is the root; every other route is one level in. The old spec crossfaded and
+    // scaled, and because fadeOut (140ms) finished before fadeIn (200ms) there was a window
+    // with neither screen opaque -- that showed the window backdrop and read as a black
+    // flash when opening a conversation.
+    val motion = phoneMotionEnabled()
     AnimatedContent(
         targetState = route,
-        transitionSpec = { (fadeIn(tween(200)) + scaleIn(tween(220), initialScale = .98f)).togetherWith(fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 1.01f)) },
+        transitionSpec = {
+            phoneNavTransition(
+                motionAllowed = motion,
+                targetDepth = if (targetState == "list") 0 else 1,
+                initialDepth = if (initialState == "list") 0 else 1,
+                // Returning from a conversation used to briefly render two copies of
+                // the list while the old conversation layer faded. Swap this boundary
+                // immediately; navigation within the conversation keeps normal motion.
+                instantPopToRoot = true,
+            )
+        },
         label = "chat-navigation",
     ) { target ->
+        // AnimatedContent keeps the outgoing target alive for the duration of the transition.
+        // Do not use the *current* nullable conversation/filter here: when Back clears
+        // openConversationKey, that value is already null while the old `chat:<key>` target
+        // is still being drawn. Resolving by the stable route key prevents both layers from
+        // rendering the list, which was the visible "extra chat page" flash on return.
+        val targetConversation = target
+            .takeIf { it.startsWith("chat:") }
+            ?.removePrefix("chat:")
+            ?.let { key -> state.conversations.firstOrNull { it.key == key } }
+        val targetFilter = target
+            .takeIf { it.startsWith("filter:") }
+            ?.removePrefix("filter:")
+            ?.let { id -> state.chatFilters.firstOrNull { it.id == id } }
         when {
             target == "local" -> AetherphoneLocalScreen(state) { showLocalScreen = false }
             target == "new-tab" -> AetherphoneTabEditor(state) { editingTab = false }
             target == "edit-tab" -> AetherphoneTabEditor(state) { state.editChatTabs = false }
-            target.startsWith("filter:") && openFilter != null -> AetherphoneFilterConversationScreen(state, openFilter)
-            target.startsWith("chat:") && conversation != null -> AetherphoneConversationScreen(state, conversation)
+            targetFilter != null -> AetherphoneFilterConversationScreen(state, targetFilter)
+            targetConversation != null -> AetherphoneConversationScreen(state, targetConversation)
             else -> LightFrame {
                 Column(Modifier.fillMaxSize()) {
                     HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
@@ -891,26 +919,65 @@ private fun AetherphoneConversationList(state: PhoneState, editTab: () -> Unit, 
                                     }
                                 },
                                 title = filter.label,
-                                subtitle = if (last != null || filter.alertPolicy == ChatAlertPolicy.Off) {
+                                subtitle = last?.let {
                                     {
-                                        if (last != null) {
-                                            LightMessagePreview(last, AetherLightMuted, 12.sp, Modifier.weight(1f))
-                                        } else {
-                                            Spacer(Modifier.weight(1f))
-                                        }
-                                        if (filter.alertPolicy == ChatAlertPolicy.Off) {
-                                            Box(
-                                                Modifier.size(22.dp).clickable { state.toggleChatFilterNotifications(filter) },
-                                                contentAlignment = Alignment.Center,
+                                        LightMessagePreview(
+                                            it,
+                                            AetherLightMuted,
+                                            12.sp,
+                                            Modifier.weight(1f),
+                                        )
+                                    }
+                                },
+                                // Keep the right column identical to ordinary conversation
+                                // rows: time on top, notification state underneath.  Putting
+                                // the bell in the preview row made it drift horizontally with
+                                // message length and broke the visual relationship with unread
+                                // badges.
+                                meta = if (last != null || filter.alertPolicy == ChatAlertPolicy.Off) {
+                                    {
+                                        Column(
+                                            modifier = Modifier.widthIn(min = 52.dp).height(36.dp),
+                                            horizontalAlignment = Alignment.End,
+                                            verticalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.height(16.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.End,
                                             ) {
-                                                ImageGlyph(R.drawable.ic2_bell_off, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp))
+                                                last?.timestamp?.let {
+                                                    Text(
+                                                        lightTalkTime(it),
+                                                        color = AetherLightMuted,
+                                                        fontSize = 11.sp,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                    )
+                                                }
+                                            }
+                                            Box(
+                                                modifier = Modifier.height(16.dp).widthIn(min = 20.dp),
+                                                contentAlignment = Alignment.CenterEnd,
+                                            ) {
+                                                if (filter.alertPolicy == ChatAlertPolicy.Off) {
+                                                    Box(
+                                                        Modifier.size(22.dp).clickable {
+                                                            state.toggleChatFilterNotifications(filter)
+                                                        },
+                                                        contentAlignment = Alignment.Center,
+                                                    ) {
+                                                        ImageGlyph(
+                                                            R.drawable.ic2_bell_off,
+                                                            AetherLightMuted.copy(alpha = .75f),
+                                                            Modifier.size(15.dp),
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 } else null,
-                                meta = last?.let {
-                                    { Text(lightTalkTime(it.timestamp), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                                },
                             )
                             Box(Modifier.offset { IntOffset(tabPress.x.roundToInt(), tabPress.y.roundToInt()) }) {
                             PhoneMenu(expanded = longPressedTabId == filter.id, onDismissRequest = { longPressedTabId = null }) {
@@ -1241,15 +1308,20 @@ private fun SzjLikeSettingRow(
 // （圆角 16 vs 14、13sp vs 12sp、未读角标 #D93025 vs 会话行的 #E5485D）。
 // 现在两处都走 LightChip。
 
-private fun chatDay(timestamp: Long): Int {
-    val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
-    return cal.get(java.util.Calendar.YEAR) * 10000 + (cal.get(java.util.Calendar.MONTH) + 1) * 100 + cal.get(java.util.Calendar.DAY_OF_MONTH)
-}
+private val chatDayLabelFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日")
+private val chatClockFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val chatTalkDateFormatter = DateTimeFormatter.ofPattern("M/d")
+private val noteDateFormatter = DateTimeFormatter.ofPattern("M月d日")
+private val reminderDateFormatter = DateTimeFormatter.ofPattern("M月d日 HH:mm")
+private val reminderDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日")
 
-private fun chatDayLabel(timestamp: Long): String {
-    val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
-    return "${cal.get(java.util.Calendar.YEAR)}年${cal.get(java.util.Calendar.MONTH) + 1}月${cal.get(java.util.Calendar.DAY_OF_MONTH)}日"
-}
+private fun chatLocalDate(timestamp: Long): LocalDate =
+    Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
+
+private fun chatDay(timestamp: Long): Long = chatLocalDate(timestamp).toEpochDay()
+
+private fun chatDayLabel(timestamp: Long): String =
+    chatLocalDate(timestamp).format(chatDayLabelFormatter)
 @Composable
 private fun BuiltinIconLibrary(onSelect: (String) -> Unit) {
     var libraryTab by remember { mutableStateOf("all") }
@@ -1304,7 +1376,11 @@ private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor:
         )
         icon.startsWith("/") -> {
             var bmp by remember(icon) { mutableStateOf<android.graphics.Bitmap?>(null) }
-            LaunchedEffect(icon) { bmp = runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull() }
+            LaunchedEffect(icon) {
+                bmp = withContext(Dispatchers.IO) {
+                    runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull()
+                }
+            }
             val current = bmp
             if (current != null) {
                 Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
@@ -1318,8 +1394,13 @@ private fun SmallConversationIcon(icon: String, fallback: String, fallbackColor:
 
 
 @Composable
-private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneState, fallback: String) {
-    val icon = state.conversationIcon(conversation.key, conversation.category)
+private fun ConversationRowIcon(
+    conversation: ChatConversation,
+    state: PhoneState,
+    fallback: String,
+    /** 调用方已经算过就传进来，别让门和图标各解析一次。 */
+    icon: String = conversationAvatarFor(conversation, state),
+) {
     val builtin = (builtinConversationIcons + defaultConversationIcons).firstOrNull { it.id == icon }
     // 首字母的颜色原来写死 Color.White，而底座（LightRowIcon）只有 selected 时才是
     // 紫色，平时是 surfaceVariant —— 浅色主题下那是浅灰。于是所有"没设过图标的群聊"
@@ -1327,9 +1408,20 @@ private fun ConversationRowIcon(conversation: ChatConversation, state: PhoneStat
     val onControl = AetherLightText
     when {
         builtin != null -> Image(painterResource(builtin.res), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        // 石之家头像是远端 URL。少了这一支，私聊头像会掉到首字母，看着像功能没生效。
+        icon.startsWith("http") -> ShizhijiaRemoteImage(
+            url = icon,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            showPlaceholder = false,
+        )
         icon.startsWith("/") -> {
             var bmp by remember(icon) { mutableStateOf<android.graphics.Bitmap?>(null) }
-            LaunchedEffect(icon) { bmp = runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull() }
+            LaunchedEffect(icon) {
+                bmp = withContext(Dispatchers.IO) {
+                    runCatching { android.graphics.BitmapFactory.decodeFile(icon) }.getOrNull()
+                }
+            }
             val current = bmp
             if (current != null) {
                 Image(current.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
@@ -1383,9 +1475,11 @@ private fun decodeChatEntities(value: String): String = value
     .replace("&#39;", "'")
     .replace("&amp;", "&")
 
+private val leadingChatChannelRegex = Regex("^\\[[^\\]]*\\]")
+
 private fun cleanChatText(raw: String, author: String): String {
     var t = decodeChatEntities(raw.trim())
-    t = t.replaceFirst(Regex("^\\[[^\\]]*\\]"), "").trim()
+    t = t.replaceFirst(leadingChatChannelRegex, "").trim()
     // 只删开头 "<名字> " 形式的名字前缀；<se.N> 音效标签是内容本身，删了会把前面的文字一起截掉
     if (t.startsWith('<')) {
         val gt = t.indexOf('>')
@@ -1422,6 +1516,8 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
     var inputFocused by remember { mutableStateOf(false) }
     var inputHeightPx by remember { mutableIntStateOf(0) }
     var chatStack by remember { mutableStateOf(listOf<ChatSub>(ChatSub.Main)) }
+    // Keep search state in this parent; ChatSub screens are swapped out on navigation.
+    val historySearchState = remember { ChatHistorySearchState() }
     val pushChatSub: (ChatSub) -> Unit = { chatStack = chatStack + it }
     val popChatSub: () -> Unit = { if (chatStack.size > 1) chatStack = chatStack.dropLast(1) }
     BackHandler(enabled = chatStack.size > 1) { popChatSub() }
@@ -1435,22 +1531,29 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
         }
     }
     val labels = listOf("全部", "说话", "喊话", "呼喊")
-    val msgs = state.chats.filter {
-        it.timestamp > state.localClearedUntil &&
-        when {
-            filter == 1 -> it.channel == 10 || it.channel == 81 || it.category == ChatCategory.Emote
-            filter == 2 -> it.channel == 11 || it.channel == 82
-            filter == 3 -> it.channel == 30 || it.channel == 83
-            else -> (it.category == ChatCategory.Public || it.category == ChatCategory.Emote) && it.channel != 27 && it.channel != 75 && it.channel != 94
-        }
-    }.sortedBy { it.timestamp }
+    val chatCount = state.chats.size
+    val chatFirst = state.chats.firstOrNull()
+    val chatLast = state.chats.lastOrNull()
+    val clearedLocal = state.localClearedUntil
+    val msgs = remember(filter, chatCount, chatFirst, chatLast, clearedLocal) {
+        state.chats.filter {
+            it.timestamp > clearedLocal &&
+            when {
+                filter == 1 -> it.channel == 10 || it.channel == 81 || it.category == ChatCategory.Emote
+                filter == 2 -> it.channel == 11 || it.channel == 82
+                filter == 3 -> it.channel == 30 || it.channel == 83
+                else -> (it.category == ChatCategory.Public || it.category == ChatCategory.Emote) && it.channel != 27 && it.channel != 75 && it.channel != 94
+            }
+        }.sortedBy { it.timestamp }
+    }
     LightFrame {
         if (chatStack.last() != ChatSub.Main) {
-            ChatSubScreen(state, localConv, chatStack.last(), onPop = popChatSub, onPush = pushChatSub)
+            ChatSubScreen(state, localConv, chatStack.last(), onPop = popChatSub, onPush = pushChatSub, searchState = historySearchState)
             return@LightFrame
         }
         Column(Modifier.fillMaxSize().imePadding()) {
             LightHeader("本地", onBack) {
+                Spacer(Modifier.width(8.dp))
                 Box(
                     Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { pushChatSub(ChatSub.LocalSettings) },
                     contentAlignment = Alignment.Center,
@@ -1490,12 +1593,19 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     }
                 }
             } else {
+                // Chat packets do not expose a server id.  Use a full fingerprint plus
+                // an occurrence ordinal so two genuinely identical messages in the same
+                // millisecond still receive distinct Compose keys.
+                val messageKeys = rememberMessageOccurrenceKeys(msgs).keys
+                val normalizedSelfName = remember(state.profile?.name) {
+                    state.profile?.name?.normalizedPlayerName()
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true },
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    itemsIndexed(msgs, key = { _, msg -> "${msg.timestamp}-${msg.channel}-${msg.sender}-${msg.text.hashCode()}" }) { index, msg ->
+                    itemsIndexed(msgs, key = { index, _ -> messageKeys[index] }) { index, msg ->
                         val showDate = index == 0 || chatDay(msg.timestamp) != chatDay(msgs[index - 1].timestamp)
                         if (showDate) {
                             Text(chatDayLabel(msg.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
@@ -1509,7 +1619,8 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                             state.displayNameFor(msg)
                         }
                         val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
-                        LightChatBubble(author, msg, self, shouldShowLightSender(msgs, index, state.profile?.name), state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = shouldShowLightSender(msgs, index, state.profile?.name), senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
+                        val groupStart = shouldShowLightSender(msgs, index, normalizedSelfName)
+                        LightChatBubble(author, msg, self, groupStart, state.chatWrapChars, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = groupStart, senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
                     }
                 }
             }
@@ -1585,8 +1696,11 @@ private fun LightMessagePreview(message: GameChatMessage?, color: Color, fontSiz
     val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val fallback = cleanChatText(message.text, "").replace('\n', ' ').trim().ifBlank { " " }
     val inkChunks = remember(message) { if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks }
-    val ink = remember(message, color, fontSize, lineH) { chatBubbleInk(inkChunks, fallback, color, true, "", light, fontSize, lineH, axisFont) }
-    val inline = chatBubbleInline(inkChunks, fallback, fontSize, lineH)
+    val renderChunks = remember(inkChunks, fallback) { cleanItemLinkChunks(inkChunks) }
+    val ink = remember(message, renderChunks, color, fontSize, lineH) { chatBubbleInk(renderChunks, fallback, color, true, "", light, fontSize, lineH, axisFont, alreadyCleaned = true) }
+    val inline = remember(renderChunks, fontSize, lineH) {
+        chatBubbleInline(renderChunks, fallback, fontSize, lineH, alreadyCleaned = true)
+    }
     Text(ink.annotated, color = color, fontSize = fontSize, lineHeight = lineH, inlineContent = if (inline.isEmpty()) emptyMap() else inline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
 
@@ -1617,16 +1731,11 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
         else -> 10
     }
     val channelTint = themeAdjustedChannelColor(channelDefaultColor(channelId))
-    val channelLabel = when (conversation.category) {
-        ChatCategory.Tell -> "密语"
-        ChatCategory.Party -> "小队"
-        ChatCategory.Team -> "联盟"
-        ChatCategory.FreeCompany -> "部队"
-        ChatCategory.Linkshell -> "通讯贝"
-        ChatCategory.Emote -> "情感"
-        else -> null
-    }
-    val hasCustomIcon = state.conversationIcon(conversation.key, conversation.category).isNotBlank()
+    // 这一句是真正的门：为空就走下面的首字母底座，ConversationRowIcon 根本不会被调到。
+    // 私聊必须问 conversationAvatarFor —— 非好友的 state.conversationIcon 返回空串，
+    // 光改 ConversationRowIcon 里面那行是够不着的。
+    val rowIcon = conversationAvatarFor(conversation, state)
+    val hasCustomIcon = rowIcon.isNotBlank()
     Box {
         LightListRow(
             onClick = { state.openConversation(conversation) },
@@ -1634,7 +1743,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             icon = {
                 if (hasCustomIcon) {
                     LightRowIcon(circle = isPerson) {
-                        ConversationRowIcon(conversation, state, rowTitle)
+                        ConversationRowIcon(conversation, state, rowTitle, rowIcon)
                     }
                 } else {
                     SoftAvatar(rowTitle.take(1), channelTint, size = LightRowIconSize)
@@ -1643,30 +1752,50 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
             title = rowTitle,
             // 有未读时标题加粗——不用再靠颜色区分，红角标已经在右列了。
             titleWeight = if (conversation.unread > 0) FontWeight.Bold else FontWeight.SemiBold,
-            titleLeading = when {
-                isPerson -> {
-                    { FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp)) }
-                }
-                channelLabel != null -> {
-                    { ChannelPill(channelLabel, channelTint, Modifier.padding(end = 6.dp)) }
-                }
-                else -> null
+            // No channel pill before the name. The 小队/联盟/部队 badge duplicated what the
+            // row already says — conversations are renameable, so the title is the user's
+            // own label and a category tag in front of it just crowds it. The person branch
+            // stays: that one is an online-status dot, not a category tag.
+            titleLeading = if (isPerson) {
+                { FriendStatusIcon(state, conversation.tellRecipient.ifBlank { rowTitle }, 14.dp, Modifier.padding(end = 6.dp)) }
+            } else {
+                null
             },
             subtitle = {
                 LightMessagePreview(previewMsg, if (previewMsg?.category == ChatCategory.Emote) themeAdjustedChannelColor(EmoteChatColor) else AetherLightMuted, 12.sp, Modifier.weight(1f))
-                if (!conversation.notify) ImageGlyph(R.drawable.ic2_bell_off, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp).padding(start = 2.dp))
             },
             meta = {
-                // 时间在上、角标在下，都贴右边。10sp 是字号下限（9sp 在高密度屏上开始糊）。
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (state.isConversationPinned(conversation)) {
-                        ImageGlyph(R.drawable.ic2_pin, AetherLightMuted, Modifier.padding(end = 4.dp).size(11.dp))
+                // 右侧固定成两行：第一行时间（可带置顶），第二行未读/免打扰标识。
+                // 之前免打扰铃铛在副标题里，副标题长度一变它就会左右漂移，
+                // 视觉上也和未读角标不在同一列。
+                Column(
+                    modifier = Modifier.widthIn(min = 52.dp).height(36.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        modifier = Modifier.height(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        if (state.isConversationPinned(conversation)) {
+                            ImageGlyph(R.drawable.ic2_pin, AetherLightMuted, Modifier.padding(end = 4.dp).size(11.dp))
+                        }
+                        conversation.lastTimestamp?.let {
+                            Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                        }
                     }
-                    conversation.lastTimestamp?.let {
-                        Text(lightTalkTime(it), color = AetherLightMuted, fontSize = 11.sp, maxLines = 1, softWrap = false)
+                    Box(
+                        modifier = Modifier.height(16.dp).widthIn(min = 20.dp),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        if (conversation.unread > 0) {
+                            LightUnreadBadge(conversation.unread, conversation.notify)
+                        } else if (!conversation.notify) {
+                            ImageGlyph(R.drawable.ic2_bell_off, AetherLightMuted.copy(alpha = .75f), Modifier.size(15.dp))
+                        }
                     }
                 }
-                LightUnreadBadge(conversation.unread, conversation.notify)
             },
         )
         Box(Modifier.offset { IntOffset(pressOffset.x.roundToInt(), pressOffset.y.roundToInt()) }) {
@@ -2029,8 +2158,11 @@ private fun LightContactRow(
 }
 
 @Composable
-fun AetherphoneContactDetailScreen(state: PhoneState) {
-    val friend = state.selectedFriend
+fun AetherphoneContactDetailScreen(state: PhoneState, friendOverride: PhoneFriend? = null) {
+    // AnimatedContent retains the previous detail screen while the selected friend is
+    // changed for the next route.  Prefer the route snapshot so the outgoing layer does
+    // not suddenly repaint itself with the newly selected contact.
+    val friend = friendOverride ?: state.selectedFriend
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
     // 石之家账号。
@@ -2311,19 +2443,104 @@ private sealed interface ChatSub {
     data object TabSettings : ChatSub
     data object LocalSettings : ChatSub
     data object Appearance : ChatSub
-    data class SearchHistory(val showAvatar: Boolean = true) : ChatSub
-    data class SearchInput(val showAvatar: Boolean = true) : ChatSub
+    /** The search is already scoped to one conversation, so a conversation avatar adds no information. */
+    data object SearchHistory : ChatSub
+    data object SearchInput : ChatSub
     data object Calendar : ChatSub
-    data class MessageView(val anchorTimestamp: Long) : ChatSub
+    data class MessageView(
+        val anchorTimestamp: Long,
+        // A historical search result may come from SQLite and no longer be in the
+        // 400-row hot list.  Carry that row into the detail screen so tapping it
+        // still lands on the message instead of silently jumping to the newest row.
+        val anchorMessage: GameChatMessage? = null,
+    ) : ChatSub
+}
+
+/**
+ * State that must outlive the search result screen itself.
+ *
+ * The result list is replaced by [ChatSub.MessageView] when a row is tapped. Keeping both
+ * values in the conversation screen means returning from that view is a true back operation:
+ * the query, result set, and exact scroll offset are still where the user left them.
+ */
+private class ChatHistorySearchState {
+    var query by mutableStateOf("")
+    val listState = LazyListState()
+    var focusRequested by mutableStateOf(false)
+    /** Archive rows stay here too; the search composable is removed while a message is open. */
+    var archivedResults: List<GameChatMessage> by mutableStateOf(emptyList())
+    var archivedQuery: String? by mutableStateOf(null)
+    var archivedCharacter: String? by mutableStateOf(null)
+    /**
+     * The first visible result when the user opened a message.  The archive query can
+     * finish while the message screen is open, so restoring by raw index is not safe:
+     * an older row inserted above it would otherwise move the viewport to a different
+     * message.  The key is cleared only after the matching row has been laid out again.
+     */
+    var restoreKey by mutableStateOf<String?>(null)
+    var restoreOffset by mutableIntStateOf(0)
+    var restoreTimestamp by mutableLongStateOf(0L)
+    private var appliedQuery: String? = null
+
+    /** Returns true only when the query actually changed, not when the screen is recreated. */
+    fun consumeQueryChange(value: String): Boolean {
+        val changed = appliedQuery != value
+        appliedQuery = value
+        if (changed) {
+            // A viewport anchor belongs to the previous result set.  Keeping it when the
+            // user edits the query can jump a completely unrelated result back into view
+            // (and, worse, leave a never-resolving restore request behind).
+            restoreKey = null
+            restoreOffset = 0
+            restoreTimestamp = 0L
+        }
+        return changed
+    }
+
+    fun captureViewport(entries: List<ChatSearchResultEntry>) {
+        val index = listState.firstVisibleItemIndex
+        val key = entries.getOrNull(index)?.key
+        if (key != null) {
+            restoreKey = key
+            restoreOffset = listState.firstVisibleItemScrollOffset
+            restoreTimestamp = entries[index].message.timestamp
+        }
+    }
+}
+
+/** A search row with an identity that survives merging hot and archived results. */
+private data class ChatSearchResultEntry(
+    val key: String,
+    val message: GameChatMessage,
+)
+
+private fun searchResultEntries(messages: List<GameChatMessage>): List<ChatSearchResultEntry> {
+    // A packet has no server id and two genuinely identical messages are legal.  Add
+    // an occurrence ordinal so even those rows have unique LazyColumn keys while the
+    // fingerprint (rather than the transient list index) remains the stable part.
+    val occurrences = HashMap<String, Int>()
+    return messages.map { message ->
+        val fingerprint = chatSearchKey(message)
+        val ordinal = occurrences[fingerprint] ?: 0
+        occurrences[fingerprint] = ordinal + 1
+        ChatSearchResultEntry("$fingerprint\u0003$ordinal", message)
+    }
 }
 
 @Composable
-private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub: ChatSub, onPop: () -> Unit, onPush: (ChatSub) -> Unit) {
+private fun ChatSubScreen(
+    state: PhoneState,
+    conversation: ChatConversation,
+    sub: ChatSub,
+    onPop: () -> Unit,
+    onPush: (ChatSub) -> Unit,
+    searchState: ChatHistorySearchState,
+) {
     when (sub) {
         ChatSub.Settings -> ChatSettingsScreen(
             state, conversation,
             onBack = onPop,
-            onSearchHistory = { onPush(ChatSub.SearchHistory()) },
+            onSearchHistory = { onPush(ChatSub.SearchHistory) },
             onAppearance = { onPush(ChatSub.Appearance) },
             onDeleteConversation = {
                 state.hideConversation(conversation)
@@ -2333,13 +2550,13 @@ private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub
         ChatSub.LocalSettings -> LocalSettingsScreen(
             state,
             onBack = onPop,
-            onHistory = { onPush(ChatSub.SearchHistory(showAvatar = false)) },
+            onHistory = { onPush(ChatSub.SearchHistory) },
             onAppearance = { onPush(ChatSub.Appearance) },
         )
         ChatSub.TabSettings -> ChatTabSettingsScreen(
             state, conversation,
             onBack = onPop,
-            onHistory = { onPush(ChatSub.SearchHistory(showAvatar = false)) },
+            onHistory = { onPush(ChatSub.SearchHistory) },
             onEditFilter = {
                 state.editingChatFilterId = state.openChatFilterId
                 state.editChatTabs = true
@@ -2352,9 +2569,9 @@ private fun ChatSubScreen(state: PhoneState, conversation: ChatConversation, sub
             },
         )
         ChatSub.Appearance -> ChatAppearanceScreen(state, onBack = onPop)
-        is ChatSub.SearchHistory -> ChatSearchHistoryScreen(onBack = onPop, onOpenInput = { onPush(ChatSub.SearchInput(sub.showAvatar)) }, onOpenCalendar = { onPush(ChatSub.Calendar) })
-        is ChatSub.SearchInput -> ChatSearchInputScreen(state, conversation, showAvatar = sub.showAvatar, onBack = onPop, onOpenMessage = { timestamp -> onPush(ChatSub.MessageView(timestamp)) })
-        is ChatSub.MessageView -> ChatMessageViewScreen(state, conversation, sub.anchorTimestamp, onBack = onPop)
+        ChatSub.SearchHistory -> ChatSearchHistoryScreen(onBack = onPop, onOpenInput = { onPush(ChatSub.SearchInput) }, onOpenCalendar = { onPush(ChatSub.Calendar) })
+        ChatSub.SearchInput -> ChatSearchInputScreen(state, conversation, searchState, onBack = onPop, onOpenMessage = { message -> onPush(ChatSub.MessageView(message.timestamp, message)) })
+        is ChatSub.MessageView -> ChatMessageViewScreen(state, conversation, sub.anchorTimestamp, sub.anchorMessage, onBack = onPop)
         ChatSub.Calendar -> ChatCalendarScreen(conversation, onBack = onPop, onOpenDay = { firstTs -> onPush(ChatSub.MessageView(firstTs)) })
         ChatSub.Main -> Unit
     }
@@ -2421,6 +2638,12 @@ private fun LocalSettingsScreen(state: PhoneState, onBack: () -> Unit, onHistory
             ChatSettingRow("查看历史记录", onClick = onHistory, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
             ChatSettingDivider()
             ChatSettingRow("外观设置", onClick = onAppearance, trailing = { ImageGlyph(R.drawable.ic2_chevron_right, AetherLightMuted, Modifier.size(20.dp)) })
+            ChatSettingDivider()
+            ChatSettingRow("说话通知", trailing = { Switch(checked = state.localNotifySay, onCheckedChange = { state.localNotifySay = it }) })
+            ChatSettingDivider()
+            ChatSettingRow("呼喊通知", trailing = { Switch(checked = state.localNotifyYell, onCheckedChange = { state.localNotifyYell = it }) })
+            ChatSettingDivider()
+            ChatSettingRow("喊话通知", trailing = { Switch(checked = state.localNotifyShout, onCheckedChange = { state.localNotifyShout = it }) })
             ChatSettingDivider()
             ChatSettingRow("删除聊天记录", color = PhoneDanger, onClick = { confirmClear = true })
         }
@@ -2559,29 +2782,125 @@ private fun ChatSearchHistoryScreen(onBack: () -> Unit, onOpenInput: () -> Unit,
 }
 
 @Composable
-private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversation, showAvatar: Boolean, onBack: () -> Unit, onOpenMessage: (Long) -> Unit) {
-    var query by remember { mutableStateOf("") }
+private fun ChatSearchInputScreen(
+    state: PhoneState,
+    conversation: ChatConversation,
+    searchState: ChatHistorySearchState,
+    onBack: () -> Unit,
+    onOpenMessage: (GameChatMessage) -> Unit,
+) {
+    val query = searchState.query
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    var archiveLoading by remember(conversation.key) { mutableStateOf(false) }
+    LaunchedEffect(searchState) {
+        // Focus only the first time this holder is shown. Re-entering from a message should
+        // restore the list without reopening the keyboard or moving the viewport.
+        if (!searchState.focusRequested) {
+            searchState.focusRequested = true
+            focusRequester.requestFocus()
+        }
     }
-    val results = remember(conversation.messages, query) {
-        if (query.isBlank()) emptyList() else conversation.messages.filter { it.text.contains(query, true) || it.sender.contains(query, true) }
+    LaunchedEffect(query) {
+        // A genuine query edit starts a new result set at the top. On screen recreation
+        // (back from MessageView) consumeQueryChange returns false, preserving the offset.
+        if (searchState.consumeQueryChange(query)) {
+            searchState.listState.scrollToItem(0)
+            searchState.archivedResults = emptyList()
+            searchState.archivedQuery = null
+            searchState.archivedCharacter = null
+        }
+    }
+    LaunchedEffect(conversation.key, query, state.currentCharacterKey) {
+        val q = query.trim()
+        if (q.isBlank()) {
+            searchState.archivedResults = emptyList()
+            searchState.archivedQuery = null
+            searchState.archivedCharacter = null
+            archiveLoading = false
+        } else if (searchState.archivedQuery != q ||
+            searchState.archivedCharacter != state.currentCharacterKey
+        ) {
+            // Do not start a SQLite LIKE scan for every keystroke.  LaunchedEffect is
+            // cancelled automatically when the query changes, so this debounce also
+            // guarantees that an old, slower page cannot win the race.
+            delay(180)
+            archiveLoading = true
+            // The query runs off the main thread inside PhoneState.  It is keyed
+            // by the exact text, so an older, slower response cannot overwrite a
+            // newer search after the user edits the field.
+            val capturedCharacter = state.currentCharacterKey
+            val rows = state.searchConversationHistory(conversation, q)
+            // The query may have been superseded while it was in flight.  Keep the
+            // old result set until the matching response arrives so returning from a
+            // message never flashes an empty list or loses its scroll anchor.
+            if (searchState.query.trim() == q && state.currentCharacterKey == capturedCharacter) {
+                searchState.archivedResults = rows
+                searchState.archivedQuery = q
+                searchState.archivedCharacter = capturedCharacter
+            }
+            archiveLoading = false
+        }
+    }
+    val localResults = if (query.isBlank()) emptyList() else
+        conversation.messages.filter { it.text.contains(query, true) || it.sender.contains(query, true) }
+    // Local hot rows overlap the newest SQLite rows.  Keep the local instance
+    // first (it carries a live sendState) and append only archive rows not already
+    // represented by the same packet tuple.
+    val results = buildList {
+        addAll(localResults)
+        val seen = localResults.mapTo(HashSet()) { chatSearchKey(it) }
+        searchState.archivedResults.forEach { message ->
+            if (seen.add(chatSearchKey(message))) add(message)
+        }
+    }.sortedByDescending { it.timestamp }
+    val resultEntries = remember(results) { searchResultEntries(results) }
+    val resultKeys = remember(resultEntries) { resultEntries.map { it.key } }
+    // Restore the exact row/offset captured before opening MessageView.  Keep the
+    // request pending if the archive result is still arriving; the effect runs again
+    // when the matching key appears instead of falling back to item 0.
+    LaunchedEffect(resultKeys, searchState.restoreKey, archiveLoading) {
+        val key = searchState.restoreKey ?: return@LaunchedEffect
+        val index = resultEntries.indexOfFirst { it.key == key }
+        if (index >= 0) {
+            searchState.listState.scrollToItem(index, searchState.restoreOffset)
+            searchState.restoreKey = null
+        } else if (!archiveLoading && searchState.archivedQuery == query.trim()) {
+            // The row may have been deleted/trimmed while its detail screen was open.
+            // Never leave a stale anchor armed forever; use the closest timestamp as a
+            // graceful fallback so the user still returns near the old position.
+            val fallback = searchState.restoreTimestamp
+            val nearest = if (fallback > 0L) {
+                resultEntries.withIndex().minByOrNull { (_, entry) ->
+                    kotlin.math.abs(entry.message.timestamp - fallback)
+                }?.index
+            } else null
+            if (nearest != null) {
+                searchState.listState.scrollToItem(nearest, searchState.restoreOffset)
+            }
+            searchState.restoreKey = null
+            searchState.restoreTimestamp = 0L
+        }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
         LightHeader("查找聊天记录", onBack) {}
         Row(Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            LightSearchField(query, { query = it }, "搜索聊天记录", Modifier.weight(1f).focusRequester(focusRequester))
+            LightSearchField(query, { searchState.query = it }, "搜索聊天记录", Modifier.weight(1f).focusRequester(focusRequester))
             if (query.isNotBlank()) Text(results.size.toString(), color = AetherPurple, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
         }
         LazyColumn(
+            state = searchState.listState,
             modifier = Modifier.fillMaxSize().padding(horizontal = LocalContentMargin.current.dp),
             verticalArrangement = Arrangement.spacedBy(LightCardGap),
         ) {
-            itemsIndexed(results, key = { index, message -> "${message.timestamp}-$index" }) { _, message ->
-                SearchResultRow(state, conversation, message, query, showAvatar) { onOpenMessage(message.timestamp) }
+            items(resultEntries, key = { it.key }) { entry ->
+                // This is a search inside one known conversation; showing that same
+                // conversation's avatar beside every result is redundant visual noise.
+                SearchResultRow(state, conversation, entry.message, query) {
+                    searchState.captureViewport(resultEntries)
+                    onOpenMessage(entry.message)
+                }
             }
-            if (query.isNotBlank() && results.isEmpty()) item {
+            if (query.isNotBlank() && results.isEmpty() && !archiveLoading) item {
                 Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
                     PhoneEmpty("没找到「$query」", "换个词，或者少打几个字", R.drawable.ic2_search)
                 }
@@ -2590,8 +2909,158 @@ private fun ChatSearchInputScreen(state: PhoneState, conversation: ChatConversat
     }
 }
 
+/**
+ * Stable-enough identity for rows that came through different storage paths.
+ *
+ * Chat packets do not expose a server message id, so timestamp alone is not a safe
+ * anchor (multiple messages can share a millisecond).  Include the sender metadata and
+ * rich-text chunks when available.  `sendState` is intentionally omitted: it changes
+ * in-place as an outgoing message is acknowledged and must not make the same row appear
+ * twice when the hot cache and SQLite result are merged.
+ */
+private fun chatSearchKey(message: GameChatMessage): String = buildString {
+    append(message.timestamp).append('\u0000')
+    append(message.channel).append('\u0000')
+    append(message.sender).append('\u0000')
+    append(message.text).append('\u0000')
+    append(message.self).append('\u0000')
+    append(message.senderName.orEmpty()).append('\u0000')
+    append(message.senderWorld.orEmpty()).append('\u0000')
+    append(message.senderStatusName.orEmpty()).append('\u0000')
+    append(message.senderStatusIcon ?: -1).append('\u0000')
+    append(message.senderWorldIcon ?: -1).append('\u0000')
+    append(message.characterTag.orEmpty()).append('\u0000')
+    append(message.targetName.orEmpty()).append('\u0000')
+    append(message.targetWorld.orEmpty()).append('\u0000')
+    append(message.selfFlag).append('\u0000')
+    message.chunks.forEach { chunk ->
+        append(chunk.text.orEmpty()).append('\u0001')
+        append(chunk.icon ?: -1).append('\u0001')
+        append(chunk.italic).append('\u0001')
+        append(chunk.foreground ?: Long.MIN_VALUE).append('\u0002')
+    }
+}
+
+/** Cheap row identity used only by LazyColumn; search/dedup keeps the full fingerprint. */
+private fun chatComposeFingerprint(message: GameChatMessage): Long {
+    var h = -0x61c8864680b583ebL
+    fun mix(value: Long) {
+        h = (h xor value) * -0x40a7b892e31b1a47L
+        h = h xor (h ushr 29)
+    }
+    mix(message.timestamp)
+    mix(message.channel.toLong())
+    mix(message.sender.hashCode().toLong())
+    mix(message.text.hashCode().toLong())
+    mix(if (message.self) 1L else 0L)
+    mix(message.senderName?.hashCode()?.toLong() ?: 0L)
+    mix(message.senderWorld?.hashCode()?.toLong() ?: 0L)
+    mix(message.targetName?.hashCode()?.toLong() ?: 0L)
+    mix(message.targetWorld?.hashCode()?.toLong() ?: 0L)
+    mix(message.chunks.size.toLong())
+    // Chunk list sizes are normally tiny.  Include icon/foreground and text hashes so
+    // two links with the same plain message still don't recycle the wrong inline item.
+    message.chunks.forEach { chunk ->
+        mix((chunk.icon ?: -1).toLong())
+        mix(chunk.text?.hashCode()?.toLong() ?: 0L)
+        mix(chunk.foreground ?: Long.MIN_VALUE)
+        mix(if (chunk.italic) 1L else 0L)
+    }
+    return h
+}
+
+/**
+ * Reuse the key list while the user drags a transcript.  SnapshotStateList keeps its
+ * identity while messages are appended, so the cache also checks size and a few element
+ * references; this catches normal append/clear/replace operations without an O(n)
+ * equality/hash pass on every frame.
+ */
+private class MessageOccurrenceKeyCache {
+    private var size = -1
+    private var source: List<GameChatMessage>? = null
+    private var sampleIndexes: IntArray = IntArray(0)
+    private var samples: Array<GameChatMessage?> = emptyArray()
+    private var cached: List<String> = emptyList()
+    private val occurrences = HashMap<Long, Int>()
+    private var revision = 0L
+    private var result = MessageOccurrenceKeys(cached, revision)
+
+    fun get(messages: List<GameChatMessage>): MessageOccurrenceKeys {
+        val n = messages.size
+        val previousSource = source
+        val prefixStillMatches = when {
+            size < 0 || n < size -> false
+            size == 0 -> true
+            previousSource === messages -> sampleIndexes.indices.all { sample ->
+                val index = sampleIndexes[sample]
+                index < messages.size && messages[index] === samples[sample]
+            }
+            previousSource == null || previousSource.size != size -> false
+            else -> (0 until size).all { index -> previousSource[index] === messages[index] }
+        }
+        val appendOnly = n > size && prefixStillMatches
+        val unchanged = n == size && prefixStillMatches
+
+        if (appendOnly) {
+            val next = ArrayList<String>(n)
+            next.addAll(cached)
+            for (index in size until n) {
+                val fingerprint = chatComposeFingerprint(messages[index])
+                val ordinal = occurrences[fingerprint] ?: 0
+                occurrences[fingerprint] = ordinal + 1
+                next += "message:${fingerprint.toString(16)}\u0003$ordinal"
+            }
+            cached = next
+            revision++
+            result = MessageOccurrenceKeys(cached, revision)
+        } else if (!unchanged) {
+            // Compose asks for keys while a LazyColumn is being re-laid out. Do not build
+            // the full search fingerprint here: it contains every chunk/string and creates
+            // substantial garbage. Rebuild compact hashes only after an actual replace,
+            // front trim or filter change; normal appends extend the prior key list above.
+            occurrences.clear()
+            cached = messages.map { message ->
+                val fingerprint = chatComposeFingerprint(message)
+                val ordinal = occurrences[fingerprint] ?: 0
+                occurrences[fingerprint] = ordinal + 1
+                "message:${fingerprint.toString(16)}\u0003$ordinal"
+            }
+            revision++
+            result = MessageOccurrenceKeys(cached, revision)
+        }
+
+        size = n
+        source = messages
+        sampleIndexes = if (n == 0) IntArray(0) else intArrayOf(
+            0,
+            (n - 1) / 3,
+            (n - 1) / 2,
+            ((n - 1) * 2) / 3,
+            n - 1,
+        )
+        val nextSamples: Array<GameChatMessage?> = if (n == 0) {
+            emptyArray()
+        } else {
+            Array(sampleIndexes.size) { sample -> messages[sampleIndexes[sample]] }
+        }
+        samples = nextSamples
+        return result
+    }
+}
+
+private data class MessageOccurrenceKeys(
+    val keys: List<String>,
+    val revision: Long,
+)
+
 @Composable
-private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, message: GameChatMessage, query: String, showAvatar: Boolean = true, onClick: () -> Unit) {
+private fun rememberMessageOccurrenceKeys(messages: List<GameChatMessage>): MessageOccurrenceKeys {
+    val cache = remember { MessageOccurrenceKeyCache() }
+    return cache.get(messages)
+}
+
+@Composable
+private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, message: GameChatMessage, query: String, onClick: () -> Unit) {
     val self = message.self || (state.profile?.name != null && message.isFrom(state.profile?.name))
     val author = if (self) state.profile?.name?.takeIf { it.isNotBlank() } ?: "我" else state.displayNameFor(message).takeIf { it != "对方" } ?: conversation.title
     val cleaned = cleanChatText(message.text, author)
@@ -2601,13 +3070,8 @@ private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, m
     // \u547D\u4E2D\u7684\u6B63\u6587\u5141\u8BB8\u591A\u884C\uFF0C\u6240\u4EE5\u526F\u884C\u4E0D\u9650\u5355\u884C\u3002
     LightListRow(
         onClick = onClick,
-        icon = if (showAvatar) {
-            {
-                LightRowIcon(circle = true) {
-                    SmallConversationIcon(state.conversationIcon(conversation.key, conversation.category), author.take(1), AetherPurple)
-                }
-            }
-        } else null,
+        // No avatar here: the parent screen already identifies the conversation.
+        icon = null,
         title = author.replace('\uE05D', ' '),
         subtitle = {
             HighlightText(cleaned, query, AetherLightMuted, 12.sp, 3, Modifier.weight(1f))
@@ -2670,8 +3134,21 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     }
     CompositionLocalProvider(LocalTextToolbar provides toolbar) {
         val dismissMod = if (selectionActive) Modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionActive = false; selectionEpoch++ }, onLongPress = {}) } else Modifier
+        // Add an occurrence ordinal to the complete message fingerprint.  A duplicate
+        // packet is legal (especially for rapid system/combat lines); a hash-only key
+        // can collide and make LazyColumn recycle the wrong row state.
+        val keySnapshot = rememberMessageOccurrenceKeys(messages)
+        val messageKeys = keySnapshot.keys
+        val selfName = state.profile?.name
+        val normalizedSelfName = remember(selfName) {
+            selfName?.normalizedPlayerName()
+        }
         LazyColumn(state = listState, modifier = modifier.then(dismissMod).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true }, verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        itemsIndexed(messages, key = { _, message -> "${message.timestamp}-${message.channel}-${message.sender}-${message.text.hashCode()}" }) { index, message ->
+        itemsIndexed(
+            messages,
+            key = { index, _ -> messageKeys[index] },
+            contentType = { _, _ -> "chat-message" },
+        ) { index, message ->
             val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
             if (showDate) {
                 Text(chatDayLabel(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
@@ -2689,17 +3166,25 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 if (tag.isNotEmpty()) "[$tag] $base" else base
             }
             Column(Modifier.fillMaxWidth()) {
-                val senderStatus = if (conversation.category != ChatCategory.Tell && !self && message.category != ChatCategory.System) {
-                    val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
-                    state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
-                } else 0L
+                val senderStatus = remember(message.senderName, message.sender, state.friends.size) {
+                    if (conversation.category != ChatCategory.Tell && !self && message.category != ChatCategory.System) {
+                        val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
+                        state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
+                    } else 0L
+                }
                 // 私聊会话不显示消息上方的角色 ID（气泡区分自己/对方），但组首条仍有尾巴；其它频道照旧
-                val groupStart = shouldShowLightSender(messages, index, state.profile?.name)
+                // A boundary compares only this row and its predecessor. Precomputing all
+                // 5,000 boundaries whenever one live message arrived caused more main-thread
+                // work than doing this tiny comparison as a row enters the viewport.
+                val groupStart = shouldShowLightSender(messages, index, normalizedSelfName)
                 // 只有真正的私聊窗口(tell:)按私聊渲染；筛选器(tab:)/群聊/本地列都按“非私聊窗口”合并——组首条显示作者
                 val privateChat = conversation.key.startsWith("tell:")
                 val showAuthor = !privateChat && groupStart
                 val showTail = privateChat || groupStart
-                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = if (conversation.category == ChatCategory.Party || conversation.category == ChatCategory.Team) state.jobIconIdFor(author) else 0, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
+                val jobIconId = remember(author, state.party.size, state.friends.size) {
+                    if (conversation.category == ChatCategory.Party || conversation.category == ChatCategory.Team) state.jobIconIdFor(author) else 0
+                }
+                LightChatBubble(author, message, self, showAuthor, state.chatWrapChars, conversation.title, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = jobIconId, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     // 原来是"⚠"字符 + 硬编码红。字符在部分机型上会渲染成彩色 emoji，
                     // 红色也和别处的红各写一个值，统一走 PhoneDanger。
@@ -2725,11 +3210,54 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
 }
 
 @Composable
-private fun ChatMessageViewScreen(state: PhoneState, conversation: ChatConversation, anchorTimestamp: Long, onBack: () -> Unit) {
-    val messages = conversation.messages
+private fun ChatMessageViewScreen(
+    state: PhoneState,
+    conversation: ChatConversation,
+    anchorTimestamp: Long,
+    anchorMessage: GameChatMessage? = null,
+    onBack: () -> Unit,
+) {
+    // Keep the selected historical row visible even when it came from SQLite and
+    // is outside the hot in-memory window.  Live rows remain the source of truth
+    // for send-state updates; the carried row is only a read-only anchor.
+    // Snapshot the SnapshotStateList first.  Remembering the mutable list object itself
+    // is insufficient: Compose keeps that object identity while messages are appended,
+    // so a detail screen opened from an older search result could stay frozen forever.
+    // Key the snapshot by cheap structural markers instead of passing a freshly copied
+    // List to remember (List.equals would walk the whole transcript on every scroll
+    // frame).  Appends/clears change size or an edge reference; send-state updates do not
+    // affect the anchor layout and therefore need no rebuild.
+    val liveSize = conversation.messages.size
+    val liveFirst = conversation.messages.firstOrNull()
+    val liveLast = conversation.messages.lastOrNull()
+    val messages = remember(conversation.key, liveSize, liveFirst, liveLast, anchorMessage) {
+        val liveMessages = conversation.messages.toList()
+        buildList {
+            addAll(liveMessages)
+            if (anchorMessage != null && none { chatSearchKey(it) == chatSearchKey(anchorMessage) }) {
+                add(anchorMessage)
+            }
+        }.sortedBy { it.timestamp }
+    }
     val listState = rememberLazyListState()
     var anchored by remember { mutableStateOf(false) }
-    val anchorIndex = remember(messages.size, anchorTimestamp) { messages.indexOfFirst { it.timestamp == anchorTimestamp }.coerceAtLeast(0) }
+    val anchorKey = anchorMessage?.let(::chatSearchKey)
+    val anchorIndex = remember(messages, anchorTimestamp, anchorKey) {
+        // A tapped local row is the same object instance in the conversation list; use
+        // that first.  Archive rows are copied, so fall back to the full fingerprint,
+        // then timestamp for calendar/day links and older rows lacking metadata.
+        val byIdentity = anchorMessage?.let { target -> messages.indexOfFirst { it === target } } ?: -1
+        val found = if (byIdentity >= 0) {
+            byIdentity
+        } else if (anchorKey != null) {
+            messages.indexOfFirst { chatSearchKey(it) == anchorKey }
+                .takeIf { it >= 0 }
+                ?: messages.indexOfFirst { it.timestamp == anchorTimestamp }
+        } else {
+            messages.indexOfFirst { it.timestamp == anchorTimestamp }
+        }
+        found.coerceAtLeast(0)
+    }
     // 只在该屏首次进入（或换日期）时定位到当天第一条；后续新消息到达不再跳回，
     // 否则用户上滑查看历史时会被新消息拽回当天第一条
     LaunchedEffect(anchorIndex) {
@@ -2828,6 +3356,9 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
     var searching by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var chatStack by remember { mutableStateOf(listOf<ChatSub>(ChatSub.Main)) }
+    // This holder intentionally belongs to the conversation screen, not the search screen.
+    // Returning from a message view must restore both the query and the result scroll offset.
+    val historySearchState = remember(conversation.key) { ChatHistorySearchState() }
     val pushChatSub: (ChatSub) -> Unit = { chatStack = chatStack + it }
     val popChatSub: () -> Unit = { if (chatStack.size > 1) chatStack = chatStack.dropLast(1) }
     BackHandler(enabled = chatStack.size > 1) { popChatSub() }
@@ -2842,7 +3373,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
     var inputHeightPx by remember { mutableIntStateOf(0) }
     LightFrame {
         if (chatStack.last() != ChatSub.Main) {
-            ChatSubScreen(state, conversation, chatStack.last(), onPop = popChatSub, onPush = pushChatSub)
+            ChatSubScreen(state, conversation, chatStack.last(), onPop = popChatSub, onPush = pushChatSub, searchState = historySearchState)
             return@LightFrame
         }
         Column(Modifier.fillMaxSize().imePadding()) {
@@ -2881,7 +3412,15 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 },
             )
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                val visible = if (search.isBlank()) conversation.messages else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
+                // Keep the list instance stable while LazyListState changes during a
+                // fling.  A new filtered List on every recomposition made Compose walk
+                // and compare the entire transcript even though no message changed.
+                val messageCount = conversation.messages.size
+                val latestMessage = conversation.messages.lastOrNull()
+                val visible = remember(search, messageCount, latestMessage) {
+                    if (search.isBlank()) conversation.messages
+                    else conversation.messages.filter { it.text.contains(search, true) || it.sender.contains(search, true) }
+                }
                 val listState = rememberLazyListState()
                 val matchIndices = remember(visible, search) {
                     if (search.isBlank()) emptyList() else visible.indices.filter { i -> visible[i].text.contains(search, true) || visible[i].sender.contains(search, true) }
@@ -3044,37 +3583,11 @@ private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk
     return out
 }
 
-// 把“自动换行的非末尾行”的两端对齐字距烘焙进字符 span：整条消息只需一个文本节点即可两端对齐
-private fun justifyText(original: androidx.compose.ui.text.AnnotatedString, layout: androidx.compose.ui.text.TextLayoutResult, bubbleWidePx: Float, density: androidx.compose.ui.unit.Density): androidx.compose.ui.text.AnnotatedString {
-    val builder = androidx.compose.ui.text.AnnotatedString.Builder()
-    for (i in 0 until layout.lineCount) {
-        val ls = layout.getLineStart(i)
-        val le = layout.getLineEnd(i)
-        if (le <= ls) continue
-        var slice = original.subSequence(ls, le)
-        if (slice.text.endsWith("\n") || slice.text.endsWith("\r")) slice = slice.subSequence(0, slice.length - 1)
-        if (slice.isEmpty()) continue
-        val isLast = i == layout.lineCount - 1
-        val lineW = layout.getLineRight(i) - layout.getLineLeft(i)
-        val chars = (le - ls).coerceAtLeast(1)
-        val lastCh = if (le > ls) original.text[le - 1] else ' '
-        val hardBreak = !isLast && (lastCh == '\n' || lastCh == '\r')
-        val isAutoWrap = !isLast && !hardBreak && lineW >= bubbleWidePx * 0.85f
-        val extraPx = if (!isAutoWrap) 0f else (bubbleWidePx - lineW).coerceAtLeast(0f)
-        val lsSp = if (isAutoWrap && chars > 1 && extraPx > 0f) with(density) { (extraPx / chars / (density.density * density.fontScale)).sp } else 0.sp
-        if (lsSp.value > 0f) {
-            builder.withStyle(androidx.compose.ui.text.SpanStyle(letterSpacing = lsSp)) { builder.append(slice) }
-        } else {
-            builder.append(slice)
-        }
-    }
-    return builder.toAnnotatedString()
-}
 private fun chatBubbleInk(
     chunks: List<GameChatChunk>, fallback: String, color: Color, forceColor: Boolean, highlight: String, light: Boolean,
-    fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily,
+    fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily, alreadyCleaned: Boolean = false,
 ): ChatInk {
-    val useChunks = cleanItemLinkChunks(chunks).ifEmpty { listOf(GameChatChunk(text = fallback)) }
+    val useChunks = (if (alreadyCleaned) chunks else cleanItemLinkChunks(chunks)).ifEmpty { listOf(GameChatChunk(text = fallback)) }
     val builder = AnnotatedString.Builder()
     val placeholders = mutableListOf<AnnotatedString.Range<Placeholder>>()
     var len = 0
@@ -3103,9 +3616,8 @@ private fun chatBubbleInk(
         return ChatInk(builder.toAnnotatedString(), placeholders)
 }
 
-@Composable
-private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, fontSize: TextUnit, lineHeight: TextUnit): Map<String, InlineTextContent> {
-    val useChunks = cleanItemLinkChunks(chunks).ifEmpty { listOf(GameChatChunk(text = fallback)) }
+private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, fontSize: TextUnit, lineHeight: TextUnit, alreadyCleaned: Boolean = false): Map<String, InlineTextContent> {
+    val useChunks = (if (alreadyCleaned) chunks else cleanItemLinkChunks(chunks)).ifEmpty { listOf(GameChatChunk(text = fallback)) }
     return buildMap {
         useChunks.forEachIndexed { index, chunk ->
             val icon = chunk.icon
@@ -3167,15 +3679,15 @@ private class TrackingTextToolbar(
     }
 }
 
-// 与气泡一体的尾巴形状：尾巴在顶部（镜像），对方=左上、自己=右上；尾巴侧底角 8dp，其余角 14dp
+// Bubble with tail: large corners 15dp, tail corner 5dp (matching variant-k.html)
 private class BubbleTailShape(private val self: Boolean) : androidx.compose.ui.graphics.Shape {
     override fun createOutline(
         size: androidx.compose.ui.geometry.Size,
         layoutDirection: androidx.compose.ui.unit.LayoutDirection,
         density: androidx.compose.ui.unit.Density,
     ): androidx.compose.ui.graphics.Outline {
-        val r = with(density) { 14.dp.toPx() }
-        val tb = with(density) { 8.dp.toPx() }
+        val r = with(density) { 15.dp.toPx() }
+        val tb = with(density) { 5.dp.toPx() }
         val tailPad = with(density) { 8.dp.toPx() }
         val tail = with(density) { 6.dp.toPx() }
         val w = size.width
@@ -3284,7 +3796,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     if (jobIconId > 0) RemoteGameIcon(jobIconId, "?", Modifier.size((authorFontSizeSp + 1).dp).padding(start = 3.dp))
                 }
             }
-            val bubbleShape = if (showTail) remember(self) { BubbleTailShape(self) } else if (self) RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp, topEnd = 8.dp, bottomEnd = 8.dp) else RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp, topEnd = 14.dp, bottomEnd = 14.dp)
+            val bubbleShape = if (showTail) remember(self) { BubbleTailShape(self) } else if (self) RoundedCornerShape(topStart = 15.dp, bottomStart = 15.dp, topEnd = 5.dp, bottomEnd = 5.dp) else RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp, topEnd = 15.dp, bottomEnd = 15.dp)
             val horizPad = if (self) Modifier.padding(end = 10.dp) else Modifier.padding(start = 10.dp)
             // v2: incoming white bubbles get a hairline stroke; self bubble keeps solid accent.
             val bubbleBorder = if (!self) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, bubbleShape) else Modifier
@@ -3296,22 +3808,39 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val contentPx = with(dens) { bubbleContent.toPx() }
                 // 情感动作文字保持正体（不随消息的斜体标记走），颜色不变；缓存 chunks 避免滚动时反复分配
                 val inkChunks = remember(message) { if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks }
-                val ink = remember(message, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
-                    chatBubbleInk(inkChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont)
+                val renderChunks = remember(inkChunks, cleaned) { cleanItemLinkChunks(inkChunks) }
+                val ink = remember(message, renderChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
+                    chatBubbleInk(renderChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont, alreadyCleaned = true)
                 }
-                val inline = chatBubbleInline(inkChunks, cleaned, fontUnit, lineUnit)
-                val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) { chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start) }
+                // Inline content is independent of width/layout.  Rebuilding its map on
+                // every scroll-driven recomposition was a surprisingly large allocation
+                // hotspot for messages containing item/status icons.
+                val inline = remember(renderChunks, fontUnit, lineUnit) {
+                    chatBubbleInline(renderChunks, cleaned, fontUnit, lineUnit, alreadyCleaned = true)
+                }
+                val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) {
+                    chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start)
+                }
+                // Measure once to choose the compact bubble width.  The old renderer then
+                // rebuilt an AnnotatedString with per-line letter-spacing and measured it a
+                // second time before Text performed its own layout: three shaping passes for
+                // every row entering a LazyColumn was the main fling-time hotspot. Compose's
+                // native Justify performs the same non-final-line alignment in Text's normal
+                // layout pass, so only this one sizing measurement remains.
                 val layout = remember(ink, measureStyle, contentPx) {
-                    textMeasurer.measure(ink.annotated, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
+                    textMeasurer.measure(
+                        ink.annotated,
+                        measureStyle,
+                        placeholders = ink.placeholders,
+                        constraints = Constraints(maxWidth = contentPx.roundToInt()),
+                    )
                 }
-                // 先把两端对齐字距烘焙进文本，再按烘焙后的文本量取宽度，保证气泡尺寸与内容一致（避免右侧留空）
-                val baseWidePx = (0 until layout.lineCount).map { layout.getLineRight(it) - layout.getLineLeft(it) }.maxOrNull()?.coerceAtLeast(1f) ?: contentPx
-                val justified = remember(ink, layout, baseWidePx) { justifyText(ink.annotated, layout, baseWidePx, dens) }
-                val jLayout = remember(ink, justified, measureStyle, contentPx) {
-                    textMeasurer.measure(justified, measureStyle, placeholders = ink.placeholders, constraints = Constraints(maxWidth = contentPx.roundToInt()))
+                val lineCount = layout.lineCount
+                val lineWidths = remember(layout) {
+                    FloatArray(lineCount) { line ->
+                        layout.getLineRight(line) - layout.getLineLeft(line)
+                    }
                 }
-                val lineCount = jLayout.lineCount
-                val lineWidths = (0 until lineCount).map { jLayout.getLineRight(it) - jLayout.getLineLeft(it) }
                 val widePx = lineWidths.maxOrNull()?.coerceAtLeast(1f) ?: contentPx
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
                 val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
@@ -3320,6 +3849,9 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
                 val bubbleWideDp = with(dens) { bubbleWidePx.toDp() }
+                val displayStyle = remember(measureStyle) {
+                    measureStyle.copy(textAlign = TextAlign.Justify)
+                }
                 key(selectionEpoch) {
                 SelectionContainer {
                 Column(Modifier.padding(start = 11.dp, end = 11.dp, top = 8.dp, bottom = 3.dp).width(bubbleWideDp)) {
@@ -3328,7 +3860,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                     } else {
                         // 单文本主体（两端对齐已烘焙）
                         Box(Modifier.fillMaxWidth()) {
-                            Text(justified, style = measureStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
+                            Text(ink.annotated, style = displayStyle, inlineContent = if (inline.isEmpty()) emptyMap() else inline)
                             if (canInline) {
                                 // 最后一行能容纳时，时间右对齐到气泡右下角（内联在末行）
                                 Text(timeText, color = timeColor, fontSize = timeUnit, lineHeight = timeUnit, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 1.dp))
@@ -3436,40 +3968,106 @@ private fun statusIconDrawable(index: Int): Int? = when (index) {
     else -> null
 }
 
-@Composable
+@androidx.compose.runtime.Composable
 private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
     if (index in 0xE000..0xF8FF) {
         val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
-        val color = Color(0xFFFF7E1E)
-        var bmp by remember(index, color) { mutableStateOf<ImageBitmap?>(null) }
-        LaunchedEffect(index, color) { bmp = renderAxisGlyph(appContext, index, color) }
+        val color = linkColor ?: Color(0xFFFF7E1E)
+        val colorArgb = color.toArgb()
+        var bmp by remember(index, colorArgb) {
+            mutableStateOf(peekAxisGlyph(index, colorArgb))
+        }
+        LaunchedEffect(index, colorArgb) {
+            if (bmp == null) {
+                bmp = withContext(Dispatchers.Default) {
+                    loadAxisGlyph(appContext, index, colorArgb)
+                }
+            }
+        }
         val img = bmp
         if (img != null) Image(img, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         return
     }
     if (index >= 1000) {
         val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
-        var bitmap by remember(index) { mutableStateOf<ImageBitmap?>(null) }
-        LaunchedEffect(index) { bitmap = ItemIconLoader.load(appContext, index)?.asImageBitmap() }
+        var bitmap by remember(index) {
+            mutableStateOf(ItemIconLoader.peek(index)?.asImageBitmap())
+        }
+        LaunchedEffect(index) {
+            if (bitmap == null) bitmap = ItemIconLoader.load(appContext, index)?.asImageBitmap()
+        }
         val bmp = bitmap
         if (bmp != null) {
             Image(bmp, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         }
         return
     }
-    statusIconDrawable(index)?.let { res ->
-        Image(painterResource(res), contentDescription = null, modifier = Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.Fit)
+    val statusRes = statusIconDrawable(index)
+    if (statusRes != null) {
+        Image(painterResource(statusRes), contentDescription = null, modifier = Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.Fit)
         return
     }
     val rect = fontIconRect(index) ?: return
-    val bitmap = ImageBitmap.imageResource(R.drawable.fonticon_ps4)
+    // The sprite sheet is immutable and shared by every chat row.  Decoding it from
+    // resources in each inline-icon composition caused a noticeable allocation spike
+    // while scrolling through icon-heavy logs.
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    var bitmap by remember { mutableStateOf(fontIconSpriteCache) }
+    LaunchedEffect(Unit) {
+        if (bitmap == null) {
+            bitmap = withContext(Dispatchers.Default) { fontIconSpriteBitmap(appContext) }
+        }
+    }
+    val sprite = bitmap ?: return
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-        drawImage(bitmap, srcOffset = androidx.compose.ui.unit.IntOffset(rect[0], rect[1]), srcSize = androidx.compose.ui.unit.IntSize(rect[2], rect[3]))
+        drawImage(sprite, srcOffset = androidx.compose.ui.unit.IntOffset(rect[0], rect[1]), srcSize = androidx.compose.ui.unit.IntSize(rect[2], rect[3]))
+    }
+}
+
+private val fontIconSpriteLock = Any()
+@Volatile
+private var fontIconSpriteCache: ImageBitmap? = null
+
+/** Decode the immutable font-icon sprite sheet once per process. */
+private fun fontIconSpriteBitmap(context: android.content.Context): ImageBitmap? {
+    fontIconSpriteCache?.let { return it }
+    synchronized(fontIconSpriteLock) {
+        fontIconSpriteCache?.let { return it }
+        val decoded = android.graphics.BitmapFactory.decodeResource(
+            context.resources,
+            R.drawable.fonticon_ps4,
+        ) ?: return null
+        return decoded.asImageBitmap().also { fontIconSpriteCache = it }
+    }
+}
+
+private val axisGlyphLock = Any()
+private val axisGlyphCache = android.util.LruCache<Long, ImageBitmap>(128)
+@Volatile
+private var axisGlyphTypeface: android.graphics.Typeface? = null
+
+private fun axisGlyphKey(code: Int, colorArgb: Int): Long =
+    (code.toLong() shl 32) xor (colorArgb.toLong() and 0xffffffffL)
+
+private fun peekAxisGlyph(code: Int, colorArgb: Int): ImageBitmap? =
+    synchronized(axisGlyphLock) { axisGlyphCache.get(axisGlyphKey(code, colorArgb)) }
+
+/** Render each private-use glyph once and keep bitmap work off the Compose/UI thread. */
+private fun loadAxisGlyph(context: android.content.Context, code: Int, colorArgb: Int): ImageBitmap? {
+    val key = axisGlyphKey(code, colorArgb)
+    synchronized(axisGlyphLock) {
+        axisGlyphCache.get(key)?.let { return it }
+        val rendered = renderAxisGlyph(context, code, Color(colorArgb)) ?: return null
+        axisGlyphCache.put(key, rendered)
+        return rendered
     }
 }
 
 private fun renderAxisGlyph(context: android.content.Context, code: Int, color: Color): ImageBitmap? {
-    val typeface = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ffxiv_axis) ?: return null
+    val typeface = axisGlyphTypeface
+        ?: androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ffxiv_axis)
+            ?.also { axisGlyphTypeface = it }
+        ?: return null
     val glyph = code.toChar().toString()
     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         this.typeface = typeface
@@ -3509,11 +4107,20 @@ private fun fontIconRect(index: Int): IntArray? = when (index) {
     else -> null
 }
 
-private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, selfName: String?): Boolean {
+private fun shouldShowLightSender(messages: List<GameChatMessage>, index: Int, normalizedSelfName: String?): Boolean {
     // 连续同一个人（未被其它人打断）的消息合并为一组：只要上一条是不同发送者，本消息即为新组首条
     if (index == 0) return true
-    fun key(message: GameChatMessage) = if (message.self || message.isFrom(selfName)) "self:${message.channel}" else "${message.channel}:${message.sender.trim()}"
-    return key(messages[index]) != key(messages[index - 1])
+    fun isSelf(message: GameChatMessage): Boolean =
+        message.self || message.selfFlag || message.channel == 12 ||
+            (!normalizedSelfName.isNullOrBlank() &&
+                message.sender.normalizedPlayerName() == normalizedSelfName)
+
+    val current = messages[index]
+    val previous = messages[index - 1]
+    val currentSelf = isSelf(current)
+    val previousSelf = isSelf(previous)
+    if (currentSelf != previousSelf || current.channel != previous.channel) return true
+    return !currentSelf && current.sender != previous.sender
 }
 
 private fun wrapLightText(value: String, limit: Int): String {
@@ -4013,13 +4620,13 @@ private fun lightConversationColor(category: ChatCategory): Color {
 
 private fun lightTalkTime(timestamp: Long): String {
     val time = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault())
-    return if (time.toLocalDate() == LocalDate.now()) time.format(DateTimeFormatter.ofPattern("HH:mm")) else time.format(DateTimeFormatter.ofPattern("M/d"))
+    return if (time.toLocalDate() == LocalDate.now()) time.format(chatClockFormatter) else time.format(chatTalkDateFormatter)
 }
 
-private fun lightClock(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
-private fun noteDate(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M月d日"))
-private fun reminderDate(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M月d日 HH:mm"))
-private fun reminderDay(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy年M月d日"))
+private fun lightClock(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(chatClockFormatter)
+private fun noteDate(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(noteDateFormatter)
+private fun reminderDate(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(reminderDateFormatter)
+private fun reminderDay(timestamp: Long): String = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(reminderDayFormatter)
 
 private fun compactNumber(value: Long): String = when {
     value >= 1_000_000 -> String.format("%.1fM", value / 1_000_000f).replace(".0M", "M")

@@ -1,6 +1,7 @@
 package com.quserh.eorzeaphone.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -76,6 +77,7 @@ import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.LocalContentMargin
 import com.quserh.eorzeaphone.ui.theme.PhoneAccent
 import com.quserh.eorzeaphone.ui.theme.PhoneInfo
+import com.quserh.eorzeaphone.ui.theme.PhoneLine
 import com.quserh.eorzeaphone.ui.theme.PhoneMuted
 import com.quserh.eorzeaphone.ui.theme.PhoneSurface
 import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
@@ -119,6 +121,14 @@ internal sealed interface WikiDest {
 
     /** 副本检索（按类型浏览：讨伐歼灭战 / 迷宫挑战 / 大型任务 …）。 */
     data object DutyBrowse : WikiDest
+
+    /**
+     * 一个普通 wiki 条目（怪物 / 地名 / NPC / 攻略），在 App 内显示正文。
+     *
+     * 用标题而不是 pageid 当参数：重定向要靠标题跟随（`AF` → 校服），
+     * 缓存键也是标题。
+     */
+    data class Page(val title: String) : WikiDest
 }
 
 /**
@@ -157,73 +167,166 @@ internal class WikiSearchState {
     /** 物品检索页自己的筛选条件（那一页有九项筛选，和首页搜索是两回事）。 */
     var browseInput: String = ""
     var filter: WikiFilter = WikiFilter()
+
+    /**
+     * 上一次的搜索结果，连同它对应的搜索词。
+     *
+     * 为什么要存：`WikiUnifiedResults` 原来把结果放自己的 `remember` 里，而进详情页
+     * 会把搜索页整个移出组合（`WikiScreen` 那个 `when` 换了分支），`remember` 就没了。
+     * 返回时结果是 null → 转圈 → 重新查一遍库。用户看到的是「搜索结果不见了」。
+     *
+     * 连搜索词一起存是为了对得上：只有 [resultsQuery] 和当前 query 相同才能用这份
+     * 缓存，否则会拿旧词的结果配新词的界面。
+     */
+    var results: WikiSearchResult? = null
+    var resultsQuery: String = ""
+
+    /**
+     * 任务检索页和副本检索页各自的搜索词，以及副本页选中的类型。
+     *
+     * 和上面同一个毛病：这两页原来把搜索词放自己的 `remember` 里，点进任务流程图/副本
+     * 详情再返回，搜索框空了，`QuestSearchResults` 拿到空词就什么都不显示。
+     * 这里只存词和类型，不存结果——两个库都是本地的，返回时重查一遍很快，
+     * 而存结果要把 QuestHit / WikiDuty 也拖进这个类，不值得。
+     */
+    var questInput: String = ""
+    var dutyInput: String = ""
+    var dutyPicked: String = ""
+}
+
+/**
+ * Wiki 的导航状态。
+ *
+ * 必须活在 composable 外面：WikiScreen 挂在外层 AnimatedContent 里，
+ * 跨应用跳转时这个 composable 会重建，`remember` 的东西全丢——
+ * 所以从背包跳过来后详情页闪一下就消失。
+ * 放到 object 里之后，导航栈不会因为重组而丢失。
+ */
+private object WikiNav {
+    var stack by mutableStateOf(listOf<WikiDest>())
+        private set
+
+    val current: WikiDest? get() = stack.lastOrNull()
+
+    fun push(dest: WikiDest) { stack = stack + dest }
+
+    fun pop() { if (stack.isNotEmpty()) stack = stack.dropLast(1) }
+
+    fun clear() { stack = emptyList() }
+
+    val canGoBack: Boolean get() = stack.isNotEmpty()
+
+    /** 统一的返回逻辑，供 BackHandler 和界面左上角返回按钮使用 */
+    fun handleBack(state: PhoneState) {
+        if (stack.size > 1) pop()
+        else {
+            val returnTo = state.wikiReturnToApp
+            if (returnTo != null) {
+                state.wikiReturnToApp = null
+                state.openApp(returnTo)
+            } else {
+                state.back()
+            }
+        }
+    }
+
+    // 每棵树的缩放/平移，跨导航保留。见 QuestTreeView。
+    val treeViews = mutableMapOf<Int, QuestTreeView>()
+
+    // 检索页的模式/搜索词/筛选，跨导航保留。见 WikiSearchState。
+    val searchState = WikiSearchState()
 }
 
 @Composable
 fun WikiScreen(state: PhoneState) {
-    // 导航栈。空 = 在搜索页。
-    val stack = remember { mutableStateListOf<WikiDest>() }
-    // 每棵树的缩放/平移，跨导航保留。见 QuestTreeView。
-    val treeViews = remember { mutableMapOf<Int, QuestTreeView>() }
-    // 检索页的模式/搜索词/筛选，跨导航保留。见 WikiSearchState。
-    val searchState = remember { WikiSearchState() }
-    // 返回键逐层弹出，照 ClockAndTimersScreens 的写法（它和聊天处理了这件事）。
-    BackHandler(enabled = stack.isNotEmpty()) { stack.removeLastOrNull() }
+    BackHandler(enabled = WikiNav.canGoBack) {
+        WikiNav.handleBack(state)
+    }
 
-    val top = stack.lastOrNull()
+    LaunchedEffect(Unit) {
+        snapshotFlow { state.pendingWikiItemId }.collect { pending ->
+            if (pending != null) {
+                WikiNav.clear()
+                WikiNav.push(WikiDest.Item(pending))
+                state.pendingWikiItemId = null
+            }
+        }
+    }
+
+    val motion = phoneMotionEnabled()
+    val targetState = WikiNav.stack.size to WikiNav.current
+    AnimatedContent(
+        targetState = targetState,
+        transitionSpec = {
+            phoneNavTransition(
+                motionAllowed = motion,
+                targetDepth = targetState.first,
+                initialDepth = initialState.first,
+            )
+        },
+        label = "wiki-navigation",
+    ) { (_, top) ->
     when (top) {
-        null -> WikiSearchScreen(state, searchState) { stack.add(it) }
+        null -> WikiSearchScreen(state, WikiNav.searchState) { WikiNav.push(it) }
         is WikiDest.Item -> WikiItemDetailRoute(
             state, top.id,
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
         is WikiDest.Quest -> WikiQuestScreen(
             state, top.id,
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
         is WikiDest.Instance -> WikiInstanceScreen(
             state, top.id,
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
         is WikiDest.Shop -> WikiShopScreen(
             state, top.id,
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
         is WikiDest.Node -> WikiNodeScreen(
-            state, top.id, onBack = { stack.removeLastOrNull() },
+            state, top.id, onBack = { WikiNav.handleBack(state) },
         )
         is WikiDest.QuestTree -> QuestTreeScreen(
             state, top.chainId, top.highlightId,
-            view = treeViews.getOrPut(top.chainId) { QuestTreeView() },
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            view = WikiNav.treeViews.getOrPut(top.chainId) { QuestTreeView() },
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
         is WikiDest.Ancestry -> QuestAncestryScreen(
             state, top.questId,
-            view = treeViews.getOrPut(-top.questId) { QuestTreeView() },
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            view = WikiNav.treeViews.getOrPut(-top.questId) { QuestTreeView() },
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
         WikiDest.ItemBrowse -> WikiItemSearchScreen(
             state = state,
-            saved = searchState,
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(WikiDest.Item(it.id)) },
+            saved = WikiNav.searchState,
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(WikiDest.Item(it.id)) },
         )
         WikiDest.QuestBrowse -> WikiQuestBrowseScreen(
             state = state,
-            onBack = { stack.removeLastOrNull() },
-            onOpenTree = { cid, hit -> stack.add(WikiDest.QuestTree(cid, hit)) },
+            saved = WikiNav.searchState,
+            onBack = { WikiNav.handleBack(state) },
+            onOpenTree = { cid, hit -> WikiNav.push(WikiDest.QuestTree(cid, hit)) },
         )
         WikiDest.DutyBrowse -> WikiDutyBrowseScreen(
             state = state,
-            onBack = { stack.removeLastOrNull() },
-            onOpen = { stack.add(it) },
+            saved = WikiNav.searchState,
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
         )
+        is WikiDest.Page -> WikiPageScreen(
+            state, top.title,
+            onBack = { WikiNav.handleBack(state) },
+            onOpen = { WikiNav.push(it) },
+        )
+    }
     }
 }
 
@@ -277,7 +380,7 @@ private fun WikiSearchScreen(
     }
 
     ScreenFrame {
-        ScreenHeader("WiKi", state, showBack = true)
+        ScreenHeader("WiKi", state, showBack = false)
         WikiSearchField(
             input,
             onChange = { input = it },
@@ -287,7 +390,7 @@ private fun WikiSearchScreen(
         if (query.isBlank()) {
             WikiHome(onOpen = onOpen)
         } else {
-            WikiUnifiedResults(query = query, onOpen = onOpen)
+            WikiUnifiedResults(query = query, saved = saved, onOpen = onOpen)
         }
     }
 }
@@ -430,15 +533,31 @@ private fun WikiEntryTile(
  * 而这些词也会命中一堆同名装备（「伊弗利特之角」之类），物品数量压过副本。
  */
 @Composable
-private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
+private fun WikiUnifiedResults(
+    query: String,
+    saved: WikiSearchState,
+    onOpen: (WikiDest) -> Unit,
+) {
     val context = LocalContext.current.applicationContext
-    var res by remember { mutableStateOf<WikiSearchResult?>(null) }
+    // 从 saved 起步，且只在搜索词对得上时才认这份缓存——否则返回时会拿旧词的结果
+    // 配新词的界面。见 WikiSearchState.results。
+    var res by remember {
+        mutableStateOf(saved.results?.takeIf { saved.resultsQuery == query })
+    }
     var loading by remember { mutableStateOf(false) }
     val margin = LocalContentMargin.current
 
     LaunchedEffect(query) {
-        loading = true
+        // 已经有这个词的缓存就不必再查库，返回时直接画出来。
+        if (saved.resultsQuery == query && saved.results != null) {
+            res = saved.results
+            return@LaunchedEffect
+        }
+        // 只在没东西可看时才转圈。有旧结果还转圈就白缓存了。
+        loading = res == null
         res = runCatching { WikiSearch.search(context, query) }.getOrNull()
+        saved.results = res
+        saved.resultsQuery = query
         loading = false
     }
 
@@ -501,7 +620,8 @@ private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
                     // 类型标签直接用副本自己的类型（讨伐歼灭战/迷宫挑战/…），
                     // 比统一写「副本」信息量大，用户找的就是这个词
                     kind = h.duty.type.ifBlank { "副本" }, kindTint = PhoneWarn,
-                    iconId = h.duty.imageId, iconHash = "",
+                    iconId = 0, iconHash = "",
+                    localIcon = dutyIconRes(h.duty.iconKind),
                     title = h.duty.name,
                     sub = buildList {
                         h.duty.levelText.takeIf { it.isNotBlank() }?.let(::add)
@@ -547,14 +667,40 @@ private fun WikiUnifiedResults(query: String, onOpen: (WikiDest) -> Unit) {
                     )
                 }
                 lazyItems(r.pages, key = { "p${it.pageId}" }) { p ->
-                    WikiPageRow(p)
+                    WikiPageRow(p) { onOpen(WikiDest.Page(p.title)) }
                 }
             }
         }
     }
 }
 
-/** 结果行。左边类型标签，右边名字 + 副标题。 */
+/**
+ * 副本类型 → 本地矢量图标。[WikiDuty.iconKind] 给的字符串在这里落到 drawable。
+ *
+ * 两边分开是为了让 data 层不依赖 `R`。映射的完整性由
+ * `开发/WIKI/wiki-feature/validate_duty_icons.py` 守着 ——
+ * 它从 Kotlin 源码解析这两张表，和库里的 type_id、res 里的真实文件三方对齐
+ * （这条链全是字符串，编译器管不着，写错要到运行时才发现）。
+ */
+internal fun dutyIconRes(kind: String): Int = when (kind) {
+    "dungeon" -> R.drawable.ic2_duty_dungeon
+    "trial" -> R.drawable.ic2_duty_trial
+    "raid" -> R.drawable.ic2_duty_raid
+    "ultimate" -> R.drawable.ic2_duty_ultimate
+    "guildhest" -> R.drawable.ic2_duty_guildhest
+    "deep" -> R.drawable.ic2_duty_deep
+    "treasure" -> R.drawable.ic2_duty_treasure
+    "seasonal" -> R.drawable.ic2_duty_seasonal
+    "mixed" -> R.drawable.ic2_duty_mixed
+    else -> R.drawable.ic2_duty_dungeon
+}
+
+/**
+ * 结果行。左边类型标签，右边名字 + 副标题。
+ *
+ * [localIcon] 非 0 时用**本地矢量图标**（副本走这条：按类型给图标，
+ * 不拉那张 55 KB 的横幅图，见 [WikiDuty.iconKind]）；否则按 [iconId] 联网取图。
+ */
 @Composable
 private fun WikiHitRow(
     kind: String,
@@ -564,6 +710,7 @@ private fun WikiHitRow(
     title: String,
     sub: String,
     onClick: () -> Unit,
+    localIcon: Int = 0,
 ) {
     val margin = LocalContentMargin.current
     PhonePressable(onClick = onClick, shape = RoundedCornerShape(0.dp)) {
@@ -572,10 +719,16 @@ private fun WikiHitRow(
                 .padding(horizontal = margin.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (iconId > 0) {
-                WikiIcon(iconId, iconHash, title.take(1), Modifier.size(34.dp))
-            } else {
-                Box(Modifier.size(34.dp))
+            when {
+                localIcon != 0 -> Box(
+                    Modifier.size(34.dp).clip(RoundedCornerShape(8.dp))
+                        .background(kindTint.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ImageGlyph(localIcon, kindTint, Modifier.size(19.dp))
+                }
+                iconId > 0 -> WikiIcon(iconId, iconHash, title.take(1), Modifier.size(34.dp))
+                else -> Box(Modifier.size(34.dp))
             }
             Column(Modifier.weight(1f).padding(start = 11.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -604,22 +757,20 @@ private fun WikiHitRow(
     PhoneHairlineRow(18.dp)
 }
 
-/** 站点条目行。带匹配片段，点了在浏览器打开（我本地没有这类条目的数据）。 */
+/**
+ * 站点条目行（怪物 / 地名 / NPC / 攻略这些本地没有表的）。
+ *
+ * **点了进 App 内的条目页**，不再直接跳浏览器 —— 用户的原话是
+ * 「不想内容跳转到网页」。浏览器入口挪到条目页右上角，当补充而不是唯一出路。
+ *
+ * 右边那个 `↗` 也去掉了：它表示的正是「会离开 App」，现在不会了。
+ */
 @Composable
-private fun WikiPageRow(p: WikiHit.Page) {
-    val context = LocalContext.current
+private fun WikiPageRow(p: WikiHit.Page, onOpen: () -> Unit) {
     val margin = LocalContentMargin.current
     Column(
-        Modifier.fillMaxWidth().clickable {
-            runCatching {
-                context.startActivity(
-                    android.content.Intent(
-                        android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse(WikiSearch.pageUrl(p.title)),
-                    )
-                )
-            }
-        }.padding(horizontal = margin.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onOpen)
+            .padding(horizontal = margin.dp, vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -633,7 +784,7 @@ private fun WikiPageRow(p: WikiHit.Page) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 6.dp).weight(1f),
             )
-            Text("↗", color = PhoneMuted, fontSize = 12.sp)
+            ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(14.dp))
         }
         // 「经『A12』命中」—— 让用户知道为什么这条会出现
         if (p.viaAlias != null) {
@@ -664,18 +815,20 @@ private fun WikiPageRow(p: WikiHit.Page) {
 @Composable
 private fun WikiQuestBrowseScreen(
     state: PhoneState,
+    saved: WikiSearchState,
     onBack: () -> Unit,
     onOpenTree: (chainId: Int, highlightId: Int) -> Unit,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
-    var input by remember { mutableStateOf("") }
-    var query by remember { mutableStateOf("") }
+    var input by remember { mutableStateOf(saved.questInput) }
+    // query 也从 saved 起步，否则返回后要等 260ms 防抖才重新出结果，中间是空屏。
+    var query by remember { mutableStateOf(saved.questInput) }
 
     LaunchedEffect(Unit) {
         snapshotFlow { input }
             .debounce(260)
             .distinctUntilChanged()
-            .collect { query = it }
+            .collect { query = it; saved.questInput = it }
     }
 
     ScreenFrame {
@@ -700,6 +853,7 @@ private fun WikiQuestBrowseScreen(
 @Composable
 private fun WikiDutyBrowseScreen(
     state: PhoneState,
+    saved: WikiSearchState,
     onBack: () -> Unit,
     onOpen: (WikiDest) -> Unit,
 ) {
@@ -707,10 +861,13 @@ private fun WikiDutyBrowseScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val margin = LocalContentMargin.current
 
-    var input by remember { mutableStateOf("") }
-    var query by remember { mutableStateOf("") }
-    var types by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
-    var picked by remember { mutableStateOf("") }
+    var input by remember { mutableStateOf(saved.dutyInput) }
+    var query by remember { mutableStateOf(saved.dutyInput) }
+    var types by remember {
+        mutableStateOf<List<DutyDb.DutyTypeGroup>>(emptyList())
+    }
+    // 选中的类型也要留：返回后掉回类型列表，等于把用户点的那一下作废了。
+    var picked by remember { mutableStateOf(saved.dutyPicked) }
     var list by remember { mutableStateOf<List<WikiDuty>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
@@ -718,8 +875,10 @@ private fun WikiDutyBrowseScreen(
         snapshotFlow { input }
             .debounce(260)
             .distinctUntilChanged()
-            .collect { query = it }
+            .collect { query = it; saved.dutyInput = it }
     }
+
+    LaunchedEffect(picked) { saved.dutyPicked = picked }
 
     LaunchedEffect(Unit) {
         types = runCatching { DutyDb.types(context) }.getOrDefault(emptyList())
@@ -784,17 +943,27 @@ private fun WikiDutyBrowseScreen(
                         Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(top = 6.dp, bottom = 20.dp),
                     ) {
-                        lazyItems(types, key = { it.first }) { (t, n) ->
+                        lazyItems(types, key = { it.name }) { g ->
                             Row(
-                                Modifier.fillMaxWidth().clickable { picked = t }
+                                Modifier.fillMaxWidth().clickable { picked = g.name }
                                     .padding(horizontal = margin.dp, vertical = 11.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                Box(
+                                    Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
+                                        .background(PhoneWarn.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    ImageGlyph(
+                                        dutyIconRes(g.iconKind), PhoneWarn,
+                                        Modifier.size(17.dp),
+                                    )
+                                }
                                 Text(
-                                    t, color = PhoneText, fontSize = 14.sp,
-                                    modifier = Modifier.weight(1f),
+                                    g.name, color = PhoneText, fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f).padding(start = 10.dp),
                                 )
-                                Text("$n", color = PhoneMuted, fontSize = 12.sp)
+                                Text("${g.count}", color = PhoneMuted, fontSize = 12.sp)
                                 ImageGlyph(
                                     R.drawable.ic_chevron_right, PhoneMuted,
                                     Modifier.size(15.dp),
@@ -834,7 +1003,8 @@ private fun WikiDutyBrowseScreen(
                 lazyItems(list, key = { it.id }) { d ->
                     WikiHitRow(
                         kind = d.levelText.ifBlank { "副本" }, kindTint = PhoneWarn,
-                        iconId = d.imageId, iconHash = "",
+                        iconId = 0, iconHash = "",
+                        localIcon = dutyIconRes(d.iconKind),
                         title = d.name,
                         sub = buildList {
                             // 在某个类型里时不必每行重复类型名
@@ -1556,9 +1726,53 @@ private fun WikiDetailScreen(
                 }
             }
 
+            // ---- 道具说明：描述 + 元数据信息条 ----
+            // 元数据走横向信息条，不是竖着一行一个字段：九个字段摞成竖列要
+            // 三百多 dp，把"如何获得"整个推出首屏，而这些字段（ID/版本/价格）
+            // 恰恰是最少被读的。一行 54dp 装完，超宽横向滚。
+            item {
+                val desc = detail?.description
+                    ?.takeIf { it.isNotBlank() }
+                    // 站点描述里带 <br> 标签
+                    ?.replace("<br>", "\n")?.replace("<br/>", "\n")?.trim()
+                if (desc != null) {
+                    Text(
+                        desc,
+                        color = PhoneText,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    )
+                }
+                WikiSpecStrip(
+                    buildList {
+                        // 品级和装备等级已经在 hero 里（数牌 + "需要等级"），不重复。
+                        add("品质" to item.rarityName.ifBlank { "—" })
+                        if (item.stack > 1) add("堆叠" to formatCount(item.stack))
+                        if (item.dye > 0) add("染色槽" to "${item.dye} 个")
+                        if (item.priceBuy > 0) add("购买" to formatCount(item.priceBuy))
+                        if (item.priceSell > 0) add("出售" to formatCount(item.priceSell))
+                        add("版本" to formatVersion(item.version))
+                        add("ID" to item.id.toString())
+                    },
+                )
+                // 日英名是同一件东西的另外两种写法 —— 一行小字带过，
+                // 不值两个独立字段格，更不值一个分区。
+                val langs = listOf(item.nameJp, item.nameEn).filter { it.isNotBlank() }
+                if (langs.isNotEmpty()) {
+                    Text(
+                        langs.joinToString("  ·  "),
+                        color = PhoneMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    )
+                }
+            }
+
             // ---- 如何获得（按需拉取）----
-            // **放在第一位**：查一件东西的目的通常就是"它怎么拿"。
-            // 原来这节在最底下，而 `物品 ID 51000` 占着第一行。
+            // 玩法信息的第一节：说明卡讲"这是什么"，从这里开始讲"拿它/用它"。
+            // （曾经这节是全页第一，因为那时 `物品 ID 51000` 占着第一行。）
             item { WikiSectionTitle("如何获得") }
             item {
                 val d = detail
@@ -1591,7 +1805,7 @@ private fun WikiDetailScreen(
                             ?.takeIf { it.isNotBlank() } ?: "已停止获取")),
                     )
                     d.sources.isEmpty() -> WikiFactCard(listOf("来源" to "站点未记录"))
-                    else -> WikiSourceCard(d.sources, nodes, onOpen)
+                    else -> WikiSourceCard(state, d.sources, nodes, onOpen)
                 }
             }
 
@@ -1601,20 +1815,7 @@ private fun WikiDetailScreen(
                 item { WikiFactCard(stats) }
             }
 
-            detail?.description?.takeIf { it.isNotBlank() }?.let { desc ->
-                item { WikiSectionTitle("描述") }
-                item {
-                    Text(
-                        // 站点描述里带 <br> 标签
-                        desc.replace("<br>", "\n").replace("<br/>", "\n"),
-                        color = PhoneText,
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(9.dp)).background(PhoneSurface).padding(12.dp),
-                    )
-                }
-            }
+            // 描述已经上移进 Hero 卡，这里不再重复一个"描述"分区。
 
             if (item.jobIds.isNotEmpty()) {
                 item { WikiSectionTitle("可使用职业") }
@@ -1629,42 +1830,6 @@ private fun WikiDetailScreen(
                         }
                     }
                 }
-            }
-
-            item { WikiSectionTitle("基础信息") }
-            item {
-                WikiFactCard(
-                    buildList {
-                        // 品级和装备等级已经在 hero 里（数牌 + "需要等级"），
-                        // 这里不再重复 —— 重复的行是噪声，会把真正只有这里才有的
-                        // 堆叠/价格/版本挤下去。
-                        add("品质" to (item.rarityName.ifBlank { "—" }))
-                        add("染色槽" to when (item.dye) {
-                            0 -> "不可染色"
-                            1 -> "1 个"
-                            else -> "${item.dye} 个"
-                        })
-                        if (item.stack > 1) add("堆叠上限" to formatCount(item.stack))
-                        if (item.priceBuy > 0) add("购买价格" to "${formatCount(item.priceBuy)} 金币")
-                        if (item.priceSell > 0) add("出售价格" to "${formatCount(item.priceSell)} 金币")
-                        add("加入版本" to formatVersion(item.version))
-                        // ID 排最后：它是查数据时才用的，玩家几乎不看。
-                        // 原来它在第一行，和"装备等级"一样重。
-                        add("物品 ID" to item.id.toString())
-                    },
-                )
-            }
-
-            // 多语言名称降级成一个紧凑块 —— 它是同一件东西的另外两种写法，
-            // 撑不起一个和"如何获得"平级的分区。
-            item { WikiSectionTitle("其他语言") }
-            item {
-                WikiFactCard(
-                    buildList {
-                        if (item.nameJp.isNotBlank()) add("日文" to item.nameJp)
-                        if (item.nameEn.isNotBlank()) add("英文" to item.nameEn)
-                    },
-                )
             }
         }
     }
@@ -1708,6 +1873,7 @@ private fun WikiIlvlPlate(itemLevel: Int) {
  */
 @Composable
 private fun WikiSourceCard(
+    state: PhoneState,
     sources: List<WikiSourceEntry>,
     nodes: Map<Int, WikiNode> = emptyMap(),
     onOpen: (WikiDest) -> Unit = {},
@@ -1726,13 +1892,30 @@ private fun WikiSourceCard(
                 entries.forEach { e ->
                     val dest = e.destOrNull()
                     val node = nodes[e.refId]
+                    // Every node hands off to the gather clock app: that screen has the map,
+                    // the aetheryte list and the full yield list, which is what "where do I
+                    // get this" actually needs. Gating this on isTimed meant most taps
+                    // silently fell through to the in-wiki page and looked like a dead link
+                    // (黄铁矿's only listed node, 286, is permanent).
+                    // linkKind, not just a nodes hit: 钓鱼 refIds are fishing-spot numbers
+                    // in a different id space (see WikiRemote.entry), so one that happens to
+                    // collide with a nodes row would hand the clock an unrelated node.
+                    val toClock = e.linkKind == WikiLinkKind.NODE && node != null
                     // 可点的行加下划线 + 用主题色，和纯文字行区分开 ——
                     // 不然用户不知道哪些能点。
-                    val clickable = dest != null
+                    val clickable = dest != null || toClock
                     val rowMod = if (clickable) {
                         Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable { onOpen(dest!!) }
+                            .clickable {
+                                if (toClock) {
+                                    // mapName, not placeText: the latter carries a
+                                    // " (32.5, 31.8)" suffix that matches no search field.
+                                    state.openGatherNode(e.refId, node.mapName)
+                                } else {
+                                    onOpen(dest!!)
+                                }
+                            }
                             .padding(vertical = 3.dp)
                     } else {
                         Modifier.fillMaxWidth().padding(top = 3.dp)
@@ -1859,10 +2042,77 @@ private fun WikiSectionTitle(text: String) {
     )
 }
 
+/**
+ * 元数据信息条：一行等宽单元格，标签在上、值在下，中间竖发丝线。
+ *
+ * 竖着排键值（`WikiFactCard`）适合"来源""装备属性"那种每行都要读的内容。
+ * 品质/堆叠/版本/ID 不是那种——它们是偶尔核一眼的规格，给每个一整行
+ * 就是让最不常读的东西占掉最多竖向空间。横向条把九行压成一行。
+ */
 @Composable
-private fun WikiFactCard(rows: List<Pair<String, String>>) {
-    if (rows.isEmpty()) return
+private fun WikiSpecStrip(cells: List<Pair<String, String>>) {
+    if (cells.isEmpty()) return
+    val line = PhoneLine
+    // 等宽平分整条，不横向滚：格子数是 5~7 个（字段按有无出现），
+    // 横滚版会把最后一格切在屏幕外，还在右边留一大片空白。weight(1f)
+    // 让它跟着屏宽自适应。
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(9.dp))
+            .background(PhoneSurface),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        cells.forEachIndexed { i, (label, value) ->
+            if (i > 0) {
+                // 竖发丝线只在文字高度上，不顶到卡片上下边 —— 顶满会把
+                // 一张卡切成几张。
+                Box(Modifier.width(1.dp).height(26.dp).background(line))
+            }
+            Column(
+                Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    label,
+                    color = PhoneMuted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                )
+                // 长值降一档（七等分格里"1,000,000"这种放不下）
+                val valueFontSize = if (value.length > 7) 11.sp else 13.sp
+                Text(
+                    value,
+                    color = PhoneText,
+                    fontSize = valueFontSize,
+                    fontWeight = FontWeight.Medium,
+                    // 等宽数字：价格/ID 这些数在一条线上要对得齐
+                    style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"),
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WikiFactCard(rows: List<Pair<String, String>>, lead: String? = null) {
+    if (rows.isEmpty() && lead == null) return
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(PhoneSurface)) {
+        // 首格是一段说明文字而不是一对键值 —— 道具描述属于这张卡，
+        // 但它是散文，配不上"标签 + 右对齐值"那套格式。
+        if (lead != null) {
+            Text(
+                lead,
+                color = PhoneText,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            )
+            if (rows.isNotEmpty()) PhoneHairlineRow(12.dp)
+        }
         rows.forEachIndexed { index, (label, value) ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),

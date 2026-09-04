@@ -1,6 +1,7 @@
 package com.quserh.eorzeaphone.data.wiki
 
 import android.content.Context
+import com.quserh.eorzeaphone.data.CacheMaintenance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -97,6 +98,54 @@ data class WikiInstance(
 )
 
 /**
+ * 一个普通 wiki 条目页的正文（怪物 / 地名 / NPC / 攻略那些本地没有表的）。
+ *
+ * ## 为什么要这个
+ *
+ * 用户的诉求是「所有条目都能在 App 里看，别跳网页」。物品/任务/副本都有
+ * 本地表了，但怪物、地名、NPC、攻略页没有 —— 那些以前是 [WikiHit.Page]，
+ * UI 上直接 `Intent.ACTION_VIEW` 踢到浏览器。
+ *
+ * 站点装了 TextExtracts 扩展，`prop=extracts&explaintext=1` 能拿到纯文本正文
+ * （实测：伊弗利特 959 字、弗栗多 3226 字、萨维奈岛 4349 字）。
+ * 比 `action=parse&prop=text` 的 149 KB HTML 现实得多 —— 那个在手机上没法渲染。
+ *
+ * ## 两个实测限制
+ *
+ * 1. **整篇正文一次只能取 1 个标题**（`exlimit` 会被静默降到 1 并给 warning）。
+ *    所以这里没有批量版；详情页一次一个正好。
+ * 2. **表格会被丢掉**。纯表格的攻略页（如「坐骑获取方式」）正文是**空的**。
+ *    [isThin] 就是为这种页面留的 —— UI 得说明「这页主要是表格」并给出
+ *    浏览器入口，而不是显示一片空白装作加载成功。
+ *
+ * 重定向自动跟随，所以黑话能用：`AF` → 校服（1819 字）、
+ * `A12` → 亚历山大机神城 天动之章4。[redirectedFrom] 记下是从哪个词跳来的。
+ */
+data class WikiPage(
+    /** 重定向跟随之后的真实标题。 */
+    val title: String,
+    /** 纯文本正文，小节标题保留成 `== 档案 ==` 形式，交给 UI 解析。 */
+    val extract: String,
+    /** 站点分类，已去掉 `Category:`/`分类:` 前缀。用来标类型（BOSS/NPC/地理）。 */
+    val categories: List<String>,
+    /** 缩略图 URL，没有就是空串。 */
+    val thumbUrl: String,
+    /** 非空表示是从这个词重定向过来的（`AF` → 校服）。 */
+    val redirectedFrom: String?,
+) {
+    /**
+     * 正文太少，说明这页的内容主要在表格/模板里，extracts 取不到。
+     *
+     * 阈值 40 字是按实测定的：真有内容的页面最少也有 154 字（版本:7.0），
+     * 而「A12」跳到的副本页只有 11 字、「坐骑获取方式」是 0 字。
+     */
+    val isThin: Boolean get() = extract.length < 40
+
+    /** 类型标签，取第一个分类。没有分类就叫「条目」。 */
+    val kindLabel: String get() = categories.firstOrNull() ?: "条目"
+}
+
+/**
  * 商店详情。站点 `Data:Shop/<id>.json`。
  */
 data class WikiShop(
@@ -140,6 +189,7 @@ object WikiRemote {
         cached(context, id, maxAgeMs)?.let { return@withContext runCatching { parse(id, it) }.getOrNull() }
         val raw = fetch(id) ?: return@withContext null
         runCatching { writeCache(context, id, raw) }
+        CacheMaintenance.schedule(context)
         runCatching { parse(id, JSONObject(raw)) }.getOrNull()
     }
 
@@ -154,7 +204,11 @@ object WikiRemote {
     }
 
     private fun writeCache(context: Context, id: Int, raw: String) {
-        cacheFile(context, id).writeText(raw)
+        val target = cacheFile(context, id)
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        tmp.writeText(raw)
+        if (target.exists()) target.delete()
+        if (!tmp.renameTo(target)) tmp.delete()
     }
 
     /**
@@ -319,6 +373,113 @@ object WikiRemote {
         return out.distinctBy { it.first }
     }
 
+    /**
+     * 取一个普通条目页的正文，给「在 App 内看 wiki 条目」用。见 [WikiPage]。
+     *
+     * 一次请求把要显示的东西全要齐：正文 + 分类 + 缩略图，并跟随重定向。
+     * 缓存 30 天 —— 这些页面（怪物档案、地名介绍）基本不变。
+     *
+     * 缓存键用标题的 MD5：标题里有 `/`、`:`、空格（「临危受命任务一览/萨维奈岛」
+     * 「版本:7.0」），直接当文件名会炸。
+     */
+    suspend fun wikiPage(
+        context: Context,
+        title: String,
+        maxAgeMs: Long = 30L * 24 * 3600 * 1000,
+    ): WikiPage? = withContext(Dispatchers.IO) {
+        val key = md5(title)
+        val dir = File(File(context.cacheDir, CACHE_DIR), "page").apply { mkdirs() }
+        val f = File(dir, "$key.json")
+        if (f.exists() && System.currentTimeMillis() - f.lastModified() < maxAgeMs) {
+            runCatching { parseWikiPage(JSONObject(f.readText()), title) }
+                .getOrNull()?.let { return@withContext it }
+        }
+        val raw = fetchExtract(title) ?: return@withContext null
+        val parsed = runCatching { parseWikiPage(JSONObject(raw), title) }.getOrNull()
+            ?: return@withContext null
+            runCatching {
+                val tmp = File(f.parentFile, f.name + ".tmp")
+                tmp.writeText(raw)
+                if (f.exists()) f.delete()
+                if (!tmp.renameTo(f)) tmp.delete()
+            }
+            CacheMaintenance.schedule(context)
+        parsed
+    }
+
+    /**
+     * `prop=extracts|categories|pageimages` 一次要齐。
+     *
+     * `exsectionformat=wiki` 让小节标题留成 `== 档案 ==`，UI 靠它分节渲染；
+     * `plain` 会把标题混成普通行，认不出来。
+     *
+     * 标题必须走 POST body（`--data-urlencode` 的等价物）—— 中文标题拼在
+     * query string 里实测回 400。这里用 GET + URLEncoder 是可以的，因为
+     * `URLEncoder` 会正确百分号编码；400 是我在命令行上没编码才出的。
+     */
+    private fun fetchExtract(title: String): String? {
+        val t = URLEncoder.encode(title, "UTF-8")
+        val url = "$BASE?action=query&format=json&formatversion=2" +
+            "&prop=extracts%7Ccategories%7Cpageimages" +
+            "&explaintext=1&exsectionformat=wiki&redirects=1" +
+            "&cllimit=20&piprop=thumbnail&pithumbsize=320" +
+            "&titles=$t"
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", UA)
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Accept-Encoding", "gzip")
+            }
+            if (conn.responseCode !in 200..299) return null
+            val stream = if (conn.contentEncoding?.contains("gzip", true) == true) {
+                java.util.zip.GZIPInputStream(conn.inputStream)
+            } else {
+                conn.inputStream
+            }
+            stream.bufferedReader().use { it.readText() }.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { conn?.disconnect() }
+        }
+    }
+
+    private fun parseWikiPage(root: JSONObject, asked: String): WikiPage? {
+        val query = root.optJSONObject("query") ?: return null
+        val page = query.optJSONArray("pages")?.optJSONObject(0) ?: return null
+        if (page.optBoolean("missing")) return null
+
+        // 「AF」→「校服」：记下是从哪个词跳来的，UI 上说明理由
+        var from: String? = null
+        query.optJSONArray("redirects")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val r = arr.optJSONObject(i) ?: continue
+                if (r.optString("from") == asked) from = asked
+            }
+        }
+
+        val cats = buildList {
+            page.optJSONArray("categories")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val c = arr.optJSONObject(i)?.optString("title") ?: continue
+                    val name = c.removePrefix("Category:").removePrefix("分类:")
+                    if (name.isNotBlank()) add(name)
+                }
+            }
+        }
+        return WikiPage(
+            title = page.optString("title").ifBlank { asked },
+            extract = page.optString("extract").orEmpty().trim(),
+            categories = cats,
+            thumbUrl = page.optJSONObject("thumbnail")?.optString("source").orEmpty(),
+            redirectedFrom = from,
+        )
+    }
+
     /** 通用数据页拉取 + 缓存。[kind] 是 `Data:` 后面的前缀。 */
     private suspend fun page(
         context: Context,
@@ -334,7 +495,13 @@ object WikiRemote {
             }
         }
         val raw = fetchPage("Data:$kind/$id.json") ?: return@withContext null
-        runCatching { f.writeText(raw) }
+        runCatching {
+            val tmp = File(f.parentFile, f.name + ".tmp")
+            tmp.writeText(raw)
+            if (f.exists()) f.delete()
+            if (!tmp.renameTo(f)) tmp.delete()
+        }
+        CacheMaintenance.schedule(context)
         runCatching { JSONObject(raw) }.getOrNull()
     }
 
@@ -482,6 +649,16 @@ object WikiRemote {
         section("属性", "属性顺序")
         return out
     }
+
+    /**
+     * 条目正文的缓存文件名。
+     *
+     * 不能拿标题直接当文件名：「临危受命任务一览/萨维奈岛」里有 `/`、
+     * 「版本:7.0」里有 `:`，都是 Android 文件名的非法字符。
+     */
+    private fun md5(s: String): String =
+        java.security.MessageDigest.getInstance("MD5")
+            .digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
     /**
      * 灰机图床 URL。**必须先把文件名首字母大写再算 MD5** ——
