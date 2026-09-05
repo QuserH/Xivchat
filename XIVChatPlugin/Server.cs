@@ -117,6 +117,7 @@ namespace XIVChatPlugin {
         private bool _wasCrafting;
         private int _craftFoodItemId;
         private uint _craftLastSkillId = 100001;
+        private bool _craftDriverActive;
         private long _craftFoodRetry;
         private long _craftLastPush;
         private string _craftFingerprint = "";
@@ -933,6 +934,7 @@ namespace XIVChatPlugin {
                 this._craftWatchers.Add(start.Item1);
                 if (this._craftPhase == 0 && !this._craftCraftingNow) {
                     this._craftPhase = 1;
+                    this._craftDriverActive = true;
                     this._craftRecipeId = start.Item2;
                     this._craftDurabilityMax = 0;
                     this._craftFingerprint = "";
@@ -970,6 +972,10 @@ namespace XIVChatPlugin {
             var synthesis = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
             var crafting = synthesis != null && synthesis->IsVisible;
             this._craftCraftingNow = crafting;
+            if (crafting) {
+                // 游戏进入制作状态：驱动流程永久退役，本请求不再重发开始回调。
+                this._craftDriverActive = false;
+            }
 
             // Keep the selected food up while any craft runs (Artisan-style):
             // 'well fed' status id is 48; eating is an Item action with 65535.
@@ -1019,7 +1025,7 @@ namespace XIVChatPlugin {
                 this.BroadcastCraftState(false);
             }
 
-            if (this._craftPhase == 0 || crafting) {
+            if (this._craftPhase == 0 || crafting || !this._craftDriverActive) {
                 return;
             }
 
@@ -1059,6 +1065,7 @@ namespace XIVChatPlugin {
 
             if (Environment.TickCount64 > this._craftPhaseDeadline) {
                 this._craftPhase = 0;
+                this._craftDriverActive = false;
             }
         }        /// <summary>Recipe sheet craft type (0-7) of a recipe row, or -1.</summary>
         private sbyte CraftJobOfRecipe(uint recipeId) {
