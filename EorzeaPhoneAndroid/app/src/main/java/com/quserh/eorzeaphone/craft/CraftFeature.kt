@@ -166,6 +166,9 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
 
     fun startRemoteCraft(recipe: CraftRecipe, itemName: String): CraftSession {
         if (craftFoodId > 0) craftBridge.craftFood(craftFoodId)
+        // 丢弃上一次制作残留的最后一帧，否则新会话会立刻把它当成
+        // “已完成”而锁死技能、不再消费新帧。
+        phone.craftRemote = null
         return engine.startRemote(recipe, itemName, craftBridge)
     }
 
