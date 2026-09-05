@@ -78,6 +78,8 @@ class RecipeDb(private val context: Context) {
 
         val tmp = File(context.filesDir, "$DB_NAME.building")
         tmp.delete()
+        onProgress("拉取配方等级表…")
+        val rlTable = fetchRlTable()
         onProgress("解析数据…")
         var itemCount = 0
         var recipeCount = 0
@@ -99,7 +101,7 @@ class RecipeDb(private val context: Context) {
                     zip.getEntry("recipe_ja")?.let { entry ->
                         zip.getInputStream(entry).use { stream ->
                             JsonReader(stream.reader().buffered(1 shl 16)).use { reader ->
-                                recipeCount = parseRecipes(reader, dbb, onProgress)
+                                recipeCount = parseRecipes(reader, dbb, onProgress, rlTable)
                             }
                         }
                     }
@@ -107,6 +109,7 @@ class RecipeDb(private val context: Context) {
                     meta.bindString(1, "source"); meta.bindString(2, "network"); meta.execute()
                     meta.bindString(1, "built_at"); meta.bindString(2, (System.currentTimeMillis() / 1000).toString()); meta.execute()
                     meta.bindString(1, "items"); meta.bindString(2, itemCount.toString()); meta.execute()
+                    meta.bindString(1, "schema_version"); meta.bindString(2, EXPECTED_SCHEMA); meta.execute()
                     meta.bindString(1, "recipes"); meta.bindString(2, recipeCount.toString()); meta.execute()
                     dbb.setTransactionSuccessful()
                 } finally {
@@ -359,9 +362,17 @@ class RecipeDb(private val context: Context) {
         return count
     }
 
-    private fun parseRecipes(reader: JsonReader, database: SQLiteDatabase, onProgress: (String) -> Unit): Int {
+    private fun parseRecipes(
+        reader: JsonReader,
+        database: SQLiteDatabase,
+        onProgress: (String) -> Unit,
+        rlTable: Map<Int, Pair<Int, Int>>,
+    ): Int {
         val recipeStmt = database.compileStatement(
-            "INSERT OR REPLACE INTO recipes VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO recipes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        )
+        val rlStmt = database.compileStatement(
+            "INSERT OR REPLACE INTO rltable VALUES(?,?,?)",
         )
         val matStmt = database.compileStatement(
             "INSERT INTO recipe_mats VALUES(?,?,?,?)",
@@ -411,6 +422,14 @@ class RecipeDb(private val context: Context) {
             recipeStmt.bindLong(7, rlv.toLong())
             recipeStmt.bindLong(8, if (hq) 1 else 0)
             recipeStmt.bindLong(9, if (qs) 1 else 0)
+            rlTable[rlv]?.let { rl ->
+                recipeStmt.bindLong(10, rl.first.toLong())
+                recipeStmt.bindLong(11, rl.second.toLong())
+            }
+            if (rlTable[rlv] == null) {
+                recipeStmt.bindLong(10, 0)
+                recipeStmt.bindLong(11, 0)
+            }
             recipeStmt.execute()
             for (i in mats.indices step 2) {
                 if (mats[i] > 0 && mats.getOrElse(i + 1) { 0 } > 0) {
@@ -430,12 +449,83 @@ class RecipeDb(private val context: Context) {
                     matStmt.execute()
                 }
             }
+            rlTable[rlv]?.let { rl ->
+                rlStmt.bindLong(1, rlv.toLong())
+                rlStmt.bindLong(2, rl.first.toLong())
+                rlStmt.bindLong(3, rl.second.toLong())
+                rlStmt.executeInsert()
+            }
             count++
             if (count % 5000 == 0) onProgress("解析配方 $count…")
         }
         reader.endObject()
         onProgress("配方 $count 条")
         return count
+    }
+
+    /**
+     * RecipeLevelTable (real craft caps) from xivapi v2, paged ~8 requests.
+     * Used by the network rebuild so mocked/remote maxes match the game.
+     */
+    private fun fetchRlTable(): Map<Int, Pair<Int, Int>> {
+        val rows = mutableMapOf<Int, Pair<Int, Int>>()
+        var after = 0
+        repeat(12) {
+            val url = "https://v2.xivapi.com/api/sheet/RecipeLevelTable" +
+                "?fields=Difficulty,Quality&limit=100&after=" + after
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 30_000
+            conn.setRequestProperty("User-Agent", "craftlist-repair")
+            try {
+                if (conn.responseCode != 200) throw java.io.IOException("HTTP ${conn.responseCode}")
+                conn.inputStream.use { input ->
+                    JsonReader(input.reader().buffered(1 shl 16)).use { parsed ->
+                        parsed.beginObject()
+                        while (parsed.hasNext()) {
+                            when (parsed.nextName()) {
+                                "rows" -> {
+                                    parsed.beginArray()
+                                    while (parsed.hasNext()) {
+                                        parsed.beginObject()
+                                        var rowId = 0
+                                        var difficulty = 0
+                                        var quality = 0
+                                        while (parsed.hasNext()) {
+                                            when (parsed.nextName()) {
+                                                "row_id" -> rowId = parsed.nextInt()
+                                                "fields" -> {
+                                                    parsed.beginObject()
+                                                    while (parsed.hasNext()) {
+                                                        when (parsed.nextName()) {
+                                                            "Difficulty" -> difficulty = parsed.nextInt()
+                                                            "Quality" -> quality = parsed.nextInt()
+                                                            else -> parsed.skipValue()
+                                                        }
+                                                    }
+                                                    parsed.endObject()
+                                                }
+                                                else -> parsed.skipValue()
+                                            }
+                                        }
+                                        parsed.endObject()
+                                        rows[rowId] = difficulty to quality
+                                    }
+                                    parsed.endArray()
+                                }
+                                else -> parsed.skipValue()
+                            }
+                        }
+                        parsed.endObject()
+                    }
+                }
+                if (rows.isNotEmpty()) after = rows.keys.max()
+                if (rows.size >= 799) return rows
+            } finally {
+                conn.disconnect()
+            }
+        }
+        return rows
     }
 
     private fun readIntArray(reader: JsonReader): List<Int> {
@@ -466,7 +556,8 @@ class RecipeDb(private val context: Context) {
                 job INTEGER NOT NULL, item_id INTEGER NOT NULL,
                 yield INTEGER NOT NULL DEFAULT 1, craft_lv INTEGER NOT NULL DEFAULT 0,
                 stars INTEGER NOT NULL DEFAULT 0, rlv INTEGER NOT NULL DEFAULT 0,
-                hq INTEGER NOT NULL DEFAULT 0, qs INTEGER NOT NULL DEFAULT 0)
+                hq INTEGER NOT NULL DEFAULT 0, qs INTEGER NOT NULL DEFAULT 0,
+                pmax INTEGER NOT NULL DEFAULT 0, qmax INTEGER NOT NULL DEFAULT 0)
             """.trimIndent(),
             "CREATE INDEX idx_recipes_item ON recipes(item_id)",
             """
@@ -476,6 +567,11 @@ class RecipeDb(private val context: Context) {
             """.trimIndent(),
             "CREATE INDEX idx_mats_recipe ON recipe_mats(recipe_id)",
             "CREATE INDEX idx_mats_item ON recipe_mats(item_id)",
+        """
+            CREATE TABLE rltable(
+                rlv INTEGER PRIMARY KEY, difficulty INTEGER NOT NULL DEFAULT 0,
+                quality INTEGER NOT NULL DEFAULT 0)
+            """.trimIndent(),
             "CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)",
         )
     }
