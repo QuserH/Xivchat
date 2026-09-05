@@ -94,8 +94,22 @@ fun CraftListAppScreen(phone: PhoneState) {
         state.prepareDb()
     }
     // Recompute the craft-side snapshot whenever any live inventory row changes.
+    // Uses the RAW snapshot (before the host drops crystal containers) so the
+    // crafting module can see the crystal pouch.
     val snapshot by remember {
-        derivedStateOf { buildCraftSnapshot(phone.inventory, phone.retainers) }
+        derivedStateOf {
+            val raw = phone.craftRawInventory
+            if (raw == null) InventorySnapshot()
+            else InventorySnapshot(
+                updatedMs = System.currentTimeMillis(),
+                items = raw.items.map {
+                    InventoryItem(it.itemId, it.name, it.quantity, it.container, it.slot, it.hq, it.iconId, it.retainerId)
+                },
+                retainers = raw.retainers.map {
+                    RetainerEntry(it.id, it.name, it.active, it.itemCount, it.quantity, it.gil, it.ventureId, it.ventureCompleteUnix)
+                },
+            )
+        }
     }
     LaunchedEffect(snapshot) { if (snapshot.items.isNotEmpty()) state.inventory = snapshot }
 

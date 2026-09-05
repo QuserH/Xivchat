@@ -623,7 +623,8 @@ internal object XivChatCodec {
         val cpMax = unpacker.unpackInt()
         val conditionId = unpacker.unpackInt()
         val finished = unpacker.unpackBoolean()
-        val canAct = if (unpacker.tryUnpackNil()) false else unpacker.unpackBoolean()
+        // Older plugins stop at `finished`; guard EOF instead of throwing on peek.
+        val canAct = if (!unpacker.hasNext() || unpacker.tryUnpackNil()) false else unpacker.unpackBoolean()
         return GameCraftState(
             recipeId, step, progress, progressMax, quality, qualityMax,
             durability, durabilityMax, cp, cpMax, conditionId, finished, canAct,

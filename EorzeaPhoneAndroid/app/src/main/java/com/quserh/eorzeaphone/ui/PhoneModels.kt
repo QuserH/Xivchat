@@ -24,6 +24,7 @@ import com.quserh.eorzeaphone.data.ChatCategory
 import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameInventoryContainer
 import com.quserh.eorzeaphone.data.GameInventoryItem
+import com.quserh.eorzeaphone.data.GameInventorySnapshot
 import com.quserh.eorzeaphone.data.GameRetainer
 import com.quserh.eorzeaphone.data.GameWallet
 import com.quserh.eorzeaphone.data.GameWalletEntry
@@ -934,6 +935,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     /** Latest remote-manual-craft push (opcode 40), or null while idle. */
     var craftRemote by mutableStateOf<GameCraftState?>(null)
+
+    /** 过滤前的原始库存快照（水晶袋 2001 等被 isPhoneInventoryContainer 排除的容器也在内），供制作清单使用。 */
+    var craftRawInventory by mutableStateOf<GameInventorySnapshot?>(null)
     var wallet by mutableStateOf<GameWallet?>(null)
     var weather by mutableStateOf<GameWeather?>(null)
     val jobs = mutableStateListOf<GameJob>()
@@ -3888,6 +3892,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
             }
             is PhoneEvent.Inventory -> {
                 inventoryLoading = false
+                craftRawInventory = event.snapshot
                 val activeIds = event.snapshot.retainers.filter { it.active }.mapTo(mutableSetOf()) { it.id }
                 val cachedRetainerItems = inventory.filter { it.retainerId != 0L && it.retainerId !in activeIds && isPhoneInventoryContainer(it.container) }
                 inventory.clear()
