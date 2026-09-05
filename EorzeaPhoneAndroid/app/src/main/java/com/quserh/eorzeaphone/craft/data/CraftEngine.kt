@@ -104,6 +104,7 @@ interface CraftRemote {
     fun craftStart(recipeId: Int)
     fun craftSkill(actionId: Long)
     fun craftStop()
+    fun craftFood(itemId: Int)
 }
 
 private fun mapCondition(id: Int): String = when (id) {
@@ -199,10 +200,9 @@ private class MockSession(
     itemName: String,
 ) : CraftSession {
 
-    // Plausible maxes derived from the recipe level; real values come from the
-    // game once the remote session exists.
-    private val progressMax = 60 + recipe.craftLv * 22
-    private val qualityMax = 400 + recipe.craftLv * 130
+    // Real caps from the recipe level table (schema v3).
+    private val progressMax = if (recipe.pmax > 0) recipe.pmax else (60 + recipe.craftLv * 22)
+    private val qualityMax = if (recipe.qmax > 0) recipe.qmax else (400 + recipe.craftLv * 130)
     private val durabilityMax = if (recipe.stars > 0) 70 else 60
 
     private val inner = MutableStateFlow(

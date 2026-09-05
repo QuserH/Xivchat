@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -1234,7 +1235,7 @@ private fun SkillButton(
         Row(verticalAlignment = Alignment.CenterVertically) {
             val bmp = iconBmp
             if (bmp != null) {
-                Image(bmp.asImageBitmap(), null, Modifier.size(26.dp))
+                Image(bmp.asImageBitmap(), null, Modifier.size(26.dp).alpha(if (disabled) 0.3f else 1f))
             } else {
                 Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
                     Text("·", style = CraftType.Row, color = CraftMuted)

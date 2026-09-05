@@ -105,6 +105,7 @@ namespace XIVChatPlugin {
         // requests from the network thread.
         private readonly ConcurrentQueue<Tuple<Guid, int>> _awaitingCraftStart = new();
         private readonly ConcurrentQueue<Tuple<Guid, uint>> _awaitingCraftSkill = new();
+        private readonly ConcurrentQueue<Tuple<Guid, int>> _awaitingCraftFood = new();
         private readonly ConcurrentQueue<Guid> _awaitingCraftStop = new();
         private readonly HashSet<Guid> _craftWatchers = new();
         private int _craftPhase; // 0 idle, 1 opening recipe, 2 waiting for craft, 3 crafting
@@ -114,6 +115,8 @@ namespace XIVChatPlugin {
         private long _craftNextRetry;
         private bool _craftCraftingNow;
         private bool _wasCrafting;
+        private int _craftFoodItemId;
+        private long _craftFoodRetry;
         private long _craftLastPush;
         private string _craftFingerprint = "";
         private readonly ConcurrentQueue<Guid> _awaitingWallet = new();
@@ -952,6 +955,11 @@ namespace XIVChatPlugin {
                 this._craftWatchers.Remove(stop);
             }
 
+            while (this._awaitingCraftFood.TryDequeue(out var food)) {
+                this._craftFoodItemId = food.Item2;
+                this._craftFoodRetry = 0;
+            }
+
             if (this._craftWatchers.Count == 0) {
                 this._craftPhase = 0;
                 return;
@@ -960,6 +968,26 @@ namespace XIVChatPlugin {
             var synthesis = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
             var crafting = synthesis != null && synthesis->IsVisible;
             this._craftCraftingNow = crafting;
+
+            // Keep the selected food up while any craft runs (Artisan-style):
+            // 'well fed' status id is 48; eating is an Item action with 65535.
+            if (this._craftFoodItemId > 0 && this._craftCraftingNow && Environment.TickCount64 >= this._craftFoodRetry) {
+                var hasFood = false;
+                var localPlayer = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
+                if (localPlayer != null) {
+                    foreach (var status in localPlayer.StatusList) {
+                        if (status.StatusId == 48) {
+                            hasFood = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hasFood) {
+                    this._craftFoodRetry = Environment.TickCount64 + 5_000;
+                    ActionManager.Instance()->UseAction(ActionType.Item, (uint) this._craftFoodItemId, extraParam: 65535);
+                }
+            }
 
             // Always-on monitor: push state on every edge and while crafting, no
             // matter whether the remote driver or the player is crafting. This is
@@ -3419,6 +3447,14 @@ namespace XIVChatPlugin {
                 case ClientOperation.CraftStop:
                     this._awaitingCraftStop.Enqueue(id);
                     break;
+                case ClientOperation.CraftFood: {
+                    var food = MessagePackSerializer.Deserialize<int[]>(payload);
+                    if (food is { Length: > 0 }) {
+                        this._awaitingCraftFood.Enqueue(Tuple.Create(id, food[0]));
+                    }
+
+                    break;
+                }
                 case ClientOperation.Message:
                     var clientMessage = ClientMessage.Decode(payload);
                     var sanitised = clientMessage.Content

@@ -41,5 +41,8 @@ namespace XIVChatCommon.Message.Client {
 
         /// <summary>Stop receiving remote-craft state pushes for this client.</summary>
         CraftStop = 32,
+
+        /// <summary>Select the food to keep up while crafting (0 = off).</summary>
+        CraftFood = 33,
     }
 }

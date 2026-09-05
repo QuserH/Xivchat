@@ -186,7 +186,7 @@ class RecipeDb(private val context: Context) {
     fun recipesFor(itemId: Int): List<CraftRecipe> {
         val database = db ?: return emptyList()
         return database.rawQuery(
-            "SELECT id, job, yield, craft_lv, stars, rlv, hq, qs FROM recipes WHERE item_id=? ORDER BY job, craft_lv",
+            "SELECT id, job, yield, craft_lv, stars, rlv, hq, qs, pmax, qmax FROM recipes WHERE item_id=? ORDER BY job, craft_lv",
             arrayOf(itemId.toString()),
         ).use { cur ->
             buildList {
@@ -195,6 +195,7 @@ class RecipeDb(private val context: Context) {
                         id = cur.getInt(0), job = cur.getInt(1), itemId = itemId,
                         yield = cur.getInt(2), craftLv = cur.getInt(3), stars = cur.getInt(4),
                         rlv = cur.getInt(5), hq = cur.getInt(6) != 0, qs = cur.getInt(7) != 0,
+                        pmax = cur.getInt(8), qmax = cur.getInt(9),
                     ))
                 }
             }
@@ -448,7 +449,7 @@ class RecipeDb(private val context: Context) {
     companion object {
         const val DB_NAME = "craft.db"
         const val DEFAULT_URL = "https://5p.nbb.ffxiv.cn/statics/statics.json"
-        const val EXPECTED_SCHEMA = "2"
+        const val EXPECTED_SCHEMA = "3"
         /** One statement per entry — SQLiteDatabase.execSQL compiles a single statement. */
         val SCHEMA_STATEMENTS = listOf(
             """

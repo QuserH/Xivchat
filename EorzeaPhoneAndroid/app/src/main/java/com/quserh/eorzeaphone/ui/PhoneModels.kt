@@ -273,7 +273,7 @@ enum class TeleportStatus { Idle, Teleporting, Done }
 
 internal fun formatCount(value: Long): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(value)
 internal fun formatCount(value: Int): String = formatCount(value.toLong())
-private val excludedPhoneInventoryContainers = setOf(2001L, 11000L, 12001L, 22001L)
+private val excludedPhoneInventoryContainers = setOf(11000L, 12001L, 22001L)
 private fun isPhoneInventoryContainer(type: Long): Boolean = type !in excludedPhoneInventoryContainers
 
 data class OutputChannel(val id: Int, val label: String)
@@ -2612,6 +2612,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun craftStart(recipeId: Int) = connection.craftStart(recipeId)
     fun craftSkill(actionId: Long) = connection.craftSkill(actionId)
     fun craftStop() = connection.craftStop()
+    fun craftFood(itemId: Int) = connection.craftFood(itemId)
 
     fun teleportTo(placeName: String) {
         if (connected && placeName.isNotBlank()) connection.teleport(placeName)

@@ -602,6 +602,7 @@ internal object XivChatCodec {
     fun encodeCraftStart(recipeId: Int): ByteArray = pack { packArrayHeader(1); packInt(recipeId) }
     fun encodeCraftSkill(actionId: Long): ByteArray = pack { packArrayHeader(1); packLong(actionId) }
     fun encodeCraftStop(): ByteArray = pack { packArrayHeader(0) }
+    fun encodeCraftFood(itemId: Int): ByteArray = pack { packArrayHeader(1); packInt(itemId) }
 
     /**
      * Opcode 40: live state of a remotely driven manual craft. ProgressMax/

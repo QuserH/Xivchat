@@ -139,15 +139,31 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     /** 远程模式是否可用：终端已连上游戏插件。 */
     val craftConnected: Boolean get() = phone.isConnected()
 
+    private val foodPrefs = context.getSharedPreferences("craft_food", Context.MODE_PRIVATE)
+
+    /** 选中的食物（0=未选）；持久化，启动远程制作时下发给插件。 */
+    var craftFoodId by mutableStateOf(foodPrefs.getInt("foodId", 0))
+    var craftFoodName by mutableStateOf(foodPrefs.getString("foodName", "") ?: "")
+
+    fun setCraftFood(itemId: Int, name: String) {
+        craftFoodId = itemId
+        craftFoodName = name
+        foodPrefs.edit().putInt("foodId", itemId).putString("foodName", name).apply()
+        if (craftConnected) phone.craftFood(itemId)
+    }
+
     private val craftBridge = object : com.quserh.eorzeaphone.craft.data.CraftRemote {
         override val lastState: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
         override fun craftStart(recipeId: Int) = phone.craftStart(recipeId)
         override fun craftSkill(actionId: Long) = phone.craftSkill(actionId)
         override fun craftStop() = phone.craftStop()
+        override fun craftFood(itemId: Int) = phone.craftFood(itemId)
     }
 
-    fun startRemoteCraft(recipe: CraftRecipe, itemName: String): CraftSession =
-        engine.startRemote(recipe, itemName, craftBridge)
+    fun startRemoteCraft(recipe: CraftRecipe, itemName: String): CraftSession {
+        if (craftFoodId > 0) craftBridge.craftFood(craftFoodId)
+        return engine.startRemote(recipe, itemName, craftBridge)
+    }
 
     var inventory by mutableStateOf(InventorySnapshot())
     var dbReady by mutableStateOf(false)

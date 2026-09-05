@@ -1244,7 +1244,7 @@ private fun InventoryHub(state: PhoneState, open: (String) -> Unit, openRetainer
 private fun inventoryTypesForGroup(group: String): List<Long> = when (group) {
     "bags" -> listOf(0, 1, 2, 3)
     "armoury" -> listOf(3500, 3200, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209, 3300, 3400)
-    "crystals" -> listOf(2001, 12001, 22001)
+    "crystals" -> listOf(2001)
     "saddle" -> listOf(4000, 4001, 4100, 4101)
     "equipped" -> listOf(1000)
     "retainers" -> listOf(10000, 10001, 10002, 10003, 10004, 10005, 10006)

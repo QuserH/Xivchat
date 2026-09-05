@@ -221,6 +221,9 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     /** Stop receiving remote-craft state (op 32); the in-game craft continues. */
     fun craftStop() = sendCommand(XivChatCodec.encodeCraftStop(), 32)
 
+    /** Select the food the plugin keeps up while crafting (op 33, 0 = off). */
+    fun craftFood(itemId: Int) = sendCommand(XivChatCodec.encodeCraftFood(itemId), 33)
+
     fun requestFriends() = sendCommand(XivChatCodec.encodePlayerList(), 6)
     fun requestParty() = sendCommand(XivChatCodec.encodePlayerList(1), 6)
 

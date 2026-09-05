@@ -31,6 +31,10 @@ data class CraftRecipe(
     val rlv: Int,
     val hq: Boolean,
     val qs: Boolean,
+    /** 配方等级表推出的真实进展上限（0=未知）。 */
+    val pmax: Int = 0,
+    /** 真实品质上限。 */
+    val qmax: Int = 0,
 )
 
 /** One material line of a recipe, per single craft. */
