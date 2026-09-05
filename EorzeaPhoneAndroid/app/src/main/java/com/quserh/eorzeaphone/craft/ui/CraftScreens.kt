@@ -923,6 +923,34 @@ fun WorkbenchTab(state: CraftAppState) {
         )
         if (session == null) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                // 游戏内有人在制作（无论谁发起）且未开远程会话：实时观察卡
+                state.remoteCraft?.takeIf { !it.finished && it.step > 0 }?.let { remote ->
+                    SectionLabel("游戏内正在制作（观察中）")
+                    GroupCard {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("第 ${remote.step} 步", style = CraftType.Headline, color = CraftText, modifier = Modifier.weight(1f))
+                                MetaChip(
+                                    when (remote.conditionId) { 0 -> "稳定"; 1 -> "高品质"; 2 -> "最高品质"; 3 -> "低品质"; else -> "特殊" },
+                                    if (remote.conditionId == 1) CraftFill else CraftMuted,
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            CraftMeter("进展", remote.progress, if (remote.progressMax > 0) remote.progressMax else maxOf(remote.progress, 1), CraftOk)
+                            Spacer(Modifier.height(6.dp))
+                            CraftMeter("品质", remote.quality, if (remote.qualityMax > 0) remote.qualityMax else maxOf(remote.quality, 1), CraftFill)
+                            Spacer(Modifier.height(6.dp))
+                            CraftMeter("耐久", remote.durability, if (remote.durabilityMax > 0) remote.durabilityMax else maxOf(remote.durability, 1), CraftDanger)
+                            Spacer(Modifier.height(6.dp))
+                            CraftMeter("CP", remote.cp, if (remote.cpMax > 0) remote.cpMax else maxOf(remote.cp, 1), CraftAccent)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "想远程操控？点下方「开始远程制作」接管观察。",
+                                style = CraftType.Micro, color = CraftMuted,
+                            )
+                        }
+                    }
+                }
                 if (query.isNotBlank()) {
                     SectionLabel("搜索结果（可制作的）")
                     val craftable = results.filter { state.db.canCraft(it.id) }
@@ -1231,8 +1259,7 @@ private fun FoodPickerDialog(state: CraftAppState, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun WorkbenchProgress(session: CraftSession) {
-    val craft = session.state.collectAsState().value ?: return
+private fun WorkbenchProgress(craft: CraftState) {
     SectionLabel("制作进度")
     GroupCard {
         Column(Modifier.padding(16.dp)) {
@@ -1260,6 +1287,12 @@ private fun WorkbenchProgress(session: CraftSession) {
             }
         }
     }
+}
+
+@Composable
+private fun WorkbenchProgress(session: CraftSession) {
+    val craft = session.state.collectAsState().value ?: return
+    WorkbenchProgress(craft)
 }
 
 @Composable

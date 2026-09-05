@@ -139,6 +139,9 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     /** 远程模式是否可用：终端已连上游戏插件。 */
     val craftConnected: Boolean get() = phone.isConnected()
 
+    /** 游戏内正在制作的实时状态（无论谁发起），无则 null。 */
+    val remoteCraft: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
+
     private val foodPrefs = context.getSharedPreferences("craft_food", Context.MODE_PRIVATE)
 
     /** 选中的食物（0=未选）；持久化，启动远程制作时下发给插件。 */

@@ -1007,6 +1007,10 @@ namespace XIVChatPlugin {
                 if (crafting) {
                     this._craftDurabilityMax = 0;
                     this._craftFingerprint = "";
+                    // The craft has started: the driver's job is done. Without
+                    // clearing this, the retry loop would re-fire the synthesize
+                    // callback after every finish (phantom auto-restarts).
+                    this._craftPhase = 0;
                 }
 
                 this.BroadcastCraftState(!crafting);
