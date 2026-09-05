@@ -1036,11 +1036,19 @@ fun WorkbenchTab(state: CraftAppState) {
             // 制作中：进度置顶固定，技能区独立滚动，滑技能时进度始终可见
             // 游戏内制作结束（含手动完成/中断）后自动退出制作模式。
             androidx.compose.runtime.LaunchedEffect(session) {
+                var sawProcess = false
                 session.state.collect { s ->
-                    if (s?.finished == true) {
-                        kotlinx.coroutines.delay(1500)
-                        state.engine.stop()
-                        state.session = null
+                    when {
+                        s == null -> Unit
+                        // 远程模式:制作中途(有步进)才算真的开始过,结束时才退出;
+                        // 否则(旁观玩家手动做、或起始帧就 finished)只记日志。
+                        s.remote && s.step > 0 && !s.finished -> sawProcess = true
+                        s.remote && s.finished && sawProcess -> {
+                            kotlinx.coroutines.delay(1500)
+                            state.engine.stop()
+                            state.session = null
+                        }
+                        else -> Unit
                     }
                 }
             }
@@ -1153,7 +1161,9 @@ private fun WorkbenchControls(state: CraftAppState, session: CraftSession) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         rowSkills.forEach { skill ->
                             SkillButton(
-                                skill, craft, cooldown > 0, Modifier.weight(1f),
+                                skill, craft,
+                                cooling = !craft.remote && cooldown > 0,
+                                modifier = Modifier.weight(1f),
                                 onInfo = { infoSkill = skill },
                             ) { session.useSkill(skill) }
                         }
@@ -1207,7 +1217,12 @@ private fun SkillButton(
             iconBmp = ItemIconLoader.load(context, skill.icon)
         }
     }
-    val disabled = cooling || craft.finished || craft.cp < skill.cp
+    // 远程:亮暗完全跟插件推的 canAct(游戏动画锁/可用性);模拟:本地冷却+CP。
+    val disabled = if (craft.remote) {
+        !craft.canAct || craft.finished
+    } else {
+        cooling || craft.finished || craft.cp < skill.cp
+    }
     Column(
         modifier
             .clip(RoundedCornerShape(8.dp))
@@ -1306,30 +1321,6 @@ private fun CraftMeter(label: String, value: Int, max: Int, color: Color) {
         )
     }
 }
-
-@Composable
-private fun SkillButton(skill: SkillDef, craft: CraftState, cooling: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val disabled = cooling || craft.finished || craft.cp < skill.cp
-    Column(
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(CraftSurface)
-            .border(0.5.dp, if (disabled) CraftLine else CraftAccent.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-            .clickable(enabled = !disabled, onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-    ) {
-        Text(skill.cn, style = CraftType.Callout, color = if (disabled) CraftMuted else CraftText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(
-            buildString {
-                if (skill.cp > 0) append("CP ${skill.cp} ")
-                if (skill.durability > 0) append("耐久 -${skill.durability}")
-                if (skill.cp == 0 && skill.durability == 0) append("辅助")
-            },
-            style = CraftType.Micro, color = CraftMuted,
-        )
-    }
-}
-
 
 @Composable
 private fun SourceChip(label: String, active: Boolean, onClick: () -> Unit) {

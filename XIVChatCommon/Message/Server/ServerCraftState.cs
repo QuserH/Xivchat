@@ -20,6 +20,7 @@ namespace XIVChatCommon.Message.Server {
         [Key(10)] public int CpMax { get; set; }
         [Key(11)] public int ConditionId { get; set; }
         [Key(12)] public bool Finished { get; set; }
+        [Key(13)] public bool CanAct { get; set; }
 
         public ServerCraftState() {
         }

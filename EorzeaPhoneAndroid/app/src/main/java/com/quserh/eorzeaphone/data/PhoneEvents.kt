@@ -192,6 +192,7 @@ data class GameCraftState(
     val cpMax: Int,
     val conditionId: Int,
     val finished: Boolean,
+    val canAct: Boolean = false,
 )
 
 data class GameInventoryContainer(

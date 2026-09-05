@@ -112,6 +112,8 @@ namespace XIVChatPlugin {
         private int _craftDurabilityMax;
         private long _craftPhaseDeadline;
         private long _craftNextRetry;
+        private bool _craftCraftingNow;
+        private bool _wasCrafting;
         private long _craftLastPush;
         private string _craftFingerprint = "";
         private readonly ConcurrentQueue<Guid> _awaitingWallet = new();
@@ -925,19 +927,24 @@ namespace XIVChatPlugin {
                 }
 
                 this._craftWatchers.Add(start.Item1);
-                if (this._craftPhase == 0) {
+                if (this._craftPhase == 0 && !this._craftCraftingNow) {
                     this._craftPhase = 1;
                     this._craftRecipeId = start.Item2;
                     this._craftDurabilityMax = 0;
                     this._craftFingerprint = "";
+                    this._craftNextRetry = 0;
                     this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
                 }
             }
 
             while (this._awaitingCraftSkill.TryDequeue(out var skill)) {
-                if (this._craftPhase is 3 or 4) {
-                    ActionManager.Instance()->UseAction(
-                        skill.Item2 >= 100000 ? ActionType.CraftAction : ActionType.Action, skill.Item2);
+                if (this._craftCraftingNow) {
+                    // Artisan-style precheck: the game refuses actions mid-animation
+                    // anyway; queueing them just burns the next available window.
+                    var actionType = skill.Item2 >= 100000 ? ActionType.CraftAction : ActionType.Action;
+                    if (ActionManager.Instance()->GetActionStatus(actionType, skill.Item2) == 0) {
+                        ActionManager.Instance()->UseAction(actionType, skill.Item2);
+                    }
                 }
             }
 
@@ -952,104 +959,74 @@ namespace XIVChatPlugin {
 
             var synthesis = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
             var crafting = synthesis != null && synthesis->IsVisible;
+            this._craftCraftingNow = crafting;
+
+            // Always-on monitor: push state on every edge and while crafting, no
+            // matter whether the remote driver or the player is crafting. This is
+            // what lets the phone follow manual in-game crafts in real time.
+            if (this._craftWatchers.Count == 0) {
+                this._wasCrafting = false;
+                this._craftPhase = 0;
+                return;
+            }
+
+            var now = Environment.TickCount64;
+            if (crafting != this._wasCrafting) {
+                this._wasCrafting = crafting;
+                this._craftLastPush = now;
+                if (crafting) {
+                    this._craftDurabilityMax = 0;
+                    this._craftFingerprint = "";
+                }
+
+                this.BroadcastCraftState(!crafting);
+            } else if (crafting && now - this._craftLastPush >= 250) {
+                this._craftLastPush = now;
+                this.BroadcastCraftState(false);
+            }
+
+            if (this._craftPhase == 0 || crafting) {
+                return;
+            }
+
+            // Phase 1: bring the player to the requested recipe and start it.
+            if (now < this._craftNextRetry) {
+                return;
+            }
+
+            this._craftNextRetry = now + 700;
             var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
             var currentJob = player == null ? 0u : player.ClassJob.RowId;
+            if (currentJob == 0) {
+                return;
+            }
 
-            switch (this._craftPhase) {
-                case 1: {
-                    // Let a leftover synth window (finish animation / manual craft)
-                    // close before touching the recipe note, otherwise opening the
-                    // note while Synthesis is visible closes it mid-flight.
-                    var leftover = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
-                    if (leftover != null && leftover->IsVisible) {
-                        break;
-                    }
-
-                    // Resolve the recipe's craft job and switch to it first when
-                    // needed; the synthesize callback is a no-op on the wrong job.
-                    var craftType = this.CraftJobOfRecipe((uint) this._craftRecipeId);
-                    var expectedJob = craftType + 8;
-                    if (craftType >= 0 && currentJob != 0 && currentJob != (uint) expectedJob) {
-                        if (this.TryEquipJobGearset((uint) expectedJob)) {
-                            this._craftPhase = 2;
-                            this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
-                            break;
-                        }
-                    }
-
-                    AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
-                    this._craftPhase = 3;
-                    this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
-                    this._craftNextRetry = 0;
-                    break;
-                }
-                case 2: {
-                    // Waiting for the job switch to land.
-                    if (currentJob == 0) {
-                        break;
-                    }
-
-                    var craftType = this.CraftJobOfRecipe((uint) this._craftRecipeId);
-                    if (craftType < 0 || currentJob == (uint) (craftType + 8)) {
-                        AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
-                        this._craftPhase = 3;
-                        this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
-                        this._craftNextRetry = 0;
-                    } else if (Environment.TickCount64 > this._craftPhaseDeadline) {
-                        this._craftPhase = 0;
-                    }
-
-                    break;
-                }
-                case 3: {
-                    // Recipe note should be open with our recipe selected; keep
-                    // firing the single-value synthesize callback until the craft
-                    // window appears (the first attempt races the list populating).
-                    if (crafting) {
-                        this._craftPhase = 4;
-                        this._craftPhaseDeadline = 0;
-                        break;
-                    }
-
-                    if (Environment.TickCount64 >= this._craftNextRetry) {
-                        this._craftNextRetry = Environment.TickCount64 + 700;
-                        var note = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("RecipeNote");
-                        if (note != null && note->IsVisible) {
-                            var atkValues = stackalloc AtkValue[1];
-                            atkValues[0].Type = AtkValueType.Int;
-                            atkValues[0].Int = 8; // synthesize the selected recipe
-                            note->FireCallback(1, atkValues);
-                        } else {
-                            // Note got closed (manual action, another addon, ...):
-                            // reopen it with our recipe instead of timing out.
-                            AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
-                        }
-                    }
-
-                    if (Environment.TickCount64 > this._craftPhaseDeadline) {
-                        this._craftPhase = 0;
-                    }
-
-                    break;
-                }
-                case 4: {
-                    if (!crafting) {
-                        this.BroadcastCraftState(true);
-                        this._craftPhase = 0;
-                        break;
-                    }
-
-                    if (Environment.TickCount64 - this._craftLastPush >= 250) {
-                        this._craftLastPush = Environment.TickCount64;
-                        this.BroadcastCraftState(false);
-                    }
-
-                    break;
+            var craftType = this.CraftJobOfRecipe((uint) this._craftRecipeId);
+            var expectedJob = craftType + 8;
+            if (craftType >= 0 && currentJob != (uint) expectedJob) {
+                // Wrong job: the synthesize callback is a no-op until switched.
+                if (this.TryEquipJobGearset((uint) expectedJob) && Environment.TickCount64 < this._craftPhaseDeadline) {
+                    return;
                 }
             }
-        }
 
-        /// <summary>Recipe sheet craft type (0-7) of a recipe row, or -1.</summary>
+            var note = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("RecipeNote");
+            if (note != null && note->IsVisible) {
+                var atkValues = stackalloc AtkValue[1];
+                atkValues[0].Type = AtkValueType.Int;
+                atkValues[0].Int = 8; // synthesize the selected recipe
+                note->FireCallback(1, atkValues);
+            } else {
+                // Note closed (never opened, dismissed, ...): (re)open it. This is
+                // also what makes the character stand up, so only do it when the
+                // note is really gone.
+                AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
+            }
+
+            if (Environment.TickCount64 > this._craftPhaseDeadline) {
+                this._craftPhase = 0;
+            }
+        }        /// <summary>Recipe sheet craft type (0-7) of a recipe row, or -1.</summary>
         private sbyte CraftJobOfRecipe(uint recipeId) {
             try {
                 var row = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Recipe>()?.GetRowOrDefault(recipeId);
@@ -1106,6 +1083,12 @@ namespace XIVChatPlugin {
                 cpMax = (int) player.MaxCp;
             }
 
+            // Artisan's animation-lock read: float* offset 2 of ActionManager.
+            var canAct = false;
+            var actionManager = ActionManager.Instance();
+            if (!finished && actionManager != null) {
+                canAct = ((float*) actionManager)[2] <= 0.05f;
+            }
             var state = new ServerCraftState {
                 UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 RecipeId = this._craftRecipeId,
@@ -1120,6 +1103,7 @@ namespace XIVChatPlugin {
                 CpMax = cpMax,
                 ConditionId = condition,
                 Finished = finished,
+                CanAct = canAct,
             };
 
             var fingerprint = $"{state.Step}|{state.Progress}|{state.Quality}|{state.Durability}|{state.Cp}|{state.ConditionId}|{state.Finished}";

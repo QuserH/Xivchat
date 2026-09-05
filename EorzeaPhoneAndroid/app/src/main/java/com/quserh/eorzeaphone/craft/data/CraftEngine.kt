@@ -73,6 +73,9 @@ data class CraftState(
     val condition: String,
     val finished: Boolean,
     val hqChance: Int,
+    val remote: Boolean = false,
+    /** 远程模式:插件推的角色当前可否行动(动画锁/可用性)。模拟模式忽略。 */
+    val canAct: Boolean = false,
 )
 
 /**
@@ -140,8 +143,8 @@ class RemoteCraftSession(
                 durability = s.durability, durabilityMax = s.durabilityMax,
                 cp = s.cp, cpMax = s.cpMax,
                 condition = mapCondition(s.conditionId),
-                finished = s.finished, hqChance = 0,
-            )
+                finished = s.finished, hqChance = 0, remote = true,
+            ).copy(canAct = s.canAct && !s.finished)
             if (s.finished) {
                 log.value = (log.value + "游戏内制作已结束").takeLast(40)
             }
@@ -150,11 +153,12 @@ class RemoteCraftSession(
 
     override fun useSkill(skill: SkillDef) {
         val current = state.value ?: return
-        // No local CP gate: the plugin-reported cp can lag or read as 0, and the
-        // game itself rejects unaffordable actions anyway.
-        if (current.finished || cooldown.value > 0) return
-        cooldown.value = 2
+        // Skill availability is driven by the plugin's animation-lock push (canAct):
+        // buttons go bright exactly when the character can act again.
+        if (current.finished || !current.canAct) return
         bridge.craftSkill(skill.id)
+        // Optimistically dim until the next plugin frame reports canAct again.
+        state.value = current.copy(canAct = false)
     }
 
     override fun stop() {
