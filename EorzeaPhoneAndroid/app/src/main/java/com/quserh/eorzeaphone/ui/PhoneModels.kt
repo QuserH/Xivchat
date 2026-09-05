@@ -936,6 +936,9 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     /** Latest remote-manual-craft push (opcode 40), or null while idle. */
     var craftRemote by mutableStateOf<GameCraftState?>(null)
 
+    /** 制作清单监听的聊天流：用于从系统消息瞬时判定制作完成/失败。 */
+    val craftChatEvents = kotlinx.coroutines.flow.MutableSharedFlow<GameChatMessage>(extraBufferCapacity = 64)
+
     /** 过滤前的原始库存快照（水晶袋 2001 等被 isPhoneInventoryContainer 排除的容器也在内），供制作清单使用。 */
     var craftRawInventory by mutableStateOf<GameInventorySnapshot?>(null)
     var wallet by mutableStateOf<GameWallet?>(null)
@@ -3789,6 +3792,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 }
             }
             is PhoneEvent.Chat -> {
+                craftChatEvents.tryEmit(event.message)
                 // 数据归属校验：插件每条消息带角色标识（名字@服务器），与连接角色不符则丢弃防串号
                 if (connectedCharacterKey.isNotBlank()) {
                     val tag = event.message.characterTag

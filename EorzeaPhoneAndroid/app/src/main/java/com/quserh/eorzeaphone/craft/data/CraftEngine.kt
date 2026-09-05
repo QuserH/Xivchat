@@ -1,5 +1,6 @@
 package com.quserh.eorzeaphone.craft.data
 
+import com.quserh.eorzeaphone.data.GameChatMessage
 import com.quserh.eorzeaphone.data.GameCraftState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -101,6 +102,7 @@ interface CraftSession {
  */
 interface CraftRemote {
     val lastState: GameCraftState?
+    val chat: kotlinx.coroutines.flow.MutableSharedFlow<GameChatMessage>
     fun craftStart(recipeId: Int)
     fun craftSkill(actionId: Long)
     fun craftStop()
@@ -148,6 +150,23 @@ class RemoteCraftSession(
             ).copy(canAct = s.canAct && !s.finished)
             if (s.finished) {
                 log.value = (log.value + "游戏内制作已结束").takeLast(40)
+            }
+        }
+    }
+
+    init {
+        // 聊天判定：系统消息“你制作出了/制作失败 + 道具名”比界面轮询更即时可靠。
+        scope.launch {
+            bridge.chat.collect { msg ->
+                val s = state.value ?: return@collect
+                if (s.finished) return@collect
+                val text = msg.text
+                val done = text.contains("制作出了") || text.contains("制作失败") || text.contains("制作中断")
+                if (done && text.contains(itemName)) {
+                    val success = text.contains("制作出了")
+                    state.value = s.copy(finished = true, remote = true)
+                    log.value = (log.value + if (success) "检测到完成消息：$text" else "检测到失败消息：$text").takeLast(40)
+                }
             }
         }
     }

@@ -156,6 +156,7 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     }
 
     private val craftBridge = object : com.quserh.eorzeaphone.craft.data.CraftRemote {
+        override val chat = phone.craftChatEvents
         override val lastState: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
         override fun craftStart(recipeId: Int) = phone.craftStart(recipeId)
         override fun craftSkill(actionId: Long) = phone.craftSkill(actionId)
