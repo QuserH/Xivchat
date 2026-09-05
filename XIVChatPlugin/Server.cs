@@ -116,6 +116,7 @@ namespace XIVChatPlugin {
         private bool _craftCraftingNow;
         private bool _wasCrafting;
         private int _craftFoodItemId;
+        private uint _craftLastSkillId = 100001;
         private long _craftFoodRetry;
         private long _craftLastPush;
         private string _craftFingerprint = "";
@@ -947,6 +948,7 @@ namespace XIVChatPlugin {
                     var actionType = skill.Item2 >= 100000 ? ActionType.CraftAction : ActionType.Action;
                     if (ActionManager.Instance()->GetActionStatus(actionType, skill.Item2) == 0) {
                         ActionManager.Instance()->UseAction(actionType, skill.Item2);
+                        this._craftLastSkillId = skill.Item2;
                     }
                 }
             }
@@ -1111,11 +1113,13 @@ namespace XIVChatPlugin {
                 cpMax = (int) player.MaxCp;
             }
 
-            // Artisan's animation-lock read: float* offset 2 of ActionManager.
+            // Offset-free availability probe: GetActionStatus returns non-zero
+            // during the animation lock / GCD of the last requested skill.
             var canAct = false;
             var actionManager = ActionManager.Instance();
             if (!finished && actionManager != null) {
-                canAct = ((float*) actionManager)[2] <= 0.05f;
+                var probeType = this._craftLastSkillId >= 100000 ? ActionType.CraftAction : ActionType.Action;
+                canAct = actionManager->GetActionStatus(probeType, this._craftLastSkillId) == 0;
             }
             var state = new ServerCraftState {
                 UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
