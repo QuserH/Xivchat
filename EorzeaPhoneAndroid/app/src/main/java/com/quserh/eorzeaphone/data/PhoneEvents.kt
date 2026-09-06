@@ -179,6 +179,28 @@ data class GameInventoryItem(
     val retainerId: Long = 0,
 )
 
+data class GameCraftSkill(
+    val id: Long,
+    val name: String,
+    val icon: Int,
+    val description: String,
+    val cp: Int,
+    val kind: Int = 3,
+)
+
+data class GameCraftConsumable(
+    val id: Int,
+    val name: String,
+    val quantity: Int,
+)
+
+data class GameCraftSkillPacket(
+    val updatedUnix: Long,
+    val skills: List<GameCraftSkill>,
+    val foods: List<GameCraftConsumable>,
+    val pots: List<GameCraftConsumable>,
+)
+
 data class GameCraftState(
     val recipeId: Int,
     val step: Int,
@@ -193,6 +215,8 @@ data class GameCraftState(
     val conditionId: Int,
     val finished: Boolean,
     val canAct: Boolean = false,
+    val hqChance: Int = -1,
+    val craftInstanceId: Long = 0,
 )
 
 data class GameInventoryContainer(
@@ -559,6 +583,11 @@ sealed interface PhoneEvent {
 
     /** Live remote-manual-craft state pushed by the plugin (opcode 40). */
     data class CraftState(val state: GameCraftState) : PhoneEvent
+    data class CraftSkills(
+        val skills: List<GameCraftSkill>,
+        val foods: List<GameCraftConsumable> = emptyList(),
+        val pots: List<GameCraftConsumable> = emptyList(),
+    ) : PhoneEvent
     data class Wallet(val wallet: GameWallet) : PhoneEvent
     data class Profile(val profile: PlayerProfile) : PhoneEvent
     data class Channel(val channel: Int, val name: String) : PhoneEvent

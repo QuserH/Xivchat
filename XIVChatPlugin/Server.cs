@@ -59,6 +59,8 @@ namespace XIVChatPlugin {
 
         private readonly Plugin _plugin;
         private readonly MarketDataCache _marketCache;
+        private readonly SubmarineSnapshotCache _submarineCache;
+        private ServerSubmarine? _lastSubmarineSnapshot;
 
         private readonly Stopwatch _sendWatch = new();
         private readonly Stopwatch _inventoryWatch = new();
@@ -103,10 +105,17 @@ namespace XIVChatPlugin {
         // Remote manual crafting (ops 30-32, push 40). All game access happens on
         // the framework thread inside ProcessRemoteCraft(); the queues only carry
         // requests from the network thread.
-        private readonly ConcurrentQueue<Tuple<Guid, int>> _awaitingCraftStart = new();
+        private readonly ConcurrentQueue<(Guid Client, int RecipeId, int? FoodId, int? PotionId)> _awaitingCraftStart = new();
         private readonly ConcurrentQueue<Tuple<Guid, uint>> _awaitingCraftSkill = new();
-        private readonly ConcurrentQueue<Tuple<Guid, int>> _awaitingCraftFood = new();
-        private readonly ConcurrentQueue<Guid> _awaitingCraftStop = new();
+        private readonly ConcurrentQueue<(Guid Client, int FoodId, int PotionId)> _awaitingCraftFood = new();
+        private readonly ConcurrentQueue<(Guid Client, CraftCancelRequest Request)> _awaitingCraftStop = new();
+        private CraftCancelRequest? _craftCancellation;
+        private Guid _craftCancelClient;
+        private long _craftCancelDeadline;
+        private bool _craftQuitClicked;
+        private ushort _craftSynthesisId;
+        private long _craftInstanceId;
+        private readonly ConcurrentQueue<Guid> _awaitingCraftSkillList = new();
         private readonly HashSet<Guid> _craftWatchers = new();
         private int _craftPhase; // 0 idle, 1 opening recipe, 2 waiting for craft, 3 crafting
         private int _craftRecipeId;
@@ -116,11 +125,15 @@ namespace XIVChatPlugin {
         private bool _craftCraftingNow;
         private bool _wasCrafting;
         private int _craftFoodItemId;
-        private uint _craftLastSkillId = 100001;
+        private int _craftPotionItemId;
+        private readonly Dictionary<(uint Action, uint Job), uint> _craftActionIds = new();
         private bool _craftDriverActive;
         private long _craftFoodRetry;
+        private Guid _craftRequestClient;
+        private ServerCraftSkill[]? _craftSkillRows;
         private long _craftLastPush;
         private string _craftFingerprint = "";
+        private ServerCraftState? _craftLastState;
         private readonly ConcurrentQueue<Guid> _awaitingWallet = new();
         private readonly ConcurrentQueue<Guid> _awaitingWeather = new();
         private readonly ConcurrentQueue<Guid> _awaitingJobs = new();
@@ -129,6 +142,7 @@ namespace XIVChatPlugin {
         private readonly ConcurrentQueue<Guid> _awaitingCollections = new();
         private readonly ConcurrentQueue<Guid> _awaitingMaps = new();
         private readonly ConcurrentQueue<Guid> _awaitingFishing = new();
+        private readonly ConcurrentQueue<Guid> _awaitingSubmarine = new();
 
         private readonly ConcurrentQueue<Guid> _awaitingParty = new();
 
@@ -286,6 +300,7 @@ namespace XIVChatPlugin {
             var cacheDir = Path.Combine(Path.GetDirectoryName(Plugin.Interface.ConfigFile.FullName) ?? "", "XIVChat");
             this._marketCache = new MarketDataCache(Plugin.DataManager, cacheDir);
             this._marketCache.Initialize();
+            this._submarineCache = new SubmarineSnapshotCache(this._plugin.Config.SubmarineSnapshots, this._plugin.Config.Save);
 
             this._lastHousingLocation = this._plugin.Functions.HousingLocation;
 
@@ -600,6 +615,7 @@ namespace XIVChatPlugin {
                 this.BroadcastAvailability(gameAvailable);
                 if (!gameAvailable) {
                     this._sendPlayerData = false;
+                    this._lastSubmarineSnapshot = null;
                     this.BroadcastMessage(EmptyPlayerData.Instance);
                 } else {
                     // 传送/过图黑屏时角色短暂不可见会触发离线广播；重新可见时强制重发角色资料，
@@ -756,6 +772,12 @@ namespace XIVChatPlugin {
                 if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
                 var fishing = this.BuildFishingSnapshot();
                 if (fishing != null) client.Queue.Writer.TryWrite(fishing);
+            }
+
+            while (this._awaitingSubmarine.TryDequeue(out var id)) {
+                if (!this.Clients.TryGetValue(id, out var client) || client.Handshake == null) continue;
+                var submarine = this.GetSubmarineSnapshot();
+                if (submarine != null) client.Queue.Writer.TryWrite(submarine);
             }
 
             while (this._awaitingMarketCategories.TryDequeue(out var id)) {
@@ -926,92 +948,119 @@ namespace XIVChatPlugin {
         /// flow (AgentRecipeNote.OpenRecipeByRecipeId + RecipeNote callback 8).
         /// </summary>
         private unsafe void ProcessRemoteCraft() {
+            this._craftWatchers.RemoveWhere(id => !this.Clients.TryGetValue(id, out var client) || client.Handshake == null);
+            var stage = AtkStage.Instance();
+            if (stage == null || stage->RaptureAtkUnitManager == null) return;
+            var synthesis = stage->RaptureAtkUnitManager->GetAddonByName("Synthesis");
+            var crafting = synthesis != null && synthesis->IsVisible;
+            this._craftCraftingNow = crafting;
+            if (crafting && !this._wasCrafting) this._craftInstanceId = DateTime.UtcNow.Ticks;
+            var stoppedClients = new HashSet<Guid>();
+            while (this._awaitingCraftStop.TryDequeue(out var stop)) {
+                if (!this.Clients.TryGetValue(stop.Client, out var stopClient) || stopClient.Handshake == null) continue;
+                stoppedClients.Add(stop.Client);
+                if (this._craftRequestClient == stop.Client && !crafting &&
+                    (stop.Request.ReleaseOnly || stop.Request.RecipeId == this._craftRecipeId)) {
+                    this._craftPhase = 0;
+                    this._craftDriverActive = false;
+                    this.BroadcastCraftState(true);
+                }
+                if (stop.Request.Matches(CurrentCraftRecipeId(), this._craftInstanceId, crafting) && this._craftCancellation == null) {
+                    this._craftPhase = 0;
+                    this._craftDriverActive = false;
+                    this._craftCancellation = stop.Request;
+                    this._craftCancelClient = stop.Client;
+                    this._craftCancelDeadline = Environment.TickCount64 + 6_000;
+                    this._craftQuitClicked = false;
+                    this._craftSynthesisId = 0;
+                }
+            }
             while (this._awaitingCraftStart.TryDequeue(out var start)) {
+                if (stoppedClients.Contains(start.Client)) {
+                    if (!crafting) {
+                        this._craftRecipeId = start.RecipeId;
+                        this._craftLastState = null;
+                        this.BroadcastCraftState(true);
+                    }
+                    continue;
+                }
                 if (!XIVChatPlugin.Plugin.ClientState.IsLoggedIn || XIVChatPlugin.Plugin.ObjectTable.LocalPlayer == null) {
                     continue;
                 }
 
-                this._craftWatchers.Add(start.Item1);
+                this._craftWatchers.Add(start.Client);
                 if (this._craftPhase == 0 && !this._craftCraftingNow) {
+                    if (this.CraftJobOfRecipe((uint) start.RecipeId) < 0) continue;
                     this._craftPhase = 1;
                     this._craftDriverActive = true;
-                    this._craftRecipeId = start.Item2;
+                    this._craftRequestClient = start.Client;
+                    this._craftRecipeId = start.RecipeId;
+                    this._craftFoodItemId = start.FoodId ?? this._craftFoodItemId;
+                    this._craftPotionItemId = start.PotionId ?? this._craftPotionItemId;
+                    this._craftFoodRetry = 0;
                     this._craftDurabilityMax = 0;
+                    this._craftLastState = null;
                     this._craftFingerprint = "";
                     this._craftNextRetry = 0;
-                    this._craftPhaseDeadline = Environment.TickCount64 + 15_000;
+                    this._craftPhaseDeadline = Environment.TickCount64 + 30_000;
                 }
             }
 
             while (this._awaitingCraftSkill.TryDequeue(out var skill)) {
-                if (this._craftCraftingNow) {
+                if (this._craftCraftingNow && this._craftCancellation == null) {
                     // Artisan-style precheck: the game refuses actions mid-animation
                     // anyway; queueing them just burns the next available window.
-                    var actionType = skill.Item2 >= 100000 ? ActionType.CraftAction : ActionType.Action;
-                    if (ActionManager.Instance()->GetActionStatus(actionType, skill.Item2) == 0) {
-                        ActionManager.Instance()->UseAction(actionType, skill.Item2);
-                        this._craftLastSkillId = skill.Item2;
+                    var skillJob = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer?.ClassJob.RowId ?? 0;
+                    var actionId = this.ResolveCraftAction(skill.Item2, skillJob);
+                    var actionType = actionId >= 100000 ? ActionType.CraftAction : ActionType.Action;
+                    var manager = ActionManager.Instance();
+                    if (actionId != 0 && manager != null && manager->GetActionStatus(actionType, actionId) == 0) {
+                        manager->UseAction(actionType, actionId);
                     }
                 }
             }
 
-            while (this._awaitingCraftStop.TryDequeue(out var stop)) {
-                this._craftWatchers.Remove(stop);
+            while (this._awaitingCraftFood.TryDequeue(out var food)) {
+                this._craftFoodItemId = food.FoodId;
+                this._craftPotionItemId = food.PotionId;
+                this._craftFoodRetry = 0;
             }
 
-            while (this._awaitingCraftFood.TryDequeue(out var food)) {
-                this._craftFoodItemId = food.Item2;
-                this._craftFoodRetry = 0;
+            while (this._awaitingCraftSkillList.TryDequeue(out var listId)) {
+                if (this.Clients.TryGetValue(listId, out var listClient) && listClient.Handshake != null) {
+                    this._craftWatchers.Add(listId);
+                    this._craftFingerprint = "";
+                    var sheet = this.BuildCraftSkillList();
+                    if (sheet != null) {
+                        listClient.Queue.Writer.TryWrite(sheet);
+                    }
+                }
             }
 
             if (this._craftWatchers.Count == 0) {
                 this._craftPhase = 0;
+                this._craftDriverActive = false;
+                this._wasCrafting = false;
+                this._craftCancellation = null;
                 return;
             }
 
-            var synthesis = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
-            var crafting = synthesis != null && synthesis->IsVisible;
-            this._craftCraftingNow = crafting;
             if (crafting) {
                 // 游戏进入制作状态：驱动流程永久退役，本请求不再重发开始回调。
                 this._craftDriverActive = false;
             }
 
-            // Keep the selected food up while any craft runs (Artisan-style):
-            // 'well fed' status id is 48; eating is an Item action with 65535.
-            if (this._craftFoodItemId > 0 && this._craftCraftingNow && Environment.TickCount64 >= this._craftFoodRetry) {
-                var hasFood = false;
-                var localPlayer = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
-                if (localPlayer != null) {
-                    foreach (var status in localPlayer.StatusList) {
-                        if (status.StatusId == 48) {
-                            hasFood = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!hasFood) {
-                    this._craftFoodRetry = Environment.TickCount64 + 5_000;
-                    ActionManager.Instance()->UseAction(ActionType.Item, (uint) this._craftFoodItemId, extraParam: 65535);
-                }
-            }
-
             // Always-on monitor: push state on every edge and while crafting, no
             // matter whether the remote driver or the player is crafting. This is
             // what lets the phone follow manual in-game crafts in real time.
-            if (this._craftWatchers.Count == 0) {
-                this._wasCrafting = false;
-                this._craftPhase = 0;
-                return;
-            }
-
             var now = Environment.TickCount64;
+            this.ProcessCraftCancellation(now, synthesis);
             if (crafting != this._wasCrafting) {
                 this._wasCrafting = crafting;
                 this._craftLastPush = now;
                 if (crafting) {
                     this._craftDurabilityMax = 0;
+                    this._craftLastState = null;
                     this._craftFingerprint = "";
                     // The craft has started: the driver's job is done. Without
                     // clearing this, the retry loop would re-fire the synthesize
@@ -1026,6 +1075,12 @@ namespace XIVChatPlugin {
             }
 
             if (this._craftPhase == 0 || crafting || !this._craftDriverActive) {
+                return;
+            }
+            if (now >= this._craftPhaseDeadline || !this.Clients.ContainsKey(this._craftRequestClient)) {
+                this._craftPhase = 0;
+                this._craftDriverActive = false;
+                this.BroadcastCraftState(true);
                 return;
             }
 
@@ -1045,13 +1100,16 @@ namespace XIVChatPlugin {
             var expectedJob = craftType + 8;
             if (craftType >= 0 && currentJob != (uint) expectedJob) {
                 // Wrong job: the synthesize callback is a no-op until switched.
-                if (this.TryEquipJobGearset((uint) expectedJob) && Environment.TickCount64 < this._craftPhaseDeadline) {
-                    return;
-                }
+                this.TryEquipJobGearset((uint) expectedJob);
+                return;
             }
 
+            // Finish both buffs before synthesis; item use is blocked during a craft.
+            if (!this.PrepareCraftConsumable(this._craftFoodItemId, 46, now)
+                || !this.PrepareCraftConsumable(this._craftPotionItemId, 44, now)) return;
+
             var note = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("RecipeNote");
-            if (note != null && note->IsVisible) {
+            if (note != null && note->IsVisible && SelectedCraftRecipeId() == this._craftRecipeId) {
                 var atkValues = stackalloc AtkValue[1];
                 atkValues[0].Type = AtkValueType.Int;
                 atkValues[0].Int = 8; // synthesize the selected recipe
@@ -1063,11 +1121,60 @@ namespace XIVChatPlugin {
                 AgentRecipeNote.Instance()->OpenRecipeByRecipeId((uint) this._craftRecipeId);
             }
 
-            if (Environment.TickCount64 > this._craftPhaseDeadline) {
-                this._craftPhase = 0;
-                this._craftDriverActive = false;
+        }
+
+        private static unsafe int SelectedCraftRecipeId() {
+            var note = RecipeNote.Instance();
+            if (note == null || note->RecipeList == null) return 0;
+            var list = note->RecipeList;
+            if (list->Recipes == null || list->SelectedIndex >= list->RecipeCount) return 0;
+            return list->SelectedRecipe->RecipeId;
+        }
+
+        private static Item? CraftConsumableItem(int itemId, uint category) {
+            if (itemId <= 0 || itemId >= 2_000_000) return null;
+            var row = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>().GetRowOrDefault((uint) itemId % 1_000_000);
+            if (row == null || row.Value.ItemUICategory.RowId != category || !row.Value.ItemAction.IsValid) return null;
+            var action = row.Value.ItemAction.Value;
+            var data = itemId >= 1_000_000 ? action.DataHQ : action.Data;
+            if (data.Count < 2 || data[0] != (category == 46 ? 48 : 49)) return null;
+            var food = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ItemFood>().GetRowOrDefault(data[1]);
+            return food != null && food.Value.Params.Any(p => p.BaseParam.RowId is 11 or 70 or 71) ? row : null;
+        }
+
+        private unsafe bool PrepareCraftConsumable(int itemId, uint category, long now) {
+            if (itemId <= 0) return true;
+            var row = CraftConsumableItem(itemId, category);
+            if (row == null) return true;
+            var action = row.Value.ItemAction.Value;
+            var hq = itemId >= 1_000_000;
+            var data = hq ? action.DataHQ : action.Data;
+            var player = XIVChatPlugin.Plugin.ObjectTable.LocalPlayer;
+            if (player == null) return false;
+            if (player.StatusList.Any(s => s.StatusId == data[0] && s.RemainingTime > 10f
+                && (s.Param == data[1] + (hq ? 10_000 : 0)
+                    || (!hq && s.Param == action.DataHQ[1] + 10_000)))) return true;
+            var owned = false;
+            foreach (var type in new[] { GameInventoryType.Inventory1, GameInventoryType.Inventory2, GameInventoryType.Inventory3, GameInventoryType.Inventory4 }) {
+                foreach (var item in XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(type)) {
+                    if (!item.IsEmpty && item.BaseItemId == row.Value.RowId && item.IsHq == hq && item.Quantity > 0) {
+                        owned = true;
+                        break;
+                    }
+                }
+                if (owned) break;
             }
-        }        /// <summary>Recipe sheet craft type (0-7) of a recipe row, or -1.</summary>
+            if (!owned) return true;
+            if (now < this._craftFoodRetry) return false;
+            var manager = ActionManager.Instance();
+            if (manager != null && manager->GetActionStatus(ActionType.Item, (uint) itemId) == 0
+                && manager->UseAction(ActionType.Item, (uint) itemId, extraParam: 65535)) {
+                this._craftFoodRetry = now + 2_000;
+            }
+            return false;
+        }
+
+        /// <summary>Recipe sheet craft type (0-7) of a recipe row, or -1.</summary>
         private sbyte CraftJobOfRecipe(uint recipeId) {
             try {
                 var row = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Recipe>()?.GetRowOrDefault(recipeId);
@@ -1101,16 +1208,96 @@ namespace XIVChatPlugin {
             return false;
         }
 
+        private static unsafe int CurrentCraftRecipeId() {
+            var note = RecipeNote.Instance();
+            return note != null && note->ActiveCraftRecipeId > 0 ? note->ActiveCraftRecipeId : SelectedCraftRecipeId();
+        }
+
+        private static unsafe bool ClickCraftButton(AtkUnitBase* addon, AtkComponentButton* button) {
+            if (addon == null || button == null || button->OwnerNode == null || !button->IsEnabled ||
+                !button->OwnerNode->AtkResNode.IsVisible()) return false;
+            var evt = button->OwnerNode->AtkResNode.AtkEventManager.Event;
+            for (var i = 0; evt != null && i < 32; i++, evt = evt->NextEvent) {
+                if (evt->State.EventType != AtkEventType.ButtonClick) continue;
+                addon->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt);
+                return true;
+            }
+            return false;
+        }
+
+        private unsafe void ProcessCraftCancellation(long now, AtkUnitBase* synthesis) {
+            var request = this._craftCancellation;
+            if (request == null) return;
+            if (now >= this._craftCancelDeadline ||
+                !this.Clients.TryGetValue(this._craftCancelClient, out var client) || client.Handshake == null) {
+                this._craftCancellation = null;
+                return;
+            }
+            var dialog = (AddonSelectYesno*)AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("SelectYesno");
+            if (!this._craftQuitClicked) {
+                if (!request.Matches(CurrentCraftRecipeId(), this._craftInstanceId, synthesis != null && synthesis->IsVisible)) {
+                    this._craftCancellation = null;
+                    return;
+                }
+                // Never interact with a pre-existing confirmation belonging to another operation.
+                if (dialog != null && dialog->IsVisible) return;
+                if (synthesis == null || !synthesis->IsVisible) return;
+                this._craftSynthesisId = synthesis->Id;
+                this._craftQuitClicked = ClickCraftButton(synthesis, ((AddonSynthesis*)synthesis)->QuitButton);
+                return;
+            }
+            if (dialog == null || !dialog->IsVisible ||
+                !CraftCancelRequest.OwnsDialog(this._craftSynthesisId, dialog->ParentId, dialog->HostId, dialog->BlockedParentId)) return;
+            // The phone already obtained explicit confirmation for this exact craft.
+            // Only confirm its own game dialog, and never force-enable a disabled button.
+            if (ClickCraftButton((AtkUnitBase*)dialog, dialog->YesButton)) this._craftCancellation = null;
+        }
+
         private unsafe void BroadcastCraftState(bool finished) {
             int progress = 0, quality = 0, durability = 0, step = 0, condition = 0;
+            int progressMax = 0, qualityMax = 0, hqChance = -1;
+            var recipeNote = RecipeNote.Instance();
+            if (!finished && recipeNote != null) {
+                var liveRecipe = recipeNote->ActiveCraftRecipeId;
+                if (liveRecipe > 0) this._craftRecipeId = liveRecipe;
+                else this._craftRecipeId = SelectedCraftRecipeId();
+            }
+            if (recipeNote != null && recipeNote->RecipeList != null
+                && SelectedCraftRecipeId() == this._craftRecipeId && this._craftRecipeId > 0) {
+                var recipe = recipeNote->RecipeList->SelectedRecipe;
+                progressMax = recipe->Difficulty;
+                qualityMax = (int) recipe->Quality;
+                this._craftDurabilityMax = recipe->Durability;
+            }
+            var recipeRow = Plugin.DataManager.GetExcelSheet<Recipe>().GetRowOrDefault((uint)this._craftRecipeId);
+            if (recipeRow is { } recipeData) {
+                var level = recipeData.RecipeLevelTable.Value;
+                progressMax = (int)((long)level.Difficulty * recipeData.DifficultyFactor / 100);
+                qualityMax = (int)((long)level.Quality * recipeData.QualityFactor / 100);
+                this._craftDurabilityMax = level.Durability * recipeData.DurabilityFactor / 100;
+                if (!recipeData.CanHq) hqChance = 0;
+            }
             var addon = AtkStage.Instance()->RaptureAtkUnitManager->GetAddonByName("Synthesis");
-            if (addon != null && addon->AtkValuesCount > 15) {
+            if (addon != null && addon->IsVisible && addon->AtkValuesCount > 15) {
                 var v = addon->AtkValues;
                 progress = (int) v[5].UInt;
+                if (v[6].UInt > 0) progressMax = (int)v[6].UInt;
                 durability = (int) v[7].UInt;
+                if (v[8].UInt > 0) this._craftDurabilityMax = (int)v[8].UInt;
                 quality = (int) v[9].UInt;
+                if (recipeRow?.CanHq == true && v[10].UInt <= 100) hqChance = (int)v[10].UInt;
                 condition = (int) v[12].UInt;
                 step = (int) v[15].UInt;
+                if (addon->AtkValuesCount > 17 && v[17].UInt > 0) qualityMax = (int)v[17].UInt;
+            } else if (finished && this._craftLastState is { } last && last.RecipeId == this._craftRecipeId) {
+                progress = last.Progress;
+                quality = last.Quality;
+                durability = last.Durability;
+                step = last.Step;
+                condition = last.ConditionId;
+                progressMax = last.ProgressMax;
+                qualityMax = last.QualityMax;
+                hqChance = last.HqChance;
             }
 
             if (this._craftDurabilityMax == 0 && durability > 0) {
@@ -1124,22 +1311,22 @@ namespace XIVChatPlugin {
                 cpMax = (int) player.MaxCp;
             }
 
-            // Offset-free availability probe: GetActionStatus returns non-zero
-            // during the animation lock / GCD of the last requested skill.
+            // Basic synthesis has no CP/condition/first-step requirement. Probing the
+            // previous action can permanently lock the UI after Muscle Memory, etc.
             var canAct = false;
             var actionManager = ActionManager.Instance();
-            if (!finished && actionManager != null) {
-                var probeType = this._craftLastSkillId >= 100000 ? ActionType.CraftAction : ActionType.Action;
-                canAct = actionManager->GetActionStatus(probeType, this._craftLastSkillId) == 0;
+            if (!finished && this._craftCancellation == null && actionManager != null && player != null) {
+                var probeId = this.ResolveCraftAction(100001, player.ClassJob.RowId);
+                canAct = probeId != 0 && actionManager->GetActionStatus(ActionType.CraftAction, probeId) == 0;
             }
             var state = new ServerCraftState {
                 UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 RecipeId = this._craftRecipeId,
                 Step = step,
                 Progress = progress,
-                ProgressMax = 0,
+                ProgressMax = progressMax,
                 Quality = quality,
-                QualityMax = 0,
+                QualityMax = qualityMax,
                 Durability = durability,
                 DurabilityMax = this._craftDurabilityMax,
                 Cp = cp,
@@ -1147,19 +1334,157 @@ namespace XIVChatPlugin {
                 ConditionId = condition,
                 Finished = finished,
                 CanAct = canAct,
+                HqChance = hqChance,
+                CraftInstanceId = this._craftInstanceId,
             };
 
-            var fingerprint = $"{state.Step}|{state.Progress}|{state.Quality}|{state.Durability}|{state.Cp}|{state.ConditionId}|{state.Finished}";
+            var fingerprint = $"{state.RecipeId}|{state.CraftInstanceId}|{state.Step}|{state.Progress}|{state.ProgressMax}|{state.Quality}|{state.QualityMax}|{state.HqChance}|{state.Durability}|{state.Cp}|{state.ConditionId}|{state.Finished}|{state.CanAct}";
             if (!finished && fingerprint == this._craftFingerprint) {
                 return;
             }
 
             this._craftFingerprint = fingerprint;
+            this._craftLastState = state;
             foreach (var watcher in this._craftWatchers) {
                 if (this.Clients.TryGetValue(watcher, out var client) && client.Handshake != null) {
                     client.Queue.Writer.TryWrite(state);
                 }
             }
+        }
+
+        private uint ResolveCraftAction(uint actionId, uint job) {
+            if (job is < 8 or > 15) return 0;
+            if (this._craftActionIds.TryGetValue((actionId, job), out var cached)) return cached;
+            uint resolved = 0;
+            if (actionId >= 100000) {
+                var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<CraftAction>();
+                var source = sheet.GetRowOrDefault(actionId);
+                if (source != null) {
+                    var name = source.Value.Name.ExtractText();
+                    if (!string.IsNullOrWhiteSpace(name)) {
+                        resolved = sheet.FirstOrDefault(row => row.ClassJobCategory.RowId == job + 1 && row.Name.ExtractText() == name).RowId;
+                    }
+                }
+            } else {
+                var sheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Action>();
+                var source = sheet.GetRowOrDefault(actionId);
+                if (source != null && source.Value.ClassJob.RowId is >= 8 and <= 15) {
+                    var name = source.Value.Name.ExtractText();
+                    resolved = sheet.FirstOrDefault(row => row.ClassJob.RowId == job && row.Name.ExtractText() == name).RowId;
+                }
+            }
+            this._craftActionIds[(actionId, job)] = resolved;
+            return resolved;
+        }
+
+        /// <summary>
+        /// Dump the game's crafting skills (CN names/icons/descriptions from the
+        /// client sheets) and the helpful foods/pots currently in inventory.
+        /// </summary>
+        private ServerCraftSkillList? BuildCraftSkillList() {
+            try {
+                if (this._craftSkillRows == null) {
+                var skills = new Dictionary<uint, ServerCraftSkill>();
+                foreach (var row in XIVChatPlugin.Plugin.DataManager.GetExcelSheet<CraftAction>()) {
+                    if (row.RowId == 0 || row.Icon == 0 || row.ClassJobLevel == 0) {
+                        continue;
+                    }
+
+                    var name = row.Name.ExtractText();
+                    if (string.IsNullOrWhiteSpace(name)) {
+                        continue;
+                    }
+
+                    skills[row.RowId] = new ServerCraftSkill {
+                        Id = row.RowId,
+                        Name = name,
+                        Icon = row.Icon,
+                        Description = row.Description.ExtractText(),
+                        Cp = (int) row.Cost,
+                        Kind = CraftKindOfName(name),
+                    };
+                }
+
+                var actionSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Action>();
+                var actionNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var baseId in new uint[] { 260, 4574, 4631, 4639, 19004, 19012, 19297 }) {
+                    var name = actionSheet.GetRowOrDefault(baseId)?.Name.ExtractText();
+                    if (!string.IsNullOrWhiteSpace(name)) actionNames.Add(name);
+                }
+                foreach (var row in actionSheet) {
+                    if (row.ClassJob.RowId is < 8 or > 15) {
+                        continue;
+                    }
+
+                    var name = row.Name.ExtractText();
+                    if (!actionNames.Contains(name)) {
+                        continue;
+                    }
+
+                    skills[row.RowId] = new ServerCraftSkill {
+                        Id = row.RowId,
+                        Name = name,
+                        Icon = row.Icon,
+                        Cp = (int) row.PrimaryCostValue,
+                        Description = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<ActionTransient>()?.GetRowOrDefault(row.RowId)?.Description.ExtractText() ?? "",
+                        Kind = 3,
+                    };
+                }
+
+                this._craftSkillRows = skills.Values.ToArray();
+                }
+
+                var foods = new Dictionary<uint, ServerCraftConsumable>();
+                var pots = new Dictionary<uint, ServerCraftConsumable>();
+                var itemSheet = XIVChatPlugin.Plugin.DataManager.GetExcelSheet<Item>();
+                foreach (var type in new[] { GameInventoryType.Inventory1, GameInventoryType.Inventory2, GameInventoryType.Inventory3, GameInventoryType.Inventory4 }) {
+                    foreach (var item in XIVChatPlugin.Plugin.GameInventory.GetInventoryItems(type)) {
+                        if (item.IsEmpty || item.ItemId == 0 || item.Quantity <= 0) {
+                            continue;
+                        }
+
+                        var row = itemSheet.GetRowOrDefault(item.BaseItemId);
+                        if (row == null) {
+                            continue;
+                        }
+
+                        var category = row.Value.ItemUICategory.RowId;
+                        if (category is not 46 and not 44) {
+                            continue;
+                        }
+
+                        var useId = item.BaseItemId + (item.IsHq ? 1_000_000u : 0);
+                        if (CraftConsumableItem((int) useId, category) == null) continue;
+
+                        var target = category == 46 ? foods : pots;
+                        if (target.TryGetValue(useId, out var existing)) {
+                            existing.Quantity += item.Quantity;
+                        } else {
+                            target[useId] = new ServerCraftConsumable {
+                                Id = useId,
+                                Name = row.Value.Name.ExtractText(),
+                                Quantity = item.Quantity,
+                            };
+                        }
+                    }
+                }
+
+                return new ServerCraftSkillList {
+                    UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    Skills = this._craftSkillRows,
+                    Foods = foods.Values.ToArray(),
+                    Pots = pots.Values.ToArray(),
+                };
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not build craft skill list: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static byte CraftKindOfName(string name) {
+            if (name.Contains("制作")) return 0;
+            if (name.Contains("加工")) return 1;
+            return 3;
         }
 
         /// <summary>
@@ -2702,11 +3027,22 @@ namespace XIVChatPlugin {
         }
 
         private void UpdateSubmarine() {
-            if (this._submarineWatch.Elapsed < TimeSpan.FromSeconds(3) || this._clients.IsEmpty) return;
+            if (this._submarineWatch.Elapsed < TimeSpan.FromSeconds(3)) return;
             this._submarineWatch.Restart();
-            var snapshot = this.BuildSubmarineSnapshot();
-            if (snapshot == null) return;
+            var snapshot = this.GetSubmarineSnapshot();
+            if (snapshot == null || this._clients.IsEmpty || ReferenceEquals(snapshot, this._lastSubmarineSnapshot)) return;
+            this._lastSubmarineSnapshot = snapshot;
             this.BroadcastMessage(snapshot, ClientPreference.PhoneSubmarineSupport);
+        }
+
+        private ServerSubmarine? GetSubmarineSnapshot() {
+            if (this._logoutObserved || !XIVChatPlugin.Plugin.ClientState.IsLoggedIn) return null;
+            try {
+                return this._submarineCache.Update(this.CurrentCharacterTag(), this.BuildSubmarineSnapshot());
+            } catch (Exception ex) {
+                Plugin.Log.Warning($"Could not cache submarine: {ex.Message}");
+                return null;
+            }
         }
 
         private unsafe ServerSubmarine? BuildSubmarineSnapshot() {
@@ -2715,22 +3051,27 @@ namespace XIVChatPlugin {
                 if (manager == null) return null;
                 var territory = manager->WorkshopTerritory;
                 if (territory == null) return null;
-                var sub = territory->Submersible;
+                ref var sub = ref territory->Submersible;
                 var vessels = new List<ServerSubmarineVessel>();
-                for (var i = 0; i < Math.Min(4, sub.DataPointers.Length); i++) {
-                    var vessel = sub.DataPointers[i].Value;
-                    if (vessel == null) continue;
-                    var name = vessel->Name.ToString().Trim();
+                for (var i = 0; i < sub.Data.Length; i++) {
+                    ref var vessel = ref sub.Data[i];
+                    var name = SubmarineSnapshotCache.ReadName(vessel.Name);
+                    // The fixed slots may load before the management UI's pointers.
+                    if (name.Length == 0 && i < sub.DataPointers.Length && sub.DataPointers[i].Value != null) {
+                        vessel = ref *sub.DataPointers[i].Value;
+                        name = SubmarineSnapshotCache.ReadName(vessel.Name);
+                    }
                     if (name.Length == 0) continue;
-                    var returnTime = (long)(vessel->GetReturnTime().ToUniversalTime() - DateTime.UnixEpoch).TotalSeconds;
                     vessels.Add(new ServerSubmarineVessel {
                         Name = name,
-                        ReturnUnix = returnTime,
-                        RankId = vessel->RankId,
-                        CurrentExp = (long)vessel->CurrentExp,
-                        NextLevelExp = (long)vessel->NextLevelExp,
+                        ReturnUnix = vessel.ReturnTime,
+                        RankId = vessel.RankId,
+                        CurrentExp = vessel.CurrentExp,
+                        NextLevelExp = vessel.NextLevelExp,
                     });
                 }
+                // An unloaded workshop is not an empty fleet.
+                if (vessels.Count == 0) return null;
                 return new ServerSubmarine {
                     UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                     Vessels = vessels.ToArray(),
@@ -3446,7 +3787,7 @@ namespace XIVChatPlugin {
                 case ClientOperation.CraftStart: {
                     var craftStart = MessagePackSerializer.Deserialize<int[]>(payload);
                     if (craftStart is { Length: > 0 }) {
-                        this._awaitingCraftStart.Enqueue(Tuple.Create(id, craftStart[0]));
+                        this._awaitingCraftStart.Enqueue((id, craftStart[0], craftStart.Length > 1 ? craftStart[1] : null, craftStart.Length > 2 ? craftStart[2] : null));
                     }
 
                     break;
@@ -3459,17 +3800,22 @@ namespace XIVChatPlugin {
 
                     break;
                 }
-                case ClientOperation.CraftStop:
-                    this._awaitingCraftStop.Enqueue(id);
+                case ClientOperation.CraftStop: {
+                    var request = CraftCancelRequest.Decode(MessagePackSerializer.Deserialize<long[]>(payload));
+                    if (request != null) this._awaitingCraftStop.Enqueue((id, request));
                     break;
+                }
                 case ClientOperation.CraftFood: {
                     var food = MessagePackSerializer.Deserialize<int[]>(payload);
                     if (food is { Length: > 0 }) {
-                        this._awaitingCraftFood.Enqueue(Tuple.Create(id, food[0]));
+                        this._awaitingCraftFood.Enqueue((id, food[0], food.Length > 1 ? food[1] : 0));
                     }
 
                     break;
                 }
+                case ClientOperation.CraftSkillList:
+                    this._awaitingCraftSkillList.Enqueue(id);
+                    break;
                 case ClientOperation.Message:
                     var clientMessage = ClientMessage.Decode(payload);
                     var sanitised = clientMessage.Content
@@ -3584,6 +3930,10 @@ namespace XIVChatPlugin {
 
                     if (client.GetPreference(ClientPreference.PhoneFishingSupport, false)) {
                         this._awaitingFishing.Enqueue(id);
+                    }
+
+                    if (client.GetPreference(ClientPreference.PhoneSubmarineSupport, false)) {
+                        this._awaitingSubmarine.Enqueue(id);
                     }
 
                     break;

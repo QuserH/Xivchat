@@ -21,6 +21,7 @@ import java.util.Locale
 import com.quserh.eorzeaphone.data.GameChatMessage
 import com.quserh.eorzeaphone.data.GameChatChunk
 import com.quserh.eorzeaphone.data.ChatCategory
+import com.quserh.eorzeaphone.data.isChatChannelNotificationEnabled
 import com.quserh.eorzeaphone.data.GameDailyEntry
 import com.quserh.eorzeaphone.data.GameInventoryContainer
 import com.quserh.eorzeaphone.data.GameInventoryItem
@@ -44,6 +45,7 @@ import com.quserh.eorzeaphone.data.GameMaps
 import com.quserh.eorzeaphone.data.GameFishingLog
 import com.quserh.eorzeaphone.data.GameSubmarine
 import com.quserh.eorzeaphone.data.GameSubmarineVessel
+import com.quserh.eorzeaphone.data.mergeSubmarineSnapshot
 import com.quserh.eorzeaphone.data.GameMarket
 import com.quserh.eorzeaphone.data.GameMarketListing
 import com.quserh.eorzeaphone.data.GameMarketMonitorEvent
@@ -935,6 +937,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
 
     /** Latest remote-manual-craft push (opcode 40), or null while idle. */
     var craftRemote by mutableStateOf<GameCraftState?>(null)
+    var craftSkills by mutableStateOf<List<com.quserh.eorzeaphone.data.GameCraftSkill>>(emptyList())
+        private set
+    var craftFoods by mutableStateOf<List<com.quserh.eorzeaphone.data.GameCraftConsumable>>(emptyList())
+        private set
+    var craftPots by mutableStateOf<List<com.quserh.eorzeaphone.data.GameCraftConsumable>>(emptyList())
+        private set
 
     /** 制作清单监听的聊天流：用于从系统消息瞬时判定制作完成/失败。 */
     val craftChatEvents = kotlinx.coroutines.flow.MutableSharedFlow<GameChatMessage>(extraBufferCapacity = 64)
@@ -2263,6 +2271,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun loadSubmarine() {
+        submarine = null
         runCatching {
             val s = charPrefs().getString("submarineCache", "")
             if (s.isNullOrBlank()) return@runCatching
@@ -2274,7 +2283,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
                     add(GameSubmarineVessel(e.optString("name"), e.optLong("returnUnix"), e.optInt("rankId"), e.optLong("currentExp"), e.optLong("nextLevelExp")))
                 }
             }
-            submarine = GameSubmarine(o.optLong("updatedUnix"), vessels)
+            submarine = mergeSubmarineSnapshot(null, GameSubmarine(o.optLong("updatedUnix"), vessels))
         }
     }
 
@@ -2612,10 +2621,12 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
     fun sendChat(text: String) = connection.sendChat(text)
 
     // Remote manual crafting passthroughs (see craft/CraftFeature.kt).
-    fun craftStart(recipeId: Int) = connection.craftStart(recipeId)
+    fun craftStart(recipeId: Int, foodId: Int = 0, potionId: Int = 0) = connection.craftStart(recipeId, foodId, potionId)
     fun craftSkill(actionId: Long) = connection.craftSkill(actionId)
+    fun requestCraftSkills() = connection.requestCraftSkills()
     fun craftStop() = connection.craftStop()
-    fun craftFood(itemId: Int) = connection.craftFood(itemId)
+    fun craftCancel(recipeId: Int, craftInstanceId: Long) = connection.craftCancel(recipeId, craftInstanceId)
+    fun craftFood(itemId: Int, potionId: Int = 0) = connection.craftFood(itemId, potionId)
 
     fun teleportTo(placeName: String) {
         if (connected && placeName.isNotBlank()) connection.teleport(placeName)
@@ -3001,6 +3012,10 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
         conv.notify = !conv.notify
         if (conv.notify) mutedConversations.remove(conv.key) else mutedConversations.add(conv.key)
         charPrefs().edit().putStringSet("mutedChatConvs", mutedConversations).apply()
+        if (conv.notify) {
+            if (!chatNotifications) updateChatNotifications(true)
+            requestNotificationPermission()
+        }
     }
 
     fun clearConversation(conv: ChatConversation) {
@@ -3709,6 +3724,11 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 requestMarketCategories()
             }
             is PhoneEvent.Disconnected -> {
+                craftRemote = null
+                craftRawInventory = null
+                craftSkills = emptyList()
+                craftFoods = emptyList()
+                craftPots = emptyList()
                 connected = false
                 gameOnline = false
                 gameAvailability = false
@@ -3728,6 +3748,10 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 gameAvailability = event.available
                 val eventEpoch = ++availabilityEpoch
                 if (!event.available) {
+                    craftRemote = null
+                    craftRawInventory = null
+                    craftFoods = emptyList()
+                    craftPots = emptyList()
                     gameOnline = false
                     connectedCharacterConfirmed = false
                     awaitingCharacterProfile = false
@@ -3868,25 +3892,23 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                             conversations.add(target.coerceAtMost(conversations.size), conv)
                         }
                         val isSelf = event.message.isSelfMessage(profile?.name)
-                        val isOpen = openConversationKey == conv.key
+                        val isOpen = appInForeground && openConversationKey == conv.key
                         if (!isSelf && !isOpen) {
                             conv.unread = (conv.unread + 1).coerceAtMost(99)
                         } else {
                             conv.unread = 0
                         }
-                        val matchedTab = chatFilters.firstOrNull { it.matches(event.message) }
-                        val mentioned = profile?.name?.substringBefore(' ')?.takeIf { it.isNotBlank() }?.let { event.message.text.contains(it, ignoreCase = true) } == true
                         val isTell = event.message.category == ChatCategory.Tell
                         val isRecent = System.currentTimeMillis() - event.message.timestamp < 30_000L
-                        val isLocalPublic = event.message.category == ChatCategory.Public
-                        val localChannelAllowed = when (event.message.channel) {
-                            10, 81 -> localNotifySay
-                            11, 82 -> localNotifyYell
-                            30, 83 -> localNotifyShout
-                            else -> false
-                        }
+                        val channelAllowed = isChatChannelNotificationEnabled(
+                            channel = event.message.channel,
+                            tellNotifications = tellNotifications,
+                            localNotifySay = localNotifySay,
+                            localNotifyYell = localNotifyYell,
+                            localNotifyShout = localNotifyShout,
+                        )
                         val allow = !isSelf && chatNotifications && conv.notify && !appInForeground && isRecent &&
-                            (if (isTell) tellNotifications else if (isLocalPublic) localChannelAllowed else true)
+                            channelAllowed
                         if (allow) {
                             val title = conv.title.ifBlank { if (isTell) event.message.sender else event.message.category.label }
                             notifier.chat(event.message, tellNotifications && isTell, title)
@@ -3963,8 +3985,11 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 saveFishingLog()
             }
             is PhoneEvent.Submarine -> {
-                submarine = event.submarine
-                saveSubmarine()
+                val next = mergeSubmarineSnapshot(submarine, event.submarine)
+                if (next != submarine) {
+                    submarine = next
+                    saveSubmarine()
+                }
             }
             // Not persisted: live board data is only meaningful while connected, and
             // a stale cached copy would look current.
@@ -4022,11 +4047,21 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
             // sealed dispatch exhaustive when a compatible plugin sends opcode 25.
             is PhoneEvent.Recipe -> Unit
             is PhoneEvent.CraftState -> craftRemote = event.state
+            is PhoneEvent.CraftSkills -> {
+                craftSkills = event.skills
+                craftFoods = event.foods
+                craftPots = event.pots
+            }
             is PhoneEvent.Profile -> {
                 // Set the online core state first so a data-load failure can never
                 // brick the session (which used to leave the app "connecting" forever).
                 val newCharacterKey = characterKey(event.profile)
                 if (connectedCharacterKey.isNotBlank() && connectedCharacterKey != newCharacterKey) {
+                    craftRemote = null
+                    craftRawInventory = null
+                    craftSkills = emptyList()
+                    craftFoods = emptyList()
+                    craftPots = emptyList()
                     // 角色切换：清空上一角色的物品/雇员缓存，防止串号
                     inventory.clear()
                     inventoryContainers.clear()

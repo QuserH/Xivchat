@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,6 +114,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.GameInventoryItem
@@ -161,13 +169,6 @@ fun ScreenFrame(background: Color = PhoneBackground, content: @Composable Column
         Column(Modifier.fillMaxSize().imePadding()) {
             content()
         }
-        // soft fade-in right under the status bar so the top of the content
-        // blends into the system bar instead of cutting off abruptly.
-        Box(
-            Modifier.fillMaxWidth().height(36.dp).background(
-                Brush.verticalGradient(listOf(background.copy(alpha = 0.9f), Color.Transparent))
-            )
-        )
     }
 }
 @Composable
@@ -233,7 +234,7 @@ fun SettingsScreen(state: PhoneState) {
             ).filter { it.isNotBlank() }.joinToString(" · ")
         }
         state.connected -> "正在读取角色资料"
-        else -> "连接游戏后显示角色资料"
+        else -> ""
     }
     val avatarKey = state.currentCharacterKey
     val avatarPath = state.characterAvatar(avatarKey)
@@ -287,7 +288,7 @@ fun SettingsScreen(state: PhoneState) {
                     Box {
                         Box(
                             modifier = Modifier.size(56.dp).clip(CircleShape).background(BrandFill)
-                                .combinedClickable(onClick = {}, onLongClick = { avatarMenu = true }),
+                                .combinedClickable(onClick = { avatarMenu = true }, onLongClick = { avatarMenu = true }),
                             contentAlignment = Alignment.Center,
                         ) {
                             val current = avatarBmp
@@ -314,7 +315,9 @@ fun SettingsScreen(state: PhoneState) {
                             color = PhoneText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        Text(profileSubtitle, color = PhoneMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                        if (profileSubtitle.isNotBlank()) {
+                            Text(profileSubtitle, color = PhoneMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                        }
                     }
                     // 只有真的能切角色时才给入口。原来箭头一直在，只是变灰，
                     // 点了没反应。
@@ -347,11 +350,9 @@ fun SettingsScreen(state: PhoneState) {
                 // expands inline for editing instead of floating bare fields.
                 var showServerEdit by remember { mutableStateOf(false) }
                 val connected = state.connected
-                val connHint = buildString {
-                    val online = state.onlineCharacterName
-                    if (connected && online.isNotBlank()) append("已连接 · ").append(online).append(" 在线")
-                    else if (state.statusMessage.isNotBlank()) append(state.statusMessage)
-                    else append("未连接")
+                val connHint = when {
+                    connected -> state.onlineCharacterName.takeIf { it.isNotBlank() && it != profileName }
+                    else -> state.statusMessage.takeIf { it.isNotBlank() && it != "未连接" }
                 }
                 SettingsGroup {
                     SettingsRow(
@@ -371,10 +372,12 @@ fun SettingsScreen(state: PhoneState) {
                     SettingsRow(
                         "游戏电脑地址",
                         R.drawable.ic2_home,
-                        hint = "与游戏同一内网的 IP 和端口",
                         onClick = { showServerEdit = !showServerEdit },
                     ) {
-                        Text("${state.host}:${state.port}", color = PhoneMuted, fontSize = 13.sp)
+                        Text(
+                            "${state.host}:${state.port}", color = PhoneMuted, fontSize = 13.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp),
+                        )
                         ImageGlyph(
                             if (showServerEdit) R.drawable.ic2_chevron_down else R.drawable.ic2_chevron_right,
                             PhoneMuted,
@@ -406,7 +409,7 @@ fun SettingsScreen(state: PhoneState) {
                 // 原来这一组还重复放了"锁定位置/待机滑动/集体动作"——
                 // 通用页和外观页里各有一份，同一个开关三个地方能改。
                 SettingsGroup {
-                    ToggleRow("免打扰", state.doNotDisturb, R.drawable.ic2_bell_off, "静音所有消息提示") { state.doNotDisturb = it }
+                    ToggleRow("免打扰", state.doNotDisturb, R.drawable.ic2_bell_off) { state.doNotDisturb = it }
                 }
             }
             item {
@@ -427,7 +430,6 @@ fun SettingsScreen(state: PhoneState) {
             item {
                 Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
                     Text("数据来源：${state.serverLabel}", color = PhoneMuted, fontSize = 12.sp)
-                    Text("长按上方头像可更换角色头像，每个角色单独保存。", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }
@@ -499,13 +501,14 @@ private fun SettingsRow(
     icon: Int,
     hint: String? = null,
     onClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
             .heightIn(min = SettingsRowHeight)
-            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .let { if (onClick != null) it.clickable(enabled = enabled, onClick = onClick) else it }
             .padding(horizontal = SettingsRowPad, vertical = 8.dp),
     ) {
         // iOS-style colored icon chip; tint is stable per label.
@@ -518,8 +521,8 @@ private fun SettingsRow(
             ImageGlyph(icon, chipTint, Modifier.size(18.dp))
         }
         Column(Modifier.weight(1f).padding(start = 14.dp, end = 10.dp)) {
-            Text(label, color = PhoneText, style = PhoneType.Row)
-            if (hint != null) {
+            Text(label, color = if (enabled) PhoneText else PhoneMuted, style = PhoneType.Row)
+            if (!hint.isNullOrBlank()) {
                 // Callout not Caption: a hint is a readable sentence, so it wants body-ish
                 // leading (17sp on 12sp) rather than the tight metadata leading.
                 Text(hint, color = PhoneMuted, style = PhoneType.Callout, modifier = Modifier.padding(top = 3.dp))
@@ -530,11 +533,19 @@ private fun SettingsRow(
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, icon: Int, hint: String? = null, onChange: (Boolean) -> Unit) {
-    SettingsRow(label, icon, hint, onClick = { onChange(!checked) }) {
+private fun ToggleRow(
+    label: String,
+    checked: Boolean,
+    icon: Int,
+    hint: String? = null,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    SettingsRow(label, icon, hint, onClick = { onChange(!checked) }, enabled = enabled) {
         Switch(
             checked = checked,
             onCheckedChange = onChange,
+            enabled = enabled,
             modifier = Modifier.scale(0.85f),
         )
     }
@@ -612,8 +623,6 @@ fun SettingsSubScreen(state: PhoneState) {
 private fun SettingsSubLayout(title: String, state: PhoneState, content: @Composable ColumnScope.() -> Unit) {
     ScreenFrame {
         ScreenHeader(title, state)
-        // 加了说明文案之后内容会超出一屏（通用页 3 个开关各带一行说明就到底了），
-        // 原来是定高 Column，多出来的部分直接被裁掉。
         Column(
             modifier = Modifier.fillMaxSize()
                 .verticalScroll(rememberScrollState())
@@ -628,11 +637,11 @@ private fun GeneralSettingsScreen(state: PhoneState) {
     SettingsSubLayout("通用", state) {
         SectionLabel("手机行为")
         SettingsGroup {
-            ToggleRow("待机时滑动手机", state.screenSwipe, R.drawable.ic2_swipe, "锁屏待机时手机会随呼吸轻微浮动") { state.screenSwipe = it }
+            ToggleRow("待机浮动", state.screenSwipe, R.drawable.ic2_swipe) { state.screenSwipe = it }
             SettingsDivider()
-            ToggleRow("集体动作时显示", state.showEmotes, R.drawable.ic2_people, "做集体动作时不自动收起手机") { state.showEmotes = it }
+            ToggleRow("集体动作时显示", state.showEmotes, R.drawable.ic2_people) { state.showEmotes = it }
             SettingsDivider()
-            ToggleRow("锁定位置", state.lockPosition, R.drawable.ic2_lock, "锁住手机在屏幕上的位置，避免误拖") { state.lockPosition = it }
+            ToggleRow("锁定位置", state.lockPosition, R.drawable.ic2_lock) { state.lockPosition = it }
         }
         SectionLabel("聊天记录")
         SettingsGroup {
@@ -640,7 +649,7 @@ private fun GeneralSettingsScreen(state: PhoneState) {
                 "保留消息上限",
                 R.drawable.ic2_history,
                 if (state.chatRetentionLimit == 0) "不限" else state.chatRetentionLimit.toString(),
-                hint = "SQLite 历史档案保留最近 N 条；首页只保留 400 条热缓存，0 = 永久保留",
+                hint = if (state.chatRetentionLimit > 0) "超出上限的旧消息会被删除" else null,
                 onMinus = { state.chatRetentionLimit = (state.chatRetentionLimit - 500).coerceAtLeast(0) },
                 onPlus = { state.chatRetentionLimit = (state.chatRetentionLimit + 500).coerceAtMost(50000) },
             )
@@ -672,39 +681,25 @@ private fun AppearanceSettingsScreen(state: PhoneState) {
                 "左右边距",
                 R.drawable.ic2_margins,
                 "${state.contentMargin}",
-                hint = "两侧同时向内收缩，数值越小越贴近屏幕边缘",
                 onMinus = { state.contentMargin -= 2 },
                 onPlus = { state.contentMargin += 2 },
             )
             SettingsDivider()
-            ToggleRow("紧凑程序坞", state.compactDock, R.drawable.ic2_grid, "底部程序坞排得更密，露出更多桌面") { state.compactDock = it }
+            ToggleRow("紧凑程序坞", state.compactDock, R.drawable.ic2_grid) { state.compactDock = it }
         }
         SectionLabel("动效与屏幕")
         SettingsGroup {
-            ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.ic2_motion, "关掉按压缩放、骨架微光等过渡动画") { state.reducedMotion = it }
+            ToggleRow("减弱动态效果", state.reducedMotion, R.drawable.ic2_motion) { state.reducedMotion = it }
             SettingsDivider()
-            // 提示语报**实测值**，不报意图：省电模式把 animator_duration_scale 压成 0 时
-            // 不说一声，用户只会觉得「App 没动画」。把系统值、覆盖是否装上、最终生效值
-            // 都摊出来，出问题时不用连电脑也能看出卡在哪一环。
-            val appCtx = LocalContext.current.applicationContext
-            val sysScale = PhoneMotion.systemScale(appCtx)
             ToggleRow(
-                "强制动效",
+                "强制播放动效",
                 state.forceMotion && !state.reducedMotion,
                 R.drawable.ic2_swipe,
-                when {
-                    state.reducedMotion -> "已被上面的「减弱动态效果」关掉"
-                    PhoneMotion.overrideError != null ->
-                        "接管失败：${PhoneMotion.overrideError}（请把这行告诉开发者）"
-                    !PhoneMotion.overrideInstalled ->
-                        "动画接管未生效，系统动画倍速 $sysScale"
-                    sysScale <= 0f ->
-                        "系统已关闭动画（倍速 0，省电模式或开发者选项），本项已接管 → 实际播放"
-                    else -> "系统动画倍速 $sysScale，忽略系统开关始终播放动效"
-                },
+                hint = if (state.forceMotion && !state.reducedMotion && !PhoneMotion.overrideInstalled) "当前设备无法强制播放动效" else null,
+                enabled = !state.reducedMotion,
             ) { if (!state.reducedMotion) state.forceMotion = it }
             SettingsDivider()
-            ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.ic2_brightness, "看攻略或等窗口时屏幕不自动熄灭") { state.keepScreenOn = it }
+            ToggleRow("保持屏幕常亮", state.keepScreenOn, R.drawable.ic2_brightness) { state.keepScreenOn = it }
         }
     }
 }
@@ -752,12 +747,6 @@ private fun AccentPicker(state: PhoneState) {
                 Spacer(Modifier.height(3.dp))
                 Text("※玛琳 摆了摆手。", color = Color(0xFFBEFFF1), fontSize = 13.sp)
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "上面那行浅青是游戏里的情感动作颜色。它由游戏决定，改不了，" +
-                    "所以气泡底必须够深——看不清就换一套。",
-                color = PhoneMuted, fontSize = 11.sp, lineHeight = 16.sp,
-            )
         }
         Spacer(Modifier.height(10.dp))
         // ---- 预设色块 ----
@@ -794,13 +783,7 @@ private fun AccentPicker(state: PhoneState) {
                         CircleShape,
                     ),
             )
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("自定义颜色", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text(
-                    "挑一个颜色，其余三个角色自动推算",
-                    color = PhoneMuted, fontSize = 11.sp,
-                )
-            }
+            Text("自定义颜色", color = PhoneText, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(start = 12.dp))
             ImageGlyph(R.drawable.ic2_chevron_right, PhoneMuted, Modifier.size(17.dp))
         }
     }
@@ -999,9 +982,9 @@ private fun ColorSlider(
 private fun SoundSettingsScreen(state: PhoneState) {
     SettingsSubLayout("声音与触感", state) {
         SettingsGroup {
-            ToggleRow("消息提示音", state.chatNotifications, R.drawable.ic2_volume, "收到消息时响一声") { state.chatNotifications = it }
+            ToggleRow("消息提示音", state.chatNotifications, R.drawable.ic2_volume) { state.chatNotifications = it }
             SettingsDivider()
-            ToggleRow("触觉反馈", state.haptics, R.drawable.ic2_vibrate, "点按钮和切换标签时轻震一下") { state.haptics = it }
+            ToggleRow("触觉反馈", state.haptics, R.drawable.ic2_vibrate) { state.haptics = it }
         }
     }
 }
@@ -1010,23 +993,18 @@ private fun NotificationsSettingsScreen(state: PhoneState) {
     SettingsSubLayout("通知", state) {
         SectionLabel("消息")
         SettingsGroup {
-            ToggleRow("聊天消息", state.chatNotifications, R.drawable.ic2_bubble, "群聊和频道消息推送到系统通知栏") { state.chatNotifications = it; if (it) state.requestNotificationPermission() }
+            ToggleRow("聊天消息", state.chatNotifications, R.drawable.ic2_bubble) { state.chatNotifications = it; if (it) state.requestNotificationPermission() }
             SettingsDivider()
-            ToggleRow("私聊消息", state.tellNotifications, R.drawable.ic2_bell, "有人私聊时单独提醒") { state.tellNotifications = it; if (it) state.requestNotificationPermission() }
+            ToggleRow("私聊消息", state.tellNotifications, R.drawable.ic2_bell) { state.tellNotifications = it; if (it) state.requestNotificationPermission() }
         }
         SectionLabel("游戏内提醒")
         SettingsGroup {
-            ToggleRow("重置提醒", state.resetNotifications, R.drawable.ic2_clock, "日常、周常和探险札记重置前提醒") { state.resetNotifications = it }
+            ToggleRow("日常与周常重置", state.resetNotifications, R.drawable.ic2_clock) { state.resetNotifications = it }
         }
         SectionLabel("免打扰")
         SettingsGroup {
-            ToggleRow("全部静音", state.doNotDisturb, R.drawable.ic2_bell_off, "盖过上面所有开关，一条都不推") { state.doNotDisturb = it }
+            ToggleRow("全部静音", state.doNotDisturb, R.drawable.ic2_bell_off) { state.doNotDisturb = it }
         }
-        Text(
-            "推送需要系统通知权限，开启任一消息通知时会请求授权。",
-            color = PhoneMuted, fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-        )
     }
 }
 @Composable
@@ -1126,18 +1104,19 @@ fun InventoryScreen(state: PhoneState) {
     // Global menu overlay: always on top, single instance
     val menuItem = InventoryNav.menuItem
     if (menuItem != null) {
-        Box(
-            Modifier.fillMaxSize()
-                .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                    indication = null,
-                    onClick = { InventoryNav.menuItem = null }
-                )
-                .zIndex(100f)
+        val density = LocalDensity.current
+        val edgePx = with(density) { 8.dp.roundToPx() }
+        val topInset = WindowInsets.statusBars.getTop(density)
+        val bottomInset = WindowInsets.navigationBars.union(WindowInsets.ime).getBottom(density)
+        val positionProvider = remember(InventoryNav.menuOffset, edgePx, topInset, bottomInset) {
+            InventoryMenuPositionProvider(InventoryNav.menuOffset, edgePx, topInset, bottomInset)
+        }
+        Popup(
+            popupPositionProvider = positionProvider,
+            onDismissRequest = { InventoryNav.menuItem = null },
+            properties = PopupProperties(focusable = true),
         ) {
-            Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(InventoryNav.menuOffset.x.toInt(), InventoryNav.menuOffset.y.toInt()) }) {
-                InventoryItemMenu(item = menuItem, expanded = true, onDismiss = { InventoryNav.menuItem = null }, state = state)
-            }
+            InventoryItemMenu(item = menuItem, expanded = true, onDismiss = { InventoryNav.menuItem = null }, state = state)
         }
     }
     }
@@ -1294,7 +1273,7 @@ private fun InventorySearchRow(item: GameInventoryItem, state: PhoneState) {
             .onGloballyPositioned { coords ->
                 rowPosition = coords.localToWindow(androidx.compose.ui.geometry.Offset.Zero)
             }
-            .pointerInput(Unit) {
+            .pointerInput(item) {
                 detectTapGestures(
                     onTap = { localOffset ->
                         InventoryNav.menuItem = item
@@ -1315,6 +1294,30 @@ private fun InventorySearchRow(item: GameInventoryItem, state: PhoneState) {
         Text("×${"%,d".format(item.quantity)}", color = PhoneWarn, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
     }
     Divider(Modifier.padding(horizontal = 20.dp), color = PhoneLine)
+}
+
+internal class InventoryMenuPositionProvider(
+    private val touch: Offset,
+    private val margin: Int,
+    private val topInset: Int = 0,
+    private val bottomInset: Int = 0,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val left = margin.coerceAtMost((windowSize.width - popupContentSize.width).coerceAtLeast(0))
+        val right = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(left)
+        val top = (topInset + margin).coerceAtMost((windowSize.height - popupContentSize.height).coerceAtLeast(0))
+        val bottom = (windowSize.height - bottomInset - popupContentSize.height - margin).coerceAtLeast(top)
+        val preferredX = if (layoutDirection == LayoutDirection.Rtl) touch.x.toInt() - popupContentSize.width else touch.x.toInt()
+        val preferredY = if (touch.y.toInt() + popupContentSize.height > windowSize.height - bottomInset - margin) {
+            touch.y.toInt() - popupContentSize.height
+        } else touch.y.toInt()
+        return IntOffset(preferredX.coerceIn(left, right), preferredY.coerceIn(top, bottom))
+    }
 }
 
 /**

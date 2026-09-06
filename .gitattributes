@@ -12,6 +12,7 @@
 *.gz binary
 *.zip binary
 *.db binary
+*.dbz binary
 *.jpg binary
 *.jpeg binary
 *.webp binary

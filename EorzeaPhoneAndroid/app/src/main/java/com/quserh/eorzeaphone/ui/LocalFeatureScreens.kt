@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -268,28 +269,35 @@ fun SubmarineScreen(state: PhoneState) {
                 Column(Modifier.fillMaxWidth().clip(FeatureCardShape).background(Color(0xFF205B6E)).padding(20.dp)) {
                     Text("潜水艇远征", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
                     Text("${vessels.count { (it.returnUnix - now) > 0 }} 艘航行中", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-                    Text("数据在插件进入房屋工房后自动读取同步", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    state.submarine?.updatedUnix?.takeIf { it > 0 }?.let { updated ->
+                        val label = remember(updated) {
+                            java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
+                                .withZone(java.time.ZoneId.systemDefault()).format(Instant.ofEpochSecond(updated))
+                        }
+                        Text("数据更新 $label", color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    }
                 }
             }
             if (vessels.isEmpty()) {
                 item {
                     Column(Modifier.fillMaxWidth().featureCard().padding(16.dp)) {
                         Text("暂无潜水艇数据", color = PhoneText, fontWeight = FontWeight.SemiBold)
-                        Text(if (state.connected) "进入一次房屋工房后即可同步。" else "连接游戏插件后读取潜水艇状态", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text(if (state.connected) "等待工房航行数据" else "游戏插件未连接", color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             } else {
-                items(vessels, key = { it.name }) { v ->
+                itemsIndexed(vessels, key = { index, v -> "$index:${v.name}" }) { _, v ->
                     Box(Modifier.animateItem()) {
                     val remaining = (v.returnUnix - now).coerceAtLeast(0L)
                     val done = remaining == 0L
+                    val idle = v.returnUnix == 0L
                     Column(Modifier.fillMaxWidth().featureCard(fill = if (done) PhoneAccentContainer else PhoneSurface).padding(14.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(v.name, color = if (done) PhoneOnAccentContainer else PhoneText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(if (done) "已回港" else "航行中", color = if (done) PhoneOnAccentContainer else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(if (idle) "待命" else if (done) "已回港" else "航行中", color = if (done) PhoneOnAccentContainer else PhoneAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                         Text(
-                            if (done) "可以收取探险成果" else "返航剩余 ${countdownLabel(remaining)}",
+                            if (idle) "等级 ${v.rankId}" else if (done) "可以收取探险成果" else "返航剩余 ${countdownLabel(remaining)}",
                             color = if (done) PhoneOnAccentContainer.copy(alpha = .78f) else PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp),
                         )
                     }
@@ -361,19 +369,23 @@ fun HousingScreen(state: PhoneState) {
 fun NotificationsScreen(state: PhoneState) {
     FeatureFrame("通知", state) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("本地通知", color = PhoneMuted, fontSize = 12.sp)
-            ToggleRow("聊天提醒", "应用在后台时提醒新消息", state.chatNotifications, state::updateChatNotifications)
-            ToggleRow("私聊优先提醒", "私聊消息使用高优先级", state.tellNotifications, state::updateTellNotifications)
-            ToggleRow("重置提醒", "每日与每周重置前提醒", state.resetNotifications, state::updateResetNotifications)
-            Text("通知仅保存在本机，不会上传到服务器。", color = PhoneMuted, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
+            ToggleRow("聊天提醒", state.chatNotifications) {
+                state.updateChatNotifications(it)
+                if (it) state.requestNotificationPermission()
+            }
+            ToggleRow("私聊提醒", state.tellNotifications) {
+                state.updateTellNotifications(it)
+                if (it) state.requestNotificationPermission()
+            }
+            ToggleRow("重置提醒", state.resetNotifications, state::updateResetNotifications)
         }
     }
 }
 
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().featureCard().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(title, color = PhoneText); Text(subtitle, color = PhoneMuted, fontSize = 11.sp) }
+private fun ToggleRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = PhoneText, modifier = Modifier.weight(1f))
         Switch(checked, onChange)
     }
 }

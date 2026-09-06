@@ -33,6 +33,8 @@ data class GatherNode(
     val sizeFactor: Int = 100,
     /** 这张图上的以太之光，用来一键传送 */
     val aetherytes: List<GatherAetheryte> = emptyList(),
+    /** 站点节点等级：通常为“限时”“传说”或“未知”。 */
+    val kindName: String = "",
 ) {
     /**
      * 游戏坐标 → 图上比例（0-1）。
@@ -49,14 +51,28 @@ data class GatherNode(
         return ((game - 1f) * scale / 41f).coerceIn(0f, 1f)
     }
 
-    /** 1 采矿、2/3 园艺、4 钓鱼。站点 Node.类型ID。 */
+    /**
+     * 节点所属采集职业。数据库的 kind_id 是节点形态，不是职业：
+     * 0/1 都是采矿（矿场/采石场），2/3 是园艺（树木/草本），5 是捕鱼。
+     */
     val jobName: String
         get() = when (kindId) {
-            1 -> "采矿工"
+            0, 1 -> "采矿工"
             2, 3 -> "园艺工"
-            4 -> "捕鱼人"
+            5 -> "捕鱼人"
             else -> ""
         }
+
+    val jobCategory: GatherJobCategory
+        get() = when (kindId) {
+            0, 1 -> GatherJobCategory.MINING
+            2, 3 -> GatherJobCategory.BOTANY
+            5 -> GatherJobCategory.FISHING
+            else -> GatherJobCategory.OTHER
+        }
+
+    val typeCategory: GatherNodeType
+        get() = GatherNodeType.from(kindName)
 
     val placeText: String
         get() = listOf(mapName, areaName)
@@ -65,6 +81,46 @@ data class GatherNode(
     val coordText: String get() = if (x > 0 || y > 0) "X:%.1f Y:%.1f".format(x, y) else ""
 
     val etHoursText: String get() = etHours.joinToString("、") { "%d:00".format(it) }
+}
+
+/** 采集时钟的职业筛选。kind_id 0/1、2/3 是同一职业的两种节点形态。 */
+enum class GatherJobCategory(val label: String) {
+    ALL("全部"),
+    MINING("采矿"),
+    BOTANY("园艺"),
+    FISHING("捕鱼"),
+    OTHER("其他");
+}
+
+/** 节点等级筛选，名称直接沿用内置库，避免把“限时”误当成职业。 */
+enum class GatherNodeType(val label: String) {
+    ALL("全部"),
+    TIMED("限时"),
+    LEGENDARY("传说"),
+    UNKNOWN("未知"),
+    OTHER("其他");
+
+    companion object {
+        fun from(raw: String): GatherNodeType = when (raw.trim()) {
+            "限时" -> TIMED
+            "传说" -> LEGENDARY
+            "未知" -> UNKNOWN
+            "" -> OTHER
+            else -> OTHER
+        }
+    }
+}
+
+enum class GatherLevelRange(val label: String, private val levels: IntRange) {
+    ALL("全部", 0..Int.MAX_VALUE),
+    LV50("1–50", 1..50),
+    LV60("51–60", 51..60),
+    LV70("61–70", 61..70),
+    LV80("71–80", 71..80),
+    LV90("81–90", 81..90),
+    LV100("91–100", 91..100);
+
+    fun includes(level: Int): Boolean = level in levels
 }
 
 /**
@@ -148,25 +204,26 @@ object EorzeaTime {
 
 object GatherClockDb {
     private const val NODE_COLS =
-        "id, kind_id, level, stars, map_name, area_name, region, x, y, " +
+        "id, kind_id, kind_name, level, stars, map_name, area_name, region, x, y, " +
             "et_hours, duration, folklore_name, map_file, size_factor"
 
     private fun android.database.Cursor.toGatherNode() = GatherNode(
         id = getInt(0),
         kindId = getInt(1),
-        level = getInt(2),
-        stars = getInt(3),
-        mapName = getString(4) ?: "",
-        areaName = getString(5) ?: "",
-        region = getString(6) ?: "",
-        x = getFloat(7),
-        y = getFloat(8),
-        etHours = (getString(9) ?: "").trim(',').split(',').mapNotNull(String::toIntOrNull),
-        durationEtMin = getInt(10),
-        folkloreName = getString(11) ?: "",
+        kindName = getString(2) ?: "",
+        level = getInt(3),
+        stars = getInt(4),
+        mapName = getString(5) ?: "",
+        areaName = getString(6) ?: "",
+        region = getString(7) ?: "",
+        x = getFloat(8),
+        y = getFloat(9),
+        etHours = (getString(10) ?: "").trim(',').split(',').mapNotNull(String::toIntOrNull),
+        durationEtMin = getInt(11),
+        folkloreName = getString(12) ?: "",
         items = emptyList(),
-        mapFile = getString(12) ?: "",
-        sizeFactor = getInt(13).takeIf { it > 0 } ?: 100,
+        mapFile = getString(13) ?: "",
+        sizeFactor = getInt(14).takeIf { it > 0 } ?: 100,
     )
 
     /**

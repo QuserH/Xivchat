@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,25 +26,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.lazy.itemsIndexed as lazyItemsIndexed
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -57,7 +65,10 @@ import com.quserh.eorzeaphone.R
 import com.quserh.eorzeaphone.data.FishingMapImageLoader
 import com.quserh.eorzeaphone.data.wiki.EorzeaTime
 import com.quserh.eorzeaphone.data.wiki.GatherClockDb
+import com.quserh.eorzeaphone.data.wiki.GatherJobCategory
+import com.quserh.eorzeaphone.data.wiki.GatherLevelRange
 import com.quserh.eorzeaphone.data.wiki.GatherNode
+import com.quserh.eorzeaphone.data.wiki.GatherNodeType
 import com.quserh.eorzeaphone.ui.theme.BrandFill
 import com.quserh.eorzeaphone.ui.theme.BrandOnFill
 import com.quserh.eorzeaphone.ui.theme.CanvasLabelScrim
@@ -74,6 +85,7 @@ import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import com.quserh.eorzeaphone.ui.theme.PhoneWarn
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 采集时钟 —— 限时采集点的倒计时。
@@ -85,6 +97,7 @@ import kotlinx.coroutines.delay
  * 只列限时点（226 个）。常驻点没有时钟意义，位置在物品检索详情页已有。
  * 数据全部来自内置库，**离线可用**；ET 换算见 [EorzeaTime]。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GatherClockScreen(state: PhoneState) {
     val context = LocalContext.current.applicationContext
@@ -92,10 +105,16 @@ fun GatherClockScreen(state: PhoneState) {
     var loading by remember { mutableStateOf(true) }
     var failure by remember { mutableStateOf<String?>(null) }
     var onlyActive by remember { mutableStateOf(false) }
+    var jobFilter by remember { mutableStateOf(GatherJobCategory.ALL) }
+    var typeFilter by remember { mutableStateOf(GatherNodeType.ALL) }
+    var levelFilter by remember { mutableStateOf(GatherLevelRange.ALL) }
+    var showFilters by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<GatherNode?>(null) }
 
-    BackHandler(enabled = detail != null) { detail = null }
+    BackHandler(enabled = detail != null || showFilters) {
+        if (showFilters) showFilters = false else detail = null
+    }
 
     LaunchedEffect(Unit) {
         runCatching { GatherClockDb.timedNodes(context) }
@@ -117,6 +136,9 @@ fun GatherClockScreen(state: PhoneState) {
         if (hit != null) detail = hit else query = state.pendingGatherNodeName.orEmpty()
         // Either way: a filtered list hiding the searched node also reads as "nothing happened".
         onlyActive = false
+        jobFilter = GatherJobCategory.ALL
+        typeFilter = GatherNodeType.ALL
+        levelFilter = GatherLevelRange.ALL
         state.pendingGatherNodeId = null
         state.pendingGatherNodeName = null
     }
@@ -141,6 +163,9 @@ fun GatherClockScreen(state: PhoneState) {
     val q = query.trim()
     val shown = ranked.filter { (n, ms) ->
         (!onlyActive || ms < 0) &&
+            (jobFilter == GatherJobCategory.ALL || n.jobCategory == jobFilter) &&
+            (typeFilter == GatherNodeType.ALL || n.typeCategory == typeFilter) &&
+            levelFilter.includes(n.level) &&
             (q.isEmpty() ||
                 n.items.any { it.name.contains(q, true) } ||
                 n.mapName.contains(q, true) ||
@@ -148,8 +173,21 @@ fun GatherClockScreen(state: PhoneState) {
                 n.region.contains(q, true))
     }
     val activeCount = ranked.count { it.second < 0 }
+    val jobCounts = remember(all) { all.groupingBy { it.jobCategory }.eachCount() }
+    val typeCounts = remember(all) { all.groupingBy { it.typeCategory }.eachCount() }
+    val levelCounts = remember(all) { GatherLevelRange.entries.associateWith { range -> all.count { range.includes(it.level) } } }
     val (etH, etM) = EorzeaTime.nowHourMinute(nowMs)
     val margin = LocalContentMargin.current
+    val selectedFilterCount = listOf(
+        jobFilter != GatherJobCategory.ALL,
+        typeFilter != GatherNodeType.ALL,
+        levelFilter != GatherLevelRange.ALL,
+    ).count { it }
+    val filterSummary = buildList {
+        if (jobFilter != GatherJobCategory.ALL) add(jobFilter.label)
+        if (typeFilter != GatherNodeType.ALL) add(typeFilter.label)
+        if (levelFilter != GatherLevelRange.ALL) add(levelFilter.label)
+    }.joinToString(" · ")
 
     // Detail used to be an early `return`, which meant entering and leaving it was an
     // instant content snap with no transition at all.
@@ -187,10 +225,19 @@ fun GatherClockScreen(state: PhoneState) {
                     Modifier.fillMaxWidth().padding(start = margin.dp, end = margin.dp, top = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        if (loading) "读取中…" else "$activeCount 处开放中 · 共 ${ranked.size} 处",
-                        color = PhoneMuted, fontSize = 12.sp, modifier = Modifier.weight(1f),
-                    )
+                    GatherFilterButton(selectedFilterCount) { showFilters = true }
+                    if (filterSummary.isNotEmpty()) {
+                        Text(
+                            filterSummary,
+                            color = PhoneMuted,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                     PhonePressable(onClick = { onlyActive = !onlyActive }, shape = PhoneChipShape) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -219,6 +266,13 @@ fun GatherClockScreen(state: PhoneState) {
                     }
                 }
 
+                Text(
+                    if (loading) "读取中…" else "$activeCount 处开放中 · 显示 ${shown.size} / ${ranked.size}",
+                    color = PhoneMuted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = margin.dp, end = margin.dp, top = 8.dp),
+                )
+
                 Spacer(Modifier.height(10.dp))
 
                 when {
@@ -242,23 +296,50 @@ fun GatherClockScreen(state: PhoneState) {
                     ) {
                         PhoneEmpty(
                             if (onlyActive) "现在没有开放的采集点" else "没有符合条件的采集点",
-                            if (onlyActive) "关掉「仅看开放中」看全部 226 处"
-                            else "换个物品名或地区试试",
+                            if (onlyActive) "关掉「仅看开放中」查看筛选结果"
+                            else "换个物品名、地图或调整上方分类",
                             R.drawable.ic2_clock,
                         )
                     }
                     else -> LazyColumn(
                         Modifier.fillMaxWidth().weight(1f),
                         contentPadding = PaddingValues(
-                            start = margin.dp, end = margin.dp, bottom = 18.dp,
+                            bottom = 18.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
                     ) {
-                        lazyItems(shown, key = { it.first.id }) { (node, ms) ->
-                            GatherRow(node, ms) { detail = node }
+                        lazyItemsIndexed(shown, key = { _, entry -> entry.first.id }) { index, (node, ms) ->
+                            Column(Modifier.fillMaxWidth()) {
+                                GatherRow(node, ms) { detail = node }
+                                if (index < shown.lastIndex) PhoneHairlineRow(16.dp)
+                            }
                         }
                     }
                 }
+            }
+
+            if (showFilters) {
+                GatherFilterBottomSheet(
+                    jobFilter = jobFilter,
+                    typeFilter = typeFilter,
+                    levelFilter = levelFilter,
+                    jobOptions = GatherJobCategory.entries.filter {
+                        it == GatherJobCategory.ALL || jobCounts[it].orZero() > 0
+                    },
+                    typeOptions = GatherNodeType.entries.filter {
+                        it == GatherNodeType.ALL || typeCounts[it].orZero() > 0
+                    },
+                    levelOptions = GatherLevelRange.entries.filter {
+                        it == GatherLevelRange.ALL || levelCounts[it].orZero() > 0
+                    },
+                    jobCount = { category -> if (category == GatherJobCategory.ALL) all.size else jobCounts[category].orZero() },
+                    typeCount = { category -> if (category == GatherNodeType.ALL) all.size else typeCounts[category].orZero() },
+                    levelCount = { range -> levelCounts[range].orZero() },
+                    onJobSelected = { jobFilter = it },
+                    onTypeSelected = { typeFilter = it },
+                    onLevelSelected = { levelFilter = it },
+                    onDismiss = { showFilters = false },
+                )
             }
         }
     }
@@ -298,14 +379,191 @@ private fun GatherSearchField(value: String, onChange: (String) -> Unit) {
     }
 }
 
+/**
+ * 筛选只在弹层中展示，选项自动换行，小屏无需横向寻找隐藏的分类。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun <T> GatherFilterRow(
+    label: String,
+    selected: T,
+    options: List<T>,
+    count: (T) -> Int,
+    optionLabel: (T) -> String,
+    onSelected: (T) -> Unit,
+) {
+    if (options.isEmpty()) return
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 9.dp),
+    ) {
+        Text(
+            label, color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { option ->
+                GatherFilterChip(
+                    label = optionLabel(option), count = count(option), active = option == selected,
+                    onClick = { onSelected(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GatherFilterButton(selectedCount: Int, onClick: () -> Unit) {
+    PhonePressable(onClick = onClick, shape = PhoneChipShape) {
+        Row(
+            Modifier.clip(PhoneChipShape)
+                .background(PhoneSurfaceRaised)
+                .padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ImageGlyph(R.drawable.ic2_filter, PhoneAccent, Modifier.size(14.dp))
+            Text(
+                "筛选",
+                color = PhoneText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(start = 5.dp),
+            )
+            if (selectedCount > 0) {
+                Box(
+                    Modifier.padding(start = 6.dp).size(18.dp)
+                        .clip(CircleShape).background(BrandFill),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        selectedCount.toString(),
+                        color = BrandOnFill,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GatherFilterBottomSheet(
+    jobFilter: GatherJobCategory,
+    typeFilter: GatherNodeType,
+    levelFilter: GatherLevelRange,
+    jobOptions: List<GatherJobCategory>,
+    typeOptions: List<GatherNodeType>,
+    levelOptions: List<GatherLevelRange>,
+    jobCount: (GatherJobCategory) -> Int,
+    typeCount: (GatherNodeType) -> Int,
+    levelCount: (GatherLevelRange) -> Int,
+    onJobSelected: (GatherJobCategory) -> Unit,
+    onTypeSelected: (GatherNodeType) -> Unit,
+    onLevelSelected: (GatherLevelRange) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    fun dismissAfterSelection() {
+        scope.launch {
+            sheetState.hide()
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = PhoneSurface,
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 18.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("筛选采集点", color = PhoneText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "关闭",
+                    color = PhoneAccent,
+                    fontSize = 13.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        .clickable { dismissAfterSelection() }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+            GatherFilterRow(
+                label = "职业",
+                selected = jobFilter,
+                options = jobOptions,
+                count = jobCount,
+                optionLabel = { it.label },
+                onSelected = { onJobSelected(it); dismissAfterSelection() },
+            )
+            GatherFilterRow(
+                label = "类型",
+                selected = typeFilter,
+                options = typeOptions,
+                count = typeCount,
+                optionLabel = { it.label },
+                onSelected = { onTypeSelected(it); dismissAfterSelection() },
+            )
+            GatherFilterRow(
+                label = "等级",
+                selected = levelFilter,
+                options = levelOptions,
+                count = levelCount,
+                optionLabel = { it.label },
+                onSelected = { onLevelSelected(it); dismissAfterSelection() },
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+@Composable
+private fun GatherFilterChip(label: String, count: Int, active: Boolean, onClick: () -> Unit) {
+    PhonePressable(onClick = onClick, shape = RoundedCornerShape(9.dp)) {
+        Row(
+            Modifier.clip(RoundedCornerShape(9.dp))
+                .background(if (active) BrandFill else PhoneSurfaceRaised)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label, color = if (active) BrandOnFill else PhoneMuted,
+                fontSize = 11.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            Text(
+                count.toString(), color = if (active) BrandOnFill.copy(alpha = 0.78f) else PhoneMuted,
+                fontSize = 10.sp, modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+    }
+}
+
+private fun Int?.orZero(): Int = this ?: 0
+
 /** 列表一行。ms 为负表示正在开放，绝对值是剩余时间。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GatherRow(node: GatherNode, ms: Long, onClick: () -> Unit) {
     val active = ms < 0
     val remain = if (active) -ms else ms
-    PhonePressable(onClick = onClick, shape = RoundedCornerShape(14.dp), pressedScale = 0.978f) {
+    PhonePressable(onClick = onClick, shape = RectangleShape, pressedScale = 1f) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PhoneSurface),
+            Modifier.fillMaxWidth().background(PhoneSurface),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 左色条：开放中绿、未开放淡。和钓鱼笔记同一套语言。
@@ -328,9 +586,10 @@ private fun GatherRow(node: GatherNode, ms: Long, onClick: () -> Unit) {
                     color = PhoneMuted, fontSize = 11.sp, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
                 )
-                Row(
+                FlowRow(
                     Modifier.padding(top = 5.dp),
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (node.level > 0) {
                         GatherBadge(
@@ -338,6 +597,8 @@ private fun GatherRow(node: GatherNode, ms: Long, onClick: () -> Unit) {
                             PhoneInfo,
                         )
                     }
+                    if (node.jobName.isNotBlank()) GatherBadge(node.jobName, PhoneAccent)
+                    if (node.kindName.isNotBlank()) GatherBadge(node.kindName, PhoneInfo)
                     GatherBadge("艾 ${node.etHoursText}", PhoneMuted)
                     if (node.folkloreName.isNotBlank()) GatherBadge("需传承录", PhoneWarn)
                 }
@@ -455,6 +716,7 @@ private fun GatherDetailScreen(
                 GatherFacts(
                     buildList {
                         node.jobName.takeIf { it.isNotBlank() }?.let { add("职业" to it) }
+                        node.kindName.takeIf { it.isNotBlank() }?.let { add("节点类型" to it) }
                         if (node.level > 0) {
                             add("等级" to ("Lv${node.level}" +
                                 "★".repeat(node.stars.coerceIn(0, 3))))

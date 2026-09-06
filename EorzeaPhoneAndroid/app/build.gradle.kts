@@ -13,8 +13,8 @@ android {
         applicationId = "com.quserh.eorzeaphone"
         minSdk = 24
         targetSdk = 36
-        versionCode = 381
-        versionName = "0.7.360"
+        versionCode = 386
+        versionName = "0.7.365"
     }
 
     buildFeatures {
@@ -83,4 +83,5 @@ dependencies {
     }
     implementation("net.java.dev.jna:jna:5.12.1@aar")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }

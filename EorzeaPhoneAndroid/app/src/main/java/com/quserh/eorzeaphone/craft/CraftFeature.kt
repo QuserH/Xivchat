@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -66,6 +67,10 @@ import com.quserh.eorzeaphone.craft.ui.WorkbenchTab
 import com.quserh.eorzeaphone.data.GameInventoryItem
 import com.quserh.eorzeaphone.data.GameRetainer
 import com.quserh.eorzeaphone.ui.PhoneState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 /**
  * Crafting-list feature embedded in the terminal app, wired the same way as
@@ -89,9 +94,13 @@ fun buildCraftSnapshot(items: List<GameInventoryItem>, retainers: List<GameRetai
 fun CraftListAppScreen(phone: PhoneState) {
     val context = LocalContext.current
     val state = remember { CraftAppState(context, phone) }
+    DisposableEffect(state) { onDispose { state.dispose() } }
 
     LaunchedEffect(Unit) {
         state.prepareDb()
+    }
+    LaunchedEffect(state.craftConnected) {
+        if (state.craftConnected) state.refreshCraftSkills()
     }
     // Recompute the craft-side snapshot whenever any live inventory row changes.
     // Uses the RAW snapshot (before the host drops crystal containers) so the
@@ -111,7 +120,7 @@ fun CraftListAppScreen(phone: PhoneState) {
             )
         }
     }
-    LaunchedEffect(snapshot) { if (snapshot.items.isNotEmpty()) state.inventory = snapshot }
+    LaunchedEffect(snapshot) { state.inventory = snapshot }
 
     BackHandler(enabled = state.stack.size > 1) { state.pop() }
 
@@ -134,10 +143,21 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     val repo = RecipeRepository(db)
     val lists = CraftingListStore(context)
     val cart = CartStore(context)
-    val engine = MockCraftEngine(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main))
+    private val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val engine = MockCraftEngine(sessionScope)
+
+    fun dispose() {
+        engine.stop()
+        sessionScope.cancel()
+        db.close()
+    }
 
     /** 远程模式是否可用：终端已连上游戏插件。 */
     val craftConnected: Boolean get() = phone.isConnected()
+    val craftSkills get() = phone.craftSkills
+    val craftFoods get() = phone.craftFoods
+    val craftPots get() = phone.craftPots
+    fun refreshCraftSkills() = phone.requestCraftSkills()
 
     /** 游戏内正在制作的实时状态（无论谁发起），无则 null。 */
     val remoteCraft: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
@@ -147,29 +167,46 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     /** 选中的食物（0=未选）；持久化，启动远程制作时下发给插件。 */
     var craftFoodId by mutableStateOf(foodPrefs.getInt("foodId", 0))
     var craftFoodName by mutableStateOf(foodPrefs.getString("foodName", "") ?: "")
+    var craftPotionId by mutableStateOf(foodPrefs.getInt("potionId", 0))
+    var craftPotionName by mutableStateOf(foodPrefs.getString("potionName", "") ?: "")
 
-    fun setCraftFood(itemId: Int, name: String) {
+    fun setCraftFood(itemId: Int, name: String, potionId: Int = craftPotionId, potionName: String = craftPotionName) {
         craftFoodId = itemId
         craftFoodName = name
-        foodPrefs.edit().putInt("foodId", itemId).putString("foodName", name).apply()
-        if (craftConnected) phone.craftFood(itemId)
+        craftPotionId = potionId
+        craftPotionName = potionName
+        foodPrefs.edit().putInt("foodId", itemId).putString("foodName", name)
+            .putInt("potionId", potionId).putString("potionName", potionName).apply()
     }
+
+    fun setCraftPotion(itemId: Int, name: String) = setCraftFood(craftFoodId, craftFoodName, itemId, name)
 
     private val craftBridge = object : com.quserh.eorzeaphone.craft.data.CraftRemote {
         override val chat = phone.craftChatEvents
         override val lastState: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
-        override fun craftStart(recipeId: Int) = phone.craftStart(recipeId)
+        override fun craftStart(recipeId: Int) = phone.craftStart(recipeId, craftFoodId, craftPotionId)
         override fun craftSkill(actionId: Long) = phone.craftSkill(actionId)
         override fun craftStop() = phone.craftStop()
-        override fun craftFood(itemId: Int) = phone.craftFood(itemId)
+        override fun craftCancel(recipeId: Int, craftInstanceId: Long) = phone.craftCancel(recipeId, craftInstanceId)
+        override fun craftFood(itemId: Int) = phone.craftFood(itemId, craftPotionId)
     }
 
     fun startRemoteCraft(recipe: CraftRecipe, itemName: String): CraftSession {
-        if (craftFoodId > 0) craftBridge.craftFood(craftFoodId)
+        // Recipe and both buffs travel in one frame, so background send ordering
+        // cannot start the craft before the potion-only/cleared selections arrive.
         // 丢弃上一次制作残留的最后一帧，否则新会话会立刻把它当成
         // “已完成”而锁死技能、不再消费新帧。
         phone.craftRemote = null
         return engine.startRemote(recipe, itemName, craftBridge)
+    }
+
+    fun adoptCurrentRemoteCraft(): Boolean {
+        if (!craftConnected || !dbReady) return false
+        val live = remoteCraft?.takeIf { !it.finished && it.step > 0 } ?: return false
+        val recipe = db.recipe(live.recipeId) ?: return false
+        val item = db.item(recipe.itemId) ?: return false
+        session = engine.adoptRemote(recipe, item.nameCn, craftBridge)
+        return true
     }
 
     var inventory by mutableStateOf(InventorySnapshot())

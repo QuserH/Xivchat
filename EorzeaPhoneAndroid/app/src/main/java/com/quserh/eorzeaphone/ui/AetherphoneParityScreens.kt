@@ -123,6 +123,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.FocusRequester
@@ -145,6 +146,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
@@ -155,6 +158,7 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
@@ -197,6 +201,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val CHAT_TEXT_LAYOUT_CACHE_SIZE = 192
+private val ChatAxisFont = FontFamily(Font(R.font.ffxiv_axis))
 
 private val AetherLightBackground: Color @Composable get() = MaterialTheme.colorScheme.background
 private val AetherLightSurface: Color @Composable get() = MaterialTheme.colorScheme.surface
@@ -528,7 +533,14 @@ private fun LightUnreadBadge(unread: Int, notify: Boolean, modifier: Modifier = 
     ) {
         Text(
             if (unread > 99) "99+" else unread.toString(),
-            color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+            style = TextStyle(
+                fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp, textAlign = TextAlign.Center,
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+            ),
+            maxLines = 1, softWrap = false,
             modifier = Modifier.padding(horizontal = 5.dp),
         )
     }
@@ -584,69 +596,84 @@ private fun LightHeader(
     title: String,
     onBack: () -> Unit,
     titleOffsetY: Dp = 0.dp,
-    trailing: @Composable RowScope.() -> Unit = {},
     titleIcon: (@Composable () -> Unit)? = null,
+    trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val headerMargin = LocalContentMargin.current
     val sidePad = (headerMargin.coerceAtLeast(2) - 2).dp
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val backScale by animateFloatAsState(if (pressed) 0.86f else 1f, PhonePressSpring, label = "lightBack")
-    // 三个模块的页头完全同构：
-    //   石之家 SzjHeader / 工具屏 ScreenHeader / 聊天 LightHeader
-    // 都是「左返回(30dp 矢量, 按压 0.86 缩放) + 居中 20sp SemiBold 标题 + 右 trailing」，
-    // 上下 12dp。
-    //
-    // 标题左边原来有一枚通讯贝当"签名"。去掉了：它每页都是同一枚、不带信息，
-    // 纯装饰顶在标题前面反而把标题的重心拽偏。三个页头现在都只有字。
-    //
-    // 骨架是**三栏 Row**，不是"Box + 三个 alignment 互相叠"。
-    // 原来那种写法里返回键(CenterStart)、标题(Center, 写死 horizontal 54dp)、
-    // trailing(CenterEnd) 全铺在同一个 Box 上，谁宽了就压谁——而 54dp 是按
-    // 一个 38dp 按钮算出来的。联系人页加第二个按钮之后就重合了。
-    // 加宽那个 padding 只是把同一个坑往后挪一个按钮；改成三栏之后，
-    // 标题吃 weight(1f)，右边加几个按钮都不用动别处。
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 左栏固定 46dp，和右栏的下限对称——标题才真的在屏幕正中。
-        Box(Modifier.width(46.dp), contentAlignment = Alignment.CenterStart) {
-            ImageGlyph(
-                R.drawable.ic2_back,
-                AetherPurple,
-                Modifier
-                    .graphicsLayer { scaleX = backScale; scaleY = backScale }
-                    .size(30.dp).clip(RoundedCornerShape(10.dp))
-                    .clickable(interactionSource = interaction, indication = null, onClick = onBack)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-            )
-        }
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    color = AetherLightText,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.2.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.offset(y = titleOffsetY),
+    // Keep actions last in the signature so a trailing lambda cannot become a title icon.
+    // Measure the side controls first; center the text itself, not the remaining space.
+    Layout(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = sidePad, vertical = 12.dp),
+        content = {
+            Box(Modifier.width(46.dp), contentAlignment = Alignment.CenterStart) {
+                ImageGlyph(
+                    R.drawable.ic2_back,
+                    AetherPurple,
+                    Modifier
+                        .graphicsLayer { scaleX = backScale; scaleY = backScale }
+                        .size(30.dp).clip(RoundedCornerShape(10.dp))
+                        .clickable(interactionSource = interaction, indication = null, onClick = onBack)
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
                 )
-                if (titleIcon != null) {
-                    Box(Modifier.padding(start = 6.dp)) { titleIcon() }
-                }
             }
-        }
-        Row(
-            Modifier.widthIn(min = 46.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-            content = trailing,
+            Row(
+                Modifier.widthIn(min = 46.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+                content = trailing,
+            )
+            Text(
+                title,
+                color = AetherLightText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.offset(y = titleOffsetY),
+            )
+            Box { titleIcon?.invoke() }
+        },
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val sideConstraints = loose.copy(maxWidth = width / 2)
+        val navigation = measurables[0].measure(sideConstraints)
+        val actions = measurables[1].measure(sideConstraints)
+        val gap = 6.dp.roundToPx()
+        val icon = measurables[3].measure(
+            loose.copy(maxWidth = (width / 2 - actions.width - gap * 2).coerceAtLeast(0)),
         )
+        val titlePlaceable = measurables[2].measure(
+            loose.copy(maxWidth = chatHeaderTitleMaxWidth(width, navigation.width, actions.width, icon.width, gap)),
+        )
+        val measuredHeight = maxOf(navigation.height, actions.height, titlePlaceable.height, icon.height)
+        val height = measuredHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
+        val titleX = (width - titlePlaceable.width) / 2
+        layout(width, height) {
+            navigation.placeRelative(0, (height - navigation.height) / 2)
+            actions.placeRelative(width - actions.width, (height - actions.height) / 2)
+            titlePlaceable.placeRelative(titleX, (height - titlePlaceable.height) / 2)
+            icon.placeRelative(titleX + titlePlaceable.width + if (icon.width > 0) gap else 0, (height - icon.height) / 2)
+        }
     }
+}
+
+internal fun chatHeaderTitleMaxWidth(
+    width: Int,
+    navigationWidth: Int,
+    actionsWidth: Int,
+    titleIconWidth: Int,
+    gap: Int,
+): Int {
+    val iconSpace = if (titleIconWidth > 0) titleIconWidth + gap else 0
+    val inset = maxOf(navigationWidth, actionsWidth + iconSpace) + gap
+    return (width - inset * 2).coerceAtLeast(0)
 }
 
 @Composable
@@ -1555,13 +1582,12 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             return@LightFrame
         }
         Column(Modifier.fillMaxSize().imePadding()) {
-            LightHeader("本地", onBack) {
-                Spacer(Modifier.width(8.dp))
+            LightHeader("本地", onBack, trailing = {
                 Box(
                     Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable { pushChatSub(ChatSub.LocalSettings) },
                     contentAlignment = Alignment.Center,
                 ) { ImageGlyph(R.drawable.ic2_more_horiz, AetherLightMuted, Modifier.size(19.dp)) }
-            }
+            })
             // chips 和会话列表的"消息/筛选器"共用 LightChip：
             // 原来这里是圆角 14 / 12sp / 6dp padding，那边是圆角 16 / 13sp / 6dp，
             // 两处各写一遍、每个值都差一点。
@@ -1575,6 +1601,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
             // LazyColumn row leaves composition.  A per-bubble measurer discarded its cache
             // on every fling, so reversing direction shaped the same messages all over again.
             val chatTextMeasurer = rememberTextMeasurer(cacheSize = CHAT_TEXT_LAYOUT_CACHE_SIZE)
+            val bubbleContentCache = remember { ChatBubbleContentCache() }
             val scrolledLocal = remember(filter) { mutableStateOf(false) }
             val listLaidOut = remember(filter) { mutableStateOf(false) }
             // 进入本地列：等列表首次布局(onGloballyPositioned)后贴底
@@ -1607,12 +1634,14 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 val normalizedSelfName = remember(state.profile?.name) {
                     state.profile?.name?.normalizedPlayerName()
                 }
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp)) {
+                val maxBubbleWidth = maxWidth.coerceAtMost(310.dp)
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true },
+                    modifier = Modifier.fillMaxSize().onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true },
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    itemsIndexed(msgs, key = { index, _ -> messageKeys[index] }) { index, msg ->
+                    itemsIndexed(msgs, key = { index, _ -> messageKeys[index] }, contentType = { _, _ -> "chat-message" }) { index, msg ->
                         val showDate = index == 0 || chatDay(msg.timestamp) != chatDay(msgs[index - 1].timestamp)
                         if (showDate) {
                             Text(chatDayLabel(msg.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
@@ -1627,8 +1656,9 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                         }
                         val author = if (tag.isBlank()) baseName else "[$tag] $baseName"
                         val groupStart = shouldShowLightSender(msgs, index, normalizedSelfName)
-                        LightChatBubble(author, msg, self, groupStart, chatTextMeasurer, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = groupStart, senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
+                        LightChatBubble(author, msg, self, groupStart, chatTextMeasurer, bubbleContentCache, maxBubbleWidth, fontSizeSp = state.chatFontSize, neutral = true, authorFontSizeSp = state.chatAuthorFontSize, showTail = groupStart, senderWorldIconId = if (state.isCrossWorld(msg)) msg.senderWorldIcon ?: msg.senderStatusIcon ?: 0 else 0)
                     }
+                }
                 }
             }
             val focus = LocalFocusManager.current
@@ -1776,7 +1806,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                 // 之前免打扰铃铛在副标题里，副标题长度一变它就会左右漂移，
                 // 视觉上也和未读角标不在同一列。
                 Column(
-                    modifier = Modifier.widthIn(min = 52.dp).height(36.dp),
+                    modifier = Modifier.widthIn(min = 52.dp).height(40.dp),
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
@@ -1793,7 +1823,7 @@ private fun LightConversationRow(conversation: ChatConversation, state: PhoneSta
                         }
                     }
                     Box(
-                        modifier = Modifier.height(16.dp).widthIn(min = 20.dp),
+                        modifier = Modifier.height(20.dp).widthIn(min = 20.dp),
                         contentAlignment = Alignment.CenterEnd,
                     ) {
                         if (conversation.unread > 0) {
@@ -2701,22 +2731,17 @@ private fun ChatTabSettingsScreen(state: PhoneState, conversation: ChatConversat
 }
 
 @Composable
-private fun ChatAdjustRow(label: String, value: Int, onMinus: () -> Unit, onPlus: () -> Unit, hint: String? = null) {
-    Column(Modifier.fillMaxWidth()) {
+private fun ChatAdjustRow(label: String, value: Int, onMinus: () -> Unit, onPlus: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = AetherLightText, fontSize = 15.sp, modifier = Modifier.weight(1f))
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onMinus), contentAlignment = Alignment.Center) {
                 ImageGlyph(R.drawable.ic2_remove, AetherPurple, Modifier.size(22.dp))
             }
-            Text("  $value  ", color = AetherLightText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Text(value.toString(), color = AetherLightText, fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.width(48.dp))
             Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(AetherLightControl).clickable(onClick = onPlus), contentAlignment = Alignment.Center) {
                 ImageGlyph(R.drawable.ic2_plus, AetherPurple, Modifier.size(22.dp))
             }
         }
-        if (hint != null) {
-            Text(hint, color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp))
-        }
-    }
 }
 
 @Composable
@@ -2727,12 +2752,9 @@ private fun ChatAppearanceScreen(state: PhoneState, onBack: () -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(12.dp)).background(AetherLightSurface),
         ) {
-            Text("全局设置 · 对所有页面生效", color = AetherLightMuted, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 2.dp))
-            ChatSettingDivider()
-            ChatAdjustRow("左右边距", state.contentMargin,
+            ChatAdjustRow("页面边距", state.contentMargin,
                 onMinus = { state.contentMargin = (state.contentMargin - 2).coerceAtLeast(0) },
                 onPlus = { state.contentMargin = (state.contentMargin + 2).coerceAtMost(60) },
-                hint = "左右都向内收缩·数值越小越贴近屏幕边缘",
             )
             ChatSettingDivider()
             ChatAdjustRow("聊天字号", state.chatFontSize,
@@ -3128,6 +3150,15 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     // TextMeasurer owns an LRU of TextLayoutResult.  Keeping it at transcript scope makes
     // reverse flings reuse recent layouts and also avoids constructing one cache per row.
     val chatTextMeasurer = rememberTextMeasurer(cacheSize = CHAT_TEXT_LAYOUT_CACHE_SIZE)
+    val bubbleContentCache = remember(conversation.key) { ChatBubbleContentCache() }
+    val friendSnapshot = state.friends.toList()
+    val friendStatusByName = remember(friendSnapshot) {
+        buildMap {
+            friendSnapshot.forEach { friend ->
+                if (friend.online) put(friend.name.normalizedPlayerName(), friend.status)
+            }
+        }
+    }
     val listLaidOut = remember(conversation.key) { mutableStateOf(false) }
     var anchoredBottom by remember(conversation.key) { mutableStateOf(false) }
     // 进入会话：等列表完成首次布局(onGloballyPositioned)后贴底；只在首次贴底，新消息到达时不得拽回底部
@@ -3143,6 +3174,10 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
         if (nearBottomLazy(listState)) { listState.requestScrollToItem(messages.lastIndex) }
     }
     CompositionLocalProvider(LocalTextToolbar provides toolbar) {
+        BoxWithConstraints(modifier) {
+        // All rows share the same width constraint. Avoid a SubcomposeLayout for
+        // every bubble entering the viewport during a fling.
+        val maxBubbleWidth = maxWidth.coerceAtMost(310.dp)
         val dismissMod = if (selectionActive) Modifier.pointerInput(Unit) { detectTapGestures(onTap = { selectionActive = false; selectionEpoch++ }, onLongPress = {}) } else Modifier
         // Add an occurrence ordinal to the complete message fingerprint.  A duplicate
         // packet is legal (especially for rapid system/combat lines); a hash-only key
@@ -3153,7 +3188,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
         val normalizedSelfName = remember(selfName) {
             selfName?.normalizedPlayerName()
         }
-        LazyColumn(state = listState, modifier = modifier.then(dismissMod).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true }, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().then(dismissMod).onGloballyPositioned { if (!listLaidOut.value) listLaidOut.value = true }, verticalArrangement = Arrangement.spacedBy(9.dp)) {
         itemsIndexed(
             messages,
             key = { index, _ -> messageKeys[index] },
@@ -3176,10 +3211,10 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 if (tag.isNotEmpty()) "[$tag] $base" else base
             }
             Column(Modifier.fillMaxWidth()) {
-                val senderStatus = remember(message.senderName, message.sender, state.friends.size) {
+                val senderStatus = remember(message.senderName, message.sender, self, conversation.category, friendStatusByName) {
                     if (conversation.category != ChatCategory.Tell && !self && message.category != ChatCategory.System) {
                         val senderKey = (message.senderName ?: message.sender).normalizedPlayerName()
-                        state.friends.firstOrNull { it.online && it.name.normalizedPlayerName() == senderKey }?.status ?: 0L
+                        friendStatusByName[senderKey] ?: 0L
                     } else 0L
                 }
                 // 私聊会话不显示消息上方的角色 ID（气泡区分自己/对方），但组首条仍有尾巴；其它频道照旧
@@ -3194,7 +3229,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                 val jobIconId = remember(author, state.party.size, state.friends.size) {
                     if (conversation.category == ChatCategory.Party || conversation.category == ChatCategory.Team) state.jobIconIdFor(author) else 0
                 }
-                LightChatBubble(author, message, self, showAuthor, chatTextMeasurer, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = jobIconId, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
+                LightChatBubble(author, message, self, showAuthor, chatTextMeasurer, bubbleContentCache, maxBubbleWidth, state.chatFontSize, neutral = !conversation.key.startsWith("tab:"), jobIconId = jobIconId, highlight = highlight, senderStatus = senderStatus, authorFontSizeSp = state.chatAuthorFontSize, selectionEpoch = selectionEpoch, showTail = showTail, senderWorldIconId = if (message.category == ChatCategory.Team) 0xE05D else if (state.isCrossWorld(message)) message.senderWorldIcon ?: message.senderStatusIcon ?: 0 else 0)
                 if (message.sendState == 2 && conversation.category == ChatCategory.Tell) {
                     // 原来是"⚠"字符 + 硬编码红。字符在部分机型上会渲染成彩色 emoji，
                     // 红色也和别处的红各写一个值，统一走 PhoneDanger。
@@ -3214,6 +3249,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
                     }
                 }
             }
+        }
         }
         }
     }
@@ -3392,7 +3428,7 @@ private fun AetherphoneConversationScreen(state: PhoneState, conversation: ChatC
                 onBack = state::back,
                 titleIcon = {
                     if (conversation.key.startsWith("tell:")) {
-                        FriendStatusIcon(state, conversation.tellRecipient.ifBlank { conversation.title }, 16.dp, Modifier.padding(start = 6.dp))
+                        FriendStatusIcon(state, conversation.tellRecipient.ifBlank { conversation.title }, 16.dp)
                     }
                 },
                 trailing = {
@@ -3625,10 +3661,42 @@ private class FilterConversationProjection(
         source.filter { filter.matches(it) && it.timestamp > clearedUntil }
 }
 
-private class ChatInk(
+internal class ChatInk(
     val annotated: AnnotatedString,
     val placeholders: List<AnnotatedString.Range<Placeholder>>,
 )
+
+internal data class ChatBubbleContentKey(
+    val message: GameChatMessage,
+    val author: String,
+    val selfEmoteFull: Boolean,
+    val color: Color,
+    val forceColor: Boolean,
+    val highlight: String,
+    val light: Boolean,
+    val fontSizeSp: Int,
+)
+
+internal class ChatBubbleContent(val ink: ChatInk, val inline: Map<String, InlineTextContent>)
+
+internal class ChatBubbleContentCache(capacity: Int = CHAT_TEXT_LAYOUT_CACHE_SIZE) :
+    androidx.collection.LruCache<ChatBubbleContentKey, ChatBubbleContent>(capacity) {
+    override fun create(key: ChatBubbleContentKey): ChatBubbleContent {
+        // Row-local remember is discarded offscreen. Retain parsed spans and inline
+        // icon lambdas alongside the bounded paragraph cache for reverse scrolling.
+        val message = key.message
+        val rawText = if (key.selfEmoteFull) key.author + message.text else message.text
+        val cleaned = cleanChatText(rawText, if (key.selfEmoteFull) "" else key.author).ifBlank { " " }
+        val chunks = if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks
+        val renderChunks = cleanItemLinkChunks(chunks)
+        val fontUnit = key.fontSizeSp.sp
+        val lineUnit = (key.fontSizeSp + 5).sp
+        return ChatBubbleContent(
+            chatBubbleInk(renderChunks, cleaned, key.color, key.forceColor, key.highlight, key.light, fontUnit, lineUnit, ChatAxisFont, alreadyCleaned = true),
+            chatBubbleInline(renderChunks, cleaned, fontUnit, lineUnit, alreadyCleaned = true),
+        )
+    }
+}
 
 private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk> {
     // 只重建“图标后连续含 PUA/� 的道具链接簇”：拿到完整名 + HQ，其余句子按原顺序保留，避免把长句误当道具名打乱顺序。
@@ -3812,17 +3880,15 @@ private fun LightSenderName(part: String, muted: Color, fontSizeSp: Int, worldIc
     }
 }
 @Composable
-private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, textMeasurer: TextMeasurer, fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true, senderWorldIconId: Int = 0) {
+private fun LightChatBubble(author: String, message: GameChatMessage, self: Boolean, showSender: Boolean, textMeasurer: TextMeasurer, contentCache: ChatBubbleContentCache, maxBubbleWidth: Dp, fontSizeSp: Int = 14, neutral: Boolean = false, jobIconId: Int = 0, highlight: String = "", senderStatus: Long = 0, authorFontSizeSp: Int = 12, selectionEpoch: Int = 0, showTail: Boolean = true, senderWorldIconId: Int = 0) {
     val fontSp = fontSizeSp.coerceIn(10, 26)
     val fontUnit = fontSp.sp
     val lineUnit = (fontSp + 5).sp
     val timeUnit = (fontSp - 5).coerceAtLeast(9).sp
     val dens = LocalDensity.current
+    val contentPx = with(dens) { (maxBubbleWidth - 32.dp).coerceAtLeast(1.dp).toPx() }
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val selfEmoteFull = self && message.category == ChatCategory.Emote && author.isNotBlank() && !message.text.startsWith(author)
-    val rawText = if (selfEmoteFull) author + message.text else message.text
-    val cleaned = remember(rawText, author) { cleanChatText(rawText, if (selfEmoteFull) "" else author).ifBlank { " " } }
-    val axisFont = remember { FontFamily(Font(R.font.ffxiv_axis)) }
     val timeText = remember(message.timestamp) { lightClock(message.timestamp) }
     // 自己气泡里的时间跟着气泡的字色走。
     val timeColor = if (self) BrandOnBubble.copy(alpha = .72f) else AetherLightMuted
@@ -3838,7 +3904,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     }
     val bubbleBg = if (self) BrandBubble else AetherLightSurface
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (self) Arrangement.End else Arrangement.Start) {
-        Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = 310.dp)) {
+        Column(horizontalAlignment = if (self) Alignment.End else Alignment.Start, modifier = Modifier.widthIn(max = maxBubbleWidth)) {
             if (showSender) {
                 val tagColor = (message.chunks.firstNotNullOfOrNull { it.foreground }?.let { themeAdjustedChannelColor(chatChunkColor(it)) } ?: themeAdjustedChannelColor(channelDefaultColor(message.channel)))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)) {
@@ -3865,28 +3931,19 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
             val horizPad = if (self) Modifier.padding(end = 10.dp) else Modifier.padding(start = 10.dp)
             // v2: incoming white bubbles get a hairline stroke; self bubble keeps solid accent.
             val bubbleBorder = if (!self) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, bubbleShape) else Modifier
-            BoxWithConstraints(
+            Box(
                 // 有尾巴：背景覆盖尾巴+本体，padding 缩内容；无尾巴：padding 在外层，本体从第 10dp 处开始，与带尾巴的首条主体对齐
                 Modifier.then(if (showTail) Modifier.clip(bubbleShape).then(Modifier.background(bubbleBg)).then(bubbleBorder).then(horizPad) else horizPad.then(Modifier.clip(bubbleShape)).then(Modifier.background(bubbleBg)).then(bubbleBorder)),
             ) {
-                val bubbleContent = (maxWidth - 22.dp).coerceAtLeast(40.dp)
-                val contentPx = with(dens) { bubbleContent.toPx() }
-                // 情感动作文字保持正体（不随消息的斜体标记走），颜色不变；缓存 chunks 避免滚动时反复分配
-                val inkChunks = remember(message) { if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks }
-                val renderChunks = remember(inkChunks, cleaned) { cleanItemLinkChunks(inkChunks) }
-                val ink = remember(message, renderChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit) {
-                    chatBubbleInk(renderChunks, cleaned, baseColor, neutral, highlight, light, fontUnit, lineUnit, axisFont, alreadyCleaned = true)
+                val content = remember(contentCache, message, author, selfEmoteFull, baseColor, neutral, highlight, light, fontSp) {
+                    checkNotNull(contentCache[ChatBubbleContentKey(message, author, selfEmoteFull, baseColor, neutral, highlight, light, fontSp)])
                 }
-                // Inline content is independent of width/layout.  Rebuilding its map on
-                // every scroll-driven recomposition was a surprisingly large allocation
-                // hotspot for messages containing item/status icons.
-                val inline = remember(renderChunks, fontUnit, lineUnit) {
-                    chatBubbleInline(renderChunks, cleaned, fontUnit, lineUnit, alreadyCleaned = true)
-                }
+                val ink = content.ink
+                val inline = content.inline
                 val measureStyle = remember(message.category, baseColor, fontUnit, lineUnit) {
                     chatBubbleStyle(baseColor, fontUnit, lineUnit, message.category, TextAlign.Start)
                 }
-                val layout = remember(ink, measureStyle, contentPx) {
+                val layout = remember(textMeasurer, ink, measureStyle, contentPx) {
                     textMeasurer.measure(
                         ink.annotated,
                         measureStyle,
@@ -3902,7 +3959,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
                 }
                 val widePx = lineWidths.maxOrNull()?.coerceAtLeast(1f) ?: contentPx
                 val lastLinePx = if (lineCount > 0) lineWidths[lineCount - 1] else 0f
-                val timePx = remember(timeText, timeUnit) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
+                val timePx = remember(timeText, timeUnit, dens.density, dens.fontScale) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = with(dens) { timeUnit.toPx() } }.measureText(timeText) }
                 val gapPx = with(dens) { 8.dp.toPx() }
                 val canInline = lastLinePx + gapPx + timePx <= contentPx
                 val bubbleWidePx = if (canInline) maxOf(widePx, lastLinePx + gapPx + timePx) else widePx
@@ -4110,9 +4167,12 @@ private fun peekAxisGlyph(code: Int, colorArgb: Int): ImageBitmap? =
 /** Render each private-use glyph once and keep bitmap work off the Compose/UI thread. */
 private fun loadAxisGlyph(context: android.content.Context, code: Int, colorArgb: Int): ImageBitmap? {
     val key = axisGlyphKey(code, colorArgb)
+    peekAxisGlyph(code, colorArgb)?.let { return it }
+    // UI cache lookups share this lock. Font loading and bitmap rendering must
+    // happen outside it or a background cache miss can stall an incoming row.
+    val rendered = renderAxisGlyph(context, code, Color(colorArgb)) ?: return null
     synchronized(axisGlyphLock) {
         axisGlyphCache.get(key)?.let { return it }
-        val rendered = renderAxisGlyph(context, code, Color(colorArgb)) ?: return null
         axisGlyphCache.put(key, rendered)
         return rendered
     }

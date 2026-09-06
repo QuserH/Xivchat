@@ -44,5 +44,8 @@ namespace XIVChatCommon.Message.Client {
 
         /// <summary>Select the food to keep up while crafting (0 = off).</summary>
         CraftFood = 33,
+
+        /// <summary>Request the crafting skill sheet + helpful consumables (op 42 reply).</summary>
+        CraftSkillList = 34,
     }
 }

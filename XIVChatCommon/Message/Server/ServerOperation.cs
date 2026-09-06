@@ -62,5 +62,12 @@
         /// and have not stopped watching. See <see cref="Client.ClientOperation.CraftStart"/>.
         /// </summary>
         CraftState = 40,
+
+        /// <summary>
+        /// The game's crafting skill sheet (CN names/icons/descriptions straight
+        /// from the client data) plus the helpful foods and pots currently in the
+        /// player's inventory. Sent in reply to ClientOperation.CraftSkillList.
+        /// </summary>
+        CraftSkillList = 42,
     }
 }

@@ -599,10 +599,70 @@ internal object XivChatCodec {
         packInt(itemId)
     }
 
-    fun encodeCraftStart(recipeId: Int): ByteArray = pack { packArrayHeader(1); packInt(recipeId) }
+    fun encodeCraftStart(recipeId: Int, foodId: Int = 0, potionId: Int = 0): ByteArray = pack {
+        packArrayHeader(3)
+        packInt(recipeId)
+        packInt(foodId)
+        packInt(potionId)
+    }
     fun encodeCraftSkill(actionId: Long): ByteArray = pack { packArrayHeader(1); packLong(actionId) }
     fun encodeCraftStop(): ByteArray = pack { packArrayHeader(0) }
-    fun encodeCraftFood(itemId: Int): ByteArray = pack { packArrayHeader(1); packInt(itemId) }
+    fun encodeCraftCancel(recipeId: Int, craftInstanceId: Long): ByteArray = pack {
+        packArrayHeader(2)
+        packInt(recipeId)
+        packLong(craftInstanceId)
+    }
+    fun encodeCraftFood(itemId: Int, potionId: Int = 0): ByteArray = pack {
+        packArrayHeader(2)
+        packInt(itemId)
+        packInt(potionId)
+    }
+    fun encodeCraftSkillList(): ByteArray = pack { packArrayHeader(0) }
+
+    /** Opcode 42: [updatedUnix, skills, foods, pots], with optional future fields. */
+    fun readCraftSkillListPacket(unpacker: MessageUnpacker): GameCraftSkillPacket {
+        if (unpacker.tryUnpackNil()) return GameCraftSkillPacket(0L, emptyList(), emptyList(), emptyList())
+        val fields = unpacker.unpackArrayHeader()
+        val updated = if (fields > 0 && !unpacker.tryUnpackNil()) unpacker.unpackLong() else 0L
+        fun readSkills(): List<GameCraftSkill> = buildList {
+            if (fields > 1 && !unpacker.tryUnpackNil()) {
+                repeat(unpacker.unpackArrayHeader()) {
+                    if (!unpacker.tryUnpackNil()) {
+                        val columns = unpacker.unpackArrayHeader()
+                        val id = if (columns > 0) unpacker.unpackLong() else 0L
+                        val name = if (columns > 1) nullableString(unpacker).orEmpty() else ""
+                        val icon = if (columns > 2) unpacker.unpackInt() else 0
+                        val description = if (columns > 3) nullableString(unpacker).orEmpty() else ""
+                        val cp = if (columns > 4) unpacker.unpackInt() else -1
+                        val kind = if (columns > 5) unpacker.unpackInt() else 3
+                        repeat((columns - 6).coerceAtLeast(0)) { unpacker.skipValue() }
+                        if (id > 0 && name.isNotBlank()) add(GameCraftSkill(id, name, icon, description, cp, kind))
+                    }
+                }
+            }
+        }
+        fun readConsumables(): List<GameCraftConsumable> = buildList {
+            if (!unpacker.tryUnpackNil()) {
+                repeat(unpacker.unpackArrayHeader()) {
+                    if (!unpacker.tryUnpackNil()) {
+                        val columns = unpacker.unpackArrayHeader()
+                        val id = if (columns > 0) unpacker.unpackInt() else 0
+                        val name = if (columns > 1) nullableString(unpacker).orEmpty() else ""
+                        val quantity = if (columns > 2) unpacker.unpackInt() else 0
+                        repeat((columns - 3).coerceAtLeast(0)) { unpacker.skipValue() }
+                        if (id > 0 && name.isNotBlank() && quantity > 0) add(GameCraftConsumable(id, name, quantity))
+                    }
+                }
+            }
+        }
+        val skills = readSkills()
+        val foods = if (fields > 2) readConsumables() else emptyList()
+        val pots = if (fields > 3) readConsumables() else emptyList()
+        repeat((fields - 4).coerceAtLeast(0)) { unpacker.skipValue() }
+        return GameCraftSkillPacket(updated, skills, foods, pots)
+    }
+
+    fun readCraftSkillList(unpacker: MessageUnpacker): List<GameCraftSkill> = readCraftSkillListPacket(unpacker).skills
 
     /**
      * Opcode 40: live state of a remotely driven manual craft. ProgressMax/
@@ -610,7 +670,7 @@ internal object XivChatCodec {
      * the running maximum.
      */
     fun readCraftState(unpacker: MessageUnpacker): GameCraftState {
-        unpacker.unpackArrayHeader()
+        val fields = unpacker.unpackArrayHeader()
         unpacker.unpackLong() // updated unix
         val recipeId = unpacker.unpackInt()
         val step = unpacker.unpackInt()
@@ -624,11 +684,14 @@ internal object XivChatCodec {
         val cpMax = unpacker.unpackInt()
         val conditionId = unpacker.unpackInt()
         val finished = unpacker.unpackBoolean()
-        // Older plugins stop at `finished`; guard EOF instead of throwing on peek.
-        val canAct = if (!unpacker.hasNext() || unpacker.tryUnpackNil()) false else unpacker.unpackBoolean()
+        val canAct = fields > 13 && !unpacker.tryUnpackNil() && unpacker.unpackBoolean()
+        val hqChance = if (fields > 14 && !unpacker.tryUnpackNil()) unpacker.unpackInt() else -1
+        val craftInstanceId = if (fields > 15 && !unpacker.tryUnpackNil()) unpacker.unpackLong() else 0L
+        repeat((fields - 16).coerceAtLeast(0)) { unpacker.skipValue() }
         return GameCraftState(
             recipeId, step, progress, progressMax, quality, qualityMax,
             durability, durabilityMax, cp, cpMax, conditionId, finished, canAct,
+            hqChance, craftInstanceId,
         )
     }
 
@@ -784,20 +847,24 @@ internal object XivChatCodec {
     }
 
     fun readSubmarine(unpacker: MessageUnpacker): GameSubmarine {
-        unpacker.unpackArrayHeader()
-        val updated = unpacker.unpackLong()
-        val count = unpacker.unpackArrayHeader()
+        val fields = unpacker.unpackArrayHeader()
+        fun number(): Long = if (unpacker.tryUnpackNil()) 0 else unpacker.unpackLong()
+        val updated = if (fields > 0) number() else 0L
+        val count = if (fields > 1 && !unpacker.tryUnpackNil()) unpacker.unpackArrayHeader() else 0
         val vessels = ArrayList<GameSubmarineVessel>(count)
         repeat(count) {
-            unpacker.unpackArrayHeader()
+            if (unpacker.tryUnpackNil()) return@repeat
+            val columns = unpacker.unpackArrayHeader()
             vessels += GameSubmarineVessel(
-                name = unpacker.unpackString(),
-                returnUnix = unpacker.unpackLong(),
-                rankId = unpacker.unpackInt(),
-                currentExp = unpacker.unpackLong(),
-                nextLevelExp = unpacker.unpackLong(),
+                name = if (columns > 0) nullableString(unpacker).orEmpty() else "",
+                returnUnix = if (columns > 1) number() else 0L,
+                rankId = if (columns > 2) number().toInt() else 0,
+                currentExp = if (columns > 3) number() else 0L,
+                nextLevelExp = if (columns > 4) number() else 0L,
             )
+            repeat((columns - 5).coerceAtLeast(0)) { unpacker.skipValue() }
         }
+        repeat((fields - 2).coerceAtLeast(0)) { unpacker.skipValue() }
         return GameSubmarine(updated, vessels)
     }
 

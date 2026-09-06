@@ -121,6 +121,9 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             24 -> onEvent(PhoneEvent.MarketMonitor(XivChatCodec.readMarketMonitorEvent(unpacker)))
                             25 -> onEvent(PhoneEvent.Recipe(XivChatCodec.readRecipe(unpacker)))
                             40 -> onEvent(PhoneEvent.CraftState(XivChatCodec.readCraftState(unpacker)))
+                            42 -> XivChatCodec.readCraftSkillListPacket(unpacker).let { packet ->
+                                onEvent(PhoneEvent.CraftSkills(packet.skills, packet.foods, packet.pots))
+                            }
                         }
                     } catch (error: Throwable) {
                         onEvent(PhoneEvent.Error("无法解析游戏数据 ($code): ${error.message ?: "未知错误"}"))
@@ -213,16 +216,20 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
     fun requestRecipe(itemId: Int) = sendCommand(XivChatCodec.encodeRecipeRequest(itemId), 17)
 
     /** Open the recipe note on this recipe row and start synthesizing (op 30). */
-    fun craftStart(recipeId: Int) = sendCommand(XivChatCodec.encodeCraftStart(recipeId), 30)
+    fun craftStart(recipeId: Int, foodId: Int = 0, potionId: Int = 0) = sendCommand(XivChatCodec.encodeCraftStart(recipeId, foodId, potionId), 30)
 
     /** Use one crafting ability (op 31). Id >= 100000 is a CraftAction row. */
     fun craftSkill(actionId: Long) = sendCommand(XivChatCodec.encodeCraftSkill(actionId), 31)
 
-    /** Stop receiving remote-craft state (op 32); the in-game craft continues. */
+    /** Release the pending remote driver (op 32); an in-game craft continues. */
     fun craftStop() = sendCommand(XivChatCodec.encodeCraftStop(), 32)
+    /** Destructive: only sent after confirmation, scoped to a specific game craft. */
+    fun craftCancel(recipeId: Int, craftInstanceId: Long) =
+        sendCommand(XivChatCodec.encodeCraftCancel(recipeId, craftInstanceId), 32)
 
-    /** Select the food the plugin keeps up while crafting (op 33, 0 = off). */
-    fun craftFood(itemId: Int) = sendCommand(XivChatCodec.encodeCraftFood(itemId), 33)
+    /** Legacy pre-craft consumable configuration (op 33, 0 = off). */
+    fun craftFood(itemId: Int, potionId: Int = 0) = sendCommand(XivChatCodec.encodeCraftFood(itemId, potionId), 33)
+    fun requestCraftSkills() = sendCommand(XivChatCodec.encodeCraftSkillList(), 34)
 
     fun requestFriends() = sendCommand(XivChatCodec.encodePlayerList(), 6)
     fun requestParty() = sendCommand(XivChatCodec.encodePlayerList(1), 6)

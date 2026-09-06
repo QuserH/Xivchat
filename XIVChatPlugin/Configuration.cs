@@ -2,6 +2,7 @@ using Dalamud.Configuration;
 using Sodium;
 using System;
 using System.Collections.Generic;
+using XIVChatCommon.Message.Server;
 
 namespace XIVChatPlugin {
     [Serializable]
@@ -44,6 +45,8 @@ namespace XIVChatPlugin {
         /// file) so monitoring survives a restart exactly like every other setting.
         /// </summary>
         public List<MarketMonitorConfig> MarketMonitors { get; set; } = new();
+
+        public Dictionary<string, ServerSubmarine> SubmarineSnapshots { get; set; } = new();
 
         public bool AllowRelayConnections { get; set; }
         public string? RelayAuth { get; set; }

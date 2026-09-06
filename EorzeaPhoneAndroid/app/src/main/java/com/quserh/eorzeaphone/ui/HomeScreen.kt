@@ -46,11 +46,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -173,7 +174,8 @@ fun HomeScreen(state: PhoneState) {
         }
         var sheetHeightPx by remember { mutableStateOf(0f) }
         val sheetY = remember { Animatable(-100000f) }
-        val sheetVisible = sheetY.value > -sheetHeightPx + 1f
+        val sheetVisible by remember { derivedStateOf { sheetHeightPx > 0f && sheetY.value > -sheetHeightPx + 1f } }
+        val deckStateHolder = rememberSaveableStateHolder()
         // Emil-style: gesture-driven sheet = spring that carries the drag velocity,
         // critically damped (no bounce, iOS drawer feel). Reduced motion snaps.
         val motionAllowed = phoneMotionEnabled()
@@ -256,9 +258,11 @@ fun HomeScreen(state: PhoneState) {
                 editMode = state.homeEditMode,
                 hoverSlot = if (dragPoint == null) -1 else dockSlotBounds.indexOfFirst { it.contains(dragPoint ?: Offset.Zero) },
                 onSlotBounds = { index, rect ->
-                    dockSlotBounds = dockSlotBounds.toMutableList().also {
-                        while (it.size <= index) it.add(Rect.Zero)
-                        it[index] = rect
+                    if (dockSlotBounds.getOrNull(index) != rect) {
+                        dockSlotBounds = dockSlotBounds.toMutableList().also {
+                            while (it.size <= index) it.add(Rect.Zero)
+                            it[index] = rect
+                        }
                     }
                 },
             )
@@ -269,7 +273,8 @@ fun HomeScreen(state: PhoneState) {
                 Box(
                     Modifier
                         .matchParentSize()
-                        .background(Color.Black.copy(alpha = 0.35f * (1f + sheetY.value / sheetHeightPx)))
+                        .graphicsLayer { alpha = (1f + sheetY.value / sheetHeightPx.coerceAtLeast(1f)).coerceIn(0f, 1f) }
+                        .background(Color.Black.copy(alpha = 0.35f))
                         .pointerInput(Unit) { detectTapGestures { closeSheet() } },
                 )
             }
@@ -300,6 +305,10 @@ fun HomeScreen(state: PhoneState) {
                     }
                     .onSizeChanged { sheetHeightPx = it.height.toFloat() },
             ) {
+                // Keep the lightweight sheet bounds, but stop its timers, feed sorting
+                // and snapshot subscriptions while it is entirely offscreen.
+                if (sheetVisible) {
+                deckStateHolder.SaveableStateProvider("home-deck") {
                 Column(Modifier.fillMaxSize()) {
                     // Notification-shade style header: title left, settings gear top-right.
                     Row(
@@ -320,6 +329,8 @@ fun HomeScreen(state: PhoneState) {
                     }
                     HomeDeck(state, Modifier.fillMaxSize())
                 }
+                }
+                }
             }
         }
     }
@@ -338,10 +349,7 @@ private fun HomeEditBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
-                Text("编辑主屏幕", color = homeText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text("长按拖拽排序 · 拖到回收站删除", color = homeText.copy(alpha = .8f), fontSize = 11.sp)
-            }
+            Text("编辑主屏幕", color = homeText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "完成",
@@ -412,7 +420,9 @@ private fun AppsGrid(
     onSwipeToNextPage: (String) -> Unit,
 ) {
     val hapticView = LocalView.current
-    val bounds = remember { mutableStateMapOf<String, Rect>() }
+    // Geometry is read by gesture callbacks, not composition. Pager placement must
+    // not publish a snapshot-state write for every icon on every scroll frame.
+    val bounds = remember(page) { HashMap<String, Rect>() }
     var dragId by remember(page) { mutableStateOf<String?>(null) }
     var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
     var originRect by remember(page) { mutableStateOf<Rect?>(null) }
@@ -541,20 +551,20 @@ private fun HomeTile(
                 label = "app-press",
             )
     val editDrag = editing
-    val shake = rememberInfiniteTransition(label = "shake")
-    val rotation by shake.animateFloat(
-        initialValue = -2.5f,
-        targetValue = 2.5f,
-        animationSpec = infiniteRepeatable(tween(120), RepeatMode.Reverse),
-        label = "shake-rotation",
-    )
-    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val rotation = if (editDrag && phoneMotionEnabled()) {
+        val shake = rememberInfiniteTransition(label = "shake")
+        shake.animateFloat(
+            initialValue = -2.5f,
+            targetValue = 2.5f,
+            animationSpec = infiniteRepeatable(tween(120), RepeatMode.Reverse),
+            label = "shake-rotation",
+        )
+    } else null
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .onGloballyPositioned {
-                bounds = it.boundsInRoot()
                 onBounds(it.boundsInRoot())
             }
             .graphicsLayer {
@@ -609,7 +619,7 @@ private fun HomeTile(
                     .graphicsLayer {
                         scaleX = if (dragging) 1f else scale
                         scaleY = if (dragging) 1f else scale
-                        rotationZ = if (editDrag && !dragging) rotation else 0f
+                        rotationZ = if (!dragging) rotation?.value ?: 0f else 0f
                         // Lift the dragged tile from its own rounded outline. 12f rather
                         // than the old 18f: the shadow now actually shows, so it needs less.
                         shadowElevation = if (dragging) 12f else 0f
@@ -716,6 +726,8 @@ internal fun weatherIcon(name: String): Int = when {
     else -> R.drawable.ic_weather_cloud
 }
 
+private class HomeIconBounds(var value: Rect = Rect.Zero)
+
 @Composable
 private fun HomeDockBar(
     state: PhoneState,
@@ -741,10 +753,7 @@ private fun HomeDockBar(
     ) {
         val dockApps = state.dockAppIds.mapNotNull { AppCatalog.byId(it) }
         dockApps.forEachIndexed { appIndex, app ->
-            var bounds by remember(app.id) { mutableStateOf(Rect.Zero) }
-            androidx.compose.runtime.SideEffect {
-                if (bounds != Rect.Zero) onSlotBounds(appIndex, bounds)
-            }
+            val bounds = remember(app.id) { HomeIconBounds() }
             val interaction = remember(app.id, state) { MutableInteractionSource() }
             val pressed by interaction.collectIsPressedAsState()
             val scale by animateFloatAsState(if (pressed) 0.86f else 1f, spring(dampingRatio = .62f, stiffness = 520f), label = "dock-press")
@@ -757,7 +766,11 @@ private fun HomeDockBar(
                     modifier = Modifier
                         .size(40.dp)
                         .graphicsLayer { scaleX = scale; scaleY = scale }
-                        .onGloballyPositioned { bounds = it.boundsInRoot() }
+                        .onGloballyPositioned {
+                            val rect = it.boundsInRoot()
+                            bounds.value = rect
+                            onSlotBounds(appIndex, rect)
+                        }
                         .clip(RoundedCornerShape(13.dp))
                         .background(tileBase)
                         .border(
@@ -767,7 +780,7 @@ private fun HomeDockBar(
                         )
                         .clickable(interactionSource = interaction, indication = null) {
                             if (state.haptics) hapticView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            state.open(app, bounds)
+                            state.open(app, bounds.value)
                         },
                 ) {
                     Image(

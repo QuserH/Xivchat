@@ -28,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +55,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.quserh.eorzeaphone.craft.data.JobCat
 import com.quserh.eorzeaphone.data.ItemIconLoader
+import com.quserh.eorzeaphone.R
+import com.quserh.eorzeaphone.ui.ImageGlyph
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import com.quserh.eorzeaphone.craft.data.CraftItem
 import com.quserh.eorzeaphone.craft.ui.CraftFill
@@ -117,13 +120,12 @@ fun Pressable(
     }
 }
 
-/** iOS inset-group card. */
+/** Full-width section surface, separate from the cards used for individual controls. */
 @Composable
 fun GroupCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(
         modifier
             .fillMaxWidth()
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
             .background(CraftSurface),
     ) { content() }
 }
@@ -167,7 +169,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(CraftSurface)
             .padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -230,15 +232,16 @@ fun CraftTabBar(current: Int, onSelect: (Int) -> Unit) {
                         .fillMaxSize()
                         .clickable { onSelect(index) },
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    Box(Modifier.padding(top = 9.dp).size(4.dp)) {
+                    Box(Modifier.size(4.dp)) {
                         if (selected) {
                             Box(Modifier.size(4.dp).background(CraftFill, androidx.compose.foundation.shape.CircleShape))
                         }
                     }
                     Text(
                         label,
-                        style = CraftType.Caption,
+                        style = CraftType.Callout,
                         color = if (selected) CraftText else CraftMuted.copy(alpha = 0.9f),
                         modifier = Modifier.padding(top = 2.dp).alpha(if (selected) 1f else 0.75f),
                     )
@@ -266,10 +269,10 @@ fun QtyStepper(value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(30.dp).clickable { onValue((value - 1).coerceAtLeast(1)) },
+            Modifier.size(32.dp).semantics { contentDescription = "减少数量" }.clickable(enabled = value > 1) { onValue((value - 1).coerceAtLeast(1)) },
             contentAlignment = Alignment.Center,
-        ) { Text("−", style = CraftType.Headline, color = CraftText) }
-        Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+        ) { ImageGlyph(R.drawable.ic2_remove, if (value > 1) CraftText else CraftMuted, Modifier.size(18.dp)) }
+        Box(Modifier.width(52.dp), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.text.BasicTextField(
                 value = text,
                 onValueChange = { raw ->
@@ -286,9 +289,9 @@ fun QtyStepper(value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier
             )
         }
         Box(
-            Modifier.size(30.dp).clickable { onValue(value + 1) },
+            Modifier.size(32.dp).semantics { contentDescription = "增加数量" }.clickable { onValue(value + 1) },
             contentAlignment = Alignment.Center,
-        ) { Text("＋", style = CraftType.Headline, color = CraftText) }
+        ) { ImageGlyph(R.drawable.ic2_plus, CraftText, Modifier.size(18.dp)) }
     }
 }
 
@@ -347,24 +350,17 @@ fun CartFab(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
 }
 }
 
-/**
- * 职业角色标签：坦克=蓝底、奶妈=绿底、战斗职业=红底、通用/生产/采集=灰底；
- * 制造·采集类别里只有一个职业（主副手工具）时精确显示该职业名。
- */
 @Composable
 fun RoleTag(cat: JobCat, modifier: Modifier = Modifier) {
-    val single = !cat.label.contains("·")
-    val (label, bg) = when (cat.role) {
-        "tank" -> "坦克" to RoleTank
-        "heal" -> "奶妈" to RoleHeal
-        "battle" -> "战斗职业" to RoleBattle
-        "universal" -> "通用" to RoleNeutral
-        "craft" -> (if (single) cat.label else "能工巧匠") to RoleNeutral
-        "gather" -> (if (single) cat.label else "大地使者") to RoleNeutral
-        else -> cat.label to RoleNeutral
+    if (cat.label.isBlank()) return
+    val bg = when (cat.role) {
+        "tank" -> RoleTank
+        "heal" -> RoleHeal
+        "battle" -> RoleBattle
+        else -> RoleNeutral
     }
     Text(
-        label,
+        cat.label,
         style = CraftType.Micro,
         color = Color.White,
         modifier = modifier

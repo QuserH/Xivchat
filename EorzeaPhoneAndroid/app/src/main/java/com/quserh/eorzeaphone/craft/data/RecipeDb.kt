@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.util.JsonReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -91,6 +92,7 @@ class RecipeDb(private val context: Context) {
                     // execSQL compiles ONE statement per call; a joined script would
                     // silently create only the first table.
                     SCHEMA_STATEMENTS.forEach { dbb.execSQL(it) }
+                    parseJobCategories(zip, dbb)
                     zip.getEntry("item")?.let { entry ->
                         zip.getInputStream(entry).use { stream ->
                             JsonReader(stream.reader().buffered(1 shl 16)).use { reader ->
@@ -143,7 +145,7 @@ class RecipeDb(private val context: Context) {
         // backslash swallows the quote during literal parsing); char(92) is the
         // same character as an expression and parses cleanly.
         val esc = "ESCAPE char(92)"
-        val rows = mutableListOf<Pair<Int, CraftItem>>()
+        val rows = mutableListOf<CraftItem>()
         val sql = """
             SELECT id, name_cn, name_jp, name_en, icon, ilv, hq, uicat, jobs,
                 CASE
@@ -158,15 +160,15 @@ class RecipeDb(private val context: Context) {
             LIMIT $limit
         """.trimIndent()
         database.rawQuery(sql, arrayOf(q, q, q, "$q%", "$q%", "$q%", like, like, like)).use { cur ->
+            val jobsColumn = cur.getColumnIndexOrThrow("jobs")
             while (cur.moveToNext()) {
-                rows += cur.getInt(8) to CraftItem(
+                rows += CraftItem(
                     cur.getInt(0), cur.getString(1) ?: "", cur.getString(2) ?: "", cur.getString(3) ?: "",
-                    cur.getInt(4), cur.getInt(5), cur.getInt(6) != 0, cur.getInt(7), cur.getInt(9),
+                    cur.getInt(4), cur.getInt(5), cur.getInt(6) != 0, cur.getInt(7), cur.getInt(jobsColumn),
                 )
             }
         }
-        return rows.sortedWith(compareByDescending<Pair<Int, CraftItem>> { it.first }.thenBy { it.second.id })
-            .map { it.second }
+        return rows
     }
 
     fun item(id: Int): CraftItem? {
@@ -202,6 +204,29 @@ class RecipeDb(private val context: Context) {
                     ))
                 }
             }
+        }
+    }
+
+    fun recipe(recipeId: Int): CraftRecipe? {
+        val database = db ?: return null
+        return database.rawQuery(
+            "SELECT item_id, job, yield, craft_lv, stars, rlv, hq, qs, pmax, qmax FROM recipes WHERE id=?",
+            arrayOf(recipeId.toString()),
+        ).use { cur ->
+            if (!cur.moveToFirst()) return@use null
+            CraftRecipe(
+                id = recipeId,
+                job = cur.getInt(1),
+                itemId = cur.getInt(0),
+                yield = cur.getInt(2),
+                craftLv = cur.getInt(3),
+                stars = cur.getInt(4),
+                rlv = cur.getInt(5),
+                hq = cur.getInt(6) != 0,
+                qs = cur.getInt(7) != 0,
+                pmax = cur.getInt(8),
+                qmax = cur.getInt(9),
+            )
         }
     }
 
@@ -268,27 +293,30 @@ class RecipeDb(private val context: Context) {
 
     private fun open(file: File) {
         val database = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
-        // Fail fast on a corrupt file: touch every table the app queries.
-        database.rawQuery("SELECT v FROM meta WHERE k='built_at'", null).use { cur ->
-            check(cur.moveToFirst()) { "meta 表为空" }
-            version = cur.getString(0)
+        try {
+            // Reject old/corrupt caches before publishing the new database handle.
+            database.rawQuery("SELECT v FROM meta WHERE k='built_at'", null).use { cur ->
+                check(cur.moveToFirst()) { "meta 表为空" }
+                version = cur.getString(0)
+            }
+            database.rawQuery("SELECT v FROM meta WHERE k='schema_version'", null).use { cur ->
+                check(cur.moveToFirst() && cur.getString(0) == EXPECTED_SCHEMA) { "配方库版本过旧" }
+            }
+            jobcats = database.rawQuery("SELECT id, label, role FROM jobcat", null).use { cur ->
+                buildMap { while (cur.moveToNext()) put(cur.getInt(0), JobCat(cur.getString(1), cur.getString(2))) }
+            }
+            craftableIds = database.rawQuery("SELECT DISTINCT item_id FROM recipes", null).use { cur ->
+                buildSet { while (cur.moveToNext()) add(cur.getInt(0)) }
+            }
+            database.rawQuery("SELECT COUNT(*) FROM items", null).use { cur ->
+                check(cur.moveToFirst() && cur.getInt(0) > 0) { "items 表为空" }
+            }
+            db?.close()
+            db = database
+        } catch (error: Throwable) {
+            database.close()
+            throw error
         }
-        // Old-schema local copies are rejected here, which triggers the repair
-        // path (delete + re-extract from the bundled asset).
-        database.rawQuery("SELECT v FROM meta WHERE k='schema_version'", null).use { cur ->
-            check(cur.moveToFirst() && cur.getString(0) == EXPECTED_SCHEMA) { "配方库版本过旧" }
-        }
-        jobcats = database.rawQuery("SELECT id, label, role FROM jobcat", null).use { cur ->
-            buildMap { while (cur.moveToNext()) put(cur.getInt(0), JobCat(cur.getString(1), cur.getString(2))) }
-        }
-        craftableIds = database.rawQuery("SELECT DISTINCT item_id FROM recipes", null).use { cur ->
-            buildSet { while (cur.moveToNext()) add(cur.getInt(0)) }
-        }
-        database.rawQuery("SELECT COUNT(*) FROM items", null).use { cur ->
-            check(cur.moveToFirst() && cur.getInt(0) > 0) { "items 表为空" }
-        }
-        db?.close()
-        db = database
     }
 
     private fun download(url: String, target: File) {
@@ -310,7 +338,7 @@ class RecipeDb(private val context: Context) {
 
     private fun parseItems(reader: JsonReader, database: SQLiteDatabase, onProgress: (String) -> Unit): Int {
         val stmt = database.compileStatement(
-            "INSERT OR REPLACE INTO items VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO items VALUES(?,?,?,?,?,?,?,?,?)",
         )
         reader.beginObject()
         var count = 0
@@ -324,6 +352,7 @@ class RecipeDb(private val context: Context) {
             var icon = 0
             var ilv = 0
             var uc = 0
+            var jobs = 0
             var hq = false
             while (reader.hasNext()) {
                 when (reader.nextName()) {
@@ -340,6 +369,7 @@ class RecipeDb(private val context: Context) {
                     "icon" -> icon = reader.nextInt()
                     "ilv" -> ilv = reader.nextInt()
                     "uc" -> uc = reader.nextInt()
+                    "jobs" -> jobs = reader.nextInt()
                     "hq" -> hq = reader.nextBoolean()
                     else -> reader.skipValue()
                 }
@@ -353,6 +383,7 @@ class RecipeDb(private val context: Context) {
             stmt.bindLong(6, ilv.toLong())
             stmt.bindLong(7, if (hq) 1 else 0)
             stmt.bindLong(8, uc.toLong())
+            stmt.bindLong(9, jobs.toLong())
             stmt.execute()
             count++
             if (count % 10000 == 0) onProgress("解析道具 $count…")
@@ -362,6 +393,38 @@ class RecipeDb(private val context: Context) {
         return count
     }
 
+    private fun parseJobCategories(zip: ZipFile, database: SQLiteDatabase) {
+        val entry = checkNotNull(zip.getEntry("ClassJobCategory")) { "缺少装备职业类别数据" }
+        val categories = zip.getInputStream(entry).use { JSONObject(it.reader().readText()) }
+        val crafters = setOf("CRP", "BSM", "ARM", "GSM", "LTW", "WVR", "ALC", "CUL")
+        val gatherers = setOf("MIN", "BTN", "FSH")
+        val tanks = setOf("GLA", "MRD", "PLD", "WAR", "DRK", "GNB")
+        val healers = setOf("CNJ", "WHM", "SCH", "AST", "SGE")
+        val statement = database.compileStatement("INSERT OR REPLACE INTO jobcat VALUES(?,?,?)")
+        for (key in categories.keys()) {
+            val languages = categories.getJSONObject(key).optJSONArray("lang") ?: continue
+            val label = languages.optString(1).trim().replace(" ", "·")
+            if (label.isBlank()) continue
+            val jobs = languages.optString(0).replace("All Classes", "").split(Regex("\\s+"))
+                .filter { it.isNotBlank() }.toSet()
+            val battle = jobs - crafters - gatherers
+            val role = when {
+                jobs.isEmpty() -> "universal"
+                jobs.all { it in crafters } -> "craft"
+                jobs.all { it in gatherers } -> "gather"
+                battle.isEmpty() -> "universal"
+                battle.all { it in tanks } -> "tank"
+                battle.all { it in healers } -> "heal"
+                else -> "battle"
+            }
+            statement.bindLong(1, key.toLong())
+            statement.bindString(2, label)
+            statement.bindString(3, role)
+            statement.execute()
+        }
+        statement.close()
+    }
+
     private fun parseRecipes(
         reader: JsonReader,
         database: SQLiteDatabase,
@@ -369,7 +432,7 @@ class RecipeDb(private val context: Context) {
         rlTable: Map<Int, Pair<Int, Int>>,
     ): Int {
         val recipeStmt = database.compileStatement(
-            "INSERT OR REPLACE INTO recipes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO recipes VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         val rlStmt = database.compileStatement(
             "INSERT OR REPLACE INTO rltable VALUES(?,?,?)",
@@ -391,6 +454,7 @@ class RecipeDb(private val context: Context) {
             var rlv = 0
             var hq = false
             var qs = false
+            var factors: List<Int> = emptyList()
             var mats: List<Int> = emptyList()
             var crystals: List<Int> = emptyList()
             while (reader.hasNext()) {
@@ -407,6 +471,7 @@ class RecipeDb(private val context: Context) {
                     "m" -> mats = readIntArray(reader)
                     "s" -> crystals = readIntArray(reader)
                     "rlv" -> rlv = reader.nextInt()
+                    "sp1" -> factors = readIntArray(reader)
                     "hq" -> hq = reader.nextBoolean()
                     "qs" -> qs = reader.nextBoolean()
                     else -> reader.skipValue()
@@ -422,9 +487,13 @@ class RecipeDb(private val context: Context) {
             recipeStmt.bindLong(7, rlv.toLong())
             recipeStmt.bindLong(8, if (hq) 1 else 0)
             recipeStmt.bindLong(9, if (qs) 1 else 0)
+            val progressFactor = factors.getOrElse(0) { 100 }
+            val qualityFactor = factors.getOrElse(1) { 100 }
+            recipeStmt.bindLong(12, progressFactor.toLong())
+            recipeStmt.bindLong(13, qualityFactor.toLong())
             rlTable[rlv]?.let { rl ->
-                recipeStmt.bindLong(10, rl.first.toLong())
-                recipeStmt.bindLong(11, rl.second.toLong())
+                recipeStmt.bindLong(10, recipeCap(rl.first, progressFactor).toLong())
+                recipeStmt.bindLong(11, recipeCap(rl.second, qualityFactor).toLong())
             }
             if (rlTable[rlv] == null) {
                 recipeStmt.bindLong(10, 0)
@@ -539,7 +608,7 @@ class RecipeDb(private val context: Context) {
     companion object {
         const val DB_NAME = "craft.db"
         const val DEFAULT_URL = "https://5p.nbb.ffxiv.cn/statics/statics.json"
-        const val EXPECTED_SCHEMA = "3"
+        const val EXPECTED_SCHEMA = "4"
         /** One statement per entry — SQLiteDatabase.execSQL compiles a single statement. */
         val SCHEMA_STATEMENTS = listOf(
             """
@@ -548,7 +617,8 @@ class RecipeDb(private val context: Context) {
                 name_cn TEXT NOT NULL DEFAULT '', name_jp TEXT NOT NULL DEFAULT '',
                 name_en TEXT NOT NULL DEFAULT '',
                 icon INTEGER NOT NULL DEFAULT 0, ilv INTEGER NOT NULL DEFAULT 0,
-                hq INTEGER NOT NULL DEFAULT 0, uicat INTEGER NOT NULL DEFAULT 0)
+                hq INTEGER NOT NULL DEFAULT 0, uicat INTEGER NOT NULL DEFAULT 0,
+                jobs INTEGER NOT NULL DEFAULT 0)
             """.trimIndent(),
             """
             CREATE TABLE recipes(
@@ -557,7 +627,8 @@ class RecipeDb(private val context: Context) {
                 yield INTEGER NOT NULL DEFAULT 1, craft_lv INTEGER NOT NULL DEFAULT 0,
                 stars INTEGER NOT NULL DEFAULT 0, rlv INTEGER NOT NULL DEFAULT 0,
                 hq INTEGER NOT NULL DEFAULT 0, qs INTEGER NOT NULL DEFAULT 0,
-                pmax INTEGER NOT NULL DEFAULT 0, qmax INTEGER NOT NULL DEFAULT 0)
+                pmax INTEGER NOT NULL DEFAULT 0, qmax INTEGER NOT NULL DEFAULT 0,
+                difficulty_factor INTEGER NOT NULL DEFAULT 100, quality_factor INTEGER NOT NULL DEFAULT 100)
             """.trimIndent(),
             "CREATE INDEX idx_recipes_item ON recipes(item_id)",
             """
@@ -567,6 +638,7 @@ class RecipeDb(private val context: Context) {
             """.trimIndent(),
             "CREATE INDEX idx_mats_recipe ON recipe_mats(recipe_id)",
             "CREATE INDEX idx_mats_item ON recipe_mats(item_id)",
+            "CREATE TABLE jobcat(id INTEGER PRIMARY KEY, label TEXT NOT NULL, role TEXT NOT NULL)",
         """
             CREATE TABLE rltable(
                 rlv INTEGER PRIMARY KEY, difficulty INTEGER NOT NULL DEFAULT 0,

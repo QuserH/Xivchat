@@ -21,6 +21,9 @@ namespace XIVChatCommon.Message.Server {
         [Key(11)] public int ConditionId { get; set; }
         [Key(12)] public bool Finished { get; set; }
         [Key(13)] public bool CanAct { get; set; }
+        [Key(14)] public int HqChance { get; set; } = -1;
+        // Identifies one synthesis, even when the next craft uses the same recipe.
+        [Key(15)] public long CraftInstanceId { get; set; }
 
         public ServerCraftState() {
         }
