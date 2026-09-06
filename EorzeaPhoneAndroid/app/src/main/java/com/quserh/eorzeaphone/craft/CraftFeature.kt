@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.quserh.eorzeaphone.craft.data.CartStore
 import com.quserh.eorzeaphone.craft.data.CraftRecipe
+import com.quserh.eorzeaphone.craft.data.CraftJobs
 import com.quserh.eorzeaphone.craft.data.CraftSession
 import com.quserh.eorzeaphone.craft.data.CraftingListStore
 import com.quserh.eorzeaphone.craft.data.InventoryItem
@@ -153,7 +154,7 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     }
 
     /** 远程模式是否可用：终端已连上游戏插件。 */
-    val craftConnected: Boolean get() = phone.isConnected()
+    val craftConnected: Boolean get() = phone.activeCharacterOnline
     val craftSkills get() = phone.craftSkills
     val craftFoods get() = phone.craftFoods
     val craftPots get() = phone.craftPots
@@ -163,22 +164,16 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     val remoteCraft: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
 
     private val foodPrefs = context.getSharedPreferences("craft_food", Context.MODE_PRIVATE)
-    private val statsPrefs = context.getSharedPreferences("craft_simulation_stats", Context.MODE_PRIVATE)
+    /** Recipe jobs use 0..7; only the persistence/protocol boundary uses game ids 8..15. */
+    val craftCharacterKey: String get() = phone.currentCharacterKey
+    val currentCraftJob: Int? get() = phone.profile?.classJobId?.toInt()?.let(CraftJobs::recipeJob)
+    fun simulationStats(job: Int) = phone.craftStats.forJob(CraftJobs.gameJobId(job))
+    fun setSimulationStats(job: Int, cp: Int, craftsmanship: Int, control: Int) =
+        phone.craftStats.saveManual(CraftJobs.gameJobId(job), cp, craftsmanship, control)
 
-    /** 模拟制作面板：允许用户按当前角色手动填写，并跨启动保存。 */
-    var craftCpMax by mutableStateOf(statsPrefs.getInt("cp", 400).coerceAtLeast(1))
-    var craftsmanship by mutableStateOf(statsPrefs.getInt("craftsmanship", 3000).coerceAtLeast(1))
-    var control by mutableStateOf(statsPrefs.getInt("control", 3000).coerceAtLeast(1))
-
-    fun setSimulationStats(cp: Int, craftsmanship: Int, control: Int) {
-        craftCpMax = cp.coerceAtLeast(1)
-        this.craftsmanship = craftsmanship.coerceAtLeast(1)
-        this.control = control.coerceAtLeast(1)
-        statsPrefs.edit()
-            .putInt("cp", craftCpMax)
-            .putInt("craftsmanship", this.craftsmanship)
-            .putInt("control", this.control)
-            .apply()
+    fun startSimulation(recipe: CraftRecipe, itemName: String): CraftSession {
+        val stats = simulationStats(recipe.job)
+        return engine.startMock(recipe, itemName, stats.cpMax, stats.craftsmanship, stats.control)
     }
 
     /** 选中的食物（0=未选）；持久化，启动远程制作时下发给插件。 */

@@ -194,11 +194,22 @@ data class GameCraftConsumable(
     val quantity: Int,
 )
 
+/** Current equipped crafting job; game ClassJob ids are 8..15, not recipe job indices. */
+data class GameCraftStats(
+    val jobId: Int,
+    val craftsmanship: Int,
+    val control: Int,
+    val cpMax: Int,
+) {
+    val valid: Boolean get() = jobId in 8..15 && craftsmanship > 0 && control > 0 && cpMax > 0
+}
+
 data class GameCraftSkillPacket(
     val updatedUnix: Long,
     val skills: List<GameCraftSkill>,
     val foods: List<GameCraftConsumable>,
     val pots: List<GameCraftConsumable>,
+    val stats: GameCraftStats? = null,
 )
 
 data class GameCraftState(
@@ -587,6 +598,8 @@ sealed interface PhoneEvent {
         val skills: List<GameCraftSkill>,
         val foods: List<GameCraftConsumable> = emptyList(),
         val pots: List<GameCraftConsumable> = emptyList(),
+        val stats: GameCraftStats? = null,
+        val updatedUnix: Long = 0,
     ) : PhoneEvent
     data class Wallet(val wallet: GameWallet) : PhoneEvent
     data class Profile(val profile: PlayerProfile) : PhoneEvent

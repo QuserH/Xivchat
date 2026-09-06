@@ -28,7 +28,36 @@ class CraftSkillCodecTest {
             val packet = XivChatCodec.readCraftSkillListPacket(u)
             assertEquals(listOf(GameCraftConsumable(1_000_100, "料理", 2)), packet.foods)
             assertEquals(listOf(GameCraftConsumable(101, "药剂", 3)), packet.pots)
+            assertNull(packet.stats)
             assertFalse(u.hasNext())
+        }
+    }
+
+    @Test
+    fun readsCurrentJobStatsAndSkipsFutureFields() {
+        val bytes = MessagePack.newDefaultBufferPacker().use { p ->
+            p.packArrayHeader(9).packLong(123).packArrayHeader(0).packArrayHeader(0).packArrayHeader(0)
+            p.packInt(15).packInt(5000).packInt(4900).packInt(700).packString("future")
+            p.toByteArray()
+        }
+        MessagePack.newDefaultUnpacker(bytes).use { u ->
+            assertEquals(GameCraftStats(15, 5000, 4900, 700), XivChatCodec.readCraftSkillListPacket(u).stats)
+            assertFalse(u.hasNext())
+        }
+    }
+
+    @Test
+    fun missingOrInvalidStatsNeverBecomeAZeroConfiguration() {
+        listOf(0, 7, 8, 16).forEach { job ->
+            val bytes = MessagePack.newDefaultBufferPacker().use { p ->
+                p.packArrayHeader(8).packLong(123).packArrayHeader(0).packArrayHeader(0).packArrayHeader(0)
+                p.packInt(job).packInt(0).packNil().packInt(700)
+                p.toByteArray()
+            }
+            MessagePack.newDefaultUnpacker(bytes).use { u ->
+                assertNull(XivChatCodec.readCraftSkillListPacket(u).stats)
+                assertFalse(u.hasNext())
+            }
         }
     }
 

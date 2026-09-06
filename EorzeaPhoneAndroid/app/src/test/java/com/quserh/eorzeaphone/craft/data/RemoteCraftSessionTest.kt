@@ -21,12 +21,37 @@ class RemoteCraftSessionTest {
         override val chat = MutableSharedFlow<GameChatMessage>(extraBufferCapacity = 1)
         var starts = 0
         var stops = 0
+        val actions = mutableListOf<Long>()
         val cancellations = mutableListOf<Pair<Int, Long>>()
         override fun craftStart(recipeId: Int) { starts++ }
-        override fun craftSkill(actionId: Long) = Unit
+        override fun craftSkill(actionId: Long) { actions += actionId }
         override fun craftStop() { stops++ }
         override fun craftCancel(recipeId: Int, craftInstanceId: Long) { cancellations += recipeId to craftInstanceId }
         override fun craftFood(itemId: Int) = Unit
+    }
+
+    @Test fun skillsFollowPluginCanActAndDoNotUseLocalPracticeRules() = runBlocking {
+        val bridge = Bridge().also { it.lastState = frame().copy(canAct = false, cp = 0) }
+        val session = RemoteCraftSession(this, recipe, "道具", bridge, false)
+        val skill = CraftSkills.forJob(recipe.job).first { it.canonicalId == 100002L }
+        try {
+            withTimeout(3000) { session.state.filterNotNull().first { it.step == 2 } }
+            session.useSkill(skill)
+            assertTrue(bridge.actions.isEmpty())
+
+            // The plugin owns remote availability, even when local CP rules would reject it.
+            bridge.lastState = frame(step = 3).copy(canAct = true, cp = 0)
+            withTimeout(3000) { session.state.filterNotNull().first { it.step == 3 && it.canAct } }
+            session.useSkill(skill)
+            session.useSkill(skill)
+            assertEquals(listOf(skill.id), bridge.actions)
+            assertFalse(session.state.value!!.canAct)
+
+            bridge.lastState = frame(step = 4).copy(finished = true)
+            withTimeout(3000) { session.state.filterNotNull().first { it.finished } }
+            session.useSkill(skill)
+            assertEquals(listOf(skill.id), bridge.actions)
+        } finally { session.stop() }
     }
 
     @Test fun adoptsWithoutStartingAnotherGameCraftAndUsesRecipeCaps() = runBlocking {

@@ -1381,7 +1381,7 @@ namespace XIVChatPlugin {
         /// Dump the game's crafting skills (CN names/icons/descriptions from the
         /// client sheets) and the helpful foods/pots currently in inventory.
         /// </summary>
-        private ServerCraftSkillList? BuildCraftSkillList() {
+        private unsafe ServerCraftSkillList? BuildCraftSkillList() {
             try {
                 if (this._craftSkillRows == null) {
                 var skills = new Dictionary<uint, ServerCraftSkill>();
@@ -1469,11 +1469,30 @@ namespace XIVChatPlugin {
                     }
                 }
 
+                // Attributes change with jobs, gear and buffs; never cache them with the skill sheet.
+                int classJobId = 0, craftsmanship = 0, control = 0, cpMax = 0;
+                var player = Plugin.ObjectTable.LocalPlayer;
+                if (player != null && player.ClassJob.RowId is >= 8 and <= 15) {
+                    classJobId = (int)player.ClassJob.RowId;
+                    cpMax = Math.Max(0, (int)player.MaxCp);
+                    var playerState = PlayerState.Instance();
+                    // During a job transition, do not assign the previous job's attributes to the new one.
+                    if (playerState != null && playerState->CurrentClassJobId == classJobId) {
+                        craftsmanship = Math.Max(0, (int)playerState->Attributes[70]);
+                        control = Math.Max(0, (int)playerState->Attributes[71]);
+                        if (cpMax <= 0) cpMax = Math.Max(0, (int)playerState->Attributes[11]);
+                    }
+                }
+
                 return new ServerCraftSkillList {
                     UpdatedUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                     Skills = this._craftSkillRows,
                     Foods = foods.Values.ToArray(),
                     Pots = pots.Values.ToArray(),
+                    ClassJobId = classJobId,
+                    Craftsmanship = craftsmanship,
+                    Control = control,
+                    CpMax = cpMax,
                 };
             } catch (Exception ex) {
                 Plugin.Log.Warning($"Could not build craft skill list: {ex.Message}");

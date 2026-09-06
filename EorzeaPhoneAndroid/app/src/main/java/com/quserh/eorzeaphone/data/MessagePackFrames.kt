@@ -619,7 +619,7 @@ internal object XivChatCodec {
     }
     fun encodeCraftSkillList(): ByteArray = pack { packArrayHeader(0) }
 
-    /** Opcode 42: [updatedUnix, skills, foods, pots], with optional future fields. */
+    /** Opcode 42: legacy four fields followed by optional job/craftsmanship/control/max CP. */
     fun readCraftSkillListPacket(unpacker: MessageUnpacker): GameCraftSkillPacket {
         if (unpacker.tryUnpackNil()) return GameCraftSkillPacket(0L, emptyList(), emptyList(), emptyList())
         val fields = unpacker.unpackArrayHeader()
@@ -658,8 +658,18 @@ internal object XivChatCodec {
         val skills = readSkills()
         val foods = if (fields > 2) readConsumables() else emptyList()
         val pots = if (fields > 3) readConsumables() else emptyList()
-        repeat((fields - 4).coerceAtLeast(0)) { unpacker.skipValue() }
-        return GameCraftSkillPacket(updated, skills, foods, pots)
+        fun optionalStat(index: Int): Int {
+            if (fields <= index || unpacker.tryUnpackNil()) return 0
+            if (!unpacker.nextFormat.valueType.isIntegerType) {
+                unpacker.skipValue()
+                return 0
+            }
+            return unpacker.unpackInt()
+        }
+        val stats = GameCraftStats(optionalStat(4), optionalStat(5), optionalStat(6), optionalStat(7))
+            .takeIf { it.valid }
+        repeat((fields - 8).coerceAtLeast(0)) { unpacker.skipValue() }
+        return GameCraftSkillPacket(updated, skills, foods, pots, stats)
     }
 
     fun readCraftSkillList(unpacker: MessageUnpacker): List<GameCraftSkill> = readCraftSkillListPacket(unpacker).skills

@@ -9283,7 +9283,7 @@ internal val SzjRightSlots = listOf("OFF_HAND", "EARS", "NECK", "WRISTS", "FINGE
  * 读的人得在两种类别之间来回跳。
  *
  * 分享卡的清单是给人照着抄搭配的，所以按**武器 / 防具 / 首饰**分段，
- * 和游戏自己的装备栏一致。段内仍是两列（横向空间只够两列）。
+ * 和游戏自己的装备栏一致。右侧清单只排一列，不再把半幅宽度继续切成两份。
  */
 private val SzjShareGroups: List<Pair<String, List<String>>> = listOf(
     "武器" to listOf("MAIN_HAND", "OFF_HAND"),
@@ -9325,63 +9325,44 @@ private fun szjShareSlot(d: ShizhijiaGlamourDetail, slot: String): SzjShareSlotI
     }
 }
 
-/**
- * 分享卡里的一个槽位格：槽位名 + 图标 + 部件名 + 染色点。
- *
- * 比详情页那版紧凑（图标 26dp、字 10sp）——分享卡要在一屏里装完十几个槽，
- * 详情页的 40dp 图标放这儿会撑爆。
- *
- * **空孔要画。** 原来这里 `mapNotNull` 把没染的孔滤掉了，理由写的是
- * "分享图里每一行都该是信息" —— 但**孔位本身就是信息**：
- * 两个孔只染第 2 孔时，只画一个色点等于告诉人"染的是第 1 孔"，是错的。
- * 别人照着分享图去染就染错位置，而这正是分享图存在的意义。
- */
+/** Fixed slot/icon columns, a wrapping item name, then one numbered line per dye hole. */
 @Composable
 private fun SzjShareSlotCell(slot: String, item: SzjShareSlotItem) {
-    Row(verticalAlignment = Alignment.Top) {
-        if (item.iconUrl.isNotBlank()) {
-            ShizhijiaRemoteImage(
-                url = item.iconUrl,
-                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(5.dp)),
-                showPlaceholder = false,
-                collapseOnFail = false,
-            )
-            Spacer(Modifier.width(6.dp))
+    val slotLabel = when (slot) {
+        "FINGER_LEFT" -> "左戒指"
+        "FINGER_RIGHT" -> "右戒指"
+        else -> SzjSlotLabels[slot] ?: slot
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.Top) {
+        Text(slotLabel, color = SzjMuted, fontSize = 11.sp, lineHeight = 15.sp,
+            modifier = Modifier.width(56.dp).padding(top = 2.dp, end = 6.dp))
+        // Reserve the icon column even if its URL is absent or loading fails.
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(6.dp)).background(SzjCardRaised), contentAlignment = Alignment.Center) {
+            if (item.iconUrl.isNotBlank()) {
+                ShizhijiaRemoteImage(url = item.iconUrl, modifier = Modifier.fillMaxSize(),
+                    showPlaceholder = false, collapseOnFail = false)
+            }
         }
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(SzjSlotLabels[slot] ?: slot, color = SzjMuted, fontSize = 9.sp, maxLines = 1)
             Text(
-                item.name, color = SzjText, fontSize = 10.sp,
-                lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                item.name, color = SzjText, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                lineHeight = 20.sp,
             )
-            // 染色：有几个孔就画几个，**空孔画成空心圈 + 「无」**，
-            // 这样孔位对得上（见上面注释）。
             if (item.dyeHoles > 0) {
-                Spacer(Modifier.height(2.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Spacer(Modifier.height(4.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     for (hi in 0 until item.dyeHoles) {
                         val dy = item.dyes.getOrNull(hi)?.takeIf { it.name.isNotBlank() }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (dy != null) {
-                                Box(
-                                    Modifier.size(8.dp).clip(CircleShape)
-                                        .background(szjDyeColor(dy.color) ?: SzjCardRaised)
-                                        .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape),
-                                )
-                                Spacer(Modifier.width(2.dp))
-                                Text(
-                                    dy.name.removeSuffix("染剂"), color = SzjMuted, fontSize = 9.sp,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                )
-                            } else {
-                                // 空心圈：和实心色点一样大，一眼能看出这一孔是空的。
-                                Box(
-                                    Modifier.size(8.dp).clip(CircleShape)
-                                        .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape),
-                                )
-                                Spacer(Modifier.width(2.dp))
-                                Text("无", color = SzjMuted, fontSize = 9.sp, maxLines = 1)
-                            }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                            Text("染色${hi + 1}", color = SzjMuted, fontSize = 10.sp, lineHeight = 15.sp,
+                                modifier = Modifier.width(39.dp))
+                            Box(Modifier.padding(top = 2.dp).size(10.dp).clip(CircleShape)
+                                .background(dy?.let { szjDyeColor(it.color) } ?: Color.Transparent)
+                                .border(0.5.dp, SzjMuted.copy(alpha = .6f), CircleShape))
+                            Spacer(Modifier.width(6.dp))
+                            Text(dy?.name?.removeSuffix("染剂") ?: "未染色", color = SzjMuted,
+                                fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -9480,7 +9461,7 @@ private fun SzjGlamourShareCard(
                     // 原来是拿详情页的左右两列逐行配对，配出来是
                     // `头部 | 耳坠`、`上衣 | 项链` —— 防具和首饰交替，
                     // 照着抄搭配的人得在两种类别之间来回跳。
-                    val groups = remember(d.id) {
+                    val groups = remember(d) {
                         SzjShareGroups.mapNotNull { (title, slots) ->
                             val items = slots.mapNotNull { s -> szjShareSlot(d, s)?.let { s to it } }
                             if (items.isEmpty()) null else title to items
@@ -9490,29 +9471,19 @@ private fun SzjGlamourShareCard(
                         Spacer(Modifier.height(12.dp))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(SzjLine))
                         groups.forEach { (title, items) ->
-                            Spacer(Modifier.height(9.dp))
+                            Spacer(Modifier.height(12.dp))
                             Text(
                                 title,
-                                color = SzjMuted,
-                                fontSize = 9.sp,
-                                letterSpacing = 1.2.sp,
-                                fontWeight = FontWeight.Medium,
+                                color = SzjOnAccentSoft,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp))
+                                    .background(SzjAccentSoft).padding(horizontal = 9.dp, vertical = 6.dp),
                             )
-                            Spacer(Modifier.height(5.dp))
-                            // 段内两列。**按有内容的槽两两成行**，不是按固定位置——
-                            // 固定位置在段内会留空洞（比如只有戒指左没有戒指右）。
-                            items.chunked(2).forEach { pair ->
-                                Row(
-                                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    pair.forEach { (slot, item) ->
-                                        Box(Modifier.weight(1f)) {
-                                            SzjShareSlotCell(slot, item)
-                                        }
-                                    }
-                                    // 单数时补一个空位，否则那一个会被拉成整行宽
-                                    if (pair.size == 1) Box(Modifier.weight(1f)) {}
+                            items.forEachIndexed { index, (slot, item) ->
+                                SzjShareSlotCell(slot, item)
+                                if (index < items.lastIndex) {
+                                    Box(Modifier.fillMaxWidth().height(0.5.dp).background(SzjLine))
                                 }
                             }
                         }
@@ -9551,17 +9522,18 @@ private fun SzjGlamourShareSheet(
     var sharing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     androidx.compose.ui.window.Dialog(
-        onDismissRequest = { if (!sharing) onDismiss() },
+        onDismissRequest = { if (!sharing && !saving) onDismiss() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(
             Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f))
-                .clickable(enabled = !sharing) { onDismiss() },
+                .clickable(enabled = !sharing && !saving) { onDismiss() },
             contentAlignment = Alignment.Center,
         ) {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 // **卡片按固定尺寸排版，再缩小显示。**
                 //
@@ -9578,7 +9550,12 @@ private fun SzjGlamourShareSheet(
                 // 站点也是这个路子：html2canvas 对一个 750px 的离屏节点渲染。
                 val cardW = 720.dp
                 val density = LocalDensity.current
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Only the preview viewport scrolls; the recorded child keeps its full height.
+                // The action row below is outside this viewport and cannot be pushed off screen.
+                BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null) { }) {
                     val avail = maxWidth
                     val k = (avail / cardW).coerceAtMost(1f)
                     Box(
@@ -9608,7 +9585,7 @@ private fun SzjGlamourShareSheet(
                     Text(
                         "取消",
                         color = Color.White.copy(alpha = .85f), fontSize = 14.sp,
-                        modifier = Modifier.clip(SzjInnerShape).clickable(enabled = !sharing) { onDismiss() }
+                        modifier = Modifier.clip(SzjInnerShape).clickable(enabled = !sharing && !saving) { onDismiss() }
                             .padding(horizontal = 18.dp, vertical = 11.dp),
                     )
                     // 保存到相册。**之前只有"分享"**——分享是把图交给别的 App，
@@ -9660,7 +9637,7 @@ private fun SzjGlamourShareSheet(
                     SzjPrimaryButton(
                         if (sharing) "生成中…" else "分享图片",
                         onClick = {
-                            if (sharing) return@SzjPrimaryButton
+                            if (sharing || saving) return@SzjPrimaryButton
                             sharing = true
                             scope.launch {
                                 val r = SzjShareImage.shareLayer(

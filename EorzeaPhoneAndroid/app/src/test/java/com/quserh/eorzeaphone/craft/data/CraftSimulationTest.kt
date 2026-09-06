@@ -102,6 +102,13 @@ class CraftSimulationTest {
     }
 
     @Test
+    fun depletedDurabilityRejectsSkillsEvenBeforeFinishedFlagArrives() {
+        val depleted = initial().copy(durability = 0, finished = false)
+        assertFalse(CraftSimulation.canUse(depleted, skill(100001)))
+        assertNull(CraftSimulation.apply(depleted, skill(100001), 0.0, 0.8))
+    }
+
+    @Test
     fun progressOnLastDurabilityCanCompleteSuccessfully() {
         val next = use(initial().copy(progress = 9999, durability = 10), 100001)
         assertTrue(next.finished)

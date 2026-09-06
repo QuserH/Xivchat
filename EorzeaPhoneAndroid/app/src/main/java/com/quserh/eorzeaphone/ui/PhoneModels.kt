@@ -61,6 +61,9 @@ import com.quserh.eorzeaphone.data.market.MarketAlertReceiver
 import com.quserh.eorzeaphone.data.market.MarketRepository
 import com.quserh.eorzeaphone.data.PhoneEvent
 import com.quserh.eorzeaphone.data.GameCraftState
+import com.quserh.eorzeaphone.craft.data.CraftSimulationStats
+import com.quserh.eorzeaphone.craft.data.CraftStatsStore
+import com.quserh.eorzeaphone.craft.data.PreferenceCraftStatsPersistence
 import com.quserh.eorzeaphone.data.XivChatConnection
 import com.quserh.eorzeaphone.data.PhoneNotifier
 import com.quserh.eorzeaphone.data.ResetReminderReceiver
@@ -697,6 +700,18 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
         private set
     var craftPots by mutableStateOf<List<com.quserh.eorzeaphone.data.GameCraftConsumable>>(emptyList())
         private set
+    val craftStats = CraftStatsStore(
+        PreferenceCraftStatsPersistence(preferences = { charPrefs() }, unassignedDefaults = prefs),
+        context.getSharedPreferences("craft_simulation_stats", Context.MODE_PRIVATE).let { legacy ->
+            CraftSimulationStats(
+                legacy.getInt("cp", 400).coerceAtLeast(1),
+                legacy.getInt("craftsmanship", 3000).coerceAtLeast(1),
+                legacy.getInt("control", 3000).coerceAtLeast(1),
+            )
+        },
+    )
+    private var craftStatsRefreshKey = ""
+    private var craftStatsRefreshedAt = 0L
 
     /** 制作清单监听的聊天流：用于从系统消息瞬时判定制作完成/失败。 */
     val craftChatEvents = kotlinx.coroutines.flow.MutableSharedFlow<GameChatMessage>(extraBufferCapacity = 64)
@@ -2188,6 +2203,7 @@ class PhoneState(context: Context, private val scope: CoroutineScope) {
             // which that debounce must be flushed to the old partition.
             flushChatPersistence()
             activeCharacterKey = key
+            craftStats.reload()
             if (persistSelection) prefs.edit().putString("activeCharacterKey", key).apply()
             chats.clear(); conversations.clear(); conversationByKey.clear(); inventory.clear(); inventoryContainers.clear(); retainers.clear()
             wallet = null; weather = null; jobs.clear(); housing = null; dailies = null; activity = null; collections = null; maps = null; fishingLog = null
@@ -3437,7 +3453,8 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
             is PhoneEvent.Wallet, is PhoneEvent.Weather, is PhoneEvent.Jobs,
             is PhoneEvent.Housing, is PhoneEvent.Dailies, is PhoneEvent.Activity,
             is PhoneEvent.Collections, is PhoneEvent.Maps, is PhoneEvent.Fishing,
-            is PhoneEvent.PartyList, is PhoneEvent.Channel, is PhoneEvent.Submarine -> true
+            is PhoneEvent.PartyList, is PhoneEvent.Channel, is PhoneEvent.Submarine,
+            is PhoneEvent.CraftSkills -> true
             else -> false
         }
         if (scopedEvent && !connectedCharacterConfirmed) {
@@ -3478,6 +3495,8 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 requestMarketCategories()
             }
             is PhoneEvent.Disconnected -> {
+                craftStatsRefreshKey = ""
+                craftStatsRefreshedAt = 0L
                 craftRemote = null
                 craftRawInventory = null
                 craftSkills = emptyList()
@@ -3805,6 +3824,7 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 craftSkills = event.skills
                 craftFoods = event.foods
                 craftPots = event.pots
+                event.stats?.let { craftStats.sync(it, event.updatedUnix) }
             }
             is PhoneEvent.Profile -> {
                 // Set the online core state first so a data-load failure can never
@@ -3853,6 +3873,19 @@ fun displayNameFor(msg: com.quserh.eorzeaphone.data.GameChatMessage): String {
                 val pending = pendingCharacterEvents.toList()
                 pendingCharacterEvents.clear()
                 pending.forEach(::handle)
+                // Capture each crafting job as the player switches to it, even if
+                // the workbench is closed. Refresh periodically for gear/food changes.
+                if (event.profile.classJobId in 8L..15L) {
+                    val refreshKey = "$newCharacterKey:${event.profile.classJobId}:${event.profile.maxCp}:${event.profile.itemLevel}"
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (refreshKey != craftStatsRefreshKey || now - craftStatsRefreshedAt >= 30_000L) {
+                        craftStatsRefreshKey = refreshKey
+                        craftStatsRefreshedAt = now
+                        requestCraftSkills()
+                    }
+                } else {
+                    craftStatsRefreshKey = ""
+                }
             }
             is PhoneEvent.Channel -> {
                 if (event.channel in 9..16 || event.channel in 19..26) {

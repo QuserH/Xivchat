@@ -651,6 +651,7 @@ fun WorkbenchTab(state: CraftAppState) {
     var mode by remember { mutableStateOf(0) } // 0 模拟 1 远程
     var recipeIndex by remember { mutableStateOf(0) }
     var showFoodPicker by remember { mutableStateOf(false) }
+    var statsJob by remember { mutableStateOf<Int?>(null) }
     var searchActive by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf(emptyList<CraftItem>()) }
@@ -715,6 +716,10 @@ fun WorkbenchTab(state: CraftAppState) {
                                 .padding(horizontal = 9.dp, vertical = 7.dp),
                         )
                     }
+                }
+                Pressable(onClick = { statsJob = targetRecipes.getOrNull(recipeIndex)?.job ?: state.currentCraftJob ?: 0 }) {
+                    ImageGlyph(R.drawable.ic2_settings, CraftText,
+                        Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp).size(22.dp).semantics { contentDescription = "制作属性设置" })
                 }
             },
         )
@@ -946,8 +951,7 @@ fun WorkbenchTab(state: CraftAppState) {
                     }
 
                     if (mode == 0) {
-                        SectionLabel("模拟角色属性")
-                        SimulationStatsEditor(state)
+                        SimulationStatsEntry(recipe.job) { statsJob = recipe.job }
                     }
 
                     SectionLabel("制作方式")
@@ -969,13 +973,7 @@ fun WorkbenchTab(state: CraftAppState) {
                             val id = targetItemId ?: return@Pressable
                             val itemNow = state.db.item(id) ?: return@Pressable
                             state.session =
-                                if (mode == 0) state.engine.startMock(
-                                    recipe,
-                                    itemNow.nameCn,
-                                    state.craftCpMax,
-                                    state.craftsmanship,
-                                    state.control,
-                                )
+                                if (mode == 0) state.startSimulation(recipe, itemNow.nameCn)
                                 else state.startRemoteCraft(recipe, itemNow.nameCn)
                         },
                         modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -1029,44 +1027,8 @@ fun WorkbenchTab(state: CraftAppState) {
             },
         )
     }
-}
-
-@Composable
-private fun SimulationStatsEditor(state: CraftAppState) {
-    var cp by remember(state.craftCpMax) { mutableStateOf(state.craftCpMax.toString()) }
-    var craftsmanship by remember(state.craftsmanship) { mutableStateOf(state.craftsmanship.toString()) }
-    var control by remember(state.control) { mutableStateOf(state.control.toString()) }
-    GroupCard {
-        SimulationStatRow("制作力", cp) {
-            cp = it
-            it.toIntOrNull()?.let { value -> state.setSimulationStats(value, craftsmanship.toIntOrNull() ?: state.craftsmanship, control.toIntOrNull() ?: state.control) }
-        }
-        Hairline()
-        SimulationStatRow("作业精度", craftsmanship) {
-            craftsmanship = it
-            it.toIntOrNull()?.let { value -> state.setSimulationStats(cp.toIntOrNull() ?: state.craftCpMax, value, control.toIntOrNull() ?: state.control) }
-        }
-        Hairline()
-        SimulationStatRow("加工精度", control) {
-            control = it
-            it.toIntOrNull()?.let { value -> state.setSimulationStats(cp.toIntOrNull() ?: state.craftCpMax, craftsmanship.toIntOrNull() ?: state.craftsmanship, value) }
-        }
-    }
-}
-
-@Composable
-private fun SimulationStatRow(label: String, value: String, onValue: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = CraftType.Callout, color = CraftText, modifier = Modifier.weight(1f))
-        InlineField(
-            value = value,
-            onValue = { onValue(it.filter(Char::isDigit).take(5)) },
-            hint = "数值",
-            modifier = Modifier.width(110.dp),
-        )
+    statsJob?.let { job ->
+        CraftStatsSettingsSheet(state, initialJob = job, onDismiss = { statsJob = null })
     }
 }
 
@@ -1244,7 +1206,6 @@ private fun WorkbenchControls(state: CraftAppState, session: CraftSession) {
     val context = LocalContext.current
     val craft = session.state.collectAsState().value ?: return
     val log by session.log.collectAsState()
-    val cooldown by session.cooldown.collectAsState()
     var infoSkill by remember { mutableStateOf<SkillDef?>(null) }
     var confirmCancel by remember(session) { mutableStateOf(false) }
     val gameSkills = state.craftSkills
@@ -1260,7 +1221,6 @@ private fun WorkbenchControls(state: CraftAppState, session: CraftSession) {
                 rowSkills.forEach { skill ->
                     SkillButton(
                         skill, craft,
-                        cooling = !craft.remote && cooldown > 0,
                         modifier = Modifier.weight(1f),
                         onInfo = { infoSkill = skill },
                     ) { session.useSkill(skill) }
@@ -1332,7 +1292,6 @@ private fun WorkbenchControls(state: CraftAppState, session: CraftSession) {
 private fun SkillButton(
     skill: SkillDef,
     craft: CraftState,
-    cooling: Boolean,
     modifier: Modifier = Modifier,
     onInfo: () -> Unit = {},
     onClick: () -> Unit,
@@ -1344,11 +1303,11 @@ private fun SkillButton(
             iconBmp = ItemIconLoader.load(context, skill.icon)
         }
     }
-    // 远程:亮暗完全跟插件推的 canAct(游戏动画锁/可用性);模拟:本地冷却+CP。
+    // 远程:亮暗完全跟插件推的 canAct(游戏动画锁/可用性);模拟:只按本地 CP/耐久/状态判断。
     val disabled = if (craft.remote) {
         !craft.canAct || craft.finished
     } else {
-        cooling || !CraftSimulation.canUse(craft, skill)
+        craft.finished || !CraftSimulation.canUse(craft, skill)
     }
     Column(
         modifier

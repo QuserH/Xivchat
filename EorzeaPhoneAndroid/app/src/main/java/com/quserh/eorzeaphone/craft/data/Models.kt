@@ -47,6 +47,8 @@ object CraftJobs {
 
     fun name(job: Int): String = if (job in NAMES.indices) NAMES[job] else "未知职业"
     fun abbr(job: Int): String = if (job in ABBR.indices) ABBR[job] else "??"
+    fun gameJobId(recipeJob: Int): Int = if (recipeJob in NAMES.indices) recipeJob + 8 else 0
+    fun recipeJob(gameJobId: Int): Int? = gameJobId.takeIf { it in 8..15 }?.minus(8)
 }
 
 /** A node of the recipe BOM tree (what materials make this item, recursively). */

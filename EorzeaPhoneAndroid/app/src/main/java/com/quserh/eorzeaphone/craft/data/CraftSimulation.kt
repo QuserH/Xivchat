@@ -37,7 +37,7 @@ internal object CraftSimulation {
     }
 
     fun canUse(state: CraftState, skill: SkillDef): Boolean {
-        if (state.finished || state.cp < cpCost(state, skill)) return false
+        if (state.finished || state.durability <= 0 || state.cp < cpCost(state, skill)) return false
         val effects = state.effects
         return when (skill.canonicalId) {
             100379L, 100387L -> state.step == 0

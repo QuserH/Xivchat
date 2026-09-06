@@ -122,7 +122,7 @@ class XivChatConnection(context: Context, private val scope: CoroutineScope, pri
                             25 -> onEvent(PhoneEvent.Recipe(XivChatCodec.readRecipe(unpacker)))
                             40 -> onEvent(PhoneEvent.CraftState(XivChatCodec.readCraftState(unpacker)))
                             42 -> XivChatCodec.readCraftSkillListPacket(unpacker).let { packet ->
-                                onEvent(PhoneEvent.CraftSkills(packet.skills, packet.foods, packet.pots))
+                                onEvent(PhoneEvent.CraftSkills(packet.skills, packet.foods, packet.pots, packet.stats, packet.updatedUnix))
                             }
                         }
                     } catch (error: Throwable) {

@@ -27,6 +27,11 @@ namespace XIVChatCommon.Message.Server {
         [Key(1)] public ServerCraftSkill[] Skills { get; set; } = [];
         [Key(2)] public ServerCraftConsumable[] Foods { get; set; } = [];
         [Key(3)] public ServerCraftConsumable[] Pots { get; set; } = [];
+        // Optional tail fields: zero means unavailable, including non-crafting jobs.
+        [Key(4)] public int ClassJobId { get; set; }
+        [Key(5)] public int Craftsmanship { get; set; }
+        [Key(6)] public int Control { get; set; }
+        [Key(7)] public int CpMax { get; set; }
 
         public ServerCraftSkillList() {
         }

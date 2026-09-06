@@ -50,7 +50,7 @@ data class CraftState(
 interface CraftSession {
     val state: StateFlow<CraftState?>
     val log: StateFlow<List<String>>
-    /** Seconds until the next skill is allowed (the in-game 2.5s GCD). */
+    /** Legacy countdown stream; simulation keeps zero and remote availability comes from CraftState.canAct. */
     val cooldown: StateFlow<Int>
     fun useSkill(skill: SkillDef)
     /** Explicit user-confirmed cancellation; stop() only disposes the observer. */
@@ -227,7 +227,7 @@ class MockCraftEngine(private val scope: CoroutineScope) {
         control: Int = 3000,
     ): CraftSession {
         stop()
-        val impl = MockSession(scope, recipe, itemName, cpMax, craftsmanship, control)
+        val impl = MockSession(recipe, itemName, cpMax, craftsmanship, control)
         session = impl
         return impl
     }
@@ -249,7 +249,6 @@ class MockCraftEngine(private val scope: CoroutineScope) {
 }
 
 private class MockSession(
-    scope: CoroutineScope,
     recipe: CraftRecipe,
     itemName: String,
     cpMax: Int,
@@ -278,23 +277,10 @@ private class MockSession(
     override val log = MutableStateFlow(listOf("开始制作：$itemName（模拟）"))
     override val cooldown = MutableStateFlow(0)
 
-    private val sessionScope = scope
-    private var ticker: Job? = null
-
     override fun useSkill(skill: SkillDef) {
         val current = inner.value ?: return
-        if (cooldown.value > 0) return
         val nextState = CraftSimulation.apply(current, skill, Math.random(), Math.random()) ?: return
         inner.value = nextState
-        cooldown.value = 3
-        ticker = sessionScope.launch {
-            delay(500)
-            cooldown.value = 2
-            delay(1000)
-            cooldown.value = 1
-            delay(1000)
-            cooldown.value = 0
-        }
         val line = when {
             nextState.finished && nextState.progress >= progressMax -> "第${nextState.step}步 ${skill.cn} → 制作完成！HQ 概率 ${nextState.hqChance}%"
             nextState.finished -> "第${nextState.step}步 ${skill.cn} → 耐久耗尽，制作失败"
@@ -306,7 +292,6 @@ private class MockSession(
     override fun cancelCraft() = stop()
 
     override fun stop() {
-        ticker?.cancel()
         inner.value?.let { if (!it.finished) inner.value = it.copy(finished = true) }
     }
 }

@@ -1,0 +1,79 @@
+name: Release EorzeaPhone plugin
+
+on:
+  push:
+    tags:
+      - 'eorzeaphone-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-plugin:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify release version
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = [xml](Get-Content XIVChatPlugin/XIVChatPlugin.csproj -Raw)
+          $version = [string]$project.Project.PropertyGroup.Version
+          $manifest = Get-Content XIVChatPlugin/EorzeaPhone.json -Raw | ConvertFrom-Json
+          if ($env:GITHUB_REF_NAME -ne "eorzeaphone-v$version" -or $manifest.AssemblyVersion -ne $version) {
+            throw 'Release tag, project version and plugin manifest must match.'
+          }
+          "number=$version" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Dalamud development files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dalamudPath = Join-Path $env:APPDATA 'XIVLauncher\addon\Hooks\dev'
+          New-Item -ItemType Directory -Force -Path $dalamudPath | Out-Null
+          $archive = Join-Path $env:RUNNER_TEMP 'dalamud.zip'
+          Invoke-WebRequest 'https://goatcorp.github.io/dalamud-distrib/latest.zip' -OutFile $archive
+          Expand-Archive -LiteralPath $archive -DestinationPath $dalamudPath -Force
+
+      - name: Build plugin
+        run: dotnet build XIVChatPlugin/XIVChatPlugin.csproj --configuration Release
+
+      - name: Verify packaged plugin
+        shell: pwsh
+        env:
+          PLUGIN_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zipPath = Join-Path $pwd 'XIVChatPlugin/bin/Release/EorzeaPhone/latest.zip'
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            foreach ($required in @('EorzeaPhone.dll', 'EorzeaPhone.json', 'XIVChatCommon.dll', 'libsodium.dll')) {
+              if ($null -eq $archive.GetEntry($required)) { throw "Missing $required in plugin package." }
+            }
+            $reader = [System.IO.StreamReader]::new($archive.GetEntry('EorzeaPhone.json').Open())
+            try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+            if ($manifest.InternalName -ne 'EorzeaPhone' -or $manifest.AssemblyVersion -ne $env:PLUGIN_VERSION) {
+              throw 'Packaged plugin identity or version does not match the release.'
+            }
+          } finally { $archive.Dispose() }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EorzeaPhone-plugin-${{ steps.version.outputs.number }}
+          path: XIVChatPlugin/bin/Release/EorzeaPhone/latest.zip
+          if-no-files-found: error
+
+      - name: Publish plugin release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 艾欧泽亚终端插件 ${{ steps.version.outputs.number }}
+          body: |
+            制作属性可按当前制作职业从游戏读取，并自动保存到手机对应角色的职业配置。
+            需要配合 Android 0.7.368 或更高版本使用自动同步；旧客户端保持兼容。
+          files: XIVChatPlugin/bin/Release/EorzeaPhone/latest.zip
