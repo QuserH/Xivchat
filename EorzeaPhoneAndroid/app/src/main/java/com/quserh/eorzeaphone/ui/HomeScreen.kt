@@ -424,7 +424,10 @@ private fun AppsGrid(
     // not publish a snapshot-state write for every icon on every scroll frame.
     val bounds = remember(page) { HashMap<String, Rect>() }
     var dragId by remember(page) { mutableStateOf<String?>(null) }
-    var dragOffset by remember(page) { mutableStateOf(Offset.Zero) }
+    // The dragged offset is consumed inside HomeTile's graphicsLayer. Snapshot writes
+    // therefore invalidate only that render layer instead of recomposing every tile in
+    // the page for every pointer event.
+    val dragOffsetState = remember(page) { mutableStateOf(Offset.Zero) }
     var originRect by remember(page) { mutableStateOf<Rect?>(null) }
     var originIndex by remember(page) { mutableStateOf(0) }
     var swipeDetected by remember(page) { mutableStateOf(false) }
@@ -457,7 +460,7 @@ private fun AppsGrid(
                             app = app,
                             editing = state.homeEditMode,
                             dragging = dragId == app.id,
-                            dragOffset = if (dragId == app.id) dragOffset else Offset.Zero,
+                            dragOffsetState = if (dragId == app.id) dragOffsetState else null,
                             dimmed = false,
                             onBounds = { bounds[app.id] = it },
                             onTap = {
@@ -476,14 +479,15 @@ private fun AppsGrid(
                                     dragId = app.id
                                     originRect = bounds[app.id]
                                     originIndex = apps.indexOfFirst { it.id == app.id }.coerceAtLeast(0)
-                                    dragOffset = Offset.Zero
+                                    dragOffsetState.value = Offset.Zero
                                 }
                             },
                             onDrag = { delta ->
                                 if (dragId == app.id) {
-                                    dragOffset += delta
+                                    dragOffsetState.value += delta
                                     val origin = originRect ?: bounds[app.id]
                                     if (origin != null) {
+                                        val dragOffset = dragOffsetState.value
                                         val pos = pointerPos(origin, dragOffset.x, dragOffset.y)
                                         onDragUpdate(pos)
                                         inTrash = trashBounds?.contains(pos) == true
@@ -500,13 +504,14 @@ private fun AppsGrid(
                                 val fromApp = app
                                 val fromOrigin = originRect ?: bounds[fromApp.id]
                                 val fromIdx = originIndex
+                                val dragOffset = dragOffsetState.value
                                 val dx = dragOffset.x
                                 val dy = dragOffset.y
                                 val pos = fromOrigin?.let { pointerPos(it, dx, dy) }
                                 val wasSwipe = swipeDetected
                                 dragId = null
                                 originRect = null
-                                dragOffset = Offset.Zero
+                                dragOffsetState.value = Offset.Zero
                                 swipeDetected = false
                                 onDragUpdate(null)
                                 onTrashActive(false)
@@ -533,7 +538,7 @@ private fun HomeTile(
     app: PhoneAppItem,
     editing: Boolean,
     dragging: Boolean,
-    dragOffset: Offset,
+    dragOffsetState: androidx.compose.runtime.State<Offset>?,
     dimmed: Boolean,
     onBounds: (Rect) -> Unit,
     onTap: () -> Unit,
@@ -571,6 +576,7 @@ private fun HomeTile(
                 scaleX = if (dragging) 1.12f else 1f
                 scaleY = if (dragging) 1.12f else 1f
                 alpha = if (dimmed) 0.45f else 1f
+                val dragOffset = dragOffsetState?.value ?: Offset.Zero
                 translationX = if (dragging) dragOffset.x else 0f
                 translationY = if (dragging) dragOffset.y else 0f
                 // No shadowElevation here: this layer has no shape, so it defaults to

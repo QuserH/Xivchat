@@ -95,6 +95,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -200,8 +201,8 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val CHAT_TEXT_LAYOUT_CACHE_SIZE = 192
-private val ChatAxisFont = FontFamily(Font(R.font.ffxiv_axis))
+internal const val CHAT_TEXT_LAYOUT_CACHE_SIZE = 192
+internal val ChatAxisFont = FontFamily(Font(R.font.ffxiv_axis))
 
 private val AetherLightBackground: Color @Composable get() = MaterialTheme.colorScheme.background
 private val AetherLightSurface: Color @Composable get() = MaterialTheme.colorScheme.surface
@@ -1350,6 +1351,11 @@ private fun chatLocalDate(timestamp: Long): LocalDate =
 
 private fun chatDay(timestamp: Long): Long = chatLocalDate(timestamp).toEpochDay()
 
+/** Precompute day boundaries once per transcript snapshot instead of converting the
+ * current and previous timestamp during every row recomposition. */
+private fun chatDayKeys(messages: List<GameChatMessage>): LongArray =
+    LongArray(messages.size) { index -> chatDay(messages[index].timestamp) }
+
 private fun chatDayLabel(timestamp: Long): String =
     chatLocalDate(timestamp).format(chatDayLabelFormatter)
 @Composable
@@ -1496,7 +1502,7 @@ private fun channelTag(channel: Int): String = when (channel) {
 
 // Local / group chat lines carry a "[频道]<名字>" or "名字：" prefix baked into the
 // text. The app already shows the author separately, so strip it before rendering.
-private fun decodeChatEntities(value: String): String = value
+internal fun decodeChatEntities(value: String): String = value
     .replace("&#x20;", " ")
     .replace("&nbsp;", " ")
     .replace("&lt;", "<")
@@ -1507,7 +1513,7 @@ private fun decodeChatEntities(value: String): String = value
 
 private val leadingChatChannelRegex = Regex("^\\[[^\\]]*\\]")
 
-private fun cleanChatText(raw: String, author: String): String {
+internal fun cleanChatText(raw: String, author: String): String {
     var t = decodeChatEntities(raw.trim())
     t = t.replaceFirst(leadingChatChannelRegex, "").trim()
     // 只删开头 "<名字> " 形式的名字前缀；<se.N> 音效标签是内容本身，删了会把前面的文字一起截掉
@@ -1631,6 +1637,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                 // an occurrence ordinal so two genuinely identical messages in the same
                 // millisecond still receive distinct Compose keys.
                 val messageKeys = rememberMessageOccurrenceKeys(msgs).keys
+                val messageDays = remember(msgs) { chatDayKeys(msgs) }
                 val normalizedSelfName = remember(state.profile?.name) {
                     state.profile?.name?.normalizedPlayerName()
                 }
@@ -1642,7 +1649,7 @@ private fun AetherphoneLocalScreen(state: PhoneState, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     itemsIndexed(msgs, key = { index, _ -> messageKeys[index] }, contentType = { _, _ -> "chat-message" }) { index, msg ->
-                        val showDate = index == 0 || chatDay(msg.timestamp) != chatDay(msgs[index - 1].timestamp)
+                        val showDate = index == 0 || messageDays[index] != messageDays[index - 1]
                         if (showDate) {
                             Text(chatDayLabel(msg.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
                         }
@@ -2938,156 +2945,6 @@ private fun ChatSearchInputScreen(
     }
 }
 
-/**
- * Stable-enough identity for rows that came through different storage paths.
- *
- * Chat packets do not expose a server message id, so timestamp alone is not a safe
- * anchor (multiple messages can share a millisecond).  Include the sender metadata and
- * rich-text chunks when available.  `sendState` is intentionally omitted: it changes
- * in-place as an outgoing message is acknowledged and must not make the same row appear
- * twice when the hot cache and SQLite result are merged.
- */
-private fun chatSearchKey(message: GameChatMessage): String = buildString {
-    append(message.timestamp).append('\u0000')
-    append(message.channel).append('\u0000')
-    append(message.sender).append('\u0000')
-    append(message.text).append('\u0000')
-    append(message.self).append('\u0000')
-    append(message.senderName.orEmpty()).append('\u0000')
-    append(message.senderWorld.orEmpty()).append('\u0000')
-    append(message.senderStatusName.orEmpty()).append('\u0000')
-    append(message.senderStatusIcon ?: -1).append('\u0000')
-    append(message.senderWorldIcon ?: -1).append('\u0000')
-    append(message.characterTag.orEmpty()).append('\u0000')
-    append(message.targetName.orEmpty()).append('\u0000')
-    append(message.targetWorld.orEmpty()).append('\u0000')
-    append(message.selfFlag).append('\u0000')
-    message.chunks.forEach { chunk ->
-        append(chunk.text.orEmpty()).append('\u0001')
-        append(chunk.icon ?: -1).append('\u0001')
-        append(chunk.italic).append('\u0001')
-        append(chunk.foreground ?: Long.MIN_VALUE).append('\u0002')
-    }
-}
-
-/** Cheap row identity used only by LazyColumn; search/dedup keeps the full fingerprint. */
-private fun chatComposeFingerprint(message: GameChatMessage): Long {
-    var h = -0x61c8864680b583ebL
-    fun mix(value: Long) {
-        h = (h xor value) * -0x40a7b892e31b1a47L
-        h = h xor (h ushr 29)
-    }
-    mix(message.timestamp)
-    mix(message.channel.toLong())
-    mix(message.sender.hashCode().toLong())
-    mix(message.text.hashCode().toLong())
-    mix(if (message.self) 1L else 0L)
-    mix(message.senderName?.hashCode()?.toLong() ?: 0L)
-    mix(message.senderWorld?.hashCode()?.toLong() ?: 0L)
-    mix(message.targetName?.hashCode()?.toLong() ?: 0L)
-    mix(message.targetWorld?.hashCode()?.toLong() ?: 0L)
-    mix(message.chunks.size.toLong())
-    // Chunk list sizes are normally tiny.  Include icon/foreground and text hashes so
-    // two links with the same plain message still don't recycle the wrong inline item.
-    message.chunks.forEach { chunk ->
-        mix((chunk.icon ?: -1).toLong())
-        mix(chunk.text?.hashCode()?.toLong() ?: 0L)
-        mix(chunk.foreground ?: Long.MIN_VALUE)
-        mix(if (chunk.italic) 1L else 0L)
-    }
-    return h
-}
-
-/**
- * Reuse the key list while the user drags a transcript.  SnapshotStateList keeps its
- * identity while messages are appended, so the cache also checks size and a few element
- * references; this catches normal append/clear/replace operations without an O(n)
- * equality/hash pass on every frame.
- */
-private class MessageOccurrenceKeyCache {
-    private var size = -1
-    private var source: List<GameChatMessage>? = null
-    private var sampleIndexes: IntArray = IntArray(0)
-    private var samples: Array<GameChatMessage?> = emptyArray()
-    private var cached: List<String> = emptyList()
-    private val occurrences = HashMap<Long, Int>()
-    private var revision = 0L
-    private var result = MessageOccurrenceKeys(cached, revision)
-
-    fun get(messages: List<GameChatMessage>): MessageOccurrenceKeys {
-        val n = messages.size
-        val previousSource = source
-        val prefixStillMatches = when {
-            size < 0 || n < size -> false
-            size == 0 -> true
-            previousSource === messages -> sampleIndexes.indices.all { sample ->
-                val index = sampleIndexes[sample]
-                index < messages.size && messages[index] === samples[sample]
-            }
-            previousSource == null || previousSource.size != size -> false
-            else -> (0 until size).all { index -> previousSource[index] === messages[index] }
-        }
-        val appendOnly = n > size && prefixStillMatches
-        val unchanged = n == size && prefixStillMatches
-
-        if (appendOnly) {
-            val next = ArrayList<String>(n)
-            next.addAll(cached)
-            for (index in size until n) {
-                val fingerprint = chatComposeFingerprint(messages[index])
-                val ordinal = occurrences[fingerprint] ?: 0
-                occurrences[fingerprint] = ordinal + 1
-                next += "message:${fingerprint.toString(16)}\u0003$ordinal"
-            }
-            cached = next
-            revision++
-            result = MessageOccurrenceKeys(cached, revision)
-        } else if (!unchanged) {
-            // Compose asks for keys while a LazyColumn is being re-laid out. Do not build
-            // the full search fingerprint here: it contains every chunk/string and creates
-            // substantial garbage. Rebuild compact hashes only after an actual replace,
-            // front trim or filter change; normal appends extend the prior key list above.
-            occurrences.clear()
-            cached = messages.map { message ->
-                val fingerprint = chatComposeFingerprint(message)
-                val ordinal = occurrences[fingerprint] ?: 0
-                occurrences[fingerprint] = ordinal + 1
-                "message:${fingerprint.toString(16)}\u0003$ordinal"
-            }
-            revision++
-            result = MessageOccurrenceKeys(cached, revision)
-        }
-
-        size = n
-        source = messages
-        sampleIndexes = if (n == 0) IntArray(0) else intArrayOf(
-            0,
-            (n - 1) / 3,
-            (n - 1) / 2,
-            ((n - 1) * 2) / 3,
-            n - 1,
-        )
-        val nextSamples: Array<GameChatMessage?> = if (n == 0) {
-            emptyArray()
-        } else {
-            Array(sampleIndexes.size) { sample -> messages[sampleIndexes[sample]] }
-        }
-        samples = nextSamples
-        return result
-    }
-}
-
-private data class MessageOccurrenceKeys(
-    val keys: List<String>,
-    val revision: Long,
-)
-
-@Composable
-private fun rememberMessageOccurrenceKeys(messages: List<GameChatMessage>): MessageOccurrenceKeys {
-    val cache = remember { MessageOccurrenceKeyCache() }
-    return cache.get(messages)
-}
-
 @Composable
 private fun SearchResultRow(state: PhoneState, conversation: ChatConversation, message: GameChatMessage, query: String, onClick: () -> Unit) {
     val self = message.self || (state.profile?.name != null && message.isFrom(state.profile?.name))
@@ -3151,11 +3008,12 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
     // reverse flings reuse recent layouts and also avoids constructing one cache per row.
     val chatTextMeasurer = rememberTextMeasurer(cacheSize = CHAT_TEXT_LAYOUT_CACHE_SIZE)
     val bubbleContentCache = remember(conversation.key) { ChatBubbleContentCache() }
-    val friendSnapshot = state.friends.toList()
-    val friendStatusByName = remember(friendSnapshot) {
-        buildMap {
-            friendSnapshot.forEach { friend ->
-                if (friend.online) put(friend.name.normalizedPlayerName(), friend.status)
+    val friendStatusByName: Map<String, Long> by remember {
+        derivedStateOf<Map<String, Long>> {
+            buildMap<String, Long> {
+                state.friends.forEach { friend ->
+                    if (friend.online) put(friend.name.normalizedPlayerName(), friend.status)
+                }
             }
         }
     }
@@ -3184,6 +3042,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
         // can collide and make LazyColumn recycle the wrong row state.
         val keySnapshot = rememberMessageOccurrenceKeys(messages)
         val messageKeys = keySnapshot.keys
+        val messageDays = remember(messages) { chatDayKeys(messages) }
         val selfName = state.profile?.name
         val normalizedSelfName = remember(selfName) {
             selfName?.normalizedPlayerName()
@@ -3194,7 +3053,7 @@ private fun ChatMessagesLazyColumn(messages: List<GameChatMessage>, conversation
             key = { index, _ -> messageKeys[index] },
             contentType = { _, _ -> "chat-message" },
         ) { index, message ->
-            val showDate = index == 0 || chatDay(message.timestamp) != chatDay(messages[index - 1].timestamp)
+            val showDate = index == 0 || messageDays[index] != messageDays[index - 1]
             if (showDate) {
                 Text(chatDayLabel(message.timestamp), color = AetherLightMuted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
             }
@@ -3661,136 +3520,6 @@ private class FilterConversationProjection(
         source.filter { filter.matches(it) && it.timestamp > clearedUntil }
 }
 
-internal class ChatInk(
-    val annotated: AnnotatedString,
-    val placeholders: List<AnnotatedString.Range<Placeholder>>,
-)
-
-internal data class ChatBubbleContentKey(
-    val message: GameChatMessage,
-    val author: String,
-    val selfEmoteFull: Boolean,
-    val color: Color,
-    val forceColor: Boolean,
-    val highlight: String,
-    val light: Boolean,
-    val fontSizeSp: Int,
-)
-
-internal class ChatBubbleContent(val ink: ChatInk, val inline: Map<String, InlineTextContent>)
-
-internal class ChatBubbleContentCache(capacity: Int = CHAT_TEXT_LAYOUT_CACHE_SIZE) :
-    androidx.collection.LruCache<ChatBubbleContentKey, ChatBubbleContent>(capacity) {
-    override fun create(key: ChatBubbleContentKey): ChatBubbleContent {
-        // Row-local remember is discarded offscreen. Retain parsed spans and inline
-        // icon lambdas alongside the bounded paragraph cache for reverse scrolling.
-        val message = key.message
-        val rawText = if (key.selfEmoteFull) key.author + message.text else message.text
-        val cleaned = cleanChatText(rawText, if (key.selfEmoteFull) "" else key.author).ifBlank { " " }
-        val chunks = if (message.category == ChatCategory.Emote) message.chunks.map { it.copy(italic = false) } else message.chunks
-        val renderChunks = cleanItemLinkChunks(chunks)
-        val fontUnit = key.fontSizeSp.sp
-        val lineUnit = (key.fontSizeSp + 5).sp
-        return ChatBubbleContent(
-            chatBubbleInk(renderChunks, cleaned, key.color, key.forceColor, key.highlight, key.light, fontUnit, lineUnit, ChatAxisFont, alreadyCleaned = true),
-            chatBubbleInline(renderChunks, cleaned, fontUnit, lineUnit, alreadyCleaned = true),
-        )
-    }
-}
-
-private fun cleanItemLinkChunks(chunks: List<GameChatChunk>): List<GameChatChunk> {
-    // 只重建“图标后连续含 PUA/� 的道具链接簇”：拿到完整名 + HQ，其余句子按原顺序保留，避免把长句误当道具名打乱顺序。
-    val iconIdx = chunks.indexOfFirst { it.icon == 0xE0BB }
-    if (iconIdx < 0) return chunks
-    val head = chunks.take(iconIdx)
-    val icon = chunks[iconIdx]
-    val rest = chunks.drop(iconIdx + 1)
-    fun isMarker(t: String) = t.any { it.code in 0xE000..0xF8FF || it.code == 0xFFFD || it.code == 0xE0BB } || t.isBlank()
-    var clusterEnd = 0
-    for (i in rest.indices) { val t = rest[i].text.orEmpty(); if (i == 0 || isMarker(t)) clusterEnd = i + 1 else break }
-    val cluster = rest.take(clusterEnd)
-    val tail = rest.drop(clusterEnd)
-    fun clean(s: String?) = (s ?: "").filter { it.code !in 0xE000..0xF8FF && it.code != 0xFFFD }
-    val itemName = cluster.map { clean(it.text) }.maxByOrNull { it.length } ?: ""
-    val glyphBuilder = StringBuilder()
-    for (c in cluster) glyphBuilder.append((c.text.orEmpty()).filter { it.code in 0xE000..0xF8FF && it.code != 0xE0BB })
-    val out = ArrayList<GameChatChunk>()
-    out.addAll(head)
-    out.add(icon)
-    if (itemName.isNotEmpty()) {
-        val ref = cluster.firstOrNull { it.text != null }
-        out.add(GameChatChunk(text = itemName, italic = ref?.italic ?: false, foreground = ref?.foreground))
-    }
-    if (glyphBuilder.isNotEmpty()) out.add(GameChatChunk(text = glyphBuilder.toString()))
-    out.addAll(tail)
-    return out
-}
-
-private fun chatBubbleInk(
-    chunks: List<GameChatChunk>, fallback: String, color: Color, forceColor: Boolean, highlight: String, light: Boolean,
-    fontSize: TextUnit, lineHeight: TextUnit, axisFont: FontFamily, alreadyCleaned: Boolean = false,
-): ChatInk {
-    val useChunks = (if (alreadyCleaned) chunks else cleanItemLinkChunks(chunks)).ifEmpty { listOf(GameChatChunk(text = fallback)) }
-    val builder = AnnotatedString.Builder()
-    val placeholders = mutableListOf<AnnotatedString.Range<Placeholder>>()
-    var len = 0
-    useChunks.forEachIndexed { index, chunk ->
-        if (chunk.icon != null) {
-            val alt = "◆"
-            builder.appendInlineContent("icon-$index", alt)
-            placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + alt.length))
-            len += alt.length
-        } else {
-                                    val text = decodeChatEntities(chunk.text.orEmpty()).trimEnd('\n', '\r', ' ', '\u00A0')
-            if (text.isEmpty()) return@forEachIndexed
-            val chunkColor = if (forceColor) color else (chunk.foreground?.let { val c = chatChunkColor(it); if (light) blendColor(c, Color.Black, 0.30f) else blendColor(c, Color.White, 0.28f) } ?: color)
-            val spanStyle = SpanStyle(color = chunkColor, fontStyle = if (chunk.italic) FontStyle.Italic else null)
-            if (text.all { it.code in 0xE000..0xF8FF }) {
-                val glyphKey = "glyph-$index"
-                builder.appendInlineContent(glyphKey, " ")
-                placeholders.add(AnnotatedString.Range(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center), len, len + 1))
-                len += 1
-            } else {
-                builder.appendPuaAware(text, highlight, spanStyle, Color(0x66FFEB3B), axisFont)
-                len += text.length
-            }
-        }
-    }
-        return ChatInk(builder.toAnnotatedString(), placeholders)
-}
-
-private fun chatBubbleInline(chunks: List<GameChatChunk>, fallback: String, fontSize: TextUnit, lineHeight: TextUnit, alreadyCleaned: Boolean = false): Map<String, InlineTextContent> {
-    val useChunks = (if (alreadyCleaned) chunks else cleanItemLinkChunks(chunks)).ifEmpty { listOf(GameChatChunk(text = fallback)) }
-    return buildMap {
-        useChunks.forEachIndexed { index, chunk ->
-            val icon = chunk.icon
-            if (icon != null) {
-                val linkColor = if (icon in 0xE000..0xF8FF) {
-                    var prevFg: Long? = null
-                    var p = index - 1
-                    while (p >= 0 && useChunks[p].icon != null) p--
-                    if (p >= 0) prevFg = useChunks[p].foreground
-                    var nextFg: Long? = null
-                    var q = index + 1
-                    while (q < useChunks.size && useChunks[q].icon != null) q++
-                    if (q < useChunks.size) nextFg = useChunks[q].foreground
-                    (nextFg ?: prevFg)?.let { chatChunkColor(it) }
-                } else null
-                put("icon-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
-                    ChatInlineIcon(icon, fontSize, linkColor)
-                })
-            } else {
-                            val gt = chunk.text.orEmpty().trimEnd('\n', '\r', ' ', '\u00A0')
-if (gt.isNotEmpty() && gt.all { it.code in 0xE000..0xF8FF }) {
-                    put("glyph-$index", InlineTextContent(Placeholder(fontSize, lineHeight, PlaceholderVerticalAlign.Center)) {
-                        ChatInlineIcon(gt.first().code, fontSize, null)
-                    })
-                }
-            }
-        }
-    }
-}
-
 private fun chatBubbleStyle(color: Color, fontSize: TextUnit, lineHeight: TextUnit, category: ChatCategory, align: TextAlign): androidx.compose.ui.text.TextStyle =
     androidx.compose.ui.text.TextStyle(
         color = color, fontSize = fontSize, lineHeight = lineHeight, textAlign = align,
@@ -3991,7 +3720,7 @@ private fun LightChatBubble(author: String, message: GameChatMessage, self: Bool
     }
 }
 
-private fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
+internal fun blendColor(c: Color, target: Color, fraction: Float): Color = Color(
     red = c.red + (target.red - c.red) * fraction,
     green = c.green + (target.green - c.green) * fraction,
     blue = c.blue + (target.blue - c.blue) * fraction,
@@ -4045,7 +3774,7 @@ private fun AnnotatedString.Builder.appendHighlighted(text: String, query: Strin
     }
 }
 
-private fun AnnotatedString.Builder.appendPuaAware(text: String, query: String, style: SpanStyle, highlight: Color, axisFont: FontFamily) {
+internal fun AnnotatedString.Builder.appendPuaAware(text: String, query: String, style: SpanStyle, highlight: Color, axisFont: FontFamily) {
     // 把 0xE000..0xF8FF 的轴字形（如 HQ / e03c、链接符号）用 FFXIV 轴字体渲染，其余走默认字体 + 高亮。
     var i = 0
     while (i < text.length) {
@@ -4062,7 +3791,7 @@ private fun AnnotatedString.Builder.appendPuaAware(text: String, query: String, 
     }
 }
 
-private fun chatChunkColor(value: Long): Color {
+internal fun chatChunkColor(value: Long): Color {
     val red = ((value shr 24) and 0xFF).toInt()
     val green = ((value shr 16) and 0xFF).toInt()
     val blue = ((value shr 8) and 0xFF).toInt()
@@ -4081,7 +3810,7 @@ private fun statusIconDrawable(index: Int): Int? = when (index) {
 }
 
 @androidx.compose.runtime.Composable
-private fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
+internal fun ChatInlineIcon(index: Int, fontSize: TextUnit, linkColor: Color?) {
     if (index in 0xE000..0xF8FF) {
         val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
         val color = linkColor ?: Color(0xFFFF7E1E)
