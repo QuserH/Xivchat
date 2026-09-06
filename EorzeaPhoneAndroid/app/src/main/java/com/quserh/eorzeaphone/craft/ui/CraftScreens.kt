@@ -316,24 +316,121 @@ fun ListTab(state: CraftAppState) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ListDetail(state: CraftAppState, listId: String) {
     val list = state.lists.listById(listId) ?: return
+    var selecting by remember(list.id) { mutableStateOf(false) }
+    var selected by remember(list.id) { mutableStateOf(emptySet<Int>()) }
+    val entries = list.entries.toList()
+    val bomRows = remember(entries, state.dbReady) {
+        buildList<Pair<BomNode, Int>> {
+            fun flatten(nodes: List<BomNode>, depth: Int) {
+                nodes.forEach { node ->
+                    add(node to depth)
+                    flatten(node.children, depth + 1)
+                }
+            }
+            entries.forEach { entry ->
+                val recipe = state.repo.defaultRecipe(entry.itemId)
+                flatten(state.repo.buildBom(entry.itemId, entry.qty, recipe).firstOrNull()?.children.orEmpty(), 0)
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(
-            title = list.name,
-            subtitle = "${list.entries.size} 种道具",
-            onBack = { state.pop() },
-        )
+        if (selecting) {
+            ScreenHeader(title = "已选 ${selected.size} 项", onBack = {
+                selecting = false
+                selected = emptySet()
+            }) {
+                Text(
+                    "删除",
+                    style = CraftType.Row,
+                    color = if (selected.isEmpty()) CraftMuted else CraftDanger,
+                    modifier = Modifier.clickable(enabled = selected.isNotEmpty()) {
+                        state.lists.removeEntries(list.id, selected)
+                        selected = emptySet()
+                        selecting = false
+                    }.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+                Text(
+                    "全选",
+                    style = CraftType.Callout,
+                    color = CraftAccent,
+                    modifier = Modifier.clickable {
+                        selected = if (selected.size == entries.size) emptySet() else entries.map { it.itemId }.toSet()
+                    }.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+                Text(
+                    "完成",
+                    style = CraftType.Callout,
+                    color = CraftMuted,
+                    modifier = Modifier.clickable {
+                        selecting = false
+                        selected = emptySet()
+                    }.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+        } else {
+            ScreenHeader(
+                title = list.name,
+                subtitle = "${entries.size} 种道具",
+                onBack = { state.pop() },
+                actions = {
+                    if (entries.isNotEmpty()) {
+                        Text(
+                            "选择",
+                            style = CraftType.Callout,
+                            color = CraftAccent,
+                            modifier = Modifier.clickable { selecting = true }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
+                    }
+                },
+            )
+        }
         LazyColumn(Modifier.fillMaxSize()) {
-            if (list.entries.isNotEmpty()) {
+            if (entries.isNotEmpty()) {
                 item { SectionLabel("目标道具") }
-                items(list.entries, key = { it.itemId }, contentType = { "entry" }) { entry ->
+                items(entries, key = { it.itemId }, contentType = { "entry" }) { entry ->
                     val item = remember(entry.itemId, state.dbReady) { state.db.item(entry.itemId) }
                     if (item != null) {
-                        EntryRow(state, list, item, entry.qty)
+                        EntryRow(
+                            state = state,
+                            list = list,
+                            item = item,
+                            qty = entry.qty,
+                            selecting = selecting,
+                            selected = entry.itemId in selected,
+                            onLongClick = {
+                                selecting = true
+                                selected = selected + entry.itemId
+                            },
+                            onSelect = { checked ->
+                                selected = if (checked) selected + entry.itemId else selected - entry.itemId
+                            },
+                        )
                         Hairline()
+                    }
+                }
+                item {
+                    SectionLabel("材料计算")
+                    Text(
+                        "直接材料在上，缩进项为下一级加工材料",
+                        style = CraftType.Caption,
+                        color = CraftMuted,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
+                if (bomRows.isEmpty()) {
+                    item {
+                        Text("暂无可展开的配方材料", style = CraftType.Callout, color = CraftMuted, modifier = Modifier.padding(16.dp))
+                    }
+                } else {
+                    itemsIndexed(bomRows, key = { index, pair -> "bom:$index:${pair.first.item.id}" }) { _, (node, depth) ->
+                        BomListRow(state, node, depth)
+                        Hairline(startPadding = (52 + depth.coerceAtMost(4) * 16).dp)
                     }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
@@ -355,13 +452,33 @@ fun ListDetail(state: CraftAppState, listId: String) {
 }
 
 @Composable
-private fun EntryRow(state: CraftAppState, list: CraftList, item: CraftItem, qty: Int) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun EntryRow(
+    state: CraftAppState,
+    list: CraftList,
+    item: CraftItem,
+    qty: Int,
+    selecting: Boolean,
+    selected: Boolean,
+    onLongClick: () -> Unit,
+    onSelect: (Boolean) -> Unit,
+) {
     var edit by remember { mutableStateOf(false) }
     val recipe = remember(item.id, state.dbReady) { state.repo.defaultRecipe(item.id) }
     Row(
-        Modifier.fillMaxWidth().clickable { edit = true }.padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth()
+            .combinedClickable(
+                onClick = {
+                    if (selecting) onSelect(!selected) else edit = true
+                },
+                onLongClick = onLongClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selecting) {
+            Checkbox(checked = selected, onCheckedChange = onSelect)
+        }
         ItemIcon(item, 44.dp)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(item.nameCn, style = CraftType.Row, color = CraftText, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -399,6 +516,37 @@ private fun EntryRow(state: CraftAppState, list: CraftList, item: CraftItem, qty
             },
             containerColor = CraftSurface,
         )
+    }
+}
+
+@Composable
+private fun BomListRow(state: CraftAppState, node: BomNode, depth: Int) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable { state.openLocations(node.item.id.toLong()) }
+            .padding(start = (16 + depth.coerceAtMost(5) * 16).dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ItemIcon(node.item, 34.dp)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(node.item.nameCn, style = CraftType.Row, color = CraftText, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (node.crystal) {
+                    Spacer(Modifier.width(6.dp))
+                    MetaChip("水晶", CraftAccent)
+                } else if (node.craftable) {
+                    Spacer(Modifier.width(6.dp))
+                    MetaChip("可制作", CraftOk)
+                }
+            }
+            Text(
+                if (node.craftable) "第 ${depth + 1} 层材料 · ${node.craftCount} 次制作" else "基础材料",
+                style = CraftType.Caption,
+                color = CraftMuted,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Text("需 ${node.totalNeed}", style = CraftType.Callout, color = CraftText)
     }
 }
 
@@ -1279,6 +1427,11 @@ fun WorkbenchTab(state: CraftAppState) {
                         )
                     }
 
+                    if (mode == 0) {
+                        SectionLabel("模拟角色属性")
+                        SimulationStatsEditor(state)
+                    }
+
                     SectionLabel("制作方式")
                     Segmented(
                         listOf("模拟制作", "远程制作"),
@@ -1298,7 +1451,13 @@ fun WorkbenchTab(state: CraftAppState) {
                             val id = targetItemId ?: return@Pressable
                             val itemNow = state.db.item(id) ?: return@Pressable
                             state.session =
-                                if (mode == 0) state.engine.startMock(recipe, itemNow.nameCn)
+                                if (mode == 0) state.engine.startMock(
+                                    recipe,
+                                    itemNow.nameCn,
+                                    state.craftCpMax,
+                                    state.craftsmanship,
+                                    state.control,
+                                )
                                 else state.startRemoteCraft(recipe, itemNow.nameCn)
                         },
                         modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -1350,6 +1509,45 @@ fun WorkbenchTab(state: CraftAppState) {
                 showFoodPicker = false
                 focusManager.clearFocus(force = true)
             },
+        )
+    }
+}
+
+@Composable
+private fun SimulationStatsEditor(state: CraftAppState) {
+    var cp by remember(state.craftCpMax) { mutableStateOf(state.craftCpMax.toString()) }
+    var craftsmanship by remember(state.craftsmanship) { mutableStateOf(state.craftsmanship.toString()) }
+    var control by remember(state.control) { mutableStateOf(state.control.toString()) }
+    GroupCard {
+        SimulationStatRow("制作力", cp) {
+            cp = it
+            it.toIntOrNull()?.let { value -> state.setSimulationStats(value, craftsmanship.toIntOrNull() ?: state.craftsmanship, control.toIntOrNull() ?: state.control) }
+        }
+        Hairline()
+        SimulationStatRow("作业精度", craftsmanship) {
+            craftsmanship = it
+            it.toIntOrNull()?.let { value -> state.setSimulationStats(cp.toIntOrNull() ?: state.craftCpMax, value, control.toIntOrNull() ?: state.control) }
+        }
+        Hairline()
+        SimulationStatRow("加工精度", control) {
+            control = it
+            it.toIntOrNull()?.let { value -> state.setSimulationStats(cp.toIntOrNull() ?: state.craftCpMax, craftsmanship.toIntOrNull() ?: state.craftsmanship, value) }
+        }
+    }
+}
+
+@Composable
+private fun SimulationStatRow(label: String, value: String, onValue: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = CraftType.Callout, color = CraftText, modifier = Modifier.weight(1f))
+        InlineField(
+            value = value,
+            onValue = { onValue(it.filter(Char::isDigit).take(5)) },
+            hint = "数值",
+            modifier = Modifier.width(110.dp),
         )
     }
 }

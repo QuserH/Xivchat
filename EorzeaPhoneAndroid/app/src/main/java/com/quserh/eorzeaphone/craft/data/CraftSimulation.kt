@@ -67,15 +67,17 @@ internal object CraftSimulation {
         }
         val progressAction = skill.kind == SkillDef.Kind.PROGRESS || skill.kind == SkillDef.Kind.PROGRESS_QUALITY
         val qualityAction = skill.kind == SkillDef.Kind.QUALITY || skill.kind == SkillDef.Kind.PROGRESS_QUALITY
+        val qualityStatFactor = (state.control.coerceAtLeast(1) / 3000.0).coerceIn(0.25, 2.0)
+        val progressStatFactor = (state.craftsmanship.coerceAtLeast(1) / 3000.0).coerceIn(0.25, 2.0)
         val qualityFactor = when (state.condition) {
             "高品质" -> 1.5
             "最高品质" -> 4.0
             "低品质" -> 0.5
             else -> 1.0
-        } * (1.0 + before.innerQuiet * 0.1) *
+        } * qualityStatFactor * (1.0 + before.innerQuiet * 0.1) *
             (1.0 + (if (before.innovation > 0) 0.5 else 0.0) + (if (before.greatStrides > 0) 1.0 else 0.0))
-        val progressFactor = 1.0 + (if (before.veneration > 0) 0.5 else 0.0) +
-            (if (before.muscleMemory > 0) 1.0 else 0.0)
+        val progressFactor = progressStatFactor * (1.0 + (if (before.veneration > 0) 0.5 else 0.0) +
+            (if (before.muscleMemory > 0) 1.0 else 0.0))
         val progressPotency = when (id) {
             100001L -> 120
             100203L, 100427L -> 180

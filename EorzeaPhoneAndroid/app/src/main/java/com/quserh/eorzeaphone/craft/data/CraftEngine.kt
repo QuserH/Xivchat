@@ -34,6 +34,9 @@ data class CraftState(
     val cancelPending: Boolean = false,
     val cancelError: String? = null,
     val cancelled: Boolean = false,
+    /** 模拟制作使用的角色面板属性；远程制作由游戏实时状态覆盖。 */
+    val craftsmanship: Int = 3000,
+    val control: Int = 3000,
 )
 
 /**
@@ -216,9 +219,15 @@ class MockCraftEngine(private val scope: CoroutineScope) {
 
     fun current(): CraftSession? = session
 
-    fun startMock(recipe: CraftRecipe, itemName: String): CraftSession {
+    fun startMock(
+        recipe: CraftRecipe,
+        itemName: String,
+        cpMax: Int = 400,
+        craftsmanship: Int = 3000,
+        control: Int = 3000,
+    ): CraftSession {
         stop()
-        val impl = MockSession(scope, recipe, itemName)
+        val impl = MockSession(scope, recipe, itemName, cpMax, craftsmanship, control)
         session = impl
         return impl
     }
@@ -243,6 +252,9 @@ private class MockSession(
     scope: CoroutineScope,
     recipe: CraftRecipe,
     itemName: String,
+    cpMax: Int,
+    craftsmanship: Int,
+    control: Int,
 ) : CraftSession {
 
     // Real caps from the recipe level table (schema v3).
@@ -256,8 +268,10 @@ private class MockSession(
             progress = 0, progressMax = progressMax,
             quality = 0, qualityMax = qualityMax,
             durability = durabilityMax, durabilityMax = durabilityMax,
-            cp = 400, cpMax = 400,
+            cp = cpMax.coerceAtLeast(1), cpMax = cpMax.coerceAtLeast(1),
             condition = "稳定", finished = false, hqChance = CraftQuality.hqChance(0, qualityMax, recipe.hq),
+            craftsmanship = craftsmanship.coerceAtLeast(1),
+            control = control.coerceAtLeast(1),
         ),
     )
     override val state: StateFlow<CraftState?> = inner

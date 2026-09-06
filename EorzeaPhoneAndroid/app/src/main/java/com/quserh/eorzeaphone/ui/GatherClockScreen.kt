@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -43,7 +44,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,7 +85,6 @@ import com.quserh.eorzeaphone.ui.theme.PhoneSurfaceRaised
 import com.quserh.eorzeaphone.ui.theme.PhoneText
 import com.quserh.eorzeaphone.ui.theme.PhoneWarn
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * 采集时钟 —— 限时采集点的倒计时。
@@ -179,11 +178,13 @@ fun GatherClockScreen(state: PhoneState) {
     val (etH, etM) = EorzeaTime.nowHourMinute(nowMs)
     val margin = LocalContentMargin.current
     val selectedFilterCount = listOf(
+        onlyActive,
         jobFilter != GatherJobCategory.ALL,
         typeFilter != GatherNodeType.ALL,
         levelFilter != GatherLevelRange.ALL,
     ).count { it }
     val filterSummary = buildList {
+        if (onlyActive) add("开放中")
         if (jobFilter != GatherJobCategory.ALL) add(jobFilter.label)
         if (typeFilter != GatherNodeType.ALL) add(typeFilter.label)
         if (levelFilter != GatherLevelRange.ALL) add(levelFilter.label)
@@ -225,7 +226,6 @@ fun GatherClockScreen(state: PhoneState) {
                     Modifier.fillMaxWidth().padding(start = margin.dp, end = margin.dp, top = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GatherFilterButton(selectedFilterCount) { showFilters = true }
                     if (filterSummary.isNotEmpty()) {
                         Text(
                             filterSummary,
@@ -238,32 +238,7 @@ fun GatherClockScreen(state: PhoneState) {
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
-                    PhonePressable(onClick = { onlyActive = !onlyActive }, shape = PhoneChipShape) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            // 底用 BrandFill、字用 BrandOnFill，而不是 PhoneAccent + 白字。
-                            // PhoneAccent 是**字色**（它自己的注释就这么写），当底用时
-                            // 深色主题下取到 inkDark（浅色），白字压上去只有 1.81:1，
-                            // 9 个强调色预设全部不达标。BrandOnFill 会按填充明度自己选
-                            // 白字还是深墨。见 HANDOFF.md §5.3、wiki-feature/check_contrast.py。
-                            modifier = Modifier.clip(PhoneChipShape)
-                                .background(if (onlyActive) BrandFill else PhoneSurfaceRaised)
-                                .padding(horizontal = 11.dp, vertical = 7.dp),
-                        ) {
-                            ImageGlyph(
-                                R.drawable.ic2_filter,
-                                if (onlyActive) BrandOnFill else PhoneMuted,
-                                Modifier.size(13.dp),
-                            )
-                            Text(
-                                "仅看开放中",
-                                color = if (onlyActive) BrandOnFill else PhoneMuted,
-                                fontSize = 12.sp,
-                                fontWeight = if (onlyActive) FontWeight.SemiBold else FontWeight.Normal,
-                                modifier = Modifier.padding(start = 5.dp),
-                            )
-                        }
-                    }
+                    GatherFilterButton(selectedFilterCount) { showFilters = true }
                 }
 
                 Text(
@@ -320,6 +295,8 @@ fun GatherClockScreen(state: PhoneState) {
 
             if (showFilters) {
                 GatherFilterBottomSheet(
+                    onlyActive = onlyActive,
+                    activeCount = activeCount,
                     jobFilter = jobFilter,
                     typeFilter = typeFilter,
                     levelFilter = levelFilter,
@@ -338,6 +315,7 @@ fun GatherClockScreen(state: PhoneState) {
                     onJobSelected = { jobFilter = it },
                     onTypeSelected = { typeFilter = it },
                     onLevelSelected = { levelFilter = it },
+                    onOnlyActiveSelected = { onlyActive = it },
                     onDismiss = { showFilters = false },
                 )
             }
@@ -453,6 +431,8 @@ private fun GatherFilterButton(selectedCount: Int, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GatherFilterBottomSheet(
+    onlyActive: Boolean,
+    activeCount: Int,
     jobFilter: GatherJobCategory,
     typeFilter: GatherNodeType,
     levelFilter: GatherLevelRange,
@@ -465,17 +445,10 @@ private fun GatherFilterBottomSheet(
     onJobSelected: (GatherJobCategory) -> Unit,
     onTypeSelected: (GatherNodeType) -> Unit,
     onLevelSelected: (GatherLevelRange) -> Unit,
+    onOnlyActiveSelected: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-
-    fun dismissAfterSelection() {
-        scope.launch {
-            sheetState.hide()
-            onDismiss()
-        }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -499,8 +472,22 @@ private fun GatherFilterBottomSheet(
                     color = PhoneAccent,
                     fontSize = 13.sp,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .clickable { dismissAfterSelection() }
+                        .clickable { onDismiss() }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = LocalContentMargin.current.dp, vertical = 9.dp),
+            ) {
+                Text(
+                    "开放状态", color = PhoneMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                GatherFilterChip(
+                    label = "仅看开放中",
+                    count = activeCount,
+                    active = onlyActive,
+                    onClick = { onOnlyActiveSelected(!onlyActive) },
                 )
             }
             GatherFilterRow(
@@ -509,7 +496,7 @@ private fun GatherFilterBottomSheet(
                 options = jobOptions,
                 count = jobCount,
                 optionLabel = { it.label },
-                onSelected = { onJobSelected(it); dismissAfterSelection() },
+                onSelected = onJobSelected,
             )
             GatherFilterRow(
                 label = "类型",
@@ -517,7 +504,7 @@ private fun GatherFilterBottomSheet(
                 options = typeOptions,
                 count = typeCount,
                 optionLabel = { it.label },
-                onSelected = { onTypeSelected(it); dismissAfterSelection() },
+                onSelected = onTypeSelected,
             )
             GatherFilterRow(
                 label = "等级",
@@ -525,7 +512,7 @@ private fun GatherFilterBottomSheet(
                 options = levelOptions,
                 count = levelCount,
                 optionLabel = { it.label },
-                onSelected = { onLevelSelected(it); dismissAfterSelection() },
+                onSelected = onLevelSelected,
             )
             Spacer(Modifier.height(6.dp))
         }
@@ -641,6 +628,7 @@ private fun GatherDetailScreen(
     onBack: () -> Unit,
 ) {
     val margin = LocalContentMargin.current
+    var wikiItem by remember { mutableStateOf<com.quserh.eorzeaphone.data.wiki.GatherItem?>(null) }
     // Reachable for a permanent node now that the wiki can jump straight here, and
     // nextWindowMs returns MAX_VALUE for one -- rendering that as a countdown would
     // read as "opens in 2.5 million hours" under a 常驻 point.
@@ -747,11 +735,17 @@ private fun GatherDetailScreen(
                             .background(PhoneSurface),
                     ) {
                         node.items.forEach { it2 ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                            PhonePressable(
+                                onClick = { },
+                                onLongClick = { wikiItem = it2 },
+                                shape = RectangleShape,
+                                pressedScale = 1f,
                             ) {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                ) {
                                 Box(
                                     Modifier.size(34.dp).clip(RoundedCornerShape(6.dp))
                                         .background(PhoneSurfaceRaised),
@@ -767,12 +761,41 @@ private fun GatherDetailScreen(
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f).padding(start = 10.dp),
                                 )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+    wikiItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { wikiItem = null },
+            title = { Text(item.name, color = PhoneText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) },
+            text = { Text("打开该物品的 Wiki 条目", color = PhoneMuted, fontSize = 13.sp) },
+            confirmButton = {
+                Text(
+                    "打开 Wiki",
+                    color = PhoneAccent,
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable {
+                        wikiItem = null
+                        state.openWikiItem(item.id)
+                    }.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            },
+            dismissButton = {
+                Text(
+                    "取消",
+                    color = PhoneMuted,
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable { wikiItem = null }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            },
+            containerColor = PhoneSurface,
+        )
     }
 }
 

@@ -163,6 +163,23 @@ class CraftAppState(private val context: Context, private val phone: PhoneState)
     val remoteCraft: com.quserh.eorzeaphone.data.GameCraftState? get() = phone.craftRemote
 
     private val foodPrefs = context.getSharedPreferences("craft_food", Context.MODE_PRIVATE)
+    private val statsPrefs = context.getSharedPreferences("craft_simulation_stats", Context.MODE_PRIVATE)
+
+    /** 模拟制作面板：允许用户按当前角色手动填写，并跨启动保存。 */
+    var craftCpMax by mutableStateOf(statsPrefs.getInt("cp", 400).coerceAtLeast(1))
+    var craftsmanship by mutableStateOf(statsPrefs.getInt("craftsmanship", 3000).coerceAtLeast(1))
+    var control by mutableStateOf(statsPrefs.getInt("control", 3000).coerceAtLeast(1))
+
+    fun setSimulationStats(cp: Int, craftsmanship: Int, control: Int) {
+        craftCpMax = cp.coerceAtLeast(1)
+        this.craftsmanship = craftsmanship.coerceAtLeast(1)
+        this.control = control.coerceAtLeast(1)
+        statsPrefs.edit()
+            .putInt("cp", craftCpMax)
+            .putInt("craftsmanship", this.craftsmanship)
+            .putInt("control", this.control)
+            .apply()
+    }
 
     /** 选中的食物（0=未选）；持久化，启动远程制作时下发给插件。 */
     var craftFoodId by mutableStateOf(foodPrefs.getInt("foodId", 0))

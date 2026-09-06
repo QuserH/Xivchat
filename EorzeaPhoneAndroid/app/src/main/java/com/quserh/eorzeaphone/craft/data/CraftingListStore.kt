@@ -6,6 +6,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Crafting lists ("制作清单"), persisted as one JSON file. Follows the plain
@@ -14,6 +21,9 @@ import java.util.UUID
 class CraftingListStore(context: Context) {
 
     private val file = File(context.filesDir, "craft_lists.json")
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val writeMutex = Mutex()
+    private val writeVersion = AtomicLong(0)
 
     /** All lists; Compose-observable so the UI recomposes on edits. */
     val lists = mutableStateListOf<CraftList>()
@@ -47,24 +57,44 @@ class CraftingListStore(context: Context) {
         }
     }
 
+    /**
+     * Persist a snapshot off the main thread. The old implementation wrote the
+     * complete JSON document synchronously on every quantity tap, which made a
+     * long edit sequence visibly hitch. Newer snapshots supersede older queued
+     * writes; the temporary file keeps a killed write from corrupting the store.
+     */
     @Synchronized
     fun save() {
-        val root = JSONObject()
-        val arr = JSONArray()
-        for (list in lists) {
-            val obj = JSONObject()
-            obj.put("id", list.id)
-            obj.put("name", list.name)
-            obj.put("updated", list.updatedMs)
-            val entries = JSONArray()
-            for (e in list.entries) {
-                entries.put(JSONObject().put("itemId", e.itemId).put("qty", e.qty))
+        val payload = JSONObject().apply {
+            put("lists", JSONArray().apply {
+                lists.forEach { list ->
+                    put(JSONObject().apply {
+                        put("id", list.id)
+                        put("name", list.name)
+                        put("updated", list.updatedMs)
+                        put("entries", JSONArray().apply {
+                            list.entries.forEach { entry ->
+                                put(JSONObject().put("itemId", entry.itemId).put("qty", entry.qty))
+                            }
+                        })
+                    })
+                }
+            })
+        }.toString()
+        val version = writeVersion.incrementAndGet()
+        ioScope.launch {
+            writeMutex.withLock {
+                if (version != writeVersion.get()) return@withLock
+                val tmp = File(file.parentFile, "${file.name}.tmp")
+                runCatching {
+                    tmp.writeText(payload)
+                    if (!tmp.renameTo(file)) {
+                        file.delete()
+                        check(tmp.renameTo(file)) { "无法替换制作清单文件" }
+                    }
+                }
             }
-            obj.put("entries", entries)
-            arr.put(obj)
         }
-        root.put("lists", arr)
-        file.writeText(root.toString())
     }
 
     fun addList(name: String): CraftList {
@@ -111,6 +141,16 @@ class CraftingListStore(context: Context) {
     fun removeEntry(listId: String, itemId: Int) {
         listById(listId)?.let { list ->
             list.entries.removeAll { it.itemId == itemId }
+            list.updatedMs = System.currentTimeMillis()
+        }
+        save()
+    }
+
+    /** Remove several entries in one transaction, used by the list detail multi-select UI. */
+    fun removeEntries(listId: String, itemIds: Set<Int>) {
+        if (itemIds.isEmpty()) return
+        listById(listId)?.let { list ->
+            list.entries.removeAll { it.itemId in itemIds }
             list.updatedMs = System.currentTimeMillis()
         }
         save()
